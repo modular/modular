@@ -5670,6 +5670,126 @@ struct EPCombineKernel[
                     if n_pend == FLUSH:
                         flush_pending()
                 flush_pending()
+            else:
+                # Below that, at decode sizes, the CTA sends its pairs
+                # together. The per-pair loop below would walk them one after
+                # another, each with its own count load, row-at-a-time block
+                # copy, barrier and publication, so the slowest CTA's serial
+                # walk would set the kernel's time. Here the CTA takes its
+                # pairs FP at a time: it loads their counts at once, copies the
+                # 16-byte units of all their rows with every thread (UNR units
+                # in flight a thread), joins once, and publishes each pair from
+                # its own lane through the per-pair loop's completion election.
+                # Each payload store precedes the publishing lane's
+                # acquire-release election RMW through a block barrier, the
+                # ordering the per-pair loop relies on.
+                # A CTA's pairs when every SM sends, so one pass.
+                comptime FP = ceildiv(Self.n_experts, Self.n_sms)
+                comptime UNR = 4
+                comptime vec = simd_width_of[DType.uint8]()
+                comptime n_vec = Self.msg_bytes // vec
+                comptime assert (
+                    Self.msg_bytes % vec == 0
+                ), "flat send copies whole 16-byte units"
+                var f_start = unsafe_stack_allocation[
+                    FP, Int32, address_space=.SHARED
+                ]()
+                var f_cnt = unsafe_stack_allocation[
+                    FP, Int32, address_space=.SHARED
+                ]()
+                var f_dst = unsafe_stack_allocation[
+                    FP, Int32, address_space=.SHARED
+                ]()
+                for pass_base in range(sm_id, Self.n_experts, n_send_sms * FP):
+                    if Int(tid) < FP:
+                        var g = pass_base + Int(tid) * n_send_sms
+                        var st = Int32(0)
+                        var cn = Int32(0)
+                        var dst = Int32(0)
+                        if g < Self.n_experts:
+                            var tr, le = udivmod(g, Self.n_local_experts)
+                            var tec = atomic_counter.unsafe_load[
+                                width=2,
+                                alignment=align_of[SIMD[.int32, 2]](),
+                                invariant=True,
+                            ](2 * Self.recv_count_layout((le, tr)))
+                            cn = tec[1]
+                            st = (tec[0] - Int32(EP_DATA_READY_FLAG)) - cn
+                            dst = Int32(tr)
+                        f_start[Int(tid)] = st
+                        f_cnt[Int(tid)] = cn
+                        f_dst[Int(tid)] = dst
+                    _scoped_barrier[Self.num_threads, comm_barrier_id]()
+                    # Exclusive prefix of the pass's row counts: rows of pair p
+                    # are flattened units [pre[p] * n_vec, pre[p + 1] * n_vec).
+                    var pre = Array[Int32, FP](fill=0)
+                    var acc = Int32(0)
+                    comptime for p in range(FP):
+                        pre[p] = acc
+                        acc += f_cnt[p]
+                    var n_units = Int(acc) * n_vec
+                    for base in range(
+                        Int(tid), n_units, Self.num_threads * UNR
+                    ):
+                        var vals = Array[SIMD[DType.uint8, vec], UNR](fill=0)
+                        var dsts = Array[Int, UNR](fill=0)
+                        comptime for k in range(UNR):
+                            var u = base + k * Self.num_threads
+                            if u < n_units:
+                                var t, v = udivmod(u, n_vec)
+                                var p = 0
+                                var pp = Int32(0)
+                                comptime for pq in range(1, FP):
+                                    if t >= Int(pre[pq]):
+                                        p = pq
+                                        pp = pre[pq]
+                                var ti = Int(f_start[p]) + t - Int(pp)
+                                vals[k] = (
+                                    input_tokens.ptr_at_offset((ti, Idx[0]))
+                                    .unsafe_bitcast[UInt8]()
+                                    .unsafe_load[
+                                        width=vec,
+                                        alignment=vec,
+                                        invariant=True,
+                                    ](v * vec)
+                                )
+                                var sti = src_info.load[width=2]((ti, Idx[0]))
+                                if Self._recv_offset_in_bounds(sti[0], sti[1]):
+                                    dsts[k] = Int(
+                                        recv_buf_ptrs[
+                                            Int(f_dst[p])
+                                        ].unsafe_offset(
+                                            Int(
+                                                Self.recv_buf_layout(
+                                                    (sti[0], sti[1], Idx[0])
+                                                )
+                                            )
+                                            + v * vec
+                                        )
+                                    )
+                        comptime for k in range(UNR):
+                            if dsts[k] != 0:
+                                MutPointer[UInt8, MutUntrackedOrigin](
+                                    unsafe_from_address=dsts[k]
+                                ).unsafe_store[alignment=vec](0, vals[k])
+                    _scoped_barrier[Self.num_threads, comm_barrier_id]()
+                    if Int(tid) < FP:
+                        var g = pass_base + Int(tid) * n_send_sms
+                        if g < Self.n_experts:
+                            var tr, le = udivmod(g, Self.n_local_experts)
+                            _ = ep_signal_completion[
+                                Self.use_shmem,
+                                n_experts_per_device=Self.n_local_experts,
+                                skip_a2a=Self.skip_a2a,
+                            ](
+                                my_rank,
+                                Int32(tr),
+                                recv_count_ptrs,
+                                Self.recv_count_layout((le, my_rank)),
+                                UInt64(f_cnt[Int(tid)]),
+                                rank_completion_counter,
+                            )
+                run_legacy = False
 
         # We use one block per-expert-per-rank to send back the tokens.
         if run_legacy:

@@ -65,6 +65,7 @@ mojo_test(
 _GPU_MEMORY = {
     "test_p2p_ep_combine.mojo": "3",
     "test_p2p_ep_dispatch.mojo": "3",
+    "test_ep_combine_reuse.mojo": "2",
     "test_allreduce_residual_rmsnorm_fp8.mojo": "9",
     "test_p2p_copy.mojo": "2",
     "test_allreduce.mojo": "4",
