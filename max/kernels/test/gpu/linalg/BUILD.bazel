@@ -341,6 +341,7 @@ _B200_TESTS = [
     "test_grouped_matmul_sm100_w4a8.mojo",
     "test_grouped_matmul_sm100_block_fp4.mojo",
     "test_grouped_matmul_nvfp4_dispatch.mojo",
+    "test_grouped_matmul_nvfp4_pdl_order.mojo",
     "test_block_scaled_matmul_with_epilogue.mojo",
     "test_matmul_sm100_block_scaled_nvfp4_1sm.mojo",
     "test_matmul_sm100_block_scaled_fp4_2sm.mojo",

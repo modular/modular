@@ -732,10 +732,10 @@ struct Grouped1D1DMatmulKernel[
         cluster_shape: 3D `(x, y, z)` cluster shape passed to the
             `nvvm.cluster_dim` metadata (defaults to `(1, 1, 1)`).
         pdl_level: Programmatic dependent launch level controlling
-            cross-grid ordering fences (defaults to `PDLLevel()`). Under
-            `OVERLAP_AT_BEGINNING` the load warp reads the routing tensors
-            and loads weight data before its wait, so the caller must make
-            both final before this grid launches.
+            cross-grid ordering fences (defaults to `PDLLevel()`). Every
+            level above `OFF` waits on the previous grid before reading any
+            tensor, routing included, and releases the next grid right
+            after the wait.
         fuse_swiglu: When `True`, treats adjacent matmul-N column pairs
             `(2i, 2i+1)` as `(gate, up)` and emits packed FP4/FP8 plus a
             5D scale tile instead of the BF16 GMEM store (defaults to
@@ -1748,7 +1748,7 @@ struct Grouped1D1DMatmulKernel[
         fence_mbarrier_init()
         cluster_sync()
 
-        # SAFE (PDLLevel.ON) tier: block-wide PDL fence fires after all SMEM
+        # Block-wide PDL fence fires after all SMEM
         # / barrier init but before any warp touches GMEM. Orders every
         # warp's subsequent _compute_iter0_ctx read of a_offsets /
         # expert_ids / expert_scales, the scheduler's direct reads, and all
@@ -1757,16 +1757,20 @@ struct Grouped1D1DMatmulKernel[
         # Past the fence, the CTA also releases the next grid. That grid's
         # CTAs then take SMs as ours retire instead of launching after our
         # last CTA, and its own wait still orders it after our writes.
-        comptime if Self.pdl_level == PDLLevel.ON:
+        #
+        # Nothing above this point may read a tensor an earlier grid writes:
+        # the routing tensors (`a_offsets`, `expert_ids`, `a_scale_offsets`)
+        # are often produced by the grid right before this one (the EP
+        # dispatch callback), and the expert id picks which weights to load.
+        # Under programmatic launch this grid can be resident while that
+        # grid is still running, so hoisting the first weight loads over the
+        # fence is unsound. A late-published routing table made it hang.
+        comptime assert (
+            Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+        ), "this kernel always waits on the previous grid; use ON"
+        comptime if Self.pdl_level > PDLLevel.OFF:
             wait_on_dependent_grids()
             launch_dependent_grids()
-        # OVERLAP_AT_BEGINNING: only the load warp runs ahead of the fence.
-        # Before its own wait it reads the routing tensors and loads weight
-        # data, which the caller guarantees are final at launch. Scales and
-        # activations load after the wait.
-        comptime if Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
-            if not Self.WarpRole.is_load():
-                wait_on_dependent_grids()
 
         var mma_op = Self.MmaOp()
 
@@ -1782,8 +1786,7 @@ struct Grouped1D1DMatmulKernel[
                 var sched_ci: Int = 0
                 var sched_phase = UInt32(0)
                 # Iter 0: compute inline (no scheduler, no mbarrier). The load
-                # warp never uses the expert scale, and under
-                # OVERLAP_AT_BEGINNING it may not read it before its wait.
+                # warp never uses the expert scale.
                 var ctx = Self._compute_iter0_ctx[read_expert_scale=False](
                     _num_active_experts,
                     a_offsets,
@@ -1792,9 +1795,6 @@ struct Grouped1D1DMatmulKernel[
                 )
                 var prefetched_ctx = ctx
                 var has_prefetched_ctx = False
-                # The first tile fills every stage with weight data before the
-                # PDL wait, then adds the scales and activations.
-                var pdl_first_tile = True
                 # Per-tile counter for the load warp's pipeline trace.
                 # DCEs to nothing when `swiglu_enable_trace=False`.
                 var tile_idx_load: Int = 0
@@ -1818,67 +1818,18 @@ struct Grouped1D1DMatmulKernel[
                                 UInt64(global_perf_counter_ns()),
                             )
 
-                    var k_begin = 0
-                    comptime if Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
-                        if pdl_first_tile:
-                            k_begin = min(
-                                num_k_iters, Self.num_group_pipeline_stages
-                            )
-                            for k_tile in range(k_begin):
-                                with producer.acquire() as tiles:
-                                    Self.load_input_tiles(
-                                        a_tma_op,
-                                        b_tma_op,
-                                        sfa_tma_op,
-                                        sfb_tma_op,
-                                        tiles,
-                                        peer_cta_coord,
-                                        ctx,
-                                        a_scale_offsets,
-                                        UInt32(
-                                            k_tile * Self.config.k_group_size
-                                        ),
-                                        elect_one_cta,
-                                        a_multicast_mask,
-                                        b_multicast_mask,
-                                        load_weights=True,
-                                        load_activations=False,
-                                        split_weight_scales=True,
-                                    )
-                            wait_on_dependent_grids()
-                            # The first tile starts the ring at stage 0.
-                            for k_tile in range(k_begin):
-                                Self.load_input_tiles(
-                                    a_tma_op,
-                                    b_tma_op,
-                                    sfa_tma_op,
-                                    sfb_tma_op,
-                                    producer.tiles_at(UInt32(k_tile)),
-                                    peer_cta_coord,
-                                    ctx,
-                                    a_scale_offsets,
-                                    UInt32(k_tile * Self.config.k_group_size),
-                                    elect_one_cta,
-                                    a_multicast_mask,
-                                    b_multicast_mask,
-                                    load_weights=False,
-                                    load_activations=True,
-                                    split_weight_scales=True,
-                                )
-                            pdl_first_tile = False
-
                     var next_ready = True
-                    if num_k_iters > k_begin:
+                    if num_k_iters > 0:
                         next_ready = producer.try_acquire()
 
-                    for k_tile in range(k_begin, num_k_iters):
+                    for k_tile in range(num_k_iters):
                         with producer.acquire_if_needed(next_ready) as tiles:
                             # T_LOAD_START tile i: AFTER producer-slot
                             # acquire, just before the first actual TMA
                             # issue. Real-work start.
                             comptime if Self.swiglu_enable_trace:
                                 if (
-                                    k_tile == k_begin
+                                    k_tile == 0
                                     and tile_idx_load < SWIGLU_MAX_TRACED_TILES
                                     and lane_id() == 0
                                 ):
@@ -2230,9 +2181,6 @@ struct Grouped1D1DMatmulKernel[
                     tile_idx_epi += 1
 
                     ctx = Self._consume_sched_ctx(smem, sched_ci, sched_phase)
-
-                comptime if Self.pdl_level > PDLLevel.ON:
-                    launch_dependent_grids()
 
         # ===== SFB TMA LOAD WARP (MMA_N < 64 only) =====
         # Dedicated warp that loads SFB scale factors from GMEM to SMEM.
@@ -2763,14 +2711,17 @@ struct Grouped1D1DMatmulKernel[
     ):
         """Load A, B, SFA, SFB tiles using TMA.
 
-        When PDL splits loads around `wait_on_dependent_grids`, the weight
-        loads (A + SFA if AB_swapped, B + SFB otherwise) can issue before
-        the wait since weights are static across grids. The activation
-        loads (the other pair) must come after. Set `load_weights=True,
-        load_activations=False` for the pre-wait call, and the inverse
-        for the post-wait call. `expect_bytes` is issued during the
-        weight phase (which covers the first call when both phases
-        happen, or the only call when the split is not used).
+        A caller can split the stage's loads so the weight side (A + SFA if
+        AB_swapped, B + SFB otherwise) issues first and the activation side
+        (the other pair) follows: `load_weights=True, load_activations=False`
+        for the first call, and the inverse for the second. `expect_bytes` is
+        issued during the weight phase (which covers the first call when both
+        phases happen, or the only call when the split is not used).
+
+        This kernel always loads both sides in one call. Splitting around
+        `wait_on_dependent_grids` is only sound for a caller whose tile
+        coordinates (expert id, token offsets) do not come from a
+        predecessor grid, because they pick which weights to load.
 
         The phase flags are runtime so a single instantiation of this
         function covers all three use-cases (both, weights-only,
