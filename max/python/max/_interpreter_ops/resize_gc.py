@@ -19,12 +19,13 @@ compiled graph per ``(op, device, dtype, rank, variant)`` serves every
 output size, the same way ``shape_rearrange_gc`` serves every pad width /
 repeat count / slice bound.
 
-``coordinate_transform_mode`` (4 values) and ``antialias`` (linear only, 2
-values) / ``round_mode`` (nearest only, 4 values) are small closed compile-time
-attrs, baked into the cache key as a ``variant`` tuple -- same shape as
-``reduce_axis_gc``'s cumsum ``(exclusive, reverse)`` variant. Bicubic has no
-variant attrs (half-pixel mapping and the Keys ``a = -0.75`` filter are
-fixed), so its key carries the empty variant.
+``coordinate_transform_mode`` (4 values) and ``antialias`` (linear and
+bicubic, 2 values) / ``round_mode`` (nearest only, 4 values) are small closed
+compile-time attrs, baked into the cache key as a ``variant`` tuple -- same
+shape as ``reduce_axis_gc``'s cumsum ``(exclusive, reverse)`` variant.
+Bicubic's only variant attr is ``antialias``. The antialiased kernel runs
+on the CPU only, on float32 or uint8, so the sweep builds that variant for
+the CPU's float32 and uint8 alone; uint8 builds no other variant.
 
 All three ops are single-device with a host ``size`` operand, so they sweep
 every discovered device; their kernels run on the input's device. Bicubic is
@@ -70,6 +71,23 @@ def _linear_variants() -> tuple[Variant, ...]:
     return tuple((cm, int(aa)) for cm in range(4) for aa in (False, True))
 
 
+def _bicubic_variants() -> tuple[Variant, ...]:
+    return ((0,), (1,))
+
+
+def _bicubic_dtypes(device: Device) -> list[DType]:
+    if device.label != "cpu":
+        return gc_compile.float_dtypes(device)
+    return [*gc_compile.float_dtypes(device), DType.uint8]
+
+
+def _bicubic_builds(device: Device, dtype: DType, variant: Variant) -> bool:
+    (antialias,) = variant
+    if not antialias:
+        return dtype != DType.uint8
+    return device.label == "cpu" and dtype in (DType.float32, DType.uint8)
+
+
 def _nearest_variants() -> tuple[Variant, ...]:
     return tuple((cm, rm) for cm in range(4) for rm in range(4))
 
@@ -82,6 +100,11 @@ class ResizeSpec:
     max_rank: int
     rank_keyed: bool
     variants: tuple[Variant, ...] = (_NO_VARIANT,)
+    dtypes: Callable[[Device], list[DType]] = gc_compile.float_dtypes
+    """The dtypes a device takes, before ``builds`` narrows them."""
+    builds: Callable[[Device, DType, Variant], bool] = lambda *_: True
+    """Whether the sweep builds a variant for a device and dtype: false for
+    one the kernel raises on at run time."""
     gpu_max_rank: int | None = None
     """The one rank accelerators warm; ``None`` warms every rank there.
 
@@ -175,11 +198,13 @@ def _build_bicubic_graph(
         out_type = TensorType(
             dtype, _symbolic_dims(rank, "o"), device=device_ref
         )
+        (antialias,) = variant
         result = Graph.current._add_op_generated(
             rmo.MoResizeBicubicOp,
             result=out_type,
             input=x,
             size=size,
+            antialias=builtin.BoolAttr(bool(antialias)),
             output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
         graph.output(result)
@@ -191,6 +216,9 @@ _RESIZE_OPS: dict[type[_core.Operation], ResizeSpec] = {
         # The bicubic kernel is rank-4 only (NCHW images).
         max_rank=4,
         rank_keyed=False,
+        variants=_bicubic_variants(),
+        dtypes=_bicubic_dtypes,
+        builds=_bicubic_builds,
     ),
     mo.ResizeLinearOp: ResizeSpec(
         build=_build_linear_graph,
@@ -268,14 +296,20 @@ def _graph_name(
 
 
 def _is_supported(
-    op_type: type[_core.Operation], device: Device, dtype: DType, rank: int
+    op_type: type[_core.Operation],
+    device: Device,
+    dtype: DType,
+    rank: int,
+    variant: Variant,
 ) -> bool:
     spec = _spec_for(op_type)
     if spec is None:
         return False
     if device not in gc_compile.DISCOVERED_DEVICES:
         return False
-    if dtype not in gc_compile.float_dtypes(device):
+    if dtype not in spec.dtypes(device):
+        return False
+    if not spec.builds(device, dtype, variant):
         return False
     return rank in _supported_ranks(spec)
 
@@ -295,10 +329,11 @@ class _ResizeFamily(gc_compile.GCFamilySpec):
         if module is None:
             module = Module()
         for spec in _RESIZE_OPS.values():
-            for dtype in gc_compile.float_dtypes(device):
+            for dtype in spec.dtypes(device):
                 for rank in _sweep_ranks_for(spec, device):
                     for variant in spec.variants:
-                        spec.build(module, device, dtype, rank, variant)
+                        if spec.builds(device, dtype, variant):
+                            spec.build(module, device, dtype, rank, variant)
         return module
 
 
@@ -338,12 +373,13 @@ def resize_model(
         return model
 
     def check_supported() -> str | None:
-        if _is_supported(op_type, device, dtype, rank):
+        if _is_supported(op_type, device, dtype, rank, variant):
             return None
+        spec = _spec_for(op_type)
+        dtypes = spec.dtypes(device) if spec else []
         return (
-            f"Unsupported resize op/device/dtype/rank for key {key!r}."
-            f" Supported dtypes on {device.label}:"
-            f" {gc_compile.float_dtypes(device)};"
+            f"Unsupported resize op/device/dtype/rank/variant for key {key!r}."
+            f" Supported dtypes on {device.label}: {dtypes};"
             f" max rank: {MAX_RANK}."
         )
 

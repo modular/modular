@@ -39,8 +39,9 @@ def test_resize_valid(
 ) -> None:
     """Test valid resize operations."""
     with graph_builder(input_types=[input_type]) as graph:
-        # Create a valid size shape - just double all dimensions.
-        new_shape = Shape(dim * 2 for dim in input_type.shape)
+        # Bicubic resizes height and width only, so double those.
+        batch, channels, height, width = input_type.shape
+        new_shape = Shape([batch, channels, height * 2, width * 2])
 
         out = ops.resize(
             graph.inputs[0].tensor,
@@ -132,6 +133,82 @@ def test_resize_error_insufficient_rank(graph_builder: GraphBuilder) -> None:
                 graph.inputs[0].tensor,
                 [448, 448],
                 interpolation=ops.InterpolationMode.BICUBIC,
+            )
+
+
+@pytest.mark.parametrize("size", [[1, 1, 4, 4], [2, 3, 4, 4]])
+def test_resize_bicubic_rejects_a_size_that_changes_planes(
+    graph_builder: GraphBuilder, size: list[int]
+) -> None:
+    """The kernel resizes each of the input's N * C planes into the output's,
+    so the size can't name other batch or channel counts."""
+    input_type = TensorType(DType.float32, [1, 3, 8, 8], DeviceRef.CPU())
+    with graph_builder(input_types=[input_type]) as graph:
+        with pytest.raises(ValueError, match="batch and channel dims"):
+            ops.resize_bicubic(graph.inputs[0].tensor, size)
+
+
+def test_resize_bicubic_refuses_out_dims_with_a_static_size(
+    graph_builder: GraphBuilder,
+) -> None:
+    input_type = TensorType(DType.float32, [1, 3, 8, 8], DeviceRef.CPU())
+    with graph_builder(input_types=[input_type]) as graph:
+        with pytest.raises(ValueError, match="out_dims"):
+            ops.resize_bicubic(
+                graph.inputs[0].tensor, [1, 3, 4, 4], out_dims=[1, 3, 2, 2]
+            )
+
+
+@pytest.mark.parametrize(
+    "size_type",
+    [
+        # Torch's (H, W) convention.
+        TensorType(DType.int64, [2], DeviceRef.CPU()),
+        TensorType(DType.int64, ["k"], DeviceRef.CPU()),
+        TensorType(DType.int32, [4], DeviceRef.CPU()),
+        TensorType(DType.int64, [4], DeviceRef.GPU()),
+    ],
+)
+def test_resize_bicubic_refuses_a_tensor_size_that_is_not_4_cpu_int64s(
+    graph_builder: GraphBuilder, size_type: TensorType
+) -> None:
+    input_type = TensorType(DType.float32, [1, 3, 8, 8], DeviceRef.CPU())
+    with graph_builder(input_types=[input_type, size_type]) as graph:
+        x, size = (v.tensor for v in graph.inputs)
+        with pytest.raises(ValueError, match="shape \\[4\\]"):
+            ops.resize_bicubic(x, size, out_dims=[1, 3, "h", "w"])
+
+
+def test_antialiased_resize_bicubic_takes_any_cpu(
+    graph_builder: GraphBuilder,
+) -> None:
+    input_type = TensorType(DType.float32, [1, 3, 8, 8], DeviceRef.CPU(1))
+    with graph_builder(input_types=[input_type]) as graph:
+        ops.resize_bicubic(graph.inputs[0].tensor, [1, 3, 4, 4], antialias=True)
+
+
+def test_antialiased_resize_bicubic_keeps_a_uint8_dtype(
+    graph_builder: GraphBuilder,
+) -> None:
+    input_type = TensorType(DType.uint8, [1, 3, 8, 8], DeviceRef.CPU())
+    with graph_builder(input_types=[input_type]) as graph:
+        out = ops.resize_bicubic(
+            graph.inputs[0].tensor, [1, 3, 4, 16], antialias=True
+        )
+        assert out.type == TensorType(
+            DType.uint8, [1, 3, 4, 16], DeviceRef.CPU()
+        )
+
+
+@pytest.mark.parametrize("dtype", [DType.int32, DType.float16])
+def test_antialiased_resize_bicubic_refuses_other_dtypes(
+    graph_builder: GraphBuilder, dtype: DType
+) -> None:
+    input_type = TensorType(dtype, [1, 3, 8, 8], DeviceRef.CPU())
+    with graph_builder(input_types=[input_type]) as graph:
+        with pytest.raises(ValueError, match="float32 or uint8"):
+            ops.resize_bicubic(
+                graph.inputs[0].tensor, [1, 3, 4, 4], antialias=True
             )
 
 

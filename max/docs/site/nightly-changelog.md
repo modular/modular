@@ -183,6 +183,15 @@ This version is still a work in progress.
   `round_mode` in place of the integer codes 0-3. The integer codes still
   work.
 
+- `ops.resize_bicubic()` and its `max.functional` counterpart
+  take an `antialias` keyword argument. With `antialias=True`, the resize
+  uses the filter of Pillow's `BICUBIC` and matches PyTorch's
+  `interpolate(mode="bicubic", antialias=True)` to float32 rounding. The
+  antialiased resize runs on the CPU, on a float32 input, or on a uint8 input
+  that it resizes to uint8, rounding and clamping once at the end.
+  `ops.resize_bicubic()` also takes its output size as a runtime int64
+  tensor, with `out_dims` declaring the output's dimensions.
+
 - Added `max.driver.float32_to_bfloat16_as_uint16()`,
   `max.driver.bfloat16_as_uint16_to_float32()`, and
   `max.driver.float32_array_to_buffer()` for moving bfloat16 data between

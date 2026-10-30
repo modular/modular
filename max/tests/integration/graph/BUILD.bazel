@@ -105,6 +105,7 @@ _GRAPH_COMMON_DEPS = [
     requirement("gguf"),
     requirement("hypothesis"),
     requirement("numpy"),
+    requirement("pillow"),
     requirement("pytest-asyncio"),
     requirement("torch"),
     requirement("torchvision"),

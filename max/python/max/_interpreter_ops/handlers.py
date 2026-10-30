@@ -2418,8 +2418,8 @@ def _handle_resize_bicubic(
     """Handle mo.resize.bicubic.
 
     Runs on the input's device like nearest (single-device MO op with a
-    host ``size`` operand); the kernel is rank-4 only. Bicubic has no
-    variant attrs, so the cache key carries the empty variant.
+    host ``size`` operand); the kernel is rank-4 only. The cache key carries
+    ``antialias`` as its variant.
     """
     input_buffer, size_buffer = inputs
     assert isinstance(input_buffer, Buffer)
@@ -2431,7 +2431,7 @@ def _handle_resize_bicubic(
         input_buffer.device,
         input_buffer.dtype,
         rank,
-        resize_gc._NO_VARIANT,
+        (int(op.antialias),),
     )
     return model(input_buffer, size_buffer)
 

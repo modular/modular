@@ -4142,14 +4142,19 @@ def MO_ResizeBicubicOp : MO_TensorOp<"resize.bicubic", [
 ]> {
   let summary = "Bicubic resize operation";
   let description = [{
-    Resizes a tensor with bicubic interpolation (Keys' cubic convolution,
-    a = -0.5, over a 4x4 neighborhood).
+    Resizes the height and width of an NCHW tensor with bicubic
+    interpolation. By default the filter is Keys' cubic convolution with
+    a = -0.75 over a 4x4 neighborhood, as torch's bicubic `interpolate`.
+    `antialias` instead uses the a = -0.5 cubic stretched by the downscale
+    factor, with its weights normalized, as torch's `antialias=True` and
+    Pillow's BICUBIC; it runs on the CPU, on a float32 or uint8 input, in
+    float32. A uint8 output rounds half to even and clamps once, on store.
 
     Example:
     ```mlir
       %input : !mo.tensor<[1, 3, 224, 224], f32>
       %size = mo.constant <#M.dense_array<1, 3, 448, 448> : tensor<4xsi64>> : !mo.tensor<[4], si64>
-      %res = mo.resize.bicubic(%input, %size) :
+      %res = mo.resize.bicubic(%input, %size) [antialias = false] :
         (!mo.tensor<[1, 3, 224, 224], f32>, !mo.tensor<[4], si64>) ->
           !mo.tensor<[1, 3, 448, 448], f32>
     ```
@@ -4157,13 +4162,16 @@ def MO_ResizeBicubicOp : MO_TensorOp<"resize.bicubic", [
   let arguments = (ins
     MO_Tensor:$input,
     MO_IndicesTensor:$size,
+    BoolAttr:$antialias,
     MO_ParamDecls:$outputParamDecls
   );
 
   let results = (outs MO_Tensor:$result);
 
   let assemblyFormat = [{
-    `` custom<ParamDecls>($outputParamDecls) `(` operands `)` attr-dict `:` functional-type(operands, results)
+    `` custom<ParamDecls>($outputParamDecls) `(` operands `)`
+    `[` `antialias` `=` $antialias `]` attr-dict `:`
+    functional-type(operands, results)
   }];
 }
 

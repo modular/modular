@@ -3621,9 +3621,22 @@ resize_linear = functional(ops.resize_linear, rule=resize_rule)
 #: Resizes a tensor using nearest-neighbor interpolation. Distributed via SPMD.
 #: See :func:`max.graph.ops.resize_nearest` for details.
 resize_nearest = functional(ops.resize_nearest, rule=resize_rule)
+
+
+def _resize_bicubic_graph(
+    input: TensorValueLike, size: ShapeLike, *, antialias: bool = False
+) -> TensorValue:
+    """Resizes with ``ops.resize_bicubic`` from a static size only.
+
+    ``resize_rule`` shards the batch axis, which a runtime size's batch
+    would contradict.
+    """
+    return ops.resize_bicubic(input, size, antialias=antialias)
+
+
 #: Resizes a tensor using bicubic interpolation. Distributed via SPMD.
 #: See :func:`max.graph.ops.resize_bicubic` for details.
-resize_bicubic = functional(ops.resize_bicubic, rule=resize_rule)
+resize_bicubic = functional(_resize_bicubic_graph, rule=resize_rule)
 #: Computes the inverse real FFT. Distributed via SPMD.
 #: See :func:`max.graph.ops.irfft` for details.
 irfft = functional(ops.irfft, rule=irfft_rule)
@@ -4288,8 +4301,11 @@ Raises:
 resize_bicubic.__doc__ = """Resizes a tensor using bicubic interpolation.
 
 Produces an output tensor whose dimensions are given by ``size`` using a
-4x4-pixel Keys/PyTorch (``a = -0.75``) cubic convolution filter with
-half-pixel coordinate mapping.
+cubic convolution filter with half-pixel coordinate mapping. By default
+the filter is the 4x4-pixel Keys/PyTorch cubic, ``a = -0.75``. With
+``antialias``, it is the ``a = -0.5`` cubic stretched by the downscale
+factor with its weights normalized, as PyTorch's
+``interpolate(mode="bicubic", antialias=True)`` and Pillow's ``BICUBIC``.
 
 .. code-block:: python
 
@@ -4307,14 +4323,19 @@ Args:
         (NCHW) layout, ``(batch_size, channels, height, width)``.
     size: The desired output shape, of length 4,
         ``(batch_size, channels, height, width)``.
+    antialias: Whether to use the antialiased ``a = -0.5`` filter, which
+        reads more input pixels when downscaling. ``input`` must then be
+        float32 or uint8 on the CPU. Defaults to ``False``.
 
 Returns:
     A ``Tensor`` containing the resized tensor, with shape ``size``
     and the same dtype as ``input``.
 
 Raises:
-    ValueError: If ``input`` doesn't have rank 4, or if ``size`` has a
-        different length.
+    ValueError: If ``input`` doesn't have rank 4, if ``size`` has a
+        different length or other batch or channel dims, or if
+        ``antialias`` is set for an input that is not float32 or uint8 on
+        the CPU.
 """
 resize_linear.__doc__ = """Resizes a tensor using linear (bilinear) interpolation.
 

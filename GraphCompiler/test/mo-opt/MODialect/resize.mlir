@@ -43,7 +43,7 @@ mo.graph @resize_linear(%arg0 : !mo.tensor<[1, 1, 2, 2], f32>) -> !mo.tensor<[1,
 mo.graph @resize.bicubic(%arg0 : !mo.tensor<[1, 3, 224, 224], f32>) -> !mo.tensor<[1, 3, 448, 448], f32> {
     //  CHECK-NEXT: %[[ARG1:.*]] = mo.constant <#M.dense_array<1, 3, 448, 448> : tensor<4xsi64>> : !mo.tensor<[4], si64>
     %size = mo.constant <#M.dense_array<1, 3, 448, 448> : tensor<4xsi64>> : !mo.tensor<[4], si64>
-    // CHECK-NEXT: %1 = mo.resize.bicubic(%[[ARG0]], %[[ARG1]]) : (!mo.tensor<[1, 3, 224, 224], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[1, 3, 448, 448], f32>
-    %output = mo.resize.bicubic(%arg0, %size) : (!mo.tensor<[1, 3, 224, 224], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[1, 3, 448, 448], f32>
+    // CHECK-NEXT: %1 = mo.resize.bicubic(%[[ARG0]], %[[ARG1]]) [antialias = false] : (!mo.tensor<[1, 3, 224, 224], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[1, 3, 448, 448], f32>
+    %output = mo.resize.bicubic(%arg0, %size) [antialias = false] : (!mo.tensor<[1, 3, 224, 224], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[1, 3, 448, 448], f32>
     mo.output %output : !mo.tensor<[1, 3, 448, 448], f32>
 }

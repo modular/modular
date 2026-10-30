@@ -74,6 +74,7 @@ from nn.kv_cache_ragged import unfused_qkv_matmul_ragged_paged_gguf_quantized
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
+    resize_cubic,
     resize_linear,
     resize_linear_gpu,
     resize_nearest_neighbor,
@@ -417,8 +418,8 @@ struct ResizeBicubic:
 
     @staticmethod
     def execute[
+        antialias: Bool,
         target: StaticString,
-        //,
     ](
         output: Some[Output & Tensor],
         input: Some[Input & Tensor],
@@ -430,11 +431,71 @@ struct ResizeBicubic:
         comptime dtype = type_of(output).dtype
         comptime assert type_of(input).rank == type_of(output).rank
         comptime assert type_of(size).rank == 1
-        resize_bicubic[dtype=dtype, target=target](
-            output.to_tile_tensor(),
-            input.to_tile_tensor[dtype](),
-            ctx,
+        # Every path resizes the input's N * C planes into the output's, and
+        # a runtime size can name other counts than the input's.
+        var in_shape = coord_to_index_list(
+            input.to_tile_tensor[dtype]().layout.shape_coord()
         )
+        var out_shape = coord_to_index_list(
+            output.to_tile_tensor[dtype]().layout.shape_coord()
+        )
+        if in_shape[0] != out_shape[0] or in_shape[1] != out_shape[1]:
+            raise Error(
+                "mo.resize.bicubic resizes height and width only; its size"
+                " must keep the input's batch and channel counts"
+            )
+        # Every output pixel reads input pixels, so a non-empty output of an
+        # empty input would be read out of bounds or left unwritten.
+        if (
+            in_shape.flattened_length() == 0
+            and out_shape.flattened_length() != 0
+        ):
+            raise Error(
+                "mo.resize.bicubic cannot resize an empty input to a"
+                " non-empty output"
+            )
+        comptime if not antialias:
+            resize_bicubic[dtype=dtype, target=target](
+                output.to_tile_tensor(),
+                input.to_tile_tensor[dtype](),
+                ctx,
+            )
+        elif not is_cpu[target]():
+            raise Error("an antialiased mo.resize.bicubic runs on the CPU")
+        elif dtype != DType.float32 and dtype != DType.uint8:
+            raise Error(
+                "an antialiased mo.resize.bicubic takes float32 or uint8, not ",
+                dtype,
+            )
+        else:
+            comptime assert (
+                type_of(input).rank == 4
+            ), "an antialiased bicubic resize takes an NCHW tensor"
+            # NCHW resizes as [N * C, H, W] planes, which resize_cubic takes
+            # as [N * C, H, W, 1], and gives the same bits as an NHWC layout
+            # of the same pixels.
+            var in_tt = input.to_tile_tensor[dtype]()
+            var out_tt = output.to_tile_tensor[dtype]()
+            var in_planes = _as_planes(in_tt)
+            var out_planes = _as_planes(out_tt)
+            resize_cubic(
+                in_tt.reshape(
+                    row_major((in_planes[0], in_planes[1], in_planes[2], 1))
+                ),
+                out_tt.reshape(
+                    row_major((out_planes[0], out_planes[1], out_planes[2], 1))
+                ),
+            )
+
+
+def _as_planes[
+    dtype: DType, //
+](tensor: TileTensor[dtype, ...]) -> IndexList[3]:
+    """Returns the shape of an NCHW tensor viewed as [N * C, H, W]."""
+    var shape = rebind[IndexList[4]](
+        coord_to_index_list(tensor.layout.shape_coord())
+    )
+    return IndexList[3](shape[0] * shape[1], shape[2], shape[3])
 
 
 @extensibility.register_shape_function("mo.resize.bicubic")
