@@ -25,6 +25,7 @@ from std.collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
 )
 from std.os import abort
+from std.python import ConvertibleToPython, Python, PythonObject
 from std.sys import size_of
 
 from std.memory.alloc import (
@@ -153,6 +154,7 @@ struct _ListIterOwned[T: Movable & Deinitable](
 @stable(since="1.0")
 struct List[T: AnyType, /](
     Boolable,
+    ConvertibleToPython where conforms_to(T, ConvertibleToPython & Movable),
     Copyable where conforms_to(T, Copyable),
     Defaultable,
     Deinitable where conforms_to(T, Deinitable) else (
@@ -807,6 +809,61 @@ struct List[T: AnyType, /](
         fmt.FormatStruct(writer, "List").params(
             fmt.TypeNames[Self.T](),
         ).fields(write_fields)
+
+    comptime ConversionToPythonErrorType: Movable & Deinitable = downcast[
+        Self.T, ConvertibleToPython
+    ].ConversionToPythonErrorType
+    """The error type raised if conversion to a `PythonObject` fails.
+
+    This is the element type's `ConversionToPythonErrorType`, so converting a
+    list whose elements can't fail to convert, such as `List[Int]`, doesn't
+    raise.
+    """
+
+    def to_python_object(
+        var self,
+    ) raises (
+        Self.ConversionToPythonErrorType
+    ) -> PythonObject where conforms_to(Self.T, ConvertibleToPython & Movable):
+        """Converts this list to a Python `list`, converting each element with
+        its own `to_python_object()`.
+
+        Elements are moved out of the list, not copied. Nested lists convert
+        to nested Python lists.
+
+        Returns:
+            A `PythonObject` holding a Python `list` with the converted
+            elements.
+
+        Raises:
+            The element type's `ConversionToPythonErrorType` if converting an
+            element fails. Elements converted so far are released, and elements
+            not yet converted are destroyed.
+
+        Examples:
+
+        ```mojo
+        from std.python import Python, PythonObject
+
+        var values: List = [1, 2, 3]
+        var py_values = PythonObject(values^)
+        print(py_values)  # => [1, 2, 3]
+        ```
+        """
+        ref cpy = Python().cpython()
+        var list_ptr = cpy.PyList_New(len(self))
+        if not list_ptr:
+            abort("failed to allocate a Python list")
+        # Own the new list right away so a failed element conversion below
+        # releases it, along with every item already stored in it.
+        var py_list = PythonObject(from_owned=list_ptr)
+        var index = 0
+        for var element in self^:
+            var item = element^.to_python_object()
+            # `PyList_SetItem` steals the reference to `item`.
+            _ = cpy.PyList_SetItem(list_ptr, index, item^.steal_data())
+            index += 1
+        return py_list^
 
     comptime _KgenNichedFieldName = "_storage".value
 
