@@ -25,6 +25,12 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mha_decode_register_owners.mojo": ["//:nvidia_gpu"],
+    # PDL needs SM90+; below that the launches serialize and the test cannot fail.
+    "test_mha_fallback_pdl_wait.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # PDL (griddepcontrol) + llvm.nvvm.nanosleep: NVIDIA SM90+ only.
     "test_mla_index_kpool_pdl.mojo": select({
         "//:h100_gpu": [],

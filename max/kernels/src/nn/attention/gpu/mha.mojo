@@ -4405,6 +4405,16 @@ def mha_decoding[
     var row_stride: Int
     var start_pos: UInt32 = 0
 
+    # Launched with `PDLLevel.ON`: valid_length, the cache lengths, Q and the KV
+    # cache are written by the predecessor grid, so nothing below may read them
+    # before this wait. Releasing the dependents right after is safe: a
+    # dependent's own wait blocks until this whole grid has completed and its
+    # stores are visible, so the release only decides when it is scheduled
+    # (`test_mha_fallback_pdl_wait` relies on this: its producer releases on
+    # entry and publishes after a spin).
+    wait_on_dependent_grids()
+    launch_dependent_grids()
+
     comptime if ragged:
         # treat valid_lengths as a input_row_offsets
         var start_of_seq = Int(valid_length[batch_idx])
@@ -6281,6 +6291,11 @@ def _bmm0_bs[
     var p_offset = batch_head * _max_prompt_len * padded_num_keys
     var start_pos: UInt32 = 0
 
+    # Launched with `PDLLevel.ON`: the lengths, Q and K come from the
+    # predecessor grid, and the early returns below must not skip this wait.
+    wait_on_dependent_grids()
+    launch_dependent_grids()
+
     comptime if ragged:
         comptime if not _is_cache_length_accurate:
             start_pos = UInt32(k.cache_length(batch))
@@ -6404,6 +6419,11 @@ def _bmm1_bs[
     var padded_num_keys = _max_cache_size
     var p_offset = batch_head * _max_prompt_len * padded_num_keys
     var start_pos: UInt32 = 0
+
+    # Launched with `PDLLevel.ON`: the lengths, P and V come from the
+    # predecessor grid, and the early returns below must not skip this wait.
+    wait_on_dependent_grids()
+    launch_dependent_grids()
 
     comptime if ragged:
         comptime if not _is_cache_length_accurate:
