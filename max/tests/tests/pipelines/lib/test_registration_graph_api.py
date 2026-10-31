@@ -430,10 +430,10 @@ def _arch(**kwargs: Any) -> SupportedArchitecture:
     )
 
 
-def test_registered_modules_serve_only_text_generation_so_far() -> None:
-    with pytest.raises(NotImplementedError, match="embeddings_generation"):
+def test_registered_modules_serve_only_text_and_embeddings_so_far() -> None:
+    with pytest.raises(NotImplementedError, match="audio_generation"):
         registered_pipeline_model(
-            PipelineTask.EMBEDDINGS_GENERATION,
+            PipelineTask.AUDIO_GENERATION,
             ToyConfig,
             ((GraphRole.DECODER, ToyDecoder),),
             None,

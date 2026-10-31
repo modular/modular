@@ -107,6 +107,7 @@ from .module_registration import (
     finalize_config,
     module_pipeline_model,
 )
+from .registration_encoder import encoder_pipeline_model
 from .request_state import (
     RequestStateGroup,
     RequestStateMixin,
@@ -769,15 +770,20 @@ def registered_pipeline_model(
     """Returns the pipeline model that serves a module registration.
 
     The task picks the pipeline model, since each task prepares its inputs
-    differently; every registration of a task shares it. A text-generation
-    registration whose ``DECODER`` is a graph-API module gets
+    differently; every registration of a task shares it. An
+    embeddings-generation registration gets
+    :func:`~max.pipelines.lib.registration_encoder.encoder_pipeline_model`'s.
+    A text-generation registration whose ``DECODER`` is a graph-API module
+    gets
     :func:`graph_api_pipeline_model`'s; any other gets
     :func:`~max.pipelines.lib.module_registration.module_pipeline_model`'s.
 
     Raises:
-        NotImplementedError: If the task isn't text generation, which is all
-            registered modules serve so far.
+        NotImplementedError: If the task is neither text nor embeddings
+            generation, which is all registered modules serve so far.
     """
+    if task == PipelineTask.EMBEDDINGS_GENERATION:
+        return encoder_pipeline_model(config, modules, batching)
     if task != PipelineTask.TEXT_GENERATION:
         raise NotImplementedError(
             f"registered modules can't serve {task.value} yet"

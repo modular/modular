@@ -485,10 +485,10 @@ def test_one_pipeline_model_serves_text_generation_with_or_without_vision() -> (
     assert pickle.loads(pickle.dumps(model)) is model
 
 
-def test_registered_modules_serve_only_text_generation() -> None:
-    with pytest.raises(NotImplementedError, match="embeddings_generation"):
+def test_registered_modules_serve_no_pixel_generation() -> None:
+    with pytest.raises(NotImplementedError, match="pixel_generation"):
         registered_pipeline_model(
-            PipelineTask.EMBEDDINGS_GENERATION,
+            PipelineTask.PIXEL_GENERATION,
             ToyConfig,
             ((GraphRole.DECODER, PlainDecoder),),
             None,
