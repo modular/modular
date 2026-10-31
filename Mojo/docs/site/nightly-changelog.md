@@ -22,6 +22,14 @@ This version is still a work in progress.
   statements work more conveniently with linear types, and reduces copies in
   general.
 
+- Auto-parameterization now reaches `_` holes nested inside other parameterized
+  types, so an unbound parameter at any depth of an argument's type becomes an
+  an implicit parameter of the function:
+
+  ```mojo
+  def process(p: Optional[Pointer[Int, _]]): ...
+  ```
+
 ## Language changes
 
 - `@explicit_destroy("<message>")` on a struct is deprecated and now emits a
