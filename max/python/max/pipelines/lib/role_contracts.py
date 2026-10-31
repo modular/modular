@@ -36,6 +36,7 @@ from .interfaces.pipeline_model import ModuleV3Outputs
 __all__ = [
     "DecoderInputs",
     "DecoderOutputs",
+    "VisionInputs",
 ]
 
 
@@ -43,6 +44,25 @@ TensorT = TypeVar("TensorT", default=Tensor)
 """The tensor type a decoder's fields hold: a ModuleV3
 :class:`~max.tensor.Tensor` or a graph-API :class:`~max.graph.TensorValue`.
 """
+
+_LeafT = TypeVar("_LeafT")
+
+
+@tree.dataclass(frozen=True, kw_only=True)
+class VisionInputs(Generic[_LeafT]):
+    """The image embeddings a ``DECODER`` merges into its token stream.
+
+    The framework passes them when a ``VISION`` module is registered. On a
+    batch without new images both are empty.
+    """
+
+    embeddings: _LeafT
+    """The encoded images, shape ``[num_image_tokens, hidden_size]``,
+    replicated on every device of the decoder's mesh."""
+
+    scatter_indices: _LeafT
+    """Each embedding row's position in the decoder's tokens, shape
+    ``[num_image_tokens]``, replicated like :attr:`embeddings`."""
 
 
 @tree.dataclass(frozen=True, kw_only=True)
@@ -57,6 +77,9 @@ class DecoderInputs(Generic[TensorT]):
 
     tokens: TensorT
     """The batch's ragged tokens, shape ``[total_seq_len]``."""
+
+    vision: VisionInputs[TensorT] | None = None
+    """The batch's image embeddings, when a ``VISION`` module is registered."""
 
     input_row_offsets: TensorT
     """Each sequence's start in :attr:`tokens`, shape ``[batch_size + 1]``."""
@@ -90,6 +113,21 @@ class DecoderInputs(Generic[TensorT]):
 
     kv: Any
     """The KV cache inputs, in the tree the config's KV params declare."""
+
+    batch_context_lengths: tuple[TensorT, ...] | None = None
+    """Each data-parallel replica's page-aligned KV context length, a CPU
+    ``int32`` tensor of shape ``[1]`` per replica.
+
+    Set when the config sets
+    :attr:`~max.pipelines.lib.registration_runtime.DeploymentConfig.takes_batch_context_lengths`,
+    as the MLA family does to size its prefill buffers without a
+    device-to-host copy.
+    """
+
+    ep: Any = None
+    """The expert-parallel communication buffers, under expert parallelism,
+    in the tree :meth:`~max.nn.legacy.comm.ep.EPBatchManager.input_tree`
+    declares."""
 
     lora: tuple[TensorT, ...] | None = None
     """The LoRA routing and adapter inputs, when serving LoRA adapters.

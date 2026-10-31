@@ -25,6 +25,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
+    Any,
     Generic,
     Protocol,
     TypeVar,
@@ -378,6 +379,32 @@ class SupportsVisionEncoding(Protocol[PackedVisionInputsT]):
         the model owns the hidden size and dtype.
         """
         ...
+
+
+@runtime_checkable
+class DelegatesVisionEncoding(Protocol):
+    """A pipeline model that hands its image encoding to another object.
+
+    A pipeline model that serves every registration of a task implements
+    this rather than :class:`SupportsVisionEncoding`, since only some of
+    them take images.
+    """
+
+    @property
+    def vision_encoding(self) -> SupportsVisionEncoding[Any] | None:
+        """What encodes the model's images, or ``None`` when it takes none."""
+        ...
+
+
+def vision_encoding(
+    pipeline_model: object,
+) -> SupportsVisionEncoding[Any] | None:
+    """Returns what encodes a pipeline model's images, if it takes any."""
+    if isinstance(pipeline_model, DelegatesVisionEncoding):
+        return pipeline_model.vision_encoding
+    if isinstance(pipeline_model, SupportsVisionEncoding):
+        return pipeline_model
+    return None
 
 
 @runtime_checkable

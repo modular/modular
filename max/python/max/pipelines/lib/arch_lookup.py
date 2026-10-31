@@ -171,8 +171,9 @@ class SupportedArchitecture:
     The framework constructs each as ``module_cls(config)`` from the
     finalized :attr:`config`, and its ``forward`` (``__call__`` for a
     graph-API :class:`~max.nn.legacy.Module`) takes and returns the role's
-    contract from :mod:`max.pipelines.lib.role_contracts`. Only ``DECODER``
-    is served so far.
+    contract from :mod:`max.pipelines.lib.role_contracts`. Only
+    text-generation ``DECODER`` modules are served so far, with a ``VISION``
+    module beside a ModuleV3 one.
     """
 
     task: PipelineTask
