@@ -154,7 +154,7 @@ static int64_t getUnionPayloadSize(const LLVMDataLayout &dl,
 
 /// The type heading the lowered struct, chosen to carry the union's alignment.
 /// It is sized independently of the payload: whatever it does not cover is
-/// made up by the trailing byte array.
+/// made up by the trailing storage array.
 static Type getUnionReprType(const LLVMDataLayout &dl, TargetInfoAttr target,
                              POP::UnionType unionType,
                              ArrayRef<UnionMember> members) {
@@ -461,9 +461,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     if (payloadSize == 0)
       return LLVM::LLVMStructType::getLiteral(&getContext(), {});
 
-    // Lower union to {repr, [(payloadSize - sizeof(repr)) x i8]}. The
-    // representative gives the whole structure its alignment, the trailing
-    // array covers the payload it does not span.
+    // Lower union to {repr, tail}. The representative gives the structure its
+    // alignment, and the trailing array covers the payload it does not span.
     Type reprType = getUnionReprType(*this, getTarget(), unionType, members);
 
     SmallVector<Type, 2> structElemTp;
@@ -471,8 +470,20 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
     if (int64_t tailLen = payloadSize - getTypeAllocSize(reprType);
         tailLen != 0) {
-      structElemTp.push_back(LLVM::LLVMArrayType::get(
-          IntegerType::get(&getContext(), 8), tailLen));
+      // Byte arrays are scalarized into individual byte accesses by LLVM's
+      // SROA, making large union copies expensive to optimize and select.
+      // Use word-sized elements when they preserve the tail's size, offset,
+      // and alignment; retain bytes for unaligned or partial-word tails.
+      Type tailType = IntegerType::get(&getContext(), 64);
+      int64_t elementSize = getTypeAllocSize(tailType);
+      if (tailLen % elementSize != 0 ||
+          getTypeABIAlign(tailType) > getTypeABIAlign(reprType) ||
+          getTypeStoreSize(tailType) != elementSize) {
+        tailType = IntegerType::get(&getContext(), 8);
+        elementSize = 1;
+      }
+      structElemTp.push_back(
+          LLVM::LLVMArrayType::get(tailType, tailLen / elementSize));
     }
 
     auto ret = LLVM::LLVMStructType::getLiteral(&getContext(), structElemTp);

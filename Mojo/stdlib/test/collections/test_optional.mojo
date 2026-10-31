@@ -690,5 +690,48 @@ def test_optional_simd_bool() raises:
     _assert_simd_bool_round_trips[16]()
 
 
+struct _LargeOptionalPayload(Movable):
+    var head: Int
+    var words: Array[Int, 128]
+
+    def __init__(out self, seed: Int):
+        self.head = seed
+        self.words = Array[Int, 128](fill=seed)
+        for i in range(128):
+            self.words[i] += i
+
+
+@fieldwise_init
+struct _LargeNestedOptional(Movable):
+    var a: Optional[_LargeOptionalPayload]
+    var b: Optional[_LargeOptionalPayload]
+
+
+@inline(.never)
+def _make_large_nested_optional(seed: Int) -> _LargeNestedOptional:
+    return _LargeNestedOptional(
+        Optional(_LargeOptionalPayload(seed)),
+        Optional(_LargeOptionalPayload(seed + 1)),
+    )
+
+
+def test_large_nested_optional_moves() raises:
+    # Exercise the word-sized union tail through a return, move, and replacement.
+    var result = _make_large_nested_optional(7)
+    var moved = result^
+    assert_equal(moved.a.value().head, 7)
+    assert_equal(moved.b.value().head, 8)
+    for i in range(128):
+        assert_equal(moved.a.value().words[i], 7 + i)
+        assert_equal(moved.b.value().words[i], 8 + i)
+
+    moved.a = None
+    assert_false(moved.a)
+    moved.b = _LargeOptionalPayload(9)
+    assert_equal(moved.b.value().head, 9)
+    for i in range(128):
+        assert_equal(moved.b.value().words[i], 9 + i)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
