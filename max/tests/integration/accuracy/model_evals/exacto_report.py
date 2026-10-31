@@ -33,6 +33,7 @@ summary — so it unit-tests without a harness, a server or a network.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import os
 import statistics
@@ -294,6 +295,20 @@ TAU2_ERROR_TERMINATIONS = frozenset(
 )
 
 
+def _empty_user_turns(messages: list[dict[str, Any]]) -> list[str]:
+    """Returns the ``finish_reason`` of each empty simulator attempt.
+
+    The runner's tau2 patch records them on the turn that followed, whether a
+    retry recovered or the task ended as a ``user_error``.
+    """
+    reasons: list[str] = []
+    for message in messages:
+        if message.get("role") == "user":
+            raw = message.get("raw_data") or {}
+            reasons.extend(str(r) for r in raw.get("exacto_empty_turns") or [])
+    return reasons
+
+
 def parse_tau2_log(
     log: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -318,7 +333,10 @@ def parse_tau2_log(
     rewards: list[float] = []
     errors = 0
     hit_step_cap = 0
+    empty_user_finish: collections.Counter[str] = collections.Counter()
     for sim in simulations:
+        empty_user_turns = _empty_user_turns(sim.get("messages") or [])
+        empty_user_finish.update(empty_user_turns)
         reward_info = sim.get("reward_info") or {}
         reward = reward_info.get("reward")
         termination = sim.get("termination_reason")
@@ -348,6 +366,7 @@ def parse_tau2_log(
                 ),
                 "duration": sim.get("duration"),
                 "agent_cost": sim.get("agent_cost"),
+                "empty_user_turns": len(empty_user_turns),
             }
         )
 
@@ -364,6 +383,8 @@ def parse_tau2_log(
     agent_info = info.get("agent_info") or {}
     user_info = info.get("user_info") or {}
     env_info = info.get("environment_info") or {}
+    agent_base = _server_url((agent_info.get("llm_args") or {}).get("api_base"))
+    user_base = _server_url((user_info.get("llm_args") or {}).get("api_base"))
 
     summary: dict[str, Any] = {
         "accuracy": accuracy,
@@ -393,6 +414,18 @@ def parse_tau2_log(
         "agent_llm_args": agent_info.get("llm_args"),
         "user_llm": user_info.get("llm"),
         "user_llm_args": user_info.get("llm_args"),
+        # The simulator plays half of each conversation, so scores compare only
+        # across runs on the same one. None: a provider with its own endpoint.
+        "user_api_base": user_base,
+        # Empty simulator replies the runner retried, keyed by finish_reason so
+        # a token cap ("length") stands out from a real stop.
+        "empty_user_turns": sum(empty_user_finish.values()),
+        "empty_user_turn_finish_reasons": dict(empty_user_finish),
+        "self_simulated": bool(
+            agent_base
+            and user_base == agent_base
+            and user_info.get("llm") == agent_info.get("llm")
+        ),
         "harness_commit": info.get("git_commit"),
     }
     return rows, summary
@@ -475,11 +508,21 @@ def eval_config(
             "sample_size": _sample_size(rows, summary.get("dataset_samples")),
         }
     agent_args = summary.get("agent_llm_args") or {}
+    user_args = summary.get("user_llm_args") or {}
+    # A self-simulated run's simulator is the endpoint under test, already in
+    # base_url, so these stay unset and its config hash is unchanged.
+    own_simulator = not summary.get("self_simulated")
     return {
         "base_url": _server_url(agent_args.get("api_base")),
         "temperature": agent_args.get("temperature"),
         "reasoning_effort": agent_args.get("reasoning_effort"),
         "user_llm": summary.get("user_llm"),
+        "user_api_base": summary.get("user_api_base")
+        if own_simulator
+        else None,
+        "user_max_tokens": user_args.get("max_tokens")
+        if own_simulator
+        else None,
         "sample_size": _sample_size(rows, summary.get("full_task_count")),
     }
 

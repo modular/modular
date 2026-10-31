@@ -76,8 +76,22 @@ def notes(score: dict[str, Any], dataset: str) -> str:
         # The reference simulator is recorded by the runner rather than named
         # here, so this needs no edit when OpenRouter changes theirs.
         reference_sim = score.get("reference_user_llm")
-        if reference_sim and score.get("user_llm") != reference_sim:
-            flags.append("substitute user simulator")
+        empty = score.get("empty_user_turns")
+        if empty:
+            reasons = score.get("empty_user_turn_finish_reasons") or {}
+            detail = ", ".join(f"{k}: {v}" for k, v in sorted(reasons.items()))
+            flags.append(
+                f"{empty} empty simulator turns"
+                + (f" (finish_reason {detail})" if detail else "")
+            )
+        if score.get("self_simulated"):
+            flags.append("self-simulated: regression signal only")
+        elif reference_sim and score.get("user_llm") != reference_sim:
+            flags.append(
+                f"substitute user simulator `{score.get('user_llm')}`, not "
+                f"OpenRouter's `{reference_sim}`: compare only with runs on "
+                "the same simulator"
+            )
     counts = score.get("target_letter_counts")
     if isinstance(counts, dict) and counts:
         total = sum(counts.values())
@@ -176,8 +190,14 @@ def _render_provenance(
             f"stop_ratio {gpqa.get('stop_ratio')}\n"
         )
     if tau:
+        if tau.get("self_simulated"):
+            where = " (self-simulated by the endpoint under test)"
+        elif tau.get("user_api_base"):
+            where = f" at {tau['user_api_base']}"
+        else:
+            where = ""
         out.write(
-            f"- tau2: user simulator `{tau.get('user_llm')}`, "
+            f"- tau2: user simulator `{tau.get('user_llm')}`{where}, "
             f"max_steps {tau.get('max_steps')}, "
             f"{tau.get('num_tasks')} tasks x {tau.get('num_trials')} trials, "
             f"{tau.get('hit_step_cap')} hit the step cap, "
