@@ -590,3 +590,84 @@ mo.graph @allgather_slice_rows_grouped(
     !mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:0>, !mo.tensor<[2, 3], f32, gpu:1>, !mo.tensor<[2, 3], f32, gpu:1>,
     !mo.tensor<[2, 3], f32, gpu:2>, !mo.tensor<[2, 3], f32, gpu:2>, !mo.tensor<[2, 3], f32, gpu:3>, !mo.tensor<[2, 3], f32, gpu:3>
 }
+
+// -----
+
+// Test concatenated allgather with no inputs.
+mo.graph @allgather_concat_no_inputs() {
+  %chain_in = mo.chain.create()
+  // expected-error@+1 {{allgather requires at least one input}}
+  %0 = "mo.distributed.allgather.concat"(%chain_in) {group_size = 1 : i64} : (!mo.chain) -> (!mo.chain)
+  mo.output
+}
+
+// -----
+
+// Test concatenated allgather with one result per gathered piece.
+mo.graph @allgather_concat_output_count(
+    %arg0: !mo.tensor<[4, 3], f32, gpu:0>,
+    %arg1: !mo.tensor<[4, 3], f32, gpu:1>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>,
+    %sig1: !mo.buffer<[1], ui8, gpu:1>)
+    -> (!mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:1>, !mo.tensor<[4, 3], f32, gpu:1>) {
+  %chain_in = mo.chain.create()
+  // expected-error@+1 {{number of outputs must match number of inputs; expected 2 outputs, found 4}}
+  %0:5 = "mo.distributed.allgather.concat"(%arg0, %arg1, %sig0, %sig1, %chain_in) {group_size = 2 : i64} :
+    (!mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
+    -> (!mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:1>, !mo.tensor<[4, 3], f32, gpu:1>, !mo.chain)
+  mo.output %0#0, %0#1, %0#2, %0#3 :
+    !mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:1>, !mo.tensor<[4, 3], f32, gpu:1>
+}
+
+// -----
+
+// Test concatenated allgather with an out-of-range axis.
+mo.graph @allgather_concat_axis_out_of_range(
+    %arg0: !mo.tensor<[4, 3], f32, gpu:0>,
+    %arg1: !mo.tensor<[4, 3], f32, gpu:1>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>,
+    %sig1: !mo.buffer<[1], ui8, gpu:1>)
+    -> (!mo.tensor<[8, 3], f32, gpu:0>, !mo.tensor<[8, 3], f32, gpu:1>) {
+  %chain_in = mo.chain.create()
+  // expected-error@+1 {{axis 2 out of bounds for rank 2}}
+  %0:3 = "mo.distributed.allgather.concat"(%arg0, %arg1, %sig0, %sig1, %chain_in) {axis = 2 : i64, group_size = 2 : i64} :
+    (!mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
+    -> (!mo.tensor<[8, 3], f32, gpu:0>, !mo.tensor<[8, 3], f32, gpu:1>, !mo.chain)
+  mo.output %0#0, %0#1 : !mo.tensor<[8, 3], f32, gpu:0>, !mo.tensor<[8, 3], f32, gpu:1>
+}
+
+// -----
+
+// Test concatenated allgather whose output is not the sum of the group along
+// the axis.
+mo.graph @allgather_concat_wrong_axis_size(
+    %arg0: !mo.tensor<[4, 3], f32, gpu:0>,
+    %arg1: !mo.tensor<[4, 3], f32, gpu:1>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>,
+    %sig1: !mo.buffer<[1], ui8, gpu:1>)
+    -> (!mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[8, 3], f32, gpu:1>) {
+  %chain_in = mo.chain.create()
+  // expected-error@+1 {{output 0 dimension 0 must be the sum of its group's inputs along the axis (8), but got 4}}
+  %0:3 = "mo.distributed.allgather.concat"(%arg0, %arg1, %sig0, %sig1, %chain_in) {axis = 0 : i64, group_size = 2 : i64} :
+    (!mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
+    -> (!mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[8, 3], f32, gpu:1>, !mo.chain)
+  mo.output %0#0, %0#1 : !mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[8, 3], f32, gpu:1>
+}
+
+// -----
+
+// Test concatenated allgather whose output differs from the inputs off the
+// axis.
+mo.graph @allgather_concat_wrong_other_dim(
+    %arg0: !mo.tensor<[4, 3], f32, gpu:0>,
+    %arg1: !mo.tensor<[4, 3], f32, gpu:1>,
+    %sig0: !mo.buffer<[1], ui8, gpu:0>,
+    %sig1: !mo.buffer<[1], ui8, gpu:1>)
+    -> (!mo.tensor<[8, 5], f32, gpu:0>, !mo.tensor<[8, 3], f32, gpu:1>) {
+  %chain_in = mo.chain.create()
+  // expected-error@+1 {{output 0 dimension 1 must match input 0 (5 vs 3)}}
+  %0:3 = "mo.distributed.allgather.concat"(%arg0, %arg1, %sig0, %sig1, %chain_in) {axis = 0 : i64, group_size = 2 : i64} :
+    (!mo.tensor<[4, 3], f32, gpu:0>, !mo.tensor<[4, 3], f32, gpu:1>, !mo.buffer<[1], ui8, gpu:0>, !mo.buffer<[1], ui8, gpu:1>, !mo.chain)
+    -> (!mo.tensor<[8, 5], f32, gpu:0>, !mo.tensor<[8, 3], f32, gpu:1>, !mo.chain)
+  mo.output %0#0, %0#1 : !mo.tensor<[8, 5], f32, gpu:0>, !mo.tensor<[8, 3], f32, gpu:1>
+}
