@@ -69,10 +69,7 @@ modular_py_test(
         # d2t table are read, but the cached snapshot is 8.4 GB.
         "HF_ESCAPES_SANDBOX": "1",
     },
-    env_inherit = [
-        "HF_TOKEN",
-        "HF_HOME",
-    ],
+    env_inherit = ["HF_TOKEN"],
     # Reads the 8.4 GB checkpoint snapshot on every run — too costly
     # per-submission; the load-time audits in the pipeline model cover the
     # wiring. Run explicitly.
@@ -107,10 +104,7 @@ modular_py_test(
         # re-download into TEST_TMPDIR on every run.
         "HF_ESCAPES_SANDBOX": "1",
     },
-    env_inherit = [
-        "HF_TOKEN",
-        "HF_HOME",
-    ],
+    env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "160",
     },
