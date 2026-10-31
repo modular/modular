@@ -40,9 +40,20 @@ threads finished (a CTA releases its dependents when its first thread issues
 the release, so every load is held), which makes the hold end in time only for
 an early release. `OVERLAP_AT_BEGINNING` must end it; `ON` (release at exit)
 and `OFF` must time out, which shows the harness can tell the two apart.
+
+The probe only sees a release if its launch is the grid's programmatic
+dependent, so no stream work may sit between the two launches. The split-K
+tier allocates its partials and counter scratch inside `rowwise.launch` and
+frees them right after the grid launch, and the redzone debug allocator
+(`MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds`) reads the redzones back with
+a device-to-host copy and a stream synchronize on every free. That
+synchronize drains the stream before the probe is enqueued, so the probe runs
+only once the grid has finished and an early release cannot be observed; the
+split-K release case reports itself as skipped under that allocator instead.
 """
 
 from std.math import ceildiv, exp, rsqrt
+from std.os import getenv
 from std.sys import align_of, get_defined_int
 from std.sys.intrinsics import llvm_intrinsic
 from std.time import global_perf_counter_ns
@@ -457,6 +468,19 @@ def run_argmax_case[
     _ = result_d^
 
 
+def _debug_allocator_syncs_on_free() -> Bool:
+    """Whether the device allocator synchronizes the stream when it frees.
+
+    `MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds` wraps every device
+    allocation in redzones and, on free, reads them back with a device-to-host
+    copy and a `synchronize` (`MemoryManagerFreeList::validateRedzones`). A
+    free between two launches therefore drops the second launch's programmatic
+    dependency on the first, which is exactly the adjacency `release_probe`
+    needs.
+    """
+    return "out-of-bounds" in getenv("MODULAR_DEBUG_DEVICE_ALLOCATOR")
+
+
 def _report_release(
     label: String,
     flags_h: HostBuffer[DType.int32],
@@ -593,7 +617,9 @@ def run_release_argmax_case[
 ) raises:
     """The same release check on a reduce-shaped argmax: `reduce_dim` 1 on a
     long, few-row shape takes the split-K tier, `reduce_dim` 0 the tiled tier.
-    Both release early."""
+    Both release early; the split-K case can only observe it when nothing
+    synchronizes the stream between the grid and the probe (see
+    `_debug_allocator_syncs_on_free`)."""
     comptime adt = DType.float32
     var n = rows * cols
     var act_h = ctx.enqueue_create_host_buffer[adt](n)
@@ -642,7 +668,24 @@ def run_release_argmax_case[
     )
     ctx.enqueue_copy(flags_h, flags_d)
     ctx.synchronize()
-    _report_release(label, flags_h, True, failures)
+    if reduce_dim == 1 and _debug_allocator_syncs_on_free():
+        # The split-K launcher frees its partials and counter scratch (and the
+        # redzone allocator synchronizes the stream doing it) after the grid
+        # launch, so the probe is not the grid's programmatic dependent and can
+        # only run once the grid has finished: an early release is unobservable
+        # here by construction. Check that the probe ran at all and say so,
+        # rather than fail the allocator sweep on the allocator's own sync.
+        if flags_h[0] == 0:
+            print("FAIL:", label, "probe never ran")
+            failures += 1
+        else:
+            print(
+                "SKIP:",
+                label,
+                "- not observable behind the redzone allocator's free sync",
+            )
+    else:
+        _report_release(label, flags_h, True, failures)
 
 
 def run_levels[
