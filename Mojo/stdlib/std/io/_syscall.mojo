@@ -14,7 +14,7 @@
 
 from std.ffi import c_int
 
-from .error import IOError
+from .error import IOError, IOErrorKind
 
 
 @inline(.always)
@@ -28,3 +28,34 @@ def check[
     if result == -1:
         raise IOError.last_os_error(operation)
     return result
+
+
+@inline(.always)
+def retry_io[
+    R: AnyType,
+    //,
+    F: def() raises IOError -> R,
+    *,
+    retry_kinds: Array[IOErrorKind, _],
+](mut f: F) raises IOError -> R:
+    """Calls `f` until it doesn't raise an error of a kind in `retry_kinds`,
+    and returns its result.
+
+    An error of any other kind is raised.
+    """
+    while True:
+        try:
+            return f()
+        except e:
+            var kind = e.kind()
+            var retry = False
+            comptime for retry_kind in retry_kinds:
+                retry = retry or kind == retry_kind
+            if not retry:
+                raise e
+
+
+comptime retry_io_interrupted = retry_io[retry_kinds=[.interrupted], ...]
+"""Calls `f` until it doesn't raise an `interrupted` error, and returns its
+result.
+"""
