@@ -887,6 +887,25 @@ static LogicalResult lowerFuncOp(FuncOp funcOp, unsigned maxInlineSize) {
 ///   %1 = kgen.struct.extract %pack[1] : <[i32, f32]>
 ///   pop.external_call @foo(%0, %1) : (i32, f32) -> ()
 ///
+/// Return true if `packStruct` is a by-reference pack: a layout-domain pack
+/// whose elements are pointers to the actual values. This is the form a
+/// variadic pack has before it is loaded. A pack that already holds values is
+/// either in the value domain (e.g. the result of `get_loaded_kgen_pack`) or a
+/// layout-domain pack of non-pointer elements, and must not be loaded again.
+static bool isByReferencePack(StructType packStruct) {
+  if (!packStruct.isLayoutDomain())
+    return false;
+  ParamListAttr variadic = packStruct.getVariadicIfResolved();
+  if (!variadic || variadic.getValues().empty())
+    return false;
+  for (TypedAttr value : variadic.getValues()) {
+    auto typeParam = dyn_cast<TypeParamAttr>(value);
+    if (!typeParam || !isa<PointerType>(typeParam.getMlirType()))
+      return false;
+  }
+  return true;
+}
+
 /// Recursively flatten a pack-typed value into individual scalar operands.
 /// Nested packs (e.g. from variadic C calls like `printf(pack(fmt,
 /// pack(*args))`) are fully expanded so that every operand passed to the
@@ -894,6 +913,15 @@ static LogicalResult lowerFuncOp(FuncOp funcOp, unsigned maxInlineSize) {
 static void flattenPackOperand(OpBuilder &builder, Location loc, Value pack,
                                StructType packStruct,
                                SmallVectorImpl<Value> &results) {
+  // A by-reference pack holds pointers to the actual values, which happens when
+  // a variadic pack is forwarded to `external_call` as a single argument (e.g.
+  // `external_call(..., args)`). Load the elements so the callee receives the
+  // values rather than their addresses.
+  if (isByReferencePack(packStruct)) {
+    pack = StructLoadIndirectOp::create(builder, loc, pack);
+    packStruct = cast<StructType>(pack.getType());
+  }
+
   ParamListAttr variadic = packStruct.getVariadicIfResolved();
   assert(variadic && "unresolved variadic pack on pop.external_call");
 

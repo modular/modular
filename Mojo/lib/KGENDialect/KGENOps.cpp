@@ -1215,9 +1215,13 @@ LogicalResult StructLoadIndirectOp::inferReturnTypes(
   auto mappedTypes = ParamOperatorAttr::get(
       POC::VariadicPtrRemoveMap, structType.getElementTypesVariadic());
   assert(structType.getDomain() != StructDomain::Value && "Unexpected domain");
-  types.push_back(StructType::get(ctx, mappedTypes, /*memOnly*/ {},
-                                  /*minAlign*/ {}, structType.getIsParamPack(),
-                                  structType.getDomain()));
+  // The loaded elements are values, so the result lives in the value domain.
+  // Keeping it in the layout domain would make a loaded pack indistinguishable
+  // from the by-reference pack it was loaded from, which matters when a pack is
+  // forwarded as a single argument (see `flattenPackOperand`).
+  types.push_back(StructType::getValueDomain(ctx, mappedTypes, /*memOnly*/ {},
+                                             /*minAlign*/ {},
+                                             structType.getIsParamPack()));
   return success();
 }
 

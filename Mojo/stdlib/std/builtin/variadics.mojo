@@ -1589,7 +1589,7 @@ struct VariadicPack[
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.struct<:param_list<type> `,
         Self._variadic_with_pointers_removed,
-        ` isParamPack>`,
+        ` isParamPack value>`,
     ]
     """This is the `!kgen.struct` type that happens if one loads all the elements
     of the pack.

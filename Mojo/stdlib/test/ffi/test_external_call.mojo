@@ -67,6 +67,39 @@ def test_snprintf_mixed_variadic_args() raises:
     assert_equal(Int(written), 18)
 
 
+def _snprintf_with_forwarded_pack[
+    *Ts: AnyType
+](buf: Pointer[c_char, _], fmt: CStringSpan[_], *args: *Ts) -> c_int:
+    """Forwards a user argument pack to a C variadic callee."""
+    return external_call["snprintf", c_int, num_fixed_args=3](
+        buf, Int(64), fmt.ptr(), args
+    )
+
+
+def test_user_pack_forwarded_by_value() raises:
+    """Forwarding a user pack must pass values, not references.
+
+    A pack forwarded to `external_call` used to reach the callee as a pointer
+    to each argument because only the outer pack was loaded. Formatting through
+    `snprintf` catches that: a pointer is printed instead of the integer or
+    string value.
+    """
+    comptime SIZE = 64
+    var allocation = alloc[c_char]({length = SIZE}).into_managed()
+    var buf = allocation.unsafe_ptr()
+    var fmt = "%d-%s".as_c_string_span()
+    var word = "seven".as_c_string_span()
+
+    var written = _snprintf_with_forwarded_pack(buf, fmt, c_int(7), word.ptr())
+
+    var formatted = String(
+        StringSlice(unsafe_from_utf8=CStringSpan(unsafe_from_ptr=buf))
+    )
+
+    assert_equal(formatted, "7-seven")
+    assert_equal(Int(written), 7)
+
+
 def test_open_honors_mode_argument() raises:
     """Checks that `open()`'s variadic mode argument reaches the callee.
 
