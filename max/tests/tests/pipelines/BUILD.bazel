@@ -6,6 +6,12 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# Tests outside this package check their vision layouts against this snapshot.
+exports_files(
+    ["testdata/vision_metadata.json"],
+    visibility = ["//mach/crates/multimodal:__pkg__"],
+)
+
 # Skip only in macOS CI, so the tests still run on a developer's Mac.
 config_setting(
     name = "macos_ci",
