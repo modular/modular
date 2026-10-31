@@ -173,7 +173,6 @@ private:
                               SmallVector<Operation *> &opsToDelete);
 
   Shared<SymbolTable &> &sharedTable;
-  DenseMap<SymbolConstantAttr, SymbolConstantAttr> fromOriginalToHotRamp;
   ImplicitLocOpBuilder &builder;
   TargetInfoAttr targetInfoAttr;
   mlir::DominanceInfo &dominanceInfo;
@@ -1093,8 +1092,8 @@ Value LowerAsyncBuildContext::initializeContinuation(FuncOp rampFunction,
   // Store resume function.
   Value resumeFunctionSlot =
       StructGEPOp::create(builder, continuation, ResumeFunction);
-  Value functionPointer =
-      CreateFuncPtrOp::create(builder, SymbolConstantAttr::get(resumeFunction));
+  Value functionPointer = CreateFuncPtrOp::create(
+      builder, FuncSymbolGenerator::get(resumeFunction));
   functionPointer = PointerBitcastOp::create(
       builder, coTypes.typeForField(ResumeFunction), functionPointer);
   StoreOp::create(builder, functionPointer, resumeFunctionSlot);
@@ -1328,9 +1327,9 @@ void LowerAsyncFunctionsPass::runOnOperation() {
                                           /*replaceTypes=*/true);
     asyncFunctions.push_back(funcOp);
   }
-  DenseMap<SymbolRefAttr, std::pair<SymbolConstantAttr, Type>>
+  DenseMap<SymbolRefAttr, std::pair<FuncSymbolGenerator, Type>>
       asyncFuncToColdRampFunctions;
-  DenseMap<SymbolRefAttr, std::pair<SymbolConstantAttr, Type>>
+  DenseMap<SymbolRefAttr, std::pair<FuncSymbolGenerator, Type>>
       asyncFuncToHotRampFunctions;
   for (FuncOp funcOp : asyncFunctions) {
     // Store a clone of the function so we can generate the hot ramp/resume.
@@ -1347,23 +1346,23 @@ void LowerAsyncFunctionsPass::runOnOperation() {
     Coroutine coroutine = buildContext.createCoroutine(funcOp, temperature);
     switch (temperature) {
     case Temp::Hot: {
-      SymbolConstantAttr value = SymbolConstantAttr::get(coroutine.hotRamp);
+      FuncSymbolGenerator value = FuncSymbolGenerator::get(coroutine.hotRamp);
       asyncFuncToHotRampFunctions[key] = {value, coroutine.coroutineType};
 
       break;
     }
     case Temp::Cold: {
-      SymbolConstantAttr coldvalue =
-          SymbolConstantAttr::get(coroutine.coldRamp);
+      FuncSymbolGenerator coldvalue =
+          FuncSymbolGenerator::get(coroutine.coldRamp);
       asyncFuncToColdRampFunctions[key] = {coldvalue, coroutine.coroutineType};
       break;
     }
     case Temp::Both: {
-      SymbolConstantAttr value = SymbolConstantAttr::get(coroutine.hotRamp);
+      FuncSymbolGenerator value = FuncSymbolGenerator::get(coroutine.hotRamp);
       asyncFuncToHotRampFunctions[key] = {value, coroutine.coroutineType};
 
-      SymbolConstantAttr coldvalue =
-          SymbolConstantAttr::get(coroutine.coldRamp);
+      FuncSymbolGenerator coldvalue =
+          FuncSymbolGenerator::get(coroutine.coldRamp);
       asyncFuncToColdRampFunctions[key] = {coldvalue, coroutine.coroutineType};
       break;
     }
