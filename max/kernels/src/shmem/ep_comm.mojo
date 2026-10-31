@@ -343,6 +343,26 @@ def _publish_peer_stores[scope: StaticString = ""]() -> None:
 
 
 @inline(.always)
+def _store_bypassing_l2(address: Int, data: SIMD[DType.uint32, 4]):
+    """Stores 16 bytes on MI355X with `sc0 sc1`, so the store bypasses the
+    per-chiplet L2 and is visible to other chiplets and agents once it
+    completes. Unlike NVIDIA, AMD has an L2 per chiplet, and plain stores
+    stay there until flushed to L3/xGMI. See
+    https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
+
+    Args:
+        address: The 16-byte aligned destination address.
+        data: The bytes to store.
+    """
+    inlined_assembly[
+        "global_store_dwordx4 $0, $1, off sc0 sc1",
+        NoneType,
+        constraints="v,v,~{memory}",
+        has_side_effect=True,
+    ](address, data)
+
+
+@inline(.always)
 def block_memcpy[
     dst_addr_space: AddressSpace,
     src_addr_space: AddressSpace,
@@ -376,11 +396,6 @@ def block_memcpy[
     compiler the memory does not change while the kernel runs.
     """
     comptime if bypass_l2 and _is_amd_mi355x():
-        # See https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
-        # Use the 16-byte global store with `sc0 sc1` to ensure the store bypass
-        # the per-chiplet L2 cache. Unlike Nvidia, AMD use per chiplet L2
-        # caches, and stores won't be visible to other chiplets until they are
-        # flushed to L3/xGMI.
         comptime store_width = 16
         comptime assert (
             num_bytes % store_width == 0
@@ -391,12 +406,7 @@ def block_memcpy[
                 alignment=store_width,
                 invariant=src_invariant,
             ](i * store_width)
-            inlined_assembly[
-                "global_store_dwordx4 $0, $1, off sc0 sc1",
-                NoneType,
-                constraints="v,v,~{memory}",
-                has_side_effect=True,
-            ](
+            _store_bypassing_l2(
                 Int(dst_p.unsafe_offset(i * store_width)),
                 bitcast[DType.uint32, 4](data),
             )
@@ -430,6 +440,37 @@ def block_memcpy[
                         dst_p.unsafe_store[alignment=simd_width](
                             i * simd_width, vals[k]
                         )
+
+
+comptime EP_TOKEN_INDEX_BYTES = 32
+"""Bytes of one token index in a `token_recv` receive buffer. A peer writes
+each index alone, so it fills a whole 32-byte sector: a partial-sector write
+costs the owning GPU a read-modify-write."""
+
+
+@inline(.always)
+def _store_token_index(
+    ptr: MutPointer[Int32, MutUntrackedOrigin], token: Int32
+):
+    """Fills a peer's token-index sector with `token`, the way
+    `block_memcpy[bypass_l2=True]` stores, so `_publish_peer_stores` publishes
+    it with the message bytes that thread copied.
+
+    Args:
+        ptr: The sector, in the peer's receive buffer.
+        token: The source token index.
+    """
+    comptime width = EP_TOKEN_INDEX_BYTES // size_of[Int32]()
+    comptime if _is_amd_mi355x():
+        comptime for i in range(0, width, 4):
+            _store_bypassing_l2(
+                Int(ptr.unsafe_offset(i)),
+                bitcast[DType.uint32, 4](SIMD[DType.int32, 4](token)),
+            )
+    else:
+        ptr.unsafe_store[alignment=EP_TOKEN_INDEX_BYTES](
+            SIMD[DType.int32, width](token)
+        )
 
 
 @inline(.always)
@@ -3056,6 +3097,59 @@ struct NullDispatchTrace(DispatchTraceSink):
 # ===-----------------------------------------------------------------------===#
 
 
+@inline(.always)
+def ep_token_index_offset(
+    *, n_ranks: Int, max_tokens_per_rank: Int, msg_bytes: Int
+) -> Int:
+    """Returns where a `token_recv` receive buffer's token indices start.
+
+    Args:
+        n_ranks: The number of devices participating in communication.
+        max_tokens_per_rank: The maximum number of tokens per rank.
+        msg_bytes: The token format's message size.
+
+    Returns:
+        The byte offset past the messages, aligned to a token index.
+    """
+    return align_up(
+        n_ranks * max_tokens_per_rank * msg_bytes, EP_TOKEN_INDEX_BYTES
+    )
+
+
+@inline(.always)
+def ep_dispatch_recv_size(
+    *,
+    n_experts: Int,
+    n_ranks: Int,
+    max_tokens_per_rank: Int,
+    msg_bytes: Int,
+    token_recv: Bool,
+) -> Int:
+    """Returns the bytes of one rank's EP dispatch receive buffer.
+
+    Args:
+        n_experts: The total number of experts in the model.
+        n_ranks: The number of devices participating in communication.
+        max_tokens_per_rank: The maximum number of tokens per rank.
+        msg_bytes: The token format's message size.
+        token_recv: Whether the dispatch receives each token once per rank
+            (see `EPDispatchKernel`).
+
+    Returns:
+        The receive buffer's size in bytes.
+    """
+    if token_recv:
+        return (
+            ep_token_index_offset(
+                n_ranks=n_ranks,
+                max_tokens_per_rank=max_tokens_per_rank,
+                msg_bytes=msg_bytes,
+            )
+            + n_experts * max_tokens_per_rank * EP_TOKEN_INDEX_BYTES
+        )
+    return n_experts * max_tokens_per_rank * msg_bytes
+
+
 struct EPDispatchKernel[
     num_threads: Int,
     n_sms: Int,
@@ -3080,6 +3174,7 @@ struct EPDispatchKernel[
     ep_send_join_named: Bool = False,
     ep_monitor_histogram: Bool = False,
     ep_warp_min_tokens: Int = -1,
+    token_recv: Bool = False,
 ]:
     """Implements dispatch_async and dispatch_wait kernel logic for Expert Parallelism.
 
@@ -3143,6 +3238,14 @@ struct EPDispatchKernel[
             one per CTA. Same bytes, same receive layout; only the slot order
             inside a (expert, source rank) segment may differ, as it already
             does between runs. -1 (the default) keeps the per-CTA send.
+        token_recv: Whether a destination receives each token once, however
+            many of its experts the token picked, instead of once per pick.
+            The receive buffer is then `ep_dispatch_recv_size` bytes: one
+            message per (source rank, source token), then the source token
+            index of every (local expert, source rank, slot). Off by default,
+            which keeps a message slot per (local expert, source rank, token):
+            SHMEM puts publish each expert through its own channel, and the
+            fused MegaFFN reads those slots itself.
     """
 
     comptime n_local_experts = Self.n_experts // Self.n_ranks
@@ -3313,6 +3416,18 @@ struct EPDispatchKernel[
     comptime _send_layout = row_major[
         Self.max_tokens_per_rank, Self.msg_bytes
     ]()
+    comptime _token_layout = row_major[
+        Self.n_ranks, Self.max_tokens_per_rank, Self.msg_bytes
+    ]()
+    comptime _token_index_layout = row_major[
+        Self.n_local_experts, Self.n_ranks, Self.max_tokens_per_rank
+    ]()
+    # Under `token_recv`, the source token indices follow the messages.
+    comptime token_index_offset = ep_token_index_offset(
+        n_ranks=Self.n_ranks,
+        max_tokens_per_rank=Self.max_tokens_per_rank,
+        msg_bytes=Self.msg_bytes,
+    )
 
     @staticmethod
     @inline(.always)
@@ -3326,6 +3441,57 @@ struct EPDispatchKernel[
             offset = Self._recv_layout[linear_idx_type=out_dtype](_coord)
         else:
             offset = Self._recv_layout[linear_idx_type=out_dtype](coord)
+
+    @staticmethod
+    @inline(.always)
+    def token_buf_layout[
+        out_dtype: DType = _get_index_type[type_of(Self._token_layout)](
+            AddressSpace.GENERIC
+        ),
+    ](coord: Coord, out offset: Scalar[out_dtype]):
+        """Returns the offset of a message byte under `token_recv`.
+
+        Args:
+            coord: The (source rank, source token, byte) coordinate.
+
+        Returns:
+            The byte offset into the receive buffer.
+        """
+        comptime if Self.skip_a2a:
+            var _coord = Coord((Idx[0], coord[1], coord[2]))
+            offset = Self._token_layout[linear_idx_type=out_dtype](_coord)
+        else:
+            offset = Self._token_layout[linear_idx_type=out_dtype](coord)
+
+    @staticmethod
+    @inline(.always)
+    def token_index_ptr(
+        recv_base: MutPointer[UInt8, MutUntrackedOrigin], coord: Coord
+    ) -> MutPointer[Int32, MutUntrackedOrigin]:
+        """Returns the address of a slot's token index under `token_recv`.
+
+        Args:
+            recv_base: The base of the receive buffer holding the index.
+            coord: The (local expert, source rank, slot) coordinate.
+
+        Returns:
+            The slot's token-index sector, whose first word is the source
+            token.
+        """
+        var offset: Int32
+        comptime if Self.skip_a2a:
+            offset = Self._token_index_layout[linear_idx_type=.int32](
+                Coord((coord[0], Idx[0], coord[2]))
+            )
+        else:
+            offset = Self._token_index_layout[linear_idx_type=.int32](coord)
+        return (
+            recv_base.unsafe_offset(Self.token_index_offset)
+            .unsafe_bitcast[Int32]()
+            .unsafe_offset(
+                Int(offset) * (EP_TOKEN_INDEX_BYTES // size_of[Int32]())
+            )
+        )
 
     @staticmethod
     @inline(.always)
@@ -3628,6 +3794,9 @@ struct EPDispatchKernel[
         comptime comm_warp_base = comm_thread_base // WARP_SIZE
         comptime n_comm_warps = n_comm_threads // WARP_SIZE
         comptime Roles = Self.role_split
+        comptime assert not (
+            Self.token_recv and (Self.use_shmem or Self.ep_final_layout)
+        ), "token_recv stores each token in its peers' token rows directly"
         # `named_barrier` counts THREADS and requires a multiple of the warp
         # size; the send join passes the whole CTA width.
         comptime assert (
@@ -3858,18 +4027,29 @@ struct EPDispatchKernel[
                                 | (UInt64(Int(counter_offset)) << 32),
                             )
 
-                    var dst_recv_buf_ptr = recv_buf_ptrs[
-                        dst_p2p_rank
-                    ].unsafe_offset(
-                        Self.recv_buf_layout(
-                            (
-                                dst_expert_local_idx,
-                                Int32(0) if Self.ep_final_layout else my_rank,
-                                _fl_row,
-                                Idx[0],
+                    var dst_offset: Int
+                    comptime if Self.token_recv:
+                        # Every pick of the token on this rank stores the
+                        # same bytes to the token's one row there.
+                        dst_offset = Int(
+                            Self.token_buf_layout((my_rank, token_idx, Idx[0]))
+                        )
+                    else:
+                        dst_offset = Int(
+                            Self.recv_buf_layout(
+                                (
+                                    dst_expert_local_idx,
+                                    Int32(
+                                        0
+                                    ) if Self.ep_final_layout else my_rank,
+                                    _fl_row,
+                                    Idx[0],
+                                )
                             )
                         )
-                    )
+                    var dst_recv_buf_ptr = recv_buf_ptrs[
+                        dst_p2p_rank
+                    ].unsafe_offset(dst_offset)
 
                     comptime if TraceT.enabled:
                         if _tr_pairs == 0 and _tr_pub >= 0 and lane_id() == 0:
@@ -3901,13 +4081,27 @@ struct EPDispatchKernel[
                     # store width. Called here, before the warp joins and
                     # publishes readiness, so the scales are visible to the
                     # consumer on exactly the same edge as the message bytes.
-                    Self.token_fmt_type.scatter_row_scales(
-                        recv_buf_ptrs[dst_p2p_rank],
-                        curr_send_buf_ptr,
-                        dst_expert_local_idx,
-                        _fl_row,
-                        Int(lane_id()),
-                    )
+                    comptime if Self.token_recv:
+                        # Stored here for the same reason: the index must be
+                        # visible with the message bytes. The format's scale
+                        # arena indexes final-layout rows, which this layout
+                        # does not have, so the scales stay in the message.
+                        if lane_id() == 0:
+                            _store_token_index(
+                                Self.token_index_ptr(
+                                    recv_buf_ptrs[dst_p2p_rank],
+                                    (dst_expert_local_idx, my_rank, slot_idx),
+                                ),
+                                Int32(token_idx),
+                            )
+                    else:
+                        Self.token_fmt_type.scatter_row_scales(
+                            recv_buf_ptrs[dst_p2p_rank],
+                            curr_send_buf_ptr,
+                            dst_expert_local_idx,
+                            _fl_row,
+                            Int(lane_id()),
+                        )
 
                     syncwarp()
                     comptime if TraceT.enabled:
@@ -4098,7 +4292,10 @@ struct EPDispatchKernel[
         ), "the warp-per-token send does not pack the shared expert's inputs"
         comptime assert (
             not Self.ep_final_layout and not Self.ep_prod_reserve
-        ), "the warp-per-token send writes the rank-major staging layout"
+        ), "the warp-per-token send has no final-row layout"
+        comptime assert (
+            not Self.token_recv or Self.p2p_world_size == Self.n_ranks
+        ), "the warp-per-token send stores into every rank directly"
         comptime assert (
             not Self.role_split.enabled
         ), "the warp-per-token send has no copy-role split"
@@ -4189,6 +4386,18 @@ struct EPDispatchKernel[
                     warp.shuffle_idx(slot, UInt32(k)),
                 )
 
+            # Under `token_recv` the message goes to a peer once, from its
+            # first pick there; bit k marks pick k as one.
+            var senders = UInt32(0)
+            var dst_rank = target_expert // Int32(Self.n_local_experts)
+            comptime if Self.token_recv:
+                var first = lane < Self.top_k
+                for k in range(Self.top_k):
+                    var rank_k = warp.shuffle_idx(dst_rank, UInt32(k))
+                    if k < lane and rank_k == dst_rank:
+                        first = False
+                senders = warp.vote[.uint32](first)
+
             # The message goes out in passes of `pass_vec` vectors a lane,
             # each loaded once and stored to every destination: holding the
             # whole message at once spills at the 64-register budget of a
@@ -4204,10 +4413,22 @@ struct EPDispatchKernel[
                             width=vec_bytes, alignment=vec_bytes
                         ](off)
                 for k in range(Self.top_k):
-                    var peer, local, k_slot = dest_of(k)
-                    var dst = recv_buf_ptrs[peer].unsafe_offset(
-                        Self.recv_buf_layout((local, my_rank, k_slot, Idx[0]))
-                    )
+                    var dst: MutPointer[UInt8, MutUntrackedOrigin]
+                    comptime if Self.token_recv:
+                        if (senders >> UInt32(k)) & 1 == 0:
+                            continue
+                        dst = recv_buf_ptrs[
+                            warp.shuffle_idx(dst_rank, UInt32(k))
+                        ].unsafe_offset(
+                            Self.token_buf_layout((my_rank, token_idx, Idx[0]))
+                        )
+                    else:
+                        var peer, local, k_slot = dest_of(k)
+                        dst = recv_buf_ptrs[peer].unsafe_offset(
+                            Self.recv_buf_layout(
+                                (local, my_rank, k_slot, Idx[0])
+                            )
+                        )
                     comptime for v in range(pass_vec):
                         var off = (
                             (p * pass_vec + v) * WARP_SIZE + lane
@@ -4215,13 +4436,29 @@ struct EPDispatchKernel[
                         if off < Self.msg_bytes:
                             dst.unsafe_store[alignment=vec_bytes](off, msg[v])
 
-            # Scales the format keeps outside the message become visible on
-            # the same edge as the bytes, as in the stock send.
-            for k in range(Self.top_k):
-                var peer, local, k_slot = dest_of(k)
-                Self.token_fmt_type.scatter_row_scales(
-                    recv_buf_ptrs[peer], buf, local, k_slot, lane
-                )
+            comptime if Self.token_recv:
+                # Each pick lists the token under its expert, published with
+                # the message by the flush below.
+                if lane < Self.top_k:
+                    _store_token_index(
+                        Self.token_index_ptr(
+                            recv_buf_ptrs[dst_rank],
+                            (
+                                target_expert % Int32(Self.n_local_experts),
+                                my_rank,
+                                slot,
+                            ),
+                        ),
+                        Int32(token_idx),
+                    )
+            else:
+                # Scales the format keeps outside the message become visible
+                # on the same edge as the bytes, as in the stock send.
+                for k in range(Self.top_k):
+                    var peer, local, k_slot = dest_of(k)
+                    Self.token_fmt_type.scatter_row_scales(
+                        recv_buf_ptrs[peer], buf, local, k_slot, lane
+                    )
 
             # Publish the warp's copies before they are counted, as the stock
             # send's flush does; each of lanes 0 to top_k - 1 then counts its
@@ -4649,6 +4886,10 @@ struct EPDispatchKernel[
         var tok_rank_map = unsafe_stack_allocation[
             tile_size, Int32, address_space=.SHARED
         ]()
+        # Under `token_recv`, each tile row's source token.
+        var tok_row_map = unsafe_stack_allocation[
+            tile_size if Self.token_recv else 1, Int32, address_space=.SHARED
+        ]()
         var smem_vals = unsafe_stack_allocation[
             3, Int32, address_space=.SHARED
         ]()
@@ -4668,9 +4909,11 @@ struct EPDispatchKernel[
             )
 
         @inline(.always)
-        def fill_tok_rank_map(tile_id: Int, _total: Int) {mut} -> None:
-            """Fill tok_rank_map for a tile. Must be called by warp 0 only,
-            after rank_prefix is loaded."""
+        def fill_tok_rank_map(
+            tile_id: Int, _total: Int, expert: Int
+        ) {mut, imm recv_buf_p} -> None:
+            """Fill tok_rank_map (and tok_row_map) for a tile of `expert`.
+            Must be called by warp 0 only, after rank_prefix is loaded."""
             var _tile_start = ufloordiv(tile_id, sms_per_tile) * tile_size
             var _count = min(_tile_start + tile_size, _total) - _tile_start
             for _tok in range(tid, _count, WARP_SIZE):
@@ -4680,6 +4923,26 @@ struct EPDispatchKernel[
                         _rank = Int32(r)
                         break
                 tok_rank_map[_tok] = _rank
+            comptime if Self.token_recv:
+                # All of a lane's index loads are in flight before any lands.
+                comptime n_rows = ceildiv(tile_size, WARP_SIZE)
+                var rows = Array[Int32, n_rows](fill=0)
+                comptime for i in range(n_rows):
+                    var _tok = Int(tid) + i * WARP_SIZE
+                    if _tok < _count:
+                        var _rank = Int(tok_rank_map[unsafe_offset=_tok])
+                        var _rank_base = (
+                            Int(rank_prefix[unsafe_offset=_rank - 1]) if _rank
+                            > 0 else 0
+                        )
+                        rows[i] = Self.token_index_ptr(
+                            recv_buf_p,
+                            (expert, _rank, _tile_start + _tok - _rank_base),
+                        )[]
+                comptime for i in range(n_rows):
+                    var _tok = Int(tid) + i * WARP_SIZE
+                    if _tok < _count:
+                        tok_row_map[unsafe_offset=_tok] = rows[i]
 
         # Wait for the auxiliary SM to signal that all offsets are ready.
         if warp_id() - comm_warp_base == 0:
@@ -4725,7 +4988,7 @@ struct EPDispatchKernel[
 
             # Fill tok_rank_map for the first tile.
             fill_tok_rank_map(
-                Int(smem_vals[1]), Int(rank_prefix[Self.n_ranks - 1])
+                Int(smem_vals[1]), Int(rank_prefix[Self.n_ranks - 1]), chosen
             )
         Self._comm_barrier[n_comm_threads, comm_barrier_id]()
 
@@ -4761,6 +5024,16 @@ struct EPDispatchKernel[
                 """Return the pointer to the token in the receive buffer."""
                 var wep = tile_start + tok_local
                 var src_rank = Int(tok_rank_map[tok_local])
+                comptime if Self.token_recv:
+                    return recv_buf_p.unsafe_offset(
+                        Self.token_buf_layout(
+                            (
+                                src_rank,
+                                Int(tok_row_map[unsafe_offset=tok_local]),
+                                Idx[0],
+                            )
+                        )
+                    )
                 var rank_base = (
                     Int(rank_prefix[src_rank - 1]) if src_rank > 0 else 0
                 )
@@ -4887,7 +5160,9 @@ struct EPDispatchKernel[
                     if tid == 0:
                         smem_vals[1] = fetch_tile_id(local_expert_id)
                     syncwarp()
-                    fill_tok_rank_map(Int(smem_vals[1]), total_tokens)
+                    fill_tok_rank_map(
+                        Int(smem_vals[1]), total_tokens, local_expert_id
+                    )
                 Self._comm_barrier[n_comm_threads, comm_barrier_id]()
                 tile_id = Int(smem_vals[1])
 
@@ -4997,7 +5272,7 @@ struct EPDispatchKernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 @__name(
-    t"ep_dispatch_async_{input_type}_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{p2p_world_size}_{use_shmem}",
+    t"ep_dispatch_async_{input_type}_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{p2p_world_size}_{use_shmem}{'_tokrecv' if token_recv else ''}",
 )
 def dispatch_async_kernel[
     input_type: DType,
@@ -5013,6 +5288,7 @@ def dispatch_async_kernel[
     InputScalesFnType: InputScalesFn,
     has_input_scales: Bool = False,
     use_shmem: Bool = True,
+    token_recv: Bool = False,
 ](
     input_tokens: TileTensor[
         input_type, input_tokens_layout, ImmUntrackedOrigin
@@ -5048,6 +5324,8 @@ def dispatch_async_kernel[
         InputScalesFnType: The type of `input_scales_fn`.
         has_input_scales: Whether `input_scales_fn` supplies the input scale.
         use_shmem: Whether to use the SHMEM API for the communication.
+        token_recv: Whether each destination receives a token once (see
+            `EPDispatchKernel`). Must match the `dispatch_wait_kernel`.
 
     Args:
         input_tokens: The input tokens to be dispatched.
@@ -5056,9 +5334,9 @@ def dispatch_async_kernel[
             shape `(max_tokens_per_rank, msg_bytes)`. Need to be allocated using
             `shmem_alloc` if `use_shmem` is True.
         recv_buf_ptrs: An array of pointers to the receive buffers for each
-            device in the p2p world. Each buffer is of shape
-            `(n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)`. Need
-            to be allocated using `shmem_alloc` if `use_shmem` is True.
+            device in the p2p world. Each buffer is `ep_dispatch_recv_size`
+            bytes. Need to be allocated using `shmem_alloc` if `use_shmem` is
+            True.
         recv_count_ptrs: An array of pointers to the receive count buffers for
             each device in the p2p world. Each buffer is of shape
             `(n_local_experts, n_ranks)`. Need to be allocated using
@@ -5077,6 +5355,7 @@ def dispatch_async_kernel[
         p2p_world_size,
         token_fmt_type,
         use_shmem,
+        token_recv=token_recv,
     ]
 
     # The reserved counter is incremented once a warp is ready to send.
@@ -5122,7 +5401,7 @@ def dispatch_async_kernel[
 )
 @__llvm_arg_metadata(format_handler, `nvvm.grid_constant`)
 @__name(
-    t"ep_wait_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{token_fmt_type.get_type_name()}"
+    t"ep_wait_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{token_fmt_type.get_type_name()}{'_tokrecv' if token_recv else ''}"
 )
 def dispatch_wait_kernel[
     num_threads: Int,
@@ -5134,6 +5413,7 @@ def dispatch_wait_kernel[
     n_ranks: Int,
     max_tokens_per_rank: Int,
     token_fmt_type: TokenFormat,
+    token_recv: Bool = False,
 ](
     format_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, row_offsets_layout, MutUntrackedOrigin],
@@ -5164,6 +5444,8 @@ def dispatch_wait_kernel[
         max_tokens_per_rank: The maximum number of tokens per rank.
         token_fmt_type: Type conforming to TokenFormat trait that defines the
             token encoding scheme.
+        token_recv: Whether each destination received a token once (see
+            `EPDispatchKernel`). Must match the `dispatch_async_kernel`.
 
     Args:
         format_handler: Instance of token_fmt_type that performs token decoding
@@ -5177,8 +5459,7 @@ def dispatch_wait_kernel[
             rank using information in this tensor.
         recv_buf_p: The pointer to the receive buffer. Need to be allocated
             using `shmem_alloc` if `use_shmem` is True. The underlying buffer is
-            of shape
-            `(n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)`.
+            `ep_dispatch_recv_size` bytes.
         recv_count_p: The pointer to the receive count buffer. Need to be
             allocated using `shmem_alloc` if `use_shmem` is True. The underlying
             buffer is of shape `(n_local_experts, n_ranks)`.
@@ -5195,6 +5476,7 @@ def dispatch_wait_kernel[
         1,  # p2p world size
         token_fmt_type,
         use_shmem=False,
+        token_recv=token_recv,
     ]
 
     var atomic_counter = ep_counters.get_dispatch_wait_ptr()
@@ -6531,7 +6813,7 @@ def _prefill_send_suffix[
 )
 @__llvm_arg_metadata(format_handler, `nvvm.grid_constant`)
 @__name(
-    t"ep_fused_dispatch_{input_type}_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{p2p_world_size}_{fused_shared_expert}_{use_shmem}{_prefill_send_suffix[token_fmt_type, warp_min_tokens, use_shmem, skip_a2a, fused_shared_expert]()}",
+    t"ep_fused_dispatch_{input_type}_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{p2p_world_size}_{fused_shared_expert}_{use_shmem}{_prefill_send_suffix[token_fmt_type, warp_min_tokens, use_shmem, skip_a2a, fused_shared_expert]()}{'_tokrecv' if token_recv else ''}",
 )
 def dispatch_kernel[
     input_type: DType,
@@ -6554,6 +6836,7 @@ def dispatch_kernel[
     use_shmem: Bool = True,
     allreduce_world_size: Int = 1,
     warp_min_tokens: Int = -1,
+    token_recv: Bool = False,
     *,
     # Callers bind this kernel before the call, so there is no tile argument
     # to infer the engines from.
@@ -6630,6 +6913,8 @@ def dispatch_kernel[
             count (see `EPDispatchKernel`). -1 (the default) keeps the stock
             monitor and send, as does every configuration but single-node
             NVFP4 without a fused shared expert.
+        token_recv: Whether each destination receives a token once (see
+            `EPDispatchKernel`).
         InputTokensEngine: Storage engine backing the `input_tokens` tile.
         TopkIdsEngine: Storage engine backing the `topk_ids` tile.
         RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
@@ -6683,6 +6968,7 @@ def dispatch_kernel[
         skip_a2a,
         ep_monitor_histogram=prefill_send,
         ep_warp_min_tokens=warp_min_tokens if prefill_send else -1,
+        token_recv=token_recv,
     ]
 
     comptime _allreduce_world_size = UInt32(allreduce_world_size)

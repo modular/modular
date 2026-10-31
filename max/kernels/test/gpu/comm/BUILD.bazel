@@ -83,9 +83,6 @@ _GPU_MEMORY = {
     "test_scatter.mojo": "3",
     "test_broadcast_subgroup.mojo": "2",
     "test_ep_ord_r_completion.mojo": "2",
-    # On four GPUs the 8,168-token case holds 9.1 GiB a GPU, 8.5 of it the
-    # receive buffer.
-    "test_ep_dispatch_prefill_send.mojo": "11",
     "test_kernel_load_gate.mojo": "2",
 }
 

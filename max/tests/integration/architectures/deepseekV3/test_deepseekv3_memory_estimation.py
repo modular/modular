@@ -104,8 +104,9 @@ def test_deepseekv3_memory_estimation() -> None:
         pipeline_config, huggingface_config
     )
 
-    max_recv_tokens_per_rank = (
-        MAX_SEND_TOKENS_PER_RANK * huggingface_config.n_routed_experts
+    max_recv_tokens_per_rank = MAX_SEND_TOKENS_PER_RANK * min(
+        huggingface_config.n_routed_experts,
+        NUM_RANKS * huggingface_config.num_experts_per_tok,
     )
     moe_min_memory = (
         max_recv_tokens_per_rank * huggingface_config.moe_intermediate_size * 1
@@ -132,21 +133,21 @@ def test_deepseekv3_memory_estimation_exact() -> None:
     mem = planner.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 5225054208 + reserve
+    assert mem == 3413114880 + reserve
 
     # For PrefillAndDecode, we also need to consider mla_activation_memory
     pipeline_config = mock_pipeline_config("prefill_and_decode")
     mem = planner.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 551759642624 + reserve
+    assert mem == 549947703296 + reserve
 
     # Also check model with different quantization encoding
     pipeline_config = mock_pipeline_config("decode_only", "float4_e2m1fnx2")
     mem = planner.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 4399759360 + reserve
+    assert mem == 3384213504 + reserve
 
 
 def _fused_planning_case(

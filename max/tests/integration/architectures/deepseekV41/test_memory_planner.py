@@ -543,9 +543,9 @@ def test_dp4_kv_capacity_per_device() -> None:
         )
         for records in (False, True)
     }
-    assert 60 * GIB < budget < 61 * GIB
-    assert 15.2e6 < capacity[False] < 15.3e6
-    assert 73.0e6 < capacity[True] < 73.2e6
+    assert 68 * GIB < budget < 69 * GIB
+    assert 17.3e6 < capacity[False] < 17.4e6
+    assert 83.0e6 < capacity[True] < 83.1e6
 
 
 def test_mxfp4_expert_scales_load_compact() -> None:

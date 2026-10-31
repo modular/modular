@@ -153,6 +153,24 @@ def pack_ptrs_array[
     return ptr_arr^
 
 
+@inline(.always)
+def ep_token_recv[n_nodes: Int]() -> Bool:
+    """Returns whether the dispatch receives each token once per rank.
+
+    Within one node every rank stores straight into its peers' receive
+    buffers, so a token is copied to a rank once and listed under each of its
+    experts there. Across nodes SHMEM puts publish each expert through its own
+    channel, so each routed pair keeps its own message slot.
+
+    Parameters:
+        n_nodes: Number of physical nodes.
+
+    Returns:
+        The `token_recv` parameter of the dispatch kernels.
+    """
+    return n_nodes == 1
+
+
 # ===-----------------------------------------------------------------------===#
 # Expert Parallelism Async Dispatch
 # ===-----------------------------------------------------------------------===#
@@ -347,6 +365,7 @@ def ep_dispatch_async_kernel_api[
         InputScalesFnType=InputScalesFnType,
         has_input_scales=has_input_scales,
         use_shmem=use_shmem,
+        token_recv=ep_token_recv[n_nodes](),
     ]
 
     @inline(.always)
@@ -507,6 +526,7 @@ def ep_dispatch_wait_kernel_api[
         n_ranks,
         max_token_per_rank,
         token_fmt_type,
+        token_recv=ep_token_recv[n_nodes](),
     ]
 
     @inline(.always)
@@ -850,6 +870,7 @@ def ep_fused_dispatch_kernel_api[
         use_shmem=use_shmem,
         allreduce_world_size=allreduce_world_size,
         warp_min_tokens=dispatch_warp_min_tokens,
+        token_recv=ep_token_recv[n_nodes](),
         InputTokensEngine=input_tokens.Engine,
         TopkIdsEngine=topk_ids.Engine,
         RowOffsetsEngine=row_offsets.Engine,

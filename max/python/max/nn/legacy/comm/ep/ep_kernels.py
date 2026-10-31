@@ -409,8 +409,8 @@ def call_ep_dispatch_async(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (max_tokens_per_rank, msg_bytes)
         recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
+            Shape: (n_gpus_per_node,) each points to the dispatch receive
+            buffer ``ep.init`` allocated.
         recv_count_ptrs: Device pointers to the receive count buffers for
             each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
@@ -508,8 +508,8 @@ def call_ep_dispatch_wait(
     Args:
         atomic_counter: Buffer for synchronization between thread blocks.
         recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
+            Shape: (n_gpus_per_node,) each points to the dispatch receive
+            buffer ``ep.init`` allocated.
         recv_count_ptrs: Device pointers to the receive count buffers for
             each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
@@ -1091,8 +1091,8 @@ def call_ep_dispatch(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (max_tokens_per_rank, msg_bytes)
         recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
+            Shape: (n_gpus_per_node,) each points to the dispatch receive
+            buffer ``ep.init`` allocated.
         recv_count_ptrs: Device pointers to the receive count buffers for
             each GPU.
             Shape: (n_gpus_per_node,) each points to a buffer of shape
