@@ -10,19 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen2 configuration."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
 from max.graph.weights import WeightData
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.llama3.decoder import Llama3DecoderConfig
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 
 
 @dataclass(kw_only=True)
-class Qwen2Config(Llama3Config):
+class Qwen2Config(Llama3DecoderConfig):
     """Model configuration for Qwen2 graph construction/execution."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
@@ -34,17 +37,18 @@ class Qwen2Config(Llama3Config):
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
+        state_dict: Mapping[str, WeightData],
+        return_logits: ReturnLogits | ModelOutputConfig,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> None:
+        """Completes the config in place, with Qwen2's attention bias."""
         super().finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
             norm_method=norm_method,
-            attention_bias=True,  # Qwen2 uses attention bias
+            attention_bias=True,
         )

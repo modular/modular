@@ -16,10 +16,10 @@ MAX provides three ways to call operations on tensors:
 - **Python operators**: Use standard operators like `+`, `-`, `*`, `/`, `@`,
   and `**` for common arithmetic and linear algebra operations.
 - **Tensor methods**: Call operations directly on
-  [`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) objects,
+  [`Tensor`](/api/python/generated/max.tensor.Tensor/) objects,
   like `x.sum(axis=0)`, `x.reshape([2, 3])`, or `x.transpose(0, 1)`.
 - **Functional API**: Call operations from
-  [`max.experimental.functional`](/api/python/experimental.functional/) that
+  [`max.functional`](/api/python/functional/) that
   take tensors as input, such as `F.relu(x)` or `F.concat([a, b])`.
 
 ### When to use the functional API
@@ -30,13 +30,13 @@ multi-tensor operations, and operations with no tensor method equivalent. Here
 are a few examples of each:
 
 - **Activation functions**:
-  [`F.relu()`](/api/python/experimental.functional/#max.experimental.functional.relu),
-  [`F.sigmoid()`](/api/python/experimental.functional/#max.experimental.functional.sigmoid),
+  [`F.relu()`](/api/python/functional/#max.functional.relu),
+  [`F.sigmoid()`](/api/python/functional/#max.functional.sigmoid),
   and
-  [`F.tanh()`](/api/python/experimental.functional/#max.experimental.functional.tanh)
+  [`F.tanh()`](/api/python/functional/#max.functional.tanh)
   don't have tensor method equivalents.
 - **Multi-tensor operations**:
-  [`F.concat()`](/api/python/experimental.functional/#max.experimental.functional.concat)
+  [`F.concat()`](/api/python/functional/#max.functional.concat)
   operates on multiple tensors at once.
 
 ## Perform arithmetic operations
@@ -55,7 +55,7 @@ tensors of matching shapes. The following example adds and multiplies two
 1-D tensors:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 a = Tensor([1.0, 2.0, 3.0])
 b = Tensor([4.0, 5.0, 6.0])
@@ -78,13 +78,13 @@ Tensor([ 4 10 18], dtype=DType.float32, device=Device(type=cpu,id=0))
 
 For operations without built-in Python equivalents, use the functional API.
 `abs()` finds the absolute value and `**` performs exponentiation.
-[`F.sqrt()`](/api/python/experimental.functional/#max.experimental.functional.sqrt)
+[`F.sqrt()`](/api/python/functional/#max.functional.sqrt)
 uses the functional API since there's no built-in function or tensor method for
 square root:
 
 ```python
-import max.experimental.functional as F
-from max.experimental.tensor import Tensor
+import max.functional as F
+from max.tensor import Tensor
 
 x = Tensor([1.0, -4.0, 9.0, -16.0])
 
@@ -113,12 +113,12 @@ neural networks.
 
 ### Reshape tensors
 
-[`reshape()`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.reshape)
+[`reshape()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.reshape)
 changes the shape of a tensor while preserving the total number of elements. The
 following example transforms a 12-element vector into three different layouts:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 x = Tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
 print(f"Original shape: {x.shape}")
@@ -144,12 +144,12 @@ Reshaped to 2x2x3: [Dim(2), Dim(2), Dim(3)]
 
 ### Transpose tensors
 
-[`transpose()`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.transpose)
+[`transpose()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.transpose)
 swaps two dimensions of a tensor. The following example converts a 2×3 matrix to
 3×2:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 x = Tensor([[1, 2, 3], [4, 5, 6]])
 print(f"Original shape: {x.shape}")
@@ -179,7 +179,7 @@ For the common case of transposing the last two dimensions, use the `.T`
 property:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 x = Tensor([[1, 2, 3], [4, 5, 6]])
 
@@ -201,13 +201,13 @@ Tensor([1 4
 higher.
 
 When you need to rearrange more than two dimensions,
-[`permute()`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.permute)
+[`permute()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.permute)
 specifies a new order for all dimensions as a list of indices. The following
 example converts a `(batch, channels, length)` tensor to
 `(batch, length, channels)`:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 # (batch=2, channels=3, length=4)
 x = Tensor(
@@ -232,13 +232,13 @@ Permuted shape: [Dim(2), Dim(4), Dim(3)]
 
 ### Concatenate tensors
 
-[`F.concat()`](/api/python/experimental.functional/#max.experimental.functional.concat)
+[`F.concat()`](/api/python/functional/#max.functional.concat)
 joins multiple tensors along a specified dimension. The following example
 concatenates two 2×2 matrices along each axis:
 
 ```python
-import max.experimental.functional as F
-from max.experimental.tensor import Tensor
+import max.functional as F
+from max.tensor import Tensor
 
 a = Tensor([[1, 2], [3, 4]])
 b = Tensor([[5, 6], [7, 8]])
@@ -281,7 +281,7 @@ The following example shows `sum`, `mean`, `max`, and `min` along axis 0,
 summing across rows to get per-column results:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 x = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
 
@@ -314,11 +314,11 @@ Min along axis 0: Tensor([1 2 3], dtype=DType.float32, device=Device(type=cpu,id
 `sum(axis=0)` and `sum(axis=1)` return tensors with shape `[Dim(1), Dim(3)]` and
 `[Dim(2), Dim(1)]` respectively, with the reduced dimension kept at size 1. Each
 reduction is also available in the functional API as
-[`F.sum()`](/api/python/experimental.functional/#max.experimental.functional.sum),
-[`F.mean()`](/api/python/experimental.functional/#max.experimental.functional.mean),
-[`F.max()`](/api/python/experimental.functional/#max.experimental.functional.max),
+[`F.sum()`](/api/python/functional/#max.functional.sum),
+[`F.mean()`](/api/python/functional/#max.functional.mean),
+[`F.max()`](/api/python/functional/#max.functional.max),
 and
-[`F.min()`](/api/python/experimental.functional/#max.experimental.functional.min).
+[`F.min()`](/api/python/functional/#max.functional.min).
 
 ## Perform matrix operations
 
@@ -326,7 +326,7 @@ The `@` operator multiplies two matrices. The following example multiplies a
 2×2 input matrix by a 2×2 weight matrix:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 x = Tensor([[1.0, 2.0], [3.0, 4.0]])
 w = Tensor([[5.0, 6.0], [7.0, 8.0]])
@@ -345,21 +345,21 @@ Tensor([19 22
 ```
 
 Matrix multiplication is also available as
-[`F.matmul()`](/api/python/experimental.functional/#max.experimental.functional.matmul).
+[`F.matmul()`](/api/python/functional/#max.functional.matmul).
 
 ## Add activation functions
 
 Activation functions are available through the functional API only.
-[`F.relu()`](/api/python/experimental.functional/#max.experimental.functional.relu)
+[`F.relu()`](/api/python/functional/#max.functional.relu)
 sets negative values to zero,
-[`F.sigmoid()`](/api/python/experimental.functional/#max.experimental.functional.sigmoid)
+[`F.sigmoid()`](/api/python/functional/#max.functional.sigmoid)
 maps values to (0, 1), and
-[`F.tanh()`](/api/python/experimental.functional/#max.experimental.functional.tanh)
+[`F.tanh()`](/api/python/functional/#max.functional.tanh)
 maps values to (-1, 1):
 
 ```python
-import max.experimental.functional as F
-from max.experimental.tensor import Tensor
+import max.functional as F
+from max.tensor import Tensor
 
 x = Tensor([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
 
@@ -385,16 +385,16 @@ Tanh: Tensor([ -0.964 -0.7616       0
 
 ## Generate random tensors
 
-The [`max.experimental.functional`](/api/python/experimental.functional/) module
+The [`max.functional`](/api/python/functional/) module
 provides functions for creating tensors with random values.
-[`F.uniform()`](/api/python/experimental.functional/#max.experimental.functional.uniform)
+[`F.uniform()`](/api/python/functional/#max.functional.uniform)
 generates values uniformly distributed over a range;
-[`F.normal()`](/api/python/experimental.functional/#max.experimental.functional.normal)
+[`F.normal()`](/api/python/functional/#max.functional.normal)
 generates values from a Gaussian distribution with the specified mean and
 standard deviation. Values vary each run:
 
 ```python
-import max.experimental.functional as F
+import max.functional as F
 
 uniform_tensor = F.uniform([3, 3], range=(0.0, 1.0))
 normal_tensor = F.normal([3, 3], mean=0.0, std=1.0)
@@ -411,15 +411,15 @@ print(normal_tensor)
 You can combine operations to implement neural network layers. The following
 example shows a linear layer using `@` for matrix multiplication, `+` for bias
 addition, and
-[`F.relu()`](/api/python/experimental.functional/#max.experimental.functional.relu)
+[`F.relu()`](/api/python/functional/#max.functional.relu)
 for the activation step. Pre-built layers like
-[`Linear`](/api/python/generated/max.experimental.nn.Linear/) use the same
-matrix multiplication and bias addition internally. Understanding the operations
-gives you the foundation for custom layers when standard ones don't fit:
+[`Linear`](/api/python/generated/max.nn.Linear/) use the same matrix
+multiplication and bias addition internally. Understanding the operations gives
+you the foundation for custom layers when standard ones don't fit:
 
 ```python
-import max.experimental.functional as F
-from max.experimental.tensor import Tensor
+import max.functional as F
+from max.tensor import Tensor
 
 
 def linear_layer(x: Tensor, weights: Tensor, bias: Tensor) -> Tensor:
@@ -448,9 +448,9 @@ Now that you understand tensor operations, continue learning with these topics:
 - **[Model bring-up workflow](/develop/model-bringup-workflow/)**: Use
   operations in a module's `forward()` method to implement a model
   architecture.
-- **[Neural network modules](/api/python/experimental.nn/)**: Explore
-  pre-built layers in `max.experimental.nn` such as `Linear`,
-  [`Conv2d`](/api/python/generated/max.experimental.nn.Conv2d/), and
-  [`Embedding`](/api/python/generated/max.experimental.nn.Embedding/).
+- **[Neural network modules](/api/python/nn/)**: Explore
+  pre-built layers in `max.nn` such as `Linear`,
+  [`Conv2d`](/api/python/generated/max.nn.Conv2d/), and
+  [`Embedding`](/api/python/generated/max.nn.Embedding/).
 - **[Custom operations](/develop/custom-ops/)**: Implement your own
   operations in Mojo when built-in operations don't meet your needs.

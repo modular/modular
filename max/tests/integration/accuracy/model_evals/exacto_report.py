@@ -33,13 +33,14 @@ summary — so it unit-tests without a harness, a server or a network.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import os
 import statistics
 from typing import Any
 
 #: Datasets this module can normalize.
-DATASETS = ("gpqa_diamond", "taubench_airline")
+DATASETS = ("gpqa_diamond", "taubench_airline", "vgi_bench")
 
 #: Share of questions that may share one correct-answer letter before the score
 #: stops measuring knowledge. Four options, so chance is 0.25; anything past
@@ -259,6 +260,16 @@ def parse_openbench_log(
         "harness": task_metadata.get("harness", "openbench"),
         "harness_commit": task_metadata.get("harness_commit"),
         "dataset_revision": task_metadata.get("dataset_revision"),
+        # Set by tasks that, like the harness, send media from a manifest: two
+        # runs saw the same videos only if they record the same hash.
+        "media_manifest_hash": task_metadata.get("media_manifest_hash"),
+        # The harness scores a request the server rejected (a 400 for an
+        # unfetchable video, say) as a wrong answer rather than an error, so
+        # these are in the accuracy but not in `errors`.
+        "model_errors_scored_wrong": sum(
+            str(row.get("explanation") or "").startswith("Model error:")
+            for row in rows
+        ),
         "harness_status": log.get("status"),
         "task": eval_meta.get("task"),
         "dataset_name": dataset.get("name"),
@@ -282,6 +293,20 @@ def parse_openbench_log(
 TAU2_ERROR_TERMINATIONS = frozenset(
     {"too_many_errors", "agent_error", "user_error"}
 )
+
+
+def _empty_user_turns(messages: list[dict[str, Any]]) -> list[str]:
+    """Returns the ``finish_reason`` of each empty simulator attempt.
+
+    The runner's tau2 patch records them on the turn that followed, whether a
+    retry recovered or the task ended as a ``user_error``.
+    """
+    reasons: list[str] = []
+    for message in messages:
+        if message.get("role") == "user":
+            raw = message.get("raw_data") or {}
+            reasons.extend(str(r) for r in raw.get("exacto_empty_turns") or [])
+    return reasons
 
 
 def parse_tau2_log(
@@ -308,7 +333,10 @@ def parse_tau2_log(
     rewards: list[float] = []
     errors = 0
     hit_step_cap = 0
+    empty_user_finish: collections.Counter[str] = collections.Counter()
     for sim in simulations:
+        empty_user_turns = _empty_user_turns(sim.get("messages") or [])
+        empty_user_finish.update(empty_user_turns)
         reward_info = sim.get("reward_info") or {}
         reward = reward_info.get("reward")
         termination = sim.get("termination_reason")
@@ -338,6 +366,7 @@ def parse_tau2_log(
                 ),
                 "duration": sim.get("duration"),
                 "agent_cost": sim.get("agent_cost"),
+                "empty_user_turns": len(empty_user_turns),
             }
         )
 
@@ -354,6 +383,8 @@ def parse_tau2_log(
     agent_info = info.get("agent_info") or {}
     user_info = info.get("user_info") or {}
     env_info = info.get("environment_info") or {}
+    agent_base = _server_url((agent_info.get("llm_args") or {}).get("api_base"))
+    user_base = _server_url((user_info.get("llm_args") or {}).get("api_base"))
 
     summary: dict[str, Any] = {
         "accuracy": accuracy,
@@ -383,6 +414,18 @@ def parse_tau2_log(
         "agent_llm_args": agent_info.get("llm_args"),
         "user_llm": user_info.get("llm"),
         "user_llm_args": user_info.get("llm_args"),
+        # The simulator plays half of each conversation, so scores compare only
+        # across runs on the same one. None: a provider with its own endpoint.
+        "user_api_base": user_base,
+        # Empty simulator replies the runner retried, keyed by finish_reason so
+        # a token cap ("length") stands out from a real stop.
+        "empty_user_turns": sum(empty_user_finish.values()),
+        "empty_user_turn_finish_reasons": dict(empty_user_finish),
+        "self_simulated": bool(
+            agent_base
+            and user_base == agent_base
+            and user_info.get("llm") == agent_info.get("llm")
+        ),
         "harness_commit": info.get("git_commit"),
     }
     return rows, summary
@@ -465,11 +508,21 @@ def eval_config(
             "sample_size": _sample_size(rows, summary.get("dataset_samples")),
         }
     agent_args = summary.get("agent_llm_args") or {}
+    user_args = summary.get("user_llm_args") or {}
+    # A self-simulated run's simulator is the endpoint under test, already in
+    # base_url, so these stay unset and its config hash is unchanged.
+    own_simulator = not summary.get("self_simulated")
     return {
         "base_url": _server_url(agent_args.get("api_base")),
         "temperature": agent_args.get("temperature"),
         "reasoning_effort": agent_args.get("reasoning_effort"),
         "user_llm": summary.get("user_llm"),
+        "user_api_base": summary.get("user_api_base")
+        if own_simulator
+        else None,
+        "user_max_tokens": user_args.get("max_tokens")
+        if own_simulator
+        else None,
         "sample_size": _sample_size(rows, summary.get("full_task_count")),
     }
 
@@ -582,25 +635,39 @@ def _enforce_error_budget(summary: dict[str, Any]) -> None:
     Mirrors :func:`eval_common.enforce_error_budget`, including the
     ``EVAL_MAX_ERROR_RATE`` override, so an endpoint that rejects most requests
     cannot report a passing-looking 0.0.
+
+    Requests the server rejected are held to the same budget. They score 0 in
+    the accuracy, as the harness scores them, so they never reach ``errors``;
+    without this check a server that refuses most videos reports a deflated
+    score and exits 0.
     """
     total = summary.get("total")
-    errors = summary.get("errors")
-    if not isinstance(total, int) or not isinstance(errors, int) or total <= 0:
+    if not isinstance(total, int) or total <= 0:
         return
     budget = float(
         os.environ.get("EVAL_MAX_ERROR_RATE") or DEFAULT_MAX_ERROR_RATE
     )
     if budget <= 0:
         return
-    rate = errors / total
-    if rate <= budget:
-        return
-    print(
-        f"::error::{errors}/{total} samples errored ({rate:.1%}), above the "
-        f"{budget:.0%} budget. Errors score as incorrect, so this run's score "
-        f"reflects infrastructure, not model quality."
-    )
-    raise SystemExit(1)
+    errors = summary.get("errors")
+    if isinstance(errors, int) and errors / total > budget:
+        print(
+            f"::error::{errors}/{total} samples errored "
+            f"({errors / total:.1%}), above the {budget:.0%} budget. Errors "
+            "score as incorrect, so this run's score reflects infrastructure, "
+            "not model quality."
+        )
+        raise SystemExit(1)
+    rejected = summary.get("model_errors_scored_wrong")
+    if isinstance(rejected, int) and rejected / total > budget:
+        print(
+            f"::error::the server rejected {rejected}/{total} requests "
+            f"({rejected / total:.1%}), above the {budget:.0%} budget. They "
+            "score 0 as the harness scores them, so this run's score reflects "
+            "the endpoint, not model quality. Check the explanations in "
+            "results.jsonl."
+        )
+        raise SystemExit(1)
 
 
 def parse_reference(

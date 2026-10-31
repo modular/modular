@@ -25,7 +25,7 @@ from linalg.matmul.vendor.blas import matmul
 def test_matmul[
     input_type: DType, M: Int, N: Int, K: Int
 ](ctx: DeviceContext) raises:
-    print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
+    print(t"== test_vendor_blas {input_type} x {M} x {N} x {K}")
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](M * K)
     var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](N * K)
@@ -72,18 +72,8 @@ def test_matmul[
         c_device_ref,
         row_major(M, N),
     )
-    var a_immut_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_immut_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
-        row_major(N, K),
-    )
+    var a_immut_tt = TileTensor(a_device, row_major(M, K)).as_imm()
+    var b_immut_tt = TileTensor(b_device, row_major(N, K)).as_imm()
 
     # Run naive matmul.
     comptime BLOCK_DIM = 16

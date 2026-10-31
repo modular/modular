@@ -570,7 +570,7 @@ def bench_conv2d[
             var d = abs(a - c)
             if d > max_diff:
                 max_diff = d
-        print("verify max |", impl, " - cuDNN| = ", max_diff, sep="")
+        print(t"verify max |{impl} - cuDNN| = {max_diff}")
         _ = output_host^
         _ = output_ref_host^
 

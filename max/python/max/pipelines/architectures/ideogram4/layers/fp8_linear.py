@@ -17,11 +17,11 @@ per-output-channel ``weight_scale``. The default loader dequantizes them to
 bf16; this module instead keeps the weight packed and runs the projection as a
 native FP8 GEMM: the bf16 activation is dynamically quantized per token
 (colwise) and multiplied by the rowwise-scaled FP8 weight via
-:func:`~max.nn.kernels.dynamic_scaled_matmul`, which dispatches to the tuned
+:func:`~max.nn.legacy.kernels.dynamic_scaled_matmul`, which dispatches to the tuned
 AMD FP8 matmul (plus a scale epilogue) on gfx950 and returns bf16.
 
 The weight and the per-token activation share float32 rowwise/colwise scales,
-mirroring the proven dynamic path in :mod:`max.nn.quant_ops`. Only bias-free
+mirroring the proven dynamic path in :mod:`max.nn.legacy.quant_ops`. Only bias-free
 projections are supported (every FP8 Linear in the Ideogram 4 DiT is
 bias-free).
 """
@@ -31,21 +31,21 @@ from __future__ import annotations
 import functools
 import operator
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import DimLike
-from max.nn.kernels import (
+from max.nn import Module
+from max.nn.legacy.kernels import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.tensor import Tensor
 
 # Scales are kept in float32 to preserve the checkpoint's per-channel scale
 # precision (the per-token activation scales are produced in the same dtype).
@@ -108,7 +108,7 @@ class Ideogram4FP8Linear(Module[[Tensor], Tensor]):
     """A bias-free linear projection executed as a native FP8 GEMM.
 
     By convention the weight is stored transposed; that is, ``weight.shape ==
-    [out_dim, in_dim]``, matching :class:`~max.experimental.nn.Linear` and the
+    [out_dim, in_dim]``, matching :class:`~max.nn.Linear` and the
     checkpoint layout.
 
     Args:

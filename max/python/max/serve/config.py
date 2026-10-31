@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""
-Placeholder file for any configs (runtime, models, pipelines, etc)
-"""
+"""Placeholder file for any configs (runtime, models, pipelines, etc)."""
 
 from __future__ import annotations
 
@@ -31,6 +29,8 @@ logger = logging.getLogger("max.serve")
 
 
 class APIType(Enum):
+    """The API dialect a server exposes."""
+
     KSERVE = "kserve"
     OPENAI = "openai"
     SAGEMAKER = "sagemaker"
@@ -91,6 +91,8 @@ class KernelTraceLevel(Enum):
 
 
 class Settings(BaseSettings):
+    """Server settings, read from the environment."""
+
     # env files, direct initialization, and aliases interact in some confusing
     # ways.  this is the way:
     #   1. extra="allow"
@@ -200,6 +202,19 @@ class Settings(BaseSettings):
         default=100 * 1024 * 1024,  # 100 MiB
         ge=0,
         alias="MAX_SERVE_MAX_REQUEST_BYTES",
+    )
+
+    request_body_timeout_s: float = Field(
+        description=(
+            "Maximum time in seconds a client may take to deliver a complete "
+            "HTTP request body. Requests that do not finish sending their body "
+            "in time (for example, a Content-Length larger than the bytes "
+            "actually sent) are rejected with HTTP 408 instead of holding the "
+            "connection open. Set 0 to disable the timeout."
+        ),
+        default=30.0,
+        ge=0,
+        alias="MAX_SERVE_REQUEST_BODY_TIMEOUT_S",
     )
 
     # File URI configuration
@@ -453,6 +468,7 @@ class Settings(BaseSettings):
     def validate_transaction_recording_file(
         cls, path: Path | None
     ) -> Path | None:
+        """Validates the transaction recording path, if one is set."""
         if path is None:
             return None
         if not path.name.endswith(".rec.jsonl"):

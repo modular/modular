@@ -106,7 +106,7 @@ LogicalResult SpecializeInf::matchArgument(Type actualType,
                                     expectedRef.getElementType())))
         return failure();
       expectedType = evaluator.getReboundType(expectedType);
-      if (!paramFinder.hasReferences(expectedType)) {
+      if (!hasReferences(expectedType)) {
         if (IREmitter::canZeroCostConvert(valueRefType, expectedType,
                                           getShared(), getDeclScope())
                 .isTrue())

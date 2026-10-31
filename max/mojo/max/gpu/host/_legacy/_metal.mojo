@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.gpu.host import DeviceContext
 from std.ffi import external_call
 
-from max.gpu.host._legacy.device_context import _CString, _checked
+from .device_context import DeviceContext, _CString, _checked
 
 
 struct _MTLDevice:

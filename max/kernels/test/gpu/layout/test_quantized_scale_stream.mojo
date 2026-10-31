@@ -40,9 +40,11 @@ def scale_stream_kernel[
     STAGES: Int,
     input_layout: TensorLayout,
     output_layout: TensorLayout,
+    source_origin: ImmOrigin,
+    output_origin: MutOrigin,
 ](
-    source: TileTensor[.bfloat16, input_layout, ImmutAnyOrigin],
-    output: TileTensor[.bfloat16, output_layout, MutAnyOrigin],
+    source: TileTensor[.bfloat16, input_layout, source_origin],
+    output: TileTensor[.bfloat16, output_layout, output_origin],
 ):
     comptime assert output.rank == output.flat_rank == 4
     comptime assert source.rank == source.flat_rank == 2
@@ -124,11 +126,16 @@ def test_scale_stream[CADENCE: Int, STAGES: Int](ctx: DeviceContext) raises:
     source.to_device()
     ctx.enqueue_function[
         scale_stream_kernel[
-            CADENCE, STAGES, type_of(input_layout), type_of(output_layout)
+            CADENCE,
+            STAGES,
+            type_of(input_layout),
+            type_of(output_layout),
+            source_origin=origin_of(source),
+            output_origin=origin_of(output),
         ]
     ](
-        source.device_tensor().as_unsafe_any_origin(),
-        output.device_tensor().as_unsafe_any_origin(),
+        source.device_tensor(),
+        output.device_tensor(),
         grid_dim=1,
         block_dim=2 * warp_size,
     )

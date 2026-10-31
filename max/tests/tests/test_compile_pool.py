@@ -31,11 +31,11 @@ from max import engine
 from max.driver import CPU, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.compile_pool import (
+from max.graph import DeviceRef, Graph, Module, TensorType
+from max.tensor.compile_pool import (
     ProcessCompilePool,
     RemoteCompileError,
 )
-from max.graph import DeviceRef, Graph, Module, TensorType
 
 
 @pytest.fixture(scope="module")

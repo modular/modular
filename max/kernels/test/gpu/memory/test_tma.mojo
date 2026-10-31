@@ -26,8 +26,7 @@ from max.gpu.sync import (
 )
 from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
-
-from std.utils.index import Index
+from std.utils.coord import coord
 
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
@@ -41,7 +40,7 @@ def kernel_copy_async_tma(descriptor: TMADescriptor):
 
     mbarrier_arrive_expect_tx_shared(mbar, 64)
     cp_async_bulk_tensor_shared_cluster_global(
-        shmem, descriptor_ptr, mbar, Index(block_idx.x * 4, block_idx.y * 4)
+        shmem, descriptor_ptr, mbar, (block_idx.x * 4, block_idx.y * 4)
     )
     mbarrier_try_wait_parity_shared(mbar, 0, 10000000)
 
@@ -84,8 +83,8 @@ def test_tma_tile_copy(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(gmem_dev, gmem_host)
 
-    var descriptor = create_tma_descriptor[.float32, 2](
-        gmem_dev, (8, 8), (8, 1), (4, 4)
+    var descriptor = create_tma_descriptor[.float32](
+        gmem_dev, coord[8, 8], coord[8, 1], coord[4, 4]
     )
 
     ctx.enqueue_function[kernel_copy_async_tma](

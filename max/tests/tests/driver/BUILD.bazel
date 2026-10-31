@@ -31,6 +31,7 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/support",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -95,7 +96,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )

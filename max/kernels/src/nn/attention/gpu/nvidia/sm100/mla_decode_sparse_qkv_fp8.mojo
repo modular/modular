@@ -91,7 +91,9 @@ from max.gpu import (
 )
 from max.gpu.sync import async_copy_arrive, barrier
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.primitives.grid_controls import (
+    PDL,
+)
 from max.gpu.intrinsics import (
     byte_permute,
     warpgroup_reg_alloc,
@@ -439,9 +441,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         # The launcher sizes grid.x to the head tiles. Stating it lets the
         # compiler fold `block_idx.x * BM` instead of keeping a 64-bit copy
         # live from kernel entry to the output store, which spilled.
-        assume(
-            Int(block_idx.x) < ceildiv(Self.config.num_q_heads, Self.config.BM)
-        )
+        assume(block_idx.x < ceildiv(Self.config.num_q_heads, Self.config.BM))
 
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
@@ -458,417 +458,420 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         var mask = mla_decode_pack.mask
         var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
+        with PDL[overlap_at_beginning=True]():
+            var offset_position = OffsetPosition[
+                Self.config,
+                Self.KVLUTType,
+                Self.ragged,
+                Self._is_cache_length_accurate,
+                Self.ValidLengthType,
+                Self.config.decoding_warp_split_k,
+                sparse=True,
+                has_extra_kv=Self.has_extra_kv,
+                TopkLengthsPtrType=Self.TopkLengthsPtrType,
+            ](
+                kv_lut,
+                rebind[
+                    ImmPointer[
+                        Scalar[Self.ValidLengthType.dtype],
+                        ImmutAnyOrigin,
+                        address_space=.GENERIC,
+                    ]
+                ](valid_length.value()),
+                q_max_seq_len,
+                num_partitions,
+                batch_size,
+                sparse_indices_stride=topk_stride,
+                sparse_topk_lengths=topk_lengths,
+                sparse_extra_indices_stride=extra_indices_stride,
+                sparse_extra_topk_lengths=extra_topk_lengths,
+            )
 
-        var offset_position = OffsetPosition[
-            Self.config,
-            Self.KVLUTType,
-            Self.ragged,
-            Self._is_cache_length_accurate,
-            Self.ValidLengthType,
-            Self.config.decoding_warp_split_k,
-            sparse=True,
-            has_extra_kv=Self.has_extra_kv,
-            TopkLengthsPtrType=Self.TopkLengthsPtrType,
-        ](
-            kv_lut,
-            rebind[
-                ImmPointer[
-                    Scalar[Self.ValidLengthType.dtype],
-                    ImmutAnyOrigin,
-                    address_space=.GENERIC,
-                ]
-            ](valid_length.value()),
-            q_max_seq_len,
-            num_partitions,
-            batch_size,
-            sparse_indices_stride=topk_stride,
-            sparse_topk_lengths=topk_lengths,
-            sparse_extra_indices_stride=extra_indices_stride,
-            sparse_extra_topk_lengths=extra_topk_lengths,
-        )
-
-        var topk: Int
-        comptime if Self.has_variable_topk:
-            topk = Int(topk_lengths.value()[Int(offset_position.batch_idx)])
-        else:
-            topk = topk_stride
-        var extra_topk: Int = 0
-        comptime if Self.has_extra_kv:
+            var topk: Int
             comptime if Self.has_variable_topk:
-                extra_topk = Int(
-                    extra_topk_lengths.value()[Int(offset_position.batch_idx)]
-                )
+                topk = Int(topk_lengths.value()[Int(offset_position.batch_idx)])
             else:
-                extra_topk = extra_indices_stride
-        # Main-segment slot count: the clamped topk, tile-padded when extra KV
-        # follows it (see `OffsetPosition.sparse_topk`).
-        topk = offset_position.num_keys - extra_topk
+                topk = topk_stride
+            var extra_topk: Int = 0
+            comptime if Self.has_extra_kv:
+                comptime if Self.has_variable_topk:
+                    extra_topk = Int(
+                        extra_topk_lengths.value()[
+                            Int(offset_position.batch_idx)
+                        ]
+                    )
+                else:
+                    extra_topk = extra_indices_stride
+            # Main-segment slot count: the clamped topk, tile-padded when extra KV
+            # follows it (see `OffsetPosition.sparse_topk`).
+            topk = offset_position.num_keys - extra_topk
 
-        var num_orig_blocks = ceildiv(topk, Self.config.BN_QK)
+            var num_orig_blocks = ceildiv(topk, Self.config.BN_QK)
 
-        @inline(.always)
-        def _pdl_early_exit_all_q() {imm}:
-            comptime if Self.fold_shared_index:
-                comptime for q_local in range(Self.q_len_fold):
-                    Self.Common_MLA_Op.pdl_early_exit[fold_q=True](
+            @inline(.always)
+            def _pdl_early_exit_all_q() {imm}:
+                comptime if Self.fold_shared_index:
+                    comptime for q_local in range(Self.q_len_fold):
+                        Self.Common_MLA_Op.pdl_early_exit[fold_q=True](
+                            offset_position.split_idx,
+                            offset_position.batch_idx,
+                            offset_position.max_seq_len,
+                            batch_size,
+                            lse_accum_split_ptr,
+                            seq_idx_fold=UInt32(q_local),
+                        )
+                else:
+                    Self.Common_MLA_Op.pdl_early_exit(
                         offset_position.split_idx,
                         offset_position.batch_idx,
                         offset_position.max_seq_len,
                         batch_size,
                         lse_accum_split_ptr,
-                        seq_idx_fold=UInt32(q_local),
                     )
-            else:
-                Self.Common_MLA_Op.pdl_early_exit(
-                    offset_position.split_idx,
-                    offset_position.batch_idx,
-                    offset_position.max_seq_len,
-                    batch_size,
-                    lse_accum_split_ptr,
-                )
 
-        comptime if Self.config.decoding_warp_split_k:
-            if offset_position.num_keys_this_split == 0:
-                _pdl_early_exit_all_q()
-                return
-
-        comptime if Self.ragged:
-            if block_idx.y >= offset_position.seq_len:
-                comptime if Self.config.decoding_warp_split_k:
+            comptime if Self.config.decoding_warp_split_k:
+                if offset_position.num_keys_this_split == 0:
                     _pdl_early_exit_all_q()
-                return
+                    return
 
-        var q_smem = external_memory[
-            Scalar[Self.fp8_type],
-            address_space=.SHARED,
-            alignment=128,
-            name="mha_dynamic_shared_memory",
-        ]()
+            comptime if Self.ragged:
+                if block_idx.y >= offset_position.seq_len:
+                    comptime if Self.config.decoding_warp_split_k:
+                        _pdl_early_exit_all_q()
+                    return
 
-        comptime kv_total_stages = Self.config.num_kv_stages
+            var q_smem = external_memory[
+                Scalar[Self.fp8_type],
+                address_space=.SHARED,
+                alignment=128,
+                name="mha_dynamic_shared_memory",
+            ]()
 
-        # Linear (SWIZZLE_NONE) gather destination -- the re-swizzle WG's
-        # source. Same per-stage size as the SW64 destination below.
-        var kv_smem_linear = q_smem.unsafe_offset(
-            Self.BlockElems * Self.NumQKBlocks
-        )
-        # SW64 destination the native FP8 MMA reads -- byte-identical role
-        # to the single-buffer kernel's `kv_smem`, one ring deeper.
-        var kv_smem = kv_smem_linear.unsafe_offset(
-            Self.KVStageElems * kv_total_stages
-        )
-        var p_smem = kv_smem.unsafe_offset(
-            Self.KVStageElems * Self.num_mma_stages
-        )
+            comptime kv_total_stages = Self.config.num_kv_stages
 
-        # Output SMEM reuses the SW64 KV region (same as the single-buffer
-        # native FP8 kernel and the BF16 kernel).
-        var out_smem = kv_smem.unsafe_bitcast[Scalar[Self.output_type]]()
-
-        var max_smem = (
-            p_smem.unsafe_offset(Self.PStageElems * Self.num_stages)
-        ).unsafe_bitcast[Scalar[Self.AccumType]]()
-        var li_smem = max_smem.unsafe_offset(2 * WARPGROUP_SIZE)
-
-        var mbar_base: MBarType = (
-            (li_smem.unsafe_offset(WARPGROUP_SIZE))
-            .unsafe_bitcast[SharedMemBarrier]()
-            .as_unsafe_any_origin()
-        )
-
-        var mbar_q: MBarType = mbar_base
-        var mbar_kv_gather_base: MBarType = mbar_base.unsafe_offset(1)
-        # Load (TMA, 1 leader thread) -> re-swizzle WG (128 threads, all
-        # independently release).
-        var kv_pipeline_gather = KVPipelineGeneric[
-            num_kv_stages=Self.config.num_kv_stages,
-            num_qk_stages=1,
-            num_producer=Self.gather_num_producer,
-            num_consumer=WARPGROUP_SIZE,
-        ](mbar_kv_gather_base)
-        var mbar_kv_mma_base: MBarType = mbar_kv_gather_base.unsafe_offset(
-            kv_pipeline_gather.num_mbars()
-        )
-        # Re-swizzle WG (128 threads, all independently commit) -> mmaQK +
-        # mmaPV (2 consumers) -- same consumer shape as the single-buffer
-        # kernel's own KV pipeline, just producer side is now a warpgroup
-        # instead of a single TMA leader thread.
-        var kv_pipeline_mma = KVPipelineGeneric[
-            num_kv_stages=Self.num_mma_stages,
-            num_qk_stages=1,
-            num_producer=WARPGROUP_SIZE,
-            num_consumer=2,
-        ](mbar_kv_mma_base)
-        var mbar_base2: MBarType = mbar_kv_mma_base.unsafe_offset(
-            kv_pipeline_mma.num_mbars()
-        )
-
-        var s_bars = DecodeSM100MiscMBars[
-            num_stages=Self.num_stages,
-            num_producer=1,
-            num_consumer=WARPGROUP_SIZE,
-        ](mbar_base2)
-        var mbar_base3: MBarType = s_bars.end()
-
-        var p_bars = DecodeSM100MiscMBars[
-            num_stages=Self.num_stages,
-            num_producer=WARPGROUP_SIZE,
-            num_consumer=1,
-        ](mbar_base3)
-        var mbar_base4: MBarType = p_bars.end()
-
-        var o_bars = DecodeSM100MiscMBars[
-            num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
-        ](mbar_base4)
-        var mbar_base5: MBarType = o_bars.end()
-
-        var c_bars = DecodeSM100MiscMBars[
-            num_stages=1,
-            num_producer=WARPGROUP_SIZE,
-            num_consumer=WARPGROUP_SIZE,
-        ](mbar_base5)
-        var mbar_base6: MBarType = c_bars.end()
-
-        var corr_done_bars = DecodeSM100MiscMBars[
-            num_stages=2,
-            num_producer=WARPGROUP_SIZE,
-            num_consumer=WARPGROUP_SIZE,
-        ](mbar_base6)
-        var mbar_base7: MBarType = corr_done_bars.end()
-
-        comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
-        var out_pipeline = OutPipeline[
-            num_out_stages=OutPipeType.num_out_stages,
-            num_producer=WARPGROUP_SIZE,
-            num_consumer=1,
-        ](mbar_base7)
-        var mbar_base8: MBarType = mbar_base7.unsafe_offset(
-            out_pipeline.num_mbars()
-        )
-
-        # idx_bars: warp 11 (producer, 32 threads) -> warp 8 (consumer, 32
-        # threads). Depth matches Self.num_stages (= config.num_kv_stages),
-        # not a fixed 2 -- see the KB entry cited in the module docstring.
-        var idx_bars = DecodeSM100MiscMBars[
-            num_stages=Self.num_stages, num_producer=32, num_consumer=32
-        ](mbar_base8)
-        var mbar_base9: MBarType = idx_bars.end()
-
-        var ptr_tmem_addr = (mbar_base9).unsafe_bitcast[UInt32]()
-        var idx_smem_base = ptr_tmem_addr.unsafe_offset(1).unsafe_bitcast[
-            Int32
-        ]()
-        comptime if Self.gather4_idx_batch > 0:
-            var align_pad = (16 - (Int(idx_smem_base) & 15)) & 15
-            debug_assert(
-                align_pad == Self.idx_smem_align_pad,
-                "idx_smem is not where the dispatch's SMEM size assumes",
+            # Linear (SWIZZLE_NONE) gather destination -- the re-swizzle WG's
+            # source. Same per-stage size as the SW64 destination below.
+            var kv_smem_linear = q_smem.unsafe_offset(
+                Self.BlockElems * Self.NumQKBlocks
             )
-            idx_smem_base = idx_smem_base.unsafe_offset(align_pad // 4)
-        comptime idx_smem_stride = Self.config.BN_QK
-
-        var warp_idx = UInt32(warp_id[broadcast=True]())
-        var is_leader = elect() != 0
-
-        if warp_idx == 8:
-            if is_leader:
-                mbar_q[].init(1)
-                kv_pipeline_gather.init()
-                kv_pipeline_mma.init()
-                s_bars.init()
-                p_bars.init()
-                o_bars.init()
-                c_bars.init()
-                corr_done_bars.init()
-                out_pipeline.init()
-                idx_bars.init()
-                q_tma.prefetch_descriptor()
-                k_tma.prefetch_descriptor()
-                o_tma.prefetch_descriptor()
-                comptime if Self.has_extra_kv:
-                    extra_k_tma.prefetch_descriptor()
-        elif warp_idx == 9:
-            tcgen05_alloc[Self.config.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
+            # SW64 destination the native FP8 MMA reads -- byte-identical role
+            # to the single-buffer kernel's `kv_smem`, one ring deeper.
+            var kv_smem = kv_smem_linear.unsafe_offset(
+                Self.KVStageElems * kv_total_stages
             )
-        # Zero the NoPE tail before the warpgroups read it. The fence publishes
-        # the generic-proxy stores to the async proxy for the tcgen05 read.
-        comptime if Self.config.input_q_depth < Self.config.padded_q_depth:
-            Self.zero_input_tail(
-                q_smem.as_unsafe_any_origin(), kv_smem.as_unsafe_any_origin()
+            var p_smem = kv_smem.unsafe_offset(
+                Self.KVStageElems * Self.num_mma_stages
             )
-        barrier()
-        comptime if Self.config.input_q_depth < Self.config.padded_q_depth:
-            fence_async_view_proxy()
 
-        if warp_idx < 4:
-            warpgroup_reg_alloc[num_reg_softmax]()
+            # Output SMEM reuses the SW64 KV region (same as the single-buffer
+            # native FP8 kernel and the BF16 kernel).
+            var out_smem = kv_smem.unsafe_bitcast[Scalar[Self.output_type]]()
 
-            var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
-            comptime if Self.has_attn_sink:
-                # The softmax row this thread owns; lane_id() would fold rows
-                # 32-63 onto 0-31 and give them the wrong heads' sinks.
-                var row = thread_idx.x & 0x3F
-                var head_idx_local = block_idx.x * Self.config.BM + row
-                if head_idx_local < Self.config.num_q_heads:
-                    attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
-                        DType.float32
-                    ]() * Float32(log2e)
+            var max_smem = (
+                p_smem.unsafe_offset(Self.PStageElems * Self.num_stages)
+            ).unsafe_bitcast[Scalar[Self.AccumType]]()
+            var li_smem = max_smem.unsafe_offset(2 * WARPGROUP_SIZE)
 
-            comptime if Self.MaskType.get_type_name() == "CausalMask" and not Self.fold_shared_index:
-                if not logical_indices:
-                    offset_position.assert_row_packed[Self.sparse_row](
-                        d_indices, indices_stride, selection_lag
-                    )
-            Self.Common_MLA_Op.Softmax[
-                native_fp8=True,
-                num_sp_stages=Self.num_stages,
-                has_attn_sink=Self.has_attn_sink,
-                fold_q=Self.fold_shared_index,
-                q_len_fold=Self.q_len_fold,
-                sparse_row=Self.sparse_row,
-            ](
-                ptr_tmem_addr[0],
-                s_bars,
-                p_bars,
-                p_smem.unsafe_bitcast[
-                    Scalar[Self.Common_MLA_Op.q_type]
-                ]().as_unsafe_any_origin(),
-                max_smem.as_unsafe_any_origin(),
-                li_smem.as_unsafe_any_origin(),
-                out_smem.as_unsafe_any_origin(),
-                c_bars,
-                corr_done_bars,
-                out_pipeline,
-                offset_position,
-                scale,
-                mask,
-                prompt_idx=UInt32(offset_position.batch_idx),
-                lse_accum_split_ptr=lse_accum_split_ptr,
-                batch_size=batch_size,
-                attn_sink_log2=attn_sink_log2,
-                logical_indices=logical_indices,
-                logical_indices_stride=indices_stride,
-                logical_indices_len=offset_position.sparse_topk,
-                selection_lag=selection_lag,
+            var mbar_base: MBarType = (
+                (li_smem.unsafe_offset(WARPGROUP_SIZE))
+                .unsafe_bitcast[SharedMemBarrier]()
+                .as_unsafe_any_origin()
             )
-        elif warp_idx >= 4 and warp_idx < 8:
-            warpgroup_reg_alloc[num_reg_correction]()
-            Self.Common_MLA_Op.Correction(
-                ptr_tmem_addr[0],
-                o_bars,
-                c_bars,
-                corr_done_bars,
-                offset_position,
+
+            var mbar_q: MBarType = mbar_base
+            var mbar_kv_gather_base: MBarType = mbar_base.unsafe_offset(1)
+            # Load (TMA, 1 leader thread) -> re-swizzle WG (128 threads, all
+            # independently release).
+            var kv_pipeline_gather = KVPipelineGeneric[
+                num_kv_stages=Self.config.num_kv_stages,
+                num_qk_stages=1,
+                num_producer=Self.gather_num_producer,
+                num_consumer=WARPGROUP_SIZE,
+            ](mbar_kv_gather_base)
+            var mbar_kv_mma_base: MBarType = mbar_kv_gather_base.unsafe_offset(
+                kv_pipeline_gather.num_mbars()
             )
-        elif warp_idx >= 8 and warp_idx < 12:
-            warpgroup_reg_dealloc[num_reg_other]()
+            # Re-swizzle WG (128 threads, all independently commit) -> mmaQK +
+            # mmaPV (2 consumers) -- same consumer shape as the single-buffer
+            # kernel's own KV pipeline, just producer side is now a warpgroup
+            # instead of a single TMA leader thread.
+            var kv_pipeline_mma = KVPipelineGeneric[
+                num_kv_stages=Self.num_mma_stages,
+                num_qk_stages=1,
+                num_producer=WARPGROUP_SIZE,
+                num_consumer=2,
+            ](mbar_kv_mma_base)
+            var mbar_base2: MBarType = mbar_kv_mma_base.unsafe_offset(
+                kv_pipeline_mma.num_mbars()
+            )
+
+            var s_bars = DecodeSM100MiscMBars[
+                num_stages=Self.num_stages,
+                num_producer=1,
+                num_consumer=WARPGROUP_SIZE,
+            ](mbar_base2)
+            var mbar_base3: MBarType = s_bars.end()
+
+            var p_bars = DecodeSM100MiscMBars[
+                num_stages=Self.num_stages,
+                num_producer=WARPGROUP_SIZE,
+                num_consumer=1,
+            ](mbar_base3)
+            var mbar_base4: MBarType = p_bars.end()
+
+            var o_bars = DecodeSM100MiscMBars[
+                num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
+            ](mbar_base4)
+            var mbar_base5: MBarType = o_bars.end()
+
+            var c_bars = DecodeSM100MiscMBars[
+                num_stages=1,
+                num_producer=WARPGROUP_SIZE,
+                num_consumer=WARPGROUP_SIZE,
+            ](mbar_base5)
+            var mbar_base6: MBarType = c_bars.end()
+
+            var corr_done_bars = DecodeSM100MiscMBars[
+                num_stages=2,
+                num_producer=WARPGROUP_SIZE,
+                num_consumer=WARPGROUP_SIZE,
+            ](mbar_base6)
+            var mbar_base7: MBarType = corr_done_bars.end()
+
+            comptime OutPipeType = DecodeOutProducer[
+                Self.output_type, Self.config
+            ]
+            var out_pipeline = OutPipeline[
+                num_out_stages=OutPipeType.num_out_stages,
+                num_producer=WARPGROUP_SIZE,
+                num_consumer=1,
+            ](mbar_base7)
+            var mbar_base8: MBarType = mbar_base7.unsafe_offset(
+                out_pipeline.num_mbars()
+            )
+
+            # idx_bars: warp 11 (producer, 32 threads) -> warp 8 (consumer, 32
+            # threads). Depth matches Self.num_stages (= config.num_kv_stages),
+            # not a fixed 2 -- see the KB entry cited in the module docstring.
+            var idx_bars = DecodeSM100MiscMBars[
+                num_stages=Self.num_stages, num_producer=32, num_consumer=32
+            ](mbar_base8)
+            var mbar_base9: MBarType = idx_bars.end()
+
+            var ptr_tmem_addr = (mbar_base9).unsafe_bitcast[UInt32]()
+            var idx_smem_base = ptr_tmem_addr.unsafe_offset(1).unsafe_bitcast[
+                Int32
+            ]()
+            comptime if Self.gather4_idx_batch > 0:
+                var align_pad = (16 - (Int(idx_smem_base) & 15)) & 15
+                debug_assert(
+                    align_pad == Self.idx_smem_align_pad,
+                    "idx_smem is not where the dispatch's SMEM size assumes",
+                )
+                idx_smem_base = idx_smem_base.unsafe_offset(align_pad // 4)
+            comptime idx_smem_stride = Self.config.BN_QK
+
+            var warp_idx = UInt32(warp_id[broadcast=True]())
+            var is_leader = elect() != 0
+
             if warp_idx == 8:
-                Self.load(
-                    q_tma,
-                    k_tma,
-                    kv_lut,
-                    q_smem.as_unsafe_any_origin(),
-                    kv_smem_linear.as_unsafe_any_origin(),
-                    mbar_q,
-                    kv_pipeline_gather,
-                    offset_position,
-                    idx_bars,
-                    idx_smem_base,
-                    num_orig_blocks,
-                    topk,
-                    extra_k_tma,
-                    extra_topk,
-                    scales_ptr,
-                )
+                if is_leader:
+                    mbar_q[].init(1)
+                    kv_pipeline_gather.init()
+                    kv_pipeline_mma.init()
+                    s_bars.init()
+                    p_bars.init()
+                    o_bars.init()
+                    c_bars.init()
+                    corr_done_bars.init()
+                    out_pipeline.init()
+                    idx_bars.init()
+                    q_tma.prefetch_descriptor()
+                    k_tma.prefetch_descriptor()
+                    o_tma.prefetch_descriptor()
+                    comptime if Self.has_extra_kv:
+                        extra_k_tma.prefetch_descriptor()
             elif warp_idx == 9:
-                Self.mmaQK(
-                    ptr_tmem_addr[0],
+                tcgen05_alloc[Self.config.cta_group](
+                    ptr_tmem_addr, Self.config.sm100_tmem_cols
+                )
+            # Zero the NoPE tail before the warpgroups read it. The fence publishes
+            # the generic-proxy stores to the async proxy for the tcgen05 read.
+            comptime if Self.config.input_q_depth < Self.config.padded_q_depth:
+                Self.zero_input_tail(
                     q_smem.as_unsafe_any_origin(),
                     kv_smem.as_unsafe_any_origin(),
-                    mbar_q,
-                    s_bars,
-                    kv_pipeline_mma,
-                    offset_position,
                 )
-            elif warp_idx == 10:
-                Self.mmaPV(
-                    ptr_tmem_addr[0],
-                    kv_smem.as_unsafe_any_origin(),
-                    p_smem.as_unsafe_any_origin(),
-                    p_bars,
-                    o_bars,
-                    kv_pipeline_mma,
-                    offset_position,
-                )
-            elif warp_idx == 11:
-                var batch_d_indices_w11 = (
-                    d_indices.unsafe_value().unsafe_offset(
-                        offset_position.q_token_idx * indices_stride
-                    )
-                )
-                var batch_extra_d_indices_w11 = extra_d_indices
-                comptime if Self.has_extra_kv:
-                    batch_extra_d_indices_w11 = (
-                        extra_d_indices.unsafe_value().unsafe_offset(
-                            offset_position.q_token_idx * extra_indices_stride
+            barrier()
+            comptime if Self.config.input_q_depth < Self.config.padded_q_depth:
+                fence_async_view_proxy()
+
+            if warp_idx < 4:
+                warpgroup_reg_alloc[num_reg_softmax]()
+
+                var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
+                comptime if Self.has_attn_sink:
+                    # The softmax row this thread owns; lane_id() would fold rows
+                    # 32-63 onto 0-31 and give them the wrong heads' sinks.
+                    var row = thread_idx.x & 0x3F
+                    var head_idx_local = block_idx.x * Self.config.BM + row
+                    if head_idx_local < Self.config.num_q_heads:
+                        attn_sink_log2 = attn_sink_ptr.value()[
+                            head_idx_local
+                        ].cast[DType.float32]() * Float32(log2e)
+
+                comptime if Self.MaskType.get_type_name() == "CausalMask" and not Self.fold_shared_index:
+                    if not logical_indices:
+                        offset_position.assert_row_packed[Self.sparse_row](
+                            d_indices, indices_stride, selection_lag
                         )
-                    )
-                Self.idx_producer(
-                    idx_bars,
-                    idx_smem_base,
-                    kv_lut,
-                    batch_d_indices_w11,
-                    topk,
-                    offset_position,
-                    num_orig_blocks,
-                    extra_kv_lut,
-                    batch_extra_d_indices_w11,
-                    extra_topk,
-                    topk_stride,
-                )
-                Self.Common_MLA_Op.store[
+                Self.Common_MLA_Op.Softmax[
+                    native_fp8=True,
+                    num_sp_stages=Self.num_stages,
+                    has_attn_sink=Self.has_attn_sink,
                     fold_q=Self.fold_shared_index,
                     q_len_fold=Self.q_len_fold,
+                    sparse_row=Self.sparse_row,
                 ](
-                    out_pipeline,
+                    ptr_tmem_addr[0],
+                    s_bars,
+                    p_bars,
+                    p_smem.unsafe_bitcast[
+                        Scalar[Self.Common_MLA_Op.q_type]
+                    ]().as_unsafe_any_origin(),
+                    max_smem.as_unsafe_any_origin(),
+                    li_smem.as_unsafe_any_origin(),
                     out_smem.as_unsafe_any_origin(),
-                    o_tma,
+                    c_bars,
+                    corr_done_bars,
+                    out_pipeline,
+                    offset_position,
+                    scale,
+                    mask,
+                    prompt_idx=UInt32(offset_position.batch_idx),
+                    lse_accum_split_ptr=lse_accum_split_ptr,
+                    batch_size=batch_size,
+                    attn_sink_log2=attn_sink_log2,
+                    logical_indices=logical_indices,
+                    logical_indices_stride=indices_stride,
+                    logical_indices_len=offset_position.sparse_topk,
+                    selection_lag=selection_lag,
+                )
+            elif warp_idx >= 4 and warp_idx < 8:
+                warpgroup_reg_alloc[num_reg_correction]()
+                Self.Common_MLA_Op.Correction(
+                    ptr_tmem_addr[0],
+                    o_bars,
+                    c_bars,
+                    corr_done_bars,
                     offset_position,
                 )
-        else:
-            # WG3 (warps 12-15): re-swizzle staging warpgroup. Reads the
-            # contiguously-gathered linear FP8, writes FP8 (no cast) into
-            # the SW64 layout mmaQK/mmaPV already expect. Repurposes the
-            # old kernel's convert-WG role/register budget without the
-            # dtype conversion.
-            warpgroup_reg_dealloc[num_reg_reswizzle]()
-            comptime if Self.is_nvfp4_kv:
-                Self.reswizzleNVFP4(
-                    kv_smem_linear.as_unsafe_any_origin(),
-                    kv_smem.as_unsafe_any_origin(),
-                    kv_pipeline_gather,
-                    kv_pipeline_mma,
-                    offset_position,
-                )
+            elif warp_idx >= 8 and warp_idx < 12:
+                warpgroup_reg_dealloc[num_reg_other]()
+                if warp_idx == 8:
+                    Self.load(
+                        q_tma,
+                        k_tma,
+                        kv_lut,
+                        q_smem.as_unsafe_any_origin(),
+                        kv_smem_linear.as_unsafe_any_origin(),
+                        mbar_q,
+                        kv_pipeline_gather,
+                        offset_position,
+                        idx_bars,
+                        idx_smem_base,
+                        num_orig_blocks,
+                        topk,
+                        extra_k_tma,
+                        extra_topk,
+                        scales_ptr,
+                    )
+                elif warp_idx == 9:
+                    Self.mmaQK(
+                        ptr_tmem_addr[0],
+                        q_smem.as_unsafe_any_origin(),
+                        kv_smem.as_unsafe_any_origin(),
+                        mbar_q,
+                        s_bars,
+                        kv_pipeline_mma,
+                        offset_position,
+                    )
+                elif warp_idx == 10:
+                    Self.mmaPV(
+                        ptr_tmem_addr[0],
+                        kv_smem.as_unsafe_any_origin(),
+                        p_smem.as_unsafe_any_origin(),
+                        p_bars,
+                        o_bars,
+                        kv_pipeline_mma,
+                        offset_position,
+                    )
+                elif warp_idx == 11:
+                    var batch_d_indices_w11 = (
+                        d_indices.unsafe_value().unsafe_offset(
+                            offset_position.q_token_idx * indices_stride
+                        )
+                    )
+                    var batch_extra_d_indices_w11 = extra_d_indices
+                    comptime if Self.has_extra_kv:
+                        batch_extra_d_indices_w11 = (
+                            extra_d_indices.unsafe_value().unsafe_offset(
+                                offset_position.q_token_idx
+                                * extra_indices_stride
+                            )
+                        )
+                    Self.idx_producer(
+                        idx_bars,
+                        idx_smem_base,
+                        kv_lut,
+                        batch_d_indices_w11,
+                        topk,
+                        offset_position,
+                        num_orig_blocks,
+                        extra_kv_lut,
+                        batch_extra_d_indices_w11,
+                        extra_topk,
+                        topk_stride,
+                    )
+                    Self.Common_MLA_Op.store[
+                        fold_q=Self.fold_shared_index,
+                        q_len_fold=Self.q_len_fold,
+                    ](
+                        out_pipeline,
+                        out_smem.as_unsafe_any_origin(),
+                        o_tma,
+                        offset_position,
+                    )
             else:
-                Self.reswizzleFP8(
-                    kv_smem_linear.as_unsafe_any_origin(),
-                    kv_smem.as_unsafe_any_origin(),
-                    kv_pipeline_gather,
-                    kv_pipeline_mma,
-                    offset_position,
+                # WG3 (warps 12-15): re-swizzle staging warpgroup. Reads the
+                # contiguously-gathered linear FP8, writes FP8 (no cast) into
+                # the SW64 layout mmaQK/mmaPV already expect. Repurposes the
+                # old kernel's convert-WG role/register budget without the
+                # dtype conversion.
+                warpgroup_reg_dealloc[num_reg_reswizzle]()
+                comptime if Self.is_nvfp4_kv:
+                    Self.reswizzleNVFP4(
+                        kv_smem_linear.as_unsafe_any_origin(),
+                        kv_smem.as_unsafe_any_origin(),
+                        kv_pipeline_gather,
+                        kv_pipeline_mma,
+                        offset_position,
+                    )
+                else:
+                    Self.reswizzleFP8(
+                        kv_smem_linear.as_unsafe_any_origin(),
+                        kv_smem.as_unsafe_any_origin(),
+                        kv_pipeline_gather,
+                        kv_pipeline_mma,
+                        offset_position,
+                    )
+            barrier()
+
+            if warp_idx == 9:
+                tcgen05_release_allocation_lock[Self.config.cta_group]()
+                tcgen05_dealloc[Self.config.cta_group](
+                    ptr_tmem_addr[0], Self.config.sm100_tmem_cols
                 )
-        barrier()
-
-        comptime if Self.config.decoding_warp_split_k:
-            launch_dependent_grids()
-
-        if warp_idx == 9:
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
-            tcgen05_dealloc[Self.config.cta_group](
-                ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-            )
 
     @staticmethod
     @inline(.always)
@@ -1275,14 +1278,19 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         var sf_smem = kv_stage_ptr.unsafe_bitcast[UInt8]().unsafe_offset(
             Self.nvfp4_sf_offset
         )
-        var lane = Int(thread_idx.x) & 31
+        var lane = thread_idx.x & 31
         var half = lane % 2
         comptime RP = Self.config.BN_QK // 16
         comptime for rp in range(RP):
             var r = rp * 16 + lane // 2
+            # Unsigned scale-pool row, -1 for an unused slot; see
+            # `_remap_scale_one`.
             var row = idx_smem[Self.config.BN_QK + r]
+            var live = row != -1
             var src = sf_gmem.unsafe_offset(
-                Int(max(row, Int32(0))) * Self.nvfp4_sf_row_bytes + half * 16
+                (Int(bitcast[DType.uint32, 1](row)) if live else 0)
+                * Self.nvfp4_sf_row_bytes
+                + half * 16
             )
             var dst = sf_smem.unsafe_offset(
                 r * Self.nvfp4_sf_row_bytes + half * 16
@@ -1290,7 +1298,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             async_copy[16, fill=UInt8(0)](
                 src.unsafe_address_space_cast[.GLOBAL](),
                 dst,
-                src_size=Int32(16) if row >= 0 else Int32(0),
+                src_size=Int32(16) if live else Int32(0),
             )
         async_copy_arrive[noinc=True](k_mbar)
 

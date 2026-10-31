@@ -35,6 +35,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -43,6 +44,29 @@
 
 using namespace M;
 using namespace M::Driver;
+
+// The id of the capture `stream` is recording into, or 0 when it is not
+// capturing.
+static uint64_t captureIdOf(const CUDADriver &driver, CUstream stream) {
+  CUstreamCaptureStatus status =
+      CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+  unsigned long long captureId = 0;
+  if (driver.cuStreamGetCaptureInfo_v2(stream, &status, &captureId, nullptr,
+                                       nullptr, nullptr) != CUDADriver::SUCCESS)
+    return 0;
+  return status == CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_ACTIVE
+             ? captureId
+             : 0;
+}
+
+// The stream whose launch trace an operation enqueued on `stream` belongs to,
+// or nullptr when it is not traced: `stream` itself, or the capturing stream
+// of the capture `stream` was forked into.
+static void *traceOwner(const CUDADriver &driver, CUstream stream) {
+  return launchTraceRegistry().resolveTraceStream(
+      static_cast<void *>(stream),
+      [&](void *s) { return captureIdOf(driver, static_cast<CUstream>(s)); });
+}
 
 static bool isStreamCapturing(const CUDADriver &driver, CUstream stream) {
   CUstreamCaptureStatus status =
@@ -290,7 +314,8 @@ CUDADevice::CUDADevice(const CUDADriver &driver, int id,
                        CUcontext context, std::string name,
                        int computeCapabilityMajor, int computeCapabilityMinor,
                        Device::MemInfo memInfo, size_t allocAlignment)
-    : Device(api, std::move(name), id, memInfo, allocAlignment),
+    : Device(api, std::move(name), id, memInfo, allocAlignment,
+             /*useMemoryManager=*/true),
       driver_(driver), cudaDevice_(cudaDevice), nvmlDevice_(nvmlDevice),
       context_(context), computeCapability_(cudaCCMonolithic(
                              computeCapabilityMajor, computeCapabilityMinor)),
@@ -480,6 +505,18 @@ ErrorOr<std::string> CUDADevice::getPciBusId() const {
   if (nvml.nvmlDeviceGetPciInfo_v3(nvmlDevice_, &pciInfo) != NVML::SUCCESS)
     RETURN_ERROR("NVML: Unable to get PCI info");
   return std::string(pciInfo.busId);
+}
+
+ErrorOr<std::optional<std::array<uint8_t, 16>>> CUDADevice::getUuid() const {
+  if (!cudaDriver().hasCuDeviceGetUuidV2())
+    return std::optional<std::array<uint8_t, 16>>();
+
+  CUuuid uuid{};
+  CUDA_CHECK_ERR(cudaDriver().cuDeviceGetUuid_v2(&uuid, cudaDevice()));
+
+  std::array<uint8_t, 16> bytes;
+  std::memcpy(bytes.data(), uuid.bytes, bytes.size());
+  return std::optional<std::array<uint8_t, 16>>(bytes);
 }
 
 ErrorOr<bool> CUDADevice::supportsMulticast() const {
@@ -789,8 +826,10 @@ ErrorOrSuccess CUDADevice::vmmUnmap(void *va, size_t byteSize) {
 
 ErrorOr<Device::MemInfo> CUDADevice::getMemoryInfo() const {
   Device::MemInfo memInfo;
+  size_t freeBytes = 0;
   CUDA_WITH_DEV_ERR(*this);
-  CUDA_CHECK_ERR(driver_.cuMemGetInfo_v2(&memInfo.free, &memInfo.total));
+  CUDA_CHECK_ERR(driver_.cuMemGetInfo_v2(&freeBytes, &memInfo.total));
+  memInfo.free = freeBytes;
 #if MODULAR_LINUX
   DEFINE_OR_RETURN_ERROR(bool, unified, isHostUnified());
   if (unified)
@@ -921,12 +960,14 @@ ErrorOr<CUDADevice &> CUDADevice::get(int id) {
     if (memInfoFromCUDA) {
       CUDAContextScope ctxScope(cuContext, driver);
       CUDA_CHECK_ERR(ctxScope.status());
+      size_t freeBytes = 0;
       CUDA_CHECK_ERR_MSG(
-          driver.cuMemGetInfo_v2(&memInfo.free, &memInfo.total),
+          driver.cuMemGetInfo_v2(&freeBytes, &memInfo.total),
           std::string("fallback after NVML rejected the memory query for "
                       "device ") +
               std::to_string(id) + " with error " +
               nvml.nvmlErrorString(nvmlMemResult));
+      memInfo.free = freeBytes;
     }
 
 #if MODULAR_LINUX
@@ -1514,7 +1555,9 @@ ErrorOr<DeviceGraphRef> CUDADeviceStream::endCapture() {
 
 void CUDADeviceStream::beginLaunchTrace() const {
   auto &registry = launchTraceRegistry();
-  registry.beginTraceForStream(static_cast<void *>(stream_));
+  const auto &cudaDevice = CUDADevice::cast(this->device());
+  registry.beginTraceForStream(static_cast<void *>(stream_),
+                               captureIdOf(cudaDevice.cudaDriver(), stream_));
 }
 
 std::vector<KernelLaunchMetadata> CUDADeviceStream::takeLaunchTrace() const {
@@ -1587,9 +1630,10 @@ ErrorOrSuccess CUDADeviceFunction::cudaCallKernelDirect(
   config.attrs = attrs;
   config.numAttrs = numAttrs;
 
-  // Record launch trace if enabled
+  // Record launch trace if enabled, including launches on streams forked
+  // into a traced capture.
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(stream)) {
+  if (void *owner = traceOwner(moduleFunction_->cudaDriver(), stream)) {
     // Convert CUDA-specific types to generic interface
     ArrayRef<uint8_t> attrsArray;
     if (attrs && numAttrs > 0) {
@@ -1604,7 +1648,7 @@ ErrorOrSuccess CUDADeviceFunction::cudaCallKernelDirect(
         moduleFunction_->name(),
         reinterpret_cast<uintptr_t>(moduleFunction_->cudaFunction()),
         moduleFunction_->paramSizes(), gridX, gridY, gridZ, blockX, blockY,
-        blockZ, sharedMemBytes, attrsArray, numAttrs, argsArray, stream);
+        blockZ, sharedMemBytes, attrsArray, numAttrs, argsArray, stream, owner);
   }
 
   CUDA_CHECK_ERR(moduleFunction_->cudaDriver().cuLaunchKernelEx(
@@ -1913,11 +1957,12 @@ ErrorOrSuccess CUDADeviceContext::enqueueCopyToDevice(void *dst,
 
   CUDA_CHECK_ERR(driver_.cuMemcpyHtoDAsync_v2(dst, src, byteSize, stream_));
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata(
         "cuMemcpyHtoD", hashMemcpyTrace(LaunchTraceKind::kMemcpyHtoD, byteSize),
         KernelLaunchMetadata::MemcpyKind::HtoD, byteSize);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
   MAYBE_SYNC(*this);
   return success();
@@ -1933,11 +1978,12 @@ ErrorOrSuccess CUDADeviceContext::enqueueCopyFromDevice(void *dst,
   CUDA_CHECK_ERR(driver_.cuMemcpyDtoHAsync_v2(dst, const_cast<void *>(src),
                                               byteSize, stream_));
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata(
         "cuMemcpyDtoH", hashMemcpyTrace(LaunchTraceKind::kMemcpyDtoH, byteSize),
         KernelLaunchMetadata::MemcpyKind::DtoH, byteSize);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
   MAYBE_SYNC(*this);
   return success();
@@ -2000,12 +2046,13 @@ ErrorOrSuccess CUDADeviceContext::memCopyDtoD(DeviceBuffer &dst,
     RETURN_IF_ERROR(srcCtx.enqueueWaitForEvent(*dstEvent));
   }
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata(
         "cuMemcpyDtoD",
         hashMemcpyTrace(LaunchTraceKind::kMemcpyDtoD, dstByteSize),
         KernelLaunchMetadata::MemcpyKind::DtoD, dstByteSize);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
 
   MAYBE_SYNC(*this);
@@ -2090,12 +2137,13 @@ CUDADeviceContext::memBatchCopy(llvm::ArrayRef<DeviceBuffer *> dsts,
   }
 
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata(
         "cuMemcpyBatch",
         hashMemcpyTrace(LaunchTraceKind::kMemcpyDtoD, totalBytes),
         KernelLaunchMetadata::MemcpyKind::DtoD, totalBytes);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
 
   MAYBE_SYNC(*this);
@@ -2149,11 +2197,12 @@ ErrorOrSuccess CUDADeviceContext::enqueueSetMemory(void *dst, size_t byteSize,
     }
   }
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata("cuMemset",
                                   hashMemsetTrace(byteSize, val, valSize),
                                   byteSize, val, valSize);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
 
   MAYBE_SYNC(*this);
@@ -2371,11 +2420,46 @@ ErrorOr<DeviceContextRef> CUDADeviceContext::selectStream(unsigned streamId) {
   if (streamPool_->get(streamId) == stream_)
     return DeviceContextRef::copy(this);
 
-  // Return a retain-all view: a new context co-owning the same stream pool and
-  // CUcontext (and therefore the same device memory pool), differing only in
-  // which pooled stream is active.
-  return DeviceContextRef::take(new CUDADeviceContext(
-      CUDADevice::cast(device()), context_, streamPool_, streamId));
+  // A retain-all view: a context co-owning the same stream pool and CUcontext
+  // (and therefore the same device memory pool), differing only in which
+  // pooled stream is active. One view per stream id, kept for this context's
+  // lifetime (see `streamViews_`).
+  std::lock_guard<std::mutex> lock(streamViewsMu_);
+  if (streamViews_.size() <= streamId)
+    streamViews_.resize(streamId + 1);
+  DeviceContextRef &view = streamViews_[streamId];
+  if (!view)
+    view = DeviceContextRef::take(new CUDADeviceContext(
+        CUDADevice::cast(device()), context_, streamPool_, streamId));
+  return view.copy();
+}
+
+bool CUDADeviceContext::flushIdleStreamViews() {
+  // Held throughout: `selectStream` is the only way to a new reference, so a
+  // view only the cache holds stays unheld until the lock is released.
+  std::lock_guard<std::mutex> lock(streamViewsMu_);
+  if (streamViews_.empty())
+    return false;
+  // Views share this context's CUcontext.
+  CUDAContextScope scope(context_, driver_);
+  if (scope.status() != CUDADriver::SUCCESS)
+    return false;
+  bool flushed = false;
+  for (DeviceContextRef &view : streamViews_) {
+    if (!view || !view->isUnique())
+      continue;
+    auto &cudaView = static_cast<CUDADeviceContext &>(*view);
+    if (cudaView.isGraphCapturing())
+      continue;
+    // A raw stream sync, not `synchronize()`: that also runs the view's event
+    // handlers, which could allocate and re-enter this lock.
+    if (driver_.cuStreamSynchronize(cudaView.stream_) != CUDADriver::SUCCESS)
+      continue;
+    // Only the ordinary free list: `graphFreeList` backs captured graphs that
+    // may still replay.
+    flushed |= cudaView.freeList().deferCachedToParent();
+  }
+  return flushed;
 }
 
 ErrorOr<DeviceStreamRef>
@@ -2407,6 +2491,24 @@ ErrorOr<DeviceEventRef> CUDADeviceContext::enqueueEvent() {
   CUDA_CHECK_ERR(driver_.cuEventRecord(event, stream_));
   return CUDADeviceEventRef::create(CUDADevice::cast(this->device()), event,
                                     recordedDuringCapture);
+}
+
+ErrorOr<DeviceEventRef> CUDADeviceContext::enqueueBaseStreamEvent() {
+  CUstream base = streamPool_->get(0);
+  if (base == stream_)
+    return DeviceEventRef();
+  CUDA_WITH_CTX_ERR(*this);
+  const bool recordedDuringCapture = isStreamCapturing(driver_, base);
+  DEFINE_OR_RETURN_ERROR(CUevent, event,
+                         CUDADevice::cast(device()).eventCachePop(
+                             /*useCache=*/!recordedDuringCapture));
+  CUDA_CHECK_ERR(driver_.cuEventRecord(event, base));
+  return CUDADeviceEventRef::create(CUDADevice::cast(this->device()), event,
+                                    recordedDuringCapture);
+}
+
+bool CUDADeviceContext::isBaseStreamCapturing() const {
+  return isStreamCapturing(driver_, streamPool_->get(0));
 }
 
 ErrorOrSuccess CUDADeviceContext::enqueueEvent(const DeviceEvent &event) {

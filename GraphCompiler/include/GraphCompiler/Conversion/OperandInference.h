@@ -23,6 +23,8 @@
 
 #include "llvm/ADT/DenseSet.h"
 
+#include <optional>
+
 namespace M::MOGG {
 
 /// Maps an `Operation`'s operands and results to the kernel's operands; the
@@ -35,6 +37,10 @@ struct KernelDeclOperandMapping {
   KernelDeclIndexToOperandAdaptorMapping operandMapping;
   KernelDeclIndexToOperandAdaptorMapping resultMapping;
 };
+
+/// The signature position of the kernel argument a mapping error is about,
+/// when one is to blame.
+using KernelArgBlame = std::optional<uint64_t>;
 
 /// Maps a kernel call's `operands` and `results` to the kernel's arguments.
 /// Needs no `Operation`, so it also serves destination-passing-style calls
@@ -52,11 +58,26 @@ ErrorOr<KernelDeclOperandMapping> mapToKernelImplementation(
     bool hasSameVariadicOperandSize, bool hasExtraOutputShapeArgument,
     bool resultLeavesByValue = false, bool allowMutToImmut = false);
 
+/// Same, and on an error about one kernel argument, sets `blame` to its
+/// position.
+ErrorOr<KernelDeclOperandMapping> mapToKernelImplementation(
+    ValueRange operands, ValueRange results,
+    const KernelDeclFunctionAdaptor &adaptor, StringRef opName,
+    bool hasSameVariadicOperandSize, bool hasExtraOutputShapeArgument,
+    bool resultLeavesByValue, bool allowMutToImmut, KernelArgBlame &blame);
+
 /// Convenience overload that reads the operands/results and op properties off
 /// `op`.
 ErrorOr<KernelDeclOperandMapping>
 mapMOOpToKernelImplementation(Operation *op,
                               const KernelDeclFunctionAdaptor &adaptor);
+
+/// Same, and on an error about one kernel argument, sets `blame` to its
+/// position.
+ErrorOr<KernelDeclOperandMapping>
+mapMOOpToKernelImplementation(Operation *op,
+                              const KernelDeclFunctionAdaptor &adaptor,
+                              KernelArgBlame &blame);
 
 } // namespace M::MOGG
 

@@ -18,7 +18,7 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     AttnKey,
     BatchCharacteristics,
     KVCacheBuffer,
@@ -29,10 +29,10 @@ from max.nn.kv_cache import (
     MLAKVCacheParams,
     PagedKVLeafRegion,
 )
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     SpeculativeMethod as CacheSpeculativeMethod,
 )
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     page_stride_of,
 )
 from max.pipelines.speculative import SpeculativeMethod
@@ -42,7 +42,7 @@ def test_speculative_methods_match_the_pipeline_literal() -> None:
     """``cache_params`` hand-copies the pipeline literal; pin the two together.
 
     The copy exists because ``max.pipelines.speculative`` depends on
-    ``max.nn``, so importing back would cycle in bazel. Nothing but this
+    ``max.nn.legacy``, so importing back would cycle in bazel. Nothing but this
     assertion stops the copy from going stale, and a method missing here
     reaches :meth:`num_draft_tokens_per_step` as an unrecognized value.
     """
@@ -527,7 +527,6 @@ def test_slots_per_page_sets_the_slot_dimension() -> None:
     """A compressed cache stores fewer slots than the tokens a page covers."""
     params = _mla_params(slots_per_page=4)
     assert params.shape_per_block == [1, 4, 4, 1, 576]
-    assert params.shape_per_layer_block == [1, 1, 4, 1, 576]
     # The block shrinks with the slot count; the tokens it covers do not.
     assert params.bytes_per_block == _mla_params().bytes_per_block // 32
     assert params.page_size == 128
@@ -552,7 +551,6 @@ def test_slots_per_page_applies_to_scale_blocks() -> None:
         ),
     )
     assert params.shape_per_scale_block == [1, 4, 32, 1, 576 // 64]
-    assert params.shape_per_layer_scale_block[2] == 32
 
 
 @pytest.mark.parametrize("slots_per_page", [48, 256, 0, -4])

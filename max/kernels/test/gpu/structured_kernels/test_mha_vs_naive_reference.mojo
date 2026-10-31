@@ -178,23 +178,9 @@ def test_mha_vs_naive[
     similarity for FP8 gating.
     """
     print(
-        "--- MHA vs naive reference (qkv=",
-        qkv_type,
-        " out=",
-        output_type,
-        " mask=",
-        mask_name,
-        " kv_block=",
-        kv_block,
-        " d=",
-        DEPTH,
-        " heads=",
-        NUM_HEADS,
-        " kv_heads=",
-        NUM_KV_HEADS,
-        " seq=",
-        SEQ_LEN,
-        ") ---",
+        t"--- MHA vs naive reference (qkv= {qkv_type}  out= {output_type} "
+        t" mask= {mask_name}  kv_block= {kv_block}  d= {DEPTH}  heads="
+        t" {NUM_HEADS}  kv_heads= {NUM_KV_HEADS}  seq= {SEQ_LEN} ) ---"
     )
 
     # `scale = 1 / sqrt(d)` — the canonical scaled-dot-product attention
@@ -295,12 +281,8 @@ def test_mha_vs_naive[
         dev_out_ref,
         row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
-    var k_ref_operand = TileTensorMHAOperand(
-        k_ref_tt.as_imm().as_unsafe_any_origin()
-    )
-    var v_ref_operand = TileTensorMHAOperand(
-        v_ref_tt.as_imm().as_unsafe_any_origin()
-    )
+    var k_ref_operand = TileTensorMHAOperand(k_ref_tt.as_imm())
+    var v_ref_operand = TileTensorMHAOperand(v_ref_tt.as_imm())
     var null_valid_length = TileTensor(
         MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
         row_major(Idx[0]),
@@ -375,20 +357,8 @@ def test_mha_vs_naive[
                         head_mismatches[h] += 1
                         if mismatches <= 5:
                             print(
-                                "MISMATCH b=",
-                                b,
-                                " s=",
-                                s,
-                                " h=",
-                                h,
-                                " d=",
-                                d,
-                                " out=",
-                                out_val,
-                                " ref=",
-                                ref_val,
-                                " diff=",
-                                diff,
+                                t"MISMATCH b= {b}  s= {s}  h= {h}  d= {d}  out="
+                                t" {out_val}  ref= {ref_val}  diff= {diff}"
                             )
 
     if num_nonfinite_hk > 0:
@@ -398,14 +368,8 @@ def test_mha_vs_naive[
 
     var mean_diff = sum_diff / Float64(num_checked)
     print(
-        "  num_checked=",
-        num_checked,
-        " mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " mean_diff=",
-        Float32(mean_diff),
+        t"  num_checked= {num_checked}  mismatches= {mismatches}  max_diff="
+        t" {max_diff}  mean_diff= {Float32(mean_diff)}"
     )
     # Per-head cosine similarity. FP8 gate: min_cos >= 0.99.
     var min_cos: Float64 = 1.0
@@ -419,14 +383,8 @@ def test_mha_vs_naive[
         if cos_sim < min_cos:
             min_cos = cos_sim
         print(
-            "    head=",
-            h,
-            " max_diff=",
-            head_max_diff[h],
-            " mismatches=",
-            head_mismatches[h],
-            " cos_sim=",
-            Float32(cos_sim),
+            t"    head= {h}  max_diff= {head_max_diff[h]}  mismatches="
+            t" {head_mismatches[h]}  cos_sim= {Float32(cos_sim)}"
         )
 
     # FP8 gate: cosine similarity >= 0.99 (per MLA convention).
@@ -439,12 +397,8 @@ def test_mha_vs_naive[
     elif is_fp8 and min_cos >= 0.99:
         passed = True
         print(
-            "  PASSED (",
-            mask_name,
-            ") via cosine similarity (min cos=",
-            Float32(min_cos),
-            "); per-element mismatches=",
-            mismatches,
+            t"  PASSED ( {mask_name} ) via cosine similarity (min cos="
+            t" {Float32(min_cos)} ); per-element mismatches= {mismatches}"
         )
     else:
         print("  FAILED (", mask_name, ") — see mismatches above")

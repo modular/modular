@@ -176,6 +176,15 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    model_worker_impl: str | None = Field(
+        default=None,
+        description=(
+            "[--cascade] Import path of an alternative model worker "
+            "implementation, as ``'module.path:ClassName'``. Left unset, uses "
+            "the MAX Serve model worker."
+        ),
+    )
+
     cascade: bool = Field(
         default=False,
         description=(
@@ -298,6 +307,24 @@ class PipelineArgs(ConfigFileModel):
         description=(
             "If set, overrides the model's attention to use a "
             "sliding-window causal mask of this many tokens."
+        ),
+    )
+
+    max_image_dimension: int = Field(
+        default=8192,
+        gt=0,
+        description=(
+            "Largest width or height, in pixels, accepted for a generated "
+            "image or video request. Larger requests are rejected as invalid."
+        ),
+    )
+
+    max_diffusion_steps: int = Field(
+        default=100,
+        gt=0,
+        description=(
+            "Largest denoising step count accepted for a generated image or "
+            "video request. Larger requests are rejected as invalid."
         ),
     )
 

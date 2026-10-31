@@ -373,12 +373,8 @@ def test_negative_lora_id[
     ctx: DeviceContext,
 ) raises:
     print(
-        "Testing negative lora_id behavior:",
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts of shape",
-        expert_shape,
+        t"Testing negative lora_id behavior: {num_active_experts} active of"
+        t" {num_experts} experts of shape {expert_shape}"
     )
     print("tokens:", end="")
     for i in range(len(num_tokens_by_expert)):
@@ -507,13 +503,7 @@ def test_negative_lora_id[
         var has_negative_id = expert_id == -1
 
         print(
-            "Expert",
-            expert_idx,
-            "has id",
-            expert_id,
-            "with",
-            num_tokens,
-            "tokens",
+            t"Expert {expert_idx} has id {expert_id} with {num_tokens} tokens"
         )
 
         # Check each token for this expert
@@ -576,13 +566,8 @@ def test_step3p5_moe_dims[
     comptime K = expert_shape[1]
 
     print(
-        num_active,
-        "active of",
-        num_experts,
-        "experts of shape",
-        expert_shape,
-        "total_tokens",
-        total_tokens,
+        t"{num_active} active of {num_experts} experts of shape"
+        t" {expert_shape} total_tokens {total_tokens}"
     )
 
     # ---- A (activations): [total_tokens, K] ----
@@ -786,14 +771,14 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](1, [128], [0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(16, 256),
+            expert_shape=(16, 256),
         ](1, [128], [0], ctx)
 
         # unaligned matmul
@@ -801,14 +786,14 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(1024, 256),
+            expert_shape=(1024, 256),
         ](1, [200], [0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](1, [256], [0], ctx)
 
         # simple expert routing
@@ -816,7 +801,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(256, 64),
+            expert_shape=(256, 64),
         ](1, [128], [2], ctx)
 
         # simple aligned group routing
@@ -824,7 +809,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(256, 64),
+            expert_shape=(256, 64),
         ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
@@ -832,21 +817,21 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(256, 64),
+            expert_shape=(256, 64),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(2880, 512),
+            expert_shape=(2880, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(5760, 512),
+            expert_shape=(5760, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -854,7 +839,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(768, 1024),
+            expert_shape=(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -863,7 +848,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(1280, 1024),
+            expert_shape=(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Decode-shaped routing: every expert has a slot, most are empty, and
@@ -906,7 +891,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(192, 1024),
+            expert_shape=(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
@@ -914,14 +899,14 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 num_experts=6,
-                expert_shape=Index(1280, 16),
+                expert_shape=(1280, 16),
             ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(16, 1024),
+            expert_shape=(16, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
@@ -929,7 +914,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(768, 1024),
+            expert_shape=(768, 1024),
             has_epilogue=True,
         ](2, [128, 256], [0, 2], ctx)
 
@@ -994,7 +979,7 @@ def main() raises:
                     .bfloat16,
                     .bfloat16,
                     num_experts=2,
-                    expert_shape=Index(n, m),
+                    expert_shape=(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
                 # Test negative lora_id behavior with naive matmul
@@ -1002,7 +987,7 @@ def main() raises:
                     .bfloat16,
                     .bfloat16,
                     num_experts=2,
-                    expert_shape=Index(n, m),
+                    expert_shape=(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
         # QKV perm dim test
@@ -1010,7 +995,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(192, 1024),
+            expert_shape=(192, 1024),
             qkv_perm_dim=True,
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
@@ -1025,7 +1010,7 @@ def main() raises:
             # expert_shape=(2560, 4096).  Total B buffer is ~5.6 GiB;
             # the crash appears related to >4 GiB weight buffer
             # addressing in the sm100 grouped matmul kernel.
-            test_step3p5_moe_dims[.bfloat16, .bfloat16, Index(2560, 4096), 288](
+            test_step3p5_moe_dims[.bfloat16, .bfloat16, (2560, 4096), 288](
                 8, 256, ctx
             )
 
@@ -1035,14 +1020,14 @@ def main() raises:
                 .float8_e4m3fn,
                 .bfloat16,
                 num_experts=4,
-                expert_shape=Index(256, 256),
+                expert_shape=(256, 256),
             ](2, [32, 64], [0, 2], ctx)
 
             test[
                 .float8_e4m3fn,
                 .bfloat16,
                 num_experts=4,
-                expert_shape=Index(256, 128),
+                expert_shape=(256, 128),
             ](3, [10, 60, 30], [2, 0, 1], ctx)
 
             # Non-128-aligned K dimension.
@@ -1050,7 +1035,7 @@ def main() raises:
                 .float8_e4m3fn,
                 .bfloat16,
                 num_experts=4,
-                expert_shape=Index(256, 192),
+                expert_shape=(256, 192),
             ](2, [25, 40], [1, 3], ctx)
 
         # float32 C output. The SM90/SM100 TMA kernels cannot emit a float32
@@ -1067,14 +1052,14 @@ def main() raises:
             .float32,
             .float32,
             num_experts=4,
-            expert_shape=Index(16, 576),  # LoRA shrink (contracts hidden)
+            expert_shape=(16, 576),  # LoRA shrink (contracts hidden)
         ](2, [128, 64], [0, 2], ctx)
 
         test[
             .float32,
             .float32,
             num_experts=4,
-            expert_shape=Index(576, 16),  # LoRA expand (contracts rank)
+            expert_shape=(576, 16),  # LoRA expand (contracts rank)
         ](2, [128, 64], [0, 2], ctx)
 
         # float32 output with an elementwise epilogue (mirrors the LoRA
@@ -1083,7 +1068,7 @@ def main() raises:
             .float32,
             .float32,
             num_experts=4,
-            expert_shape=Index(16, 576),
+            expert_shape=(16, 576),
             has_epilogue=True,
         ](2, [128, 64], [0, 2], ctx)
 
@@ -1093,7 +1078,7 @@ def main() raises:
             .float32,
             .float32,
             num_experts=4,
-            expert_shape=Index(16, 576),
+            expert_shape=(16, 576),
             qkv_perm_dim=True,
         ](2, [128, 64], [0, 2], ctx)
 

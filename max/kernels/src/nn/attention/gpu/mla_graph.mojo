@@ -87,6 +87,7 @@ from nn.attention.gpu.mla import (
     mla_decode_max_seq_len,
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    amd_sparse_mla_bf16_num_partitions,
     amd_sparse_mla_decode_num_partitions,
 )
 from nn.attention.mha_operand import KVCacheMHAOperand, SparseRowsMHAOperand
@@ -977,9 +978,9 @@ def mla_prefill_branch_fp8[
     # =========================================================================#
 
     # Create a view of the `q` tensor that only contains the last
-    # qk_rope_head_dim columns of each Q head. The slice carries runtime
-    # extents, so reshape restores the static trailing dims.
-    var q_rope = q[:, :, qk_nope_head_dim:].reshape(
+    # qk_rope_head_dim columns of each Q head. The reshape pins the static
+    # strides, which `q`'s type may not carry.
+    var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
@@ -1343,9 +1344,6 @@ def quantize_and_bmm_fp8_helper[
 # case it reads them in place, as prefill always does, through
 # `SparseRowsMHAOperand`.
 comptime _AMD_SPARSE_MLA_GATHER_VEC = 16
-# Tokens gathered per pass on the BF16 AMD sparse MLA arm: 256 tokens of
-# 2051 x 576 BF16 rows is ~600 MB of scratch.
-comptime _AMD_SPARSE_MLA_MAX_GATHER_TOKENS = 256
 
 
 @__name(t"amd_sparse_mla_gather_kv_rows_{k_cache_dim}_{rows_per_block}")
@@ -1539,6 +1537,8 @@ def _amd_sparse_mla_compact_indices[
     compact_indices: MutPointer[Int32, MutAnyOrigin],
     valid_lengths: MutPointer[UInt32, MutAnyOrigin],
     indices_stride: Int32,
+    zero_row: MutPointer[UInt8, MutAnyOrigin],
+    zero_row_bytes: Int32,
 ):
     """Moves each row's valid indices to the front and records their count.
 
@@ -1551,9 +1551,24 @@ def _amd_sparse_mla_compact_indices[
     Order within the row is preserved; attention does not depend on it.
 
     Only the first `topk_lengths[row]` slots are read, so the count never
-    exceeds the columns the gather fills.
+    exceeds `topk_lengths[row]`.
+
+    Args:
+        d_indices: `[rows, indices_stride]` physical rows, `-1` if unused.
+        topk_lengths: Slots of each row to read.
+        compact_indices: `[rows, indices_stride]` output, valid indices
+            first, then `-1`.
+        valid_lengths: `[rows]` output, each row's valid index count.
+        indices_stride: Slots per row.
+        zero_row: `zero_row_bytes` bytes that block 0 clears.
+        zero_row_bytes: Size of `zero_row`.
     """
     var row = block_idx.x
+    # The in-place decode reads this row for every padded slot, so it must
+    # be zero before any partition runs; the compaction launch precedes it.
+    if row == 0:
+        for i in range(thread_idx.x, Int(zero_row_bytes), BLOCK_SIZE):
+            zero_row[i] = 0
     var stride = Int(indices_stride)
     var base = row * stride
     var tid = thread_idx.x
@@ -1580,6 +1595,134 @@ def _amd_sparse_mla_compact_indices[
         compact_indices[base + col] = -1
     if tid == 0:
         valid_lengths[row] = UInt32(written)
+
+
+# At most MI355X's `grid.z` extent (`MAX_GRID_DIM_Z`, 65536). The decode and
+# split-K reduce launch one z-slice per query token.
+comptime _AMD_SPARSE_MLA_MAX_LAUNCH_TOKENS = 65535
+
+
+def _amd_sparse_mla_bf16_rows[
+    dtype: DType,
+    cache_t: KVCacheT,
+    //,
+    num_heads: Int,
+    k_cache_dim: Int,
+    kv_latent_dim: Int,
+    max_launch_tokens: Int = _AMD_SPARSE_MLA_MAX_LAUNCH_TOKENS,
+](
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k_cache: cache_t,
+    indices: MutPointer[Int32, MutAnyOrigin],
+    topk_lengths: MutPointer[Int32, MutAnyOrigin],
+    indices_stride: Int,
+    compact_indices: MutPointer[Int32, MutAnyOrigin],
+    valid_lengths: MutPointer[UInt32, MutAnyOrigin],
+    zero_row: MutPointer[Scalar[cache_t.dtype], MutAnyOrigin],
+    scale: Float32,
+    ctx: DeviceContext,
+    scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
+) raises:
+    """Attends each token's selected rows in place: the AMD BF16 sparse arm.
+
+    Compacts every token's selection with `_amd_sparse_mla_compact_indices`,
+    then decodes over the compacted rows straight from the paged cache, at
+    most `max_launch_tokens` tokens per launch.
+
+    Parameters:
+        dtype: Q element type (inferred).
+        cache_t: The latent KV cache type (inferred).
+        num_heads: Query heads on this device.
+        k_cache_dim: Latent plus RoPE width of a cache row.
+        kv_latent_dim: Latent width, the output's last dimension.
+        max_launch_tokens: Tokens per decode launch.
+
+    Args:
+        output: `[seq_len, num_heads, kv_latent_dim]` row-major output.
+        q: `[seq_len, num_heads, k_cache_dim]` row-major absorbed queries.
+        k_cache: The latent KV cache.
+        indices: `[seq_len, indices_stride]` physical rows, `-1` if unused.
+        topk_lengths: Slots of each token's row to read.
+        indices_stride: Selected slots per token.
+        compact_indices: `[seq_len, indices_stride]` scratch.
+        valid_lengths: `[seq_len]` scratch for the compacted counts.
+        zero_row: `k_cache_dim` scratch that padded slots read.
+        scale: The softmax scale.
+        ctx: The device context.
+        scalar_args_buf: Precomputed dispatch scalars.
+    """
+    var seq_len = Int(q.dim[0]())
+    ctx.enqueue_function[
+        _amd_sparse_mla_compact_indices[
+            _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS
+        ]
+    ](
+        indices,
+        topk_lengths,
+        compact_indices,
+        valid_lengths,
+        Int32(indices_stride),
+        zero_row.unsafe_bitcast[UInt8](),
+        Int32(k_cache_dim * size_of[cache_t.dtype]()),
+        grid_dim=(seq_len, 1, 1),
+        block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
+    )
+    comptime q_row_stride = num_heads * k_cache_dim
+    comptime output_row_stride = num_heads * kv_latent_dim
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
+    for token0 in range(0, seq_len, max_launch_tokens):
+        var tokens = min(max_launch_tokens, seq_len - token0)
+        var q_rows = TileTensor(
+            q.ptr.unsafe_offset(token0 * q_row_stride),
+            TileLayout(
+                (tokens, Idx[1], Idx[num_heads], Idx[k_cache_dim]),
+                (
+                    Idx[q_row_stride],
+                    Idx[q_row_stride],
+                    Idx[k_cache_dim],
+                    Idx[1],
+                ),
+            ),
+        )
+        var output_rows = TileTensor(
+            output.ptr.unsafe_offset(token0 * output_row_stride),
+            TileLayout(
+                (tokens, Idx[1], Idx[num_heads], Idx[kv_latent_dim]),
+                (
+                    Idx[output_row_stride],
+                    Idx[output_row_stride],
+                    Idx[kv_latent_dim],
+                    Idx[1],
+                ),
+            ),
+        )
+        var token_valid_lengths = valid_lengths.unsafe_offset(token0)
+        var k_rows = SparseRowsMHAOperand[row_width=k_cache_dim](
+            KVCacheMHAOperand(k_cache),
+            k_cache.blocks_raw_ptr(),
+            zero_row,
+            compact_indices.unsafe_offset(token0 * indices_stride),
+            token_valid_lengths,
+            indices_stride,
+        )
+        flare_mla_decoding_rows[
+            config=MHAConfig[dtype](num_heads, k_cache_dim)
+        ](
+            output_rows,
+            q_rows,
+            k_rows,
+            indices_stride,
+            PaddingMask(TileTensor(token_valid_lengths, row_major(tokens))),
+            scale,
+            ctx,
+            scalar_args_buf,
+            num_partitions=amd_sparse_mla_bf16_num_partitions(
+                tokens, indices_stride, num_heads, sm_count
+            ),
+        )
 
 
 def mla_decode_branch_fp8[
@@ -1816,13 +1959,13 @@ def mla_decode_branch_fp8[
         var num_batches = Int(input_row_offsets.dim(0)) - 1
         if seq_len != num_batches:
             raise Error(
-                "AMD sparse MLA decode only supports one query token per"
-                " sequence (S=1 decode); got "
-                + String(seq_len)
-                + " query tokens across "
-                + String(num_batches)
-                + " sequences. Multi-token decode (MTP / speculative-"
-                "decode verify, S>1) is not implemented on this path."
+                String(
+                    t"AMD sparse MLA decode only supports one query token per"
+                    t" sequence (S=1 decode); got {seq_len} query tokens across"
+                    t" {num_batches} sequences. Multi-token decode (MTP /"
+                    t" speculative-decode verify, S>1) is not implemented on"
+                    t" this path."
+                )
             )
 
     # Stage Q in the FP8 cache dtype where the kernel consumes it natively:
@@ -1895,9 +2038,9 @@ def mla_decode_branch_fp8[
     # =========================================================================#
 
     # Create a view of the `q` tensor that only contains the last
-    # qk_rope_head_dim columns of each Q head. The slice carries runtime
-    # extents, so reshape restores the static trailing dims.
-    var q_rope = q[:, :, qk_nope_head_dim:].reshape(
+    # qk_rope_head_dim columns of each Q head. The reshape pins the static
+    # strides, which `q`'s type may not carry.
+    var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
@@ -1906,7 +2049,9 @@ def mla_decode_branch_fp8[
 
     # Create a view of the `mla_decode_input` tensor that only contains the last
     # qk_rope_head_dim columns of each Q head.
-    var mla_decode_input_rope = mla_decode_input[:, :, kv_latent_dim:].reshape(
+    var mla_decode_input_rope = mla_decode_input[
+        :, :, Idx[kv_latent_dim] :
+    ].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
@@ -2083,9 +2228,12 @@ def mla_decode_branch_fp8[
                     batch_size,
                     indices_stride,
                     num_heads,
-                    ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                    ctx.device().get_attribute(
+                        DeviceAttribute.MULTIPROCESSOR_COUNT
+                    ),
                 ),
             )
+            _ = valid_lengths_buf^
     else:
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -2269,13 +2417,15 @@ def mla_prefill_branch_sparse_fp8[
         target=target,
     ](mla_decode_input_nope, q_nope, w_uk, w_uk_scale, ctx)
 
-    var q_rope = q[:, :, qk_nope_head_dim:].reshape(
+    var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
     )
-    var mla_decode_input_rope = mla_decode_input[:, :, kv_latent_dim:].reshape(
+    var mla_decode_input_rope = mla_decode_input[
+        :, :, Idx[kv_latent_dim] :
+    ].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
@@ -2397,6 +2547,8 @@ def mla_prefill_branch_sparse_fp8[
             ctx,
             scalar_args_buf,
         )
+        _ = valid_lengths_buf^
+        _ = zero_row_buf^
     else:
         # SM100 runs the native-FP8 sparse prefill kernel when heads fit its
         # tiles (128, or a multiple of 8 in (0,64]); Q is cast to FP8.
@@ -3084,9 +3236,9 @@ def mla_prefill_branch_bf16[
     # =========================================================================#
 
     # Create a view of the `q` tensor that only contains the last
-    # qk_rope_head_dim columns of each Q head. The slice carries runtime
-    # extents, so reshape restores the static trailing dims.
-    var q_rope = q[:, :, qk_nope_head_dim:].reshape(
+    # qk_rope_head_dim columns of each Q head. The reshape pins the static
+    # strides, which `q`'s type may not carry.
+    var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
@@ -3438,9 +3590,9 @@ def mla_decode_branch_bf16[
     # =========================================================================#
 
     # Create a view of the `q` tensor that only contains the last
-    # qk_rope_head_dim columns of each Q head. The slice carries runtime
-    # extents, so reshape restores the static trailing dims.
-    var q_rope = q[:, :, qk_nope_head_dim:].reshape(
+    # qk_rope_head_dim columns of each Q head. The reshape pins the static
+    # strides, which `q`'s type may not carry.
+    var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
@@ -3449,7 +3601,9 @@ def mla_decode_branch_bf16[
 
     # Create a view of the `mla_decode_input` tensor that only contains the last
     # qk_rope_head_dim columns of each Q head.
-    var mla_decode_input_rope = mla_decode_input[:, :, kv_latent_dim:].reshape(
+    var mla_decode_input_rope = mla_decode_input[
+        :, :, Idx[kv_latent_dim] :
+    ].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
@@ -3492,9 +3646,9 @@ def mla_decode_branch_bf16[
         )
     )
 
-    _batched_matmul_gpu[transpose_b=True](
-        mla_decode_input_nope, q_nope_t, w_uk, ctx
-    )
+    _batched_matmul_gpu[
+        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+    ](mla_decode_input_nope, q_nope_t, w_uk, ctx)
 
     # Perform MLA decode
     var raw_output_buf = ctx.enqueue_create_buffer[.bfloat16](
@@ -3506,13 +3660,9 @@ def mla_decode_branch_bf16[
     )
 
     comptime if ctx.target.is_amd_gpu() and sparse_mla:
-        # gfx950 has no sparse MLA kernel, so gather each token's selected
-        # latent rows into a dense scratch and run the dense decode kernel on
-        # it, as `mla_decode_branch_fp8`'s AMD arm does. Each `q` row carries
-        # its own selection, so a prefill routed here works the same as decode.
         comptime assert (
             collection_t.CacheType.dtype == DType.bfloat16
-        ), "the BF16 AMD sparse MLA arm gathers from a BF16 latent cache"
+        ), "the BF16 AMD sparse MLA arm requires a BF16 latent cache"
         comptime assert (
             AttnSinkPtrType.is_null
         ), "AMD sparse MLA decode does not consume attention sinks"
@@ -3520,133 +3670,40 @@ def mla_decode_branch_bf16[
             not TopkLengthsPtrType.is_null
         ), "AMD sparse MLA decode requires topk_lengths"
         comptime assert physical_indices, (
-            "the AMD sparse MLA arm gathers paged physical rows; the graph op"
+            "the AMD sparse MLA arm reads paged physical rows; the graph op"
             " remaps logical indices before calling it"
         )
         if d_indices is None:
             raise Error("AMD sparse MLA decode requires d_indices.")
 
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-        var k_cache_blocks_base = k_cache.blocks_raw_ptr()
         var topk_lengths_ptr = rebind[MutPointer[Int32, MutAnyOrigin]](
             as_optional_reg(topk_lengths).value()
         )
-
         var compact_buf = ctx.enqueue_create_buffer[DType.int32](
             seq_len * indices_stride
         )
         var valid_lengths_buf = ctx.enqueue_create_buffer[DType.uint32](seq_len)
-        ctx.enqueue_function[
-            _amd_sparse_mla_compact_indices[
-                _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS
-            ]
-        ](
+        var zero_row_buf = ctx.enqueue_create_buffer[type_of(k_cache).dtype](
+            k_cache_dim
+        )
+        _amd_sparse_mla_bf16_rows[num_heads, k_cache_dim, kv_latent_dim](
+            raw_output,
+            mla_decode_input,
+            k_cache,
             d_indices.value(),
             topk_lengths_ptr,
-            compact_buf.unsafe_ptr(),
-            valid_lengths_buf.unsafe_ptr(),
-            Int32(indices_stride),
-            grid_dim=(seq_len, 1, 1),
-            block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
+            indices_stride,
+            compact_buf.unsafe_ptr().as_unsafe_any_origin(),
+            valid_lengths_buf.unsafe_ptr().as_unsafe_any_origin(),
+            zero_row_buf.unsafe_ptr().as_unsafe_any_origin(),
+            scale,
+            ctx,
+            scalar_args_buf,
         )
-
-        # A gathered row is `indices_stride * k_cache_dim` elements (~2.4 MB
-        # for GLM-5.3-Flash), so a whole prefill chunk would not fit; bound
-        # the scratch to `_AMD_SPARSE_MLA_MAX_GATHER_TOKENS` tokens.
-        # TODO(vprabhakar): a fused gather-attend kernel would drop the
-        # scratch and the per-chunk launches.
-        var chunk_tokens = min(seq_len, _AMD_SPARSE_MLA_MAX_GATHER_TOKENS)
-        var scratch_buf = ctx.enqueue_create_buffer[mla_decode_input_dtype](
-            chunk_tokens * indices_stride * k_cache_dim
-        )
-        comptime GATHER_ROWS_PER_BLOCK = 7
-        for token0 in range(0, seq_len, chunk_tokens):
-            var tokens = min(chunk_tokens, seq_len - token0)
-            ctx.enqueue_function[
-                _amd_sparse_mla_gather_kv_rows[
-                    type_of(k_cache),
-                    k_cache_dim,
-                    GATHER_ROWS_PER_BLOCK,
-                ]
-            ](
-                k_cache,
-                k_cache_blocks_base,
-                compact_buf.unsafe_ptr().unsafe_offset(token0 * indices_stride),
-                topk_lengths_ptr.unsafe_offset(token0),
-                scratch_buf.unsafe_ptr(),
-                Int32(indices_stride),
-                grid_dim=(
-                    ceildiv(indices_stride, GATHER_ROWS_PER_BLOCK),
-                    tokens,
-                    1,
-                ),
-                block_dim=(
-                    k_cache_dim // _AMD_SPARSE_MLA_GATHER_VEC,
-                    GATHER_ROWS_PER_BLOCK,
-                    1,
-                ),
-            )
-            var k_scratch = TileTensor(
-                scratch_buf,
-                row_major(tokens, indices_stride, Idx[1], Idx[k_cache_dim]),
-            )
-            var q_tokens = TileTensor(
-                mla_decode_input.ptr.unsafe_offset(
-                    token0 * num_heads * k_cache_dim
-                ),
-                TileLayout(
-                    (tokens, Idx[1], Idx[num_heads], Idx[k_cache_dim]),
-                    (
-                        Idx[num_heads * k_cache_dim],
-                        Idx[num_heads * k_cache_dim],
-                        Idx[k_cache_dim],
-                        Idx[1],
-                    ),
-                ),
-            )
-            var out_tokens = TileTensor(
-                raw_output.ptr.unsafe_offset(
-                    token0 * num_heads * kv_latent_dim
-                ),
-                TileLayout(
-                    (tokens, Idx[1], Idx[num_heads], Idx[kv_latent_dim]),
-                    (
-                        Idx[num_heads * kv_latent_dim],
-                        Idx[num_heads * kv_latent_dim],
-                        Idx[kv_latent_dim],
-                        Idx[1],
-                    ),
-                ),
-            )
-            var lengths_tt = TileTensor(
-                valid_lengths_buf.unsafe_ptr().unsafe_offset(token0),
-                row_major(tokens),
-            )
-            # Sized for this token chunk rather than taken from the graph; at
-            # decode the chunk is the whole batch, matching the capture key.
-            flare_mla_decoding[
-                config=MHAConfig[mla_decode_input_dtype](
-                    num_heads, k_cache_dim
-                ),
-                decoding_warp_split_k=False,
-            ](
-                out_tokens,
-                q_tokens,
-                k_scratch,
-                PaddingMask(lengths_tt),
-                scale,
-                ctx,
-                scalar_args_buf,
-                num_partitions=amd_sparse_mla_decode_num_partitions(
-                    tokens,
-                    indices_stride,
-                    num_heads,
-                    ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
-                ),
-            )
         _ = compact_buf^
         _ = valid_lengths_buf^
-        _ = scratch_buf^
+        _ = zero_row_buf^
     else:
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -3692,7 +3749,9 @@ def mla_decode_branch_bf16[
         )
     )
 
-    _batched_matmul_gpu[transpose_b=True](output_t, raw_output_t, w_uv, ctx)
+    _batched_matmul_gpu[
+        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+    ](output_t, raw_output_t, w_uv, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3803,17 +3862,19 @@ def mla_prefill_branch_sparse_bf16[
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
         )
     )
-    _batched_matmul_gpu[transpose_b=True](
-        mla_decode_input_nope, q_nope_t, w_uk, ctx
-    )
+    _batched_matmul_gpu[
+        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+    ](mla_decode_input_nope, q_nope_t, w_uk, ctx)
 
-    var q_rope = q[:, :, qk_nope_head_dim:].reshape(
+    var q_rope = q[:, :, Idx[qk_nope_head_dim] :].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         )
     )
-    var mla_decode_input_rope = mla_decode_input[:, :, kv_latent_dim:].reshape(
+    var mla_decode_input_rope = mla_decode_input[
+        :, :, Idx[kv_latent_dim] :
+    ].reshape(
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
@@ -3993,7 +4054,9 @@ def mla_prefill_branch_sparse_bf16[
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
         )
     )
-    _batched_matmul_gpu[transpose_b=True](output_t, raw_output_t, w_uv, ctx)
+    _batched_matmul_gpu[
+        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+    ](output_t, raw_output_t, w_uv, ctx)
 
 
 # ===-----------------------------------------------------------------------===#

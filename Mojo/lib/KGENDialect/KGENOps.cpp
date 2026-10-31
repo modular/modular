@@ -69,11 +69,11 @@ static LogicalResult verifyParamValueOp(OpT op) {
                           << " does not match result type " << op.getType();
 }
 
-/// Return true if the parameter value contains symbol constants, making the
+/// Return true if the parameter value contains function symbols, making the
 /// operation implicit parametric.
-static bool containsSymbolConstants(TypedAttr value) {
+static bool containsFuncSymbols(TypedAttr value) {
   mlir::AttrTypeWalker walker;
-  walker.addWalk([](SymbolConstantAttr) { return WalkResult::interrupt(); });
+  walker.addWalk([](FuncSymbolAttr) { return WalkResult::interrupt(); });
   return walker.walk(value).wasInterrupted();
 }
 
@@ -100,7 +100,7 @@ void ParamConstantOp::getAsmResultNames(
 }
 
 bool ParamConstantOp::isImplicitlyParametric() {
-  return containsSymbolConstants(getValue());
+  return containsFuncSymbols(getValue());
 }
 
 void ParamConstantOp::walkDefinitions(
@@ -113,7 +113,7 @@ void ParamConstantOp::walkDefinitions(
 LogicalResult ParamMaterializeOp::verify() { return verifyParamValueOp(*this); }
 
 bool ParamMaterializeOp::isImplicitlyParametric() {
-  return containsSymbolConstants(getValue());
+  return containsFuncSymbols(getValue());
 }
 
 void ParamMaterializeOp::walkDefinitions(
@@ -640,7 +640,7 @@ static void printStructInstanceSpec(OpAsmPrinter &p, Operation *op,
 //===----------------------------------------------------------------------===//
 
 static ParseResult
-parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
+parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
             SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
             SmallVectorImpl<Type> &operandTypes,
             SmallVectorImpl<Type> &resultTypes) {
@@ -655,31 +655,32 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
   FunctionType functionType;
   if (parseKGENFuncTypeGenerator(p, functionType, signature))
     return failure();
-  calleeCst = SymbolConstantAttr::get(callee, signature, paramValues);
+  calleeAttr = FuncSymbolGenerator::get(
+      {},
+      FuncSymbolAttr::get(callee, signature.getInstantiatedBody(),
+                          paramValues.getValue()),
+      signature.getParamListAttrs());
   llvm::append_range(operandTypes, functionType.getInputs());
   llvm::append_range(resultTypes, functionType.getResults());
   return success();
 }
 
-static void printCallOp(OpAsmPrinter &p, Operation *op,
-                        SymbolConstantAttr calleeCst, ValueRange operands,
-                        TypeRange operandTypes, TypeRange resultTypes) {
-  p << calleeCst.getSymbol();
-  printParameterValues(p, calleeCst.getParamValues());
+static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
+                        ValueRange operands, TypeRange operandTypes,
+                        TypeRange resultTypes) {
+  FuncSymbolGenerator callee(calleeAttr);
+  p << callee.getSymbol();
+  printParameterValues(p, callee.getParamValues());
   p << '(';
   p.printOperands(operands);
   p << ") : ";
   printSignatureValues(
       p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
-      calleeCst.getType());
+      callee.getType());
 }
 
-void CallOp::concretizeCallee(IRRewriter &b, SymbolConstantAttr callee) {
+void CallOp::concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee) {
   setCalleeAttr(callee);
-}
-
-void CallOp::setCalleeAttr(TypedAttr callee) {
-  setCalleeAttr(cast<SymbolConstantAttr>(callee));
 }
 
 FailureOr<InlineResult> CallOp::prepInline(mlir::RewriterBase &b) {
@@ -700,6 +701,8 @@ static LogicalResult verifyCallOp(Operation *op, ValueRange args,
 }
 
 LogicalResult CallOp::verify() {
+  if (!FuncSymbolGenerator::dynCast(getCallee()))
+    return emitOpError("expected callee to be a function symbol generator");
   return verifyCallOp(*this, getOperands(), getCalleeType().getBody());
 }
 
@@ -715,7 +718,7 @@ LogicalResult CallIndirectOp::verify() {
 // CallParamOp
 //===----------------------------------------------------------------------===//
 
-void CallParamOp::concretizeCallee(IRRewriter &b, SymbolConstantAttr callee) {
+void CallParamOp::concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee) {
   b.replaceOpWithNewOp<CallOp>(*this, getResultTypes(), callee, getOperands());
 }
 
@@ -728,163 +731,31 @@ LogicalResult CallParamOp::verify() {
   return verifyCallOp(*this, getOperands(), getCalleeType().getBody());
 }
 //===----------------------------------------------------------------------===//
-// StageClosureOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
-                                       Region &body) {
-  // we expect the following syntax:
-  // kgen.stage_closure = () capturing -> index {
-  // } { name = foo }
-  FuncTypeGeneratorType signatureType;
-  ParamDeclArrayAttr inputParams;
-  ParamDeclArrayAttr resultParams;
-  FunctionType functionTypeValue;
-  SmallVector<OpAsmParser::Argument> args;
-  llvm::SMLoc bodyLoc;
-  if (p.parseEqual() ||
-      parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
-                                     functionTypeValue, signatureType) ||
-      p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
-    return failure();
-  if (!inputParams.empty() || !resultParams.empty())
-    return p.emitError(bodyLoc, "staged closures cannot have parameters");
-  resultType = signatureType;
-  return success();
-}
-
-static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
-                                FuncTypeGeneratorType resultType,
-                                Region &body) {
-  p << "= ";
-  printFunctionFuncTypeGenerator(p, &body, {}, {},
-                                 resultType.getBody().getValues(), resultType);
-  p << ' ';
-  p.printRegion(body, /*printEntryBlockArgs=*/false);
-}
-
-//===----------------------------------------------------------------------===//
-// CreateClosureOp
+// CreateFuncPtrOp
 //===----------------------------------------------------------------------===//
 
 LogicalResult
-CreateClosureOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
+CreateFuncPtrOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
                                   Adaptor adaptor,
                                   SmallVectorImpl<Type> &results) {
   auto callee = dyn_cast_or_null<TypedAttr>(adaptor.getCalleeAttr());
   if (!callee) {
     return mlir::emitOptionalError(
-        loc, "'create_closure' expected TypedAttr 'callee'");
+        loc, "'create_func_ptr' expected TypedAttr 'callee'");
   }
   auto sigGen = dyn_cast<FuncTypeGeneratorType>(callee.getType());
   if (!sigGen) {
     return mlir::emitOptionalError(
         loc,
-        "'create_closure' attribute 'callee' must have FuncTypeGeneratorType");
+        "'create_func_ptr' attribute 'callee' must have FuncTypeGeneratorType");
   }
-
-  ValueRange captures = adaptor.getOperands();
-  FuncType sig = sigGen.getBody();
-  unsigned numCaptures = captures.size();
-  if (numCaptures > sig.getNumArguments()) {
-    return mlir::emitOptionalError(loc, "provided ", numCaptures,
-                                   " operands but callee only has ",
-                                   sig.getNumArguments(), " to bind");
-  }
-
-  ArrayRef<Type> newArgTypes = sig.getArguments().drop_front(numCaptures);
-  ArrayRef<ArgConvention> newArgConvs =
-      sig.getArgConventions().drop_front(numCaptures);
-
-  FnEffects effects = sig.getFnEffects();
-  if (!captures.empty())
-    effects.setCapturing();
-
-  // Drop the first `numCaptures` positional pogs from `argListAttrs` (they're
-  // now bound by the closure).
-  PogListAttr argListAttrs = sig.getArgListAttrs();
-  if (argListAttrs && !argListAttrs.getPogs().empty()) {
-    ArrayRef<PogMetadataAttr> newPogs =
-        argListAttrs.getPogs().drop_front(numCaptures);
-    argListAttrs =
-        PogListAttr::get(ctx, newPogs, argListAttrs.getBodyConstraints(),
-                         argListAttrs.getOrigVariadicConvention());
-  }
-  results.push_back(FuncTypeGeneratorType::get(
-      sigGen.getInputParamTypes(),
-      Builder(ctx).getFunctionType(newArgTypes, sig.getResults()), newArgConvs,
-      effects, sig.getMetadata(), sigGen.getParamListAttrs(), argListAttrs));
+  results.push_back(sigGen);
   return mlir::success();
 }
 
-static ParseResult
-parseClosureCaptureTypes(AsmParser &p, TypedAttr callee,
-                         ArrayRef<OpAsmParser::UnresolvedOperand> captures,
-                         SmallVectorImpl<Type> &captureTypes) {
-  auto sigGen = dyn_cast<FuncTypeGeneratorType>(callee.getType());
-  if (!sigGen) {
-    return p.emitError(p.getCurrentLocation(),
-                       "expected type of callee to be FuncTypeGeneratorType");
-  }
-  FuncType sig = sigGen.getBody();
-
-  unsigned numCaptures = captures.size();
-  if (numCaptures > sig.getNumArguments()) {
-    return p.emitError(p.getCurrentLocation(), "provided ")
-           << numCaptures << " operands but callee only has "
-           << sig.getNumArguments() << " to bind";
-  }
-
-  ArrayRef<Type> inputs = sig.getArguments().take_front(numCaptures);
-  captureTypes.append(inputs.begin(), inputs.end());
-  return success();
-}
-
-static void printClosureCaptureTypes(AsmPrinter &p, Operation *,
-                                     TypedAttr callee, ValueRange captures,
-                                     TypeRange captureTypes) {}
-
-LogicalResult CreateClosureOp::verify() {
-  FuncType calleeSig = getCalleeType().getBody();
-  if (getNumOperands() > calleeSig.getNumArguments()) {
-    return emitOpError("provided ")
-           << getNumOperands() << " operands but callee only has "
-           << calleeSig.getNumArguments() << " to bind";
-  }
-  unsigned expectedArgs = calleeSig.getNumArguments() - getNumOperands();
-  FuncType sig = getType().getBody();
-  if (sig.getNumArguments() != expectedArgs) {
-    return emitOpError("result signature has ")
-           << sig.getNumArguments() << " arguments but expected "
-           << expectedArgs;
-  }
-
-  for (auto [i, type, argType] :
-       llvm::enumerate(getOperandTypes(),
-                       calleeSig.getArguments().take_front(getNumOperands()))) {
-    if (type != argType) {
-      return emitOpError("operand #")
-             << i << " has type " << type
-             << " but callee argument type expected " << argType;
-    }
-  }
-  for (auto [i, type, argType] :
-       llvm::enumerate(sig.getArguments(),
-                       calleeSig.getArguments().drop_front(getNumOperands()))) {
-    if (type != argType) {
-      return emitOpError("result signature argument #")
-             << i << " type is " << argType << " but expected to be " << type;
-    }
-  }
-
-  if (!getCaptures().empty() && !sig.isCapturing())
-    return emitOpError("has captures, so result signature must be 'capturing'");
-  return success();
-}
-
-FailureOr<InlineResult> CreateClosureOp::prepInline(mlir::RewriterBase &b) {
-  auto op = StageClosureOp::create(b, getLoc(), getType());
-  return {{op, [](Operation *) {}}};
+FailureOr<InlineResult> CreateFuncPtrOp::prepInline(mlir::RewriterBase &b) {
+  // Materializing a function pointer is not a call and cannot be inlined.
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//

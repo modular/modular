@@ -717,7 +717,7 @@ def _allreduce_naive_single_ptr[
     ctx.enqueue_memset(accum, 0)
 
     # Resolve this device's rank and allocate a temp staging buffer.
-    var my_rank: Int = Int(ctx.id())
+    var my_rank: Int = Int(ctx.device().id)
     var scratch = ctx.enqueue_create_buffer[dtype](num_elements)
 
     # Grid configuration for naive kernels.
@@ -882,7 +882,9 @@ def _allreduce_2stage_kernel[
         # resolving through its slot.
         var elem_start = rs_config.rank_start(_my_rank)
         var n_elements = rs_config.rank_num_elements(_my_rank)
-        comptime SlicedTile = type_of(src_tensors[0][0:0])
+        comptime SlicedTile = type_of(
+            src_tensors[0][elem_start : (elem_start + n_elements)]
+        )
         # Round-robin access pattern to balance NVLink traffic across GPUs.
         var sliced_tiles = Array[_, num_tensors](
             fill_with_unrolled=lambda [i: Int]() -> SlicedTile: src_tensors[
@@ -1126,9 +1128,12 @@ def _allreduce_1stage_kernel[
                         accum_type=accum_type,
                     ](elem_idx, ptrs_ngpus, output_layout, output_lambda)
 
-        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, _my_rank
-        )
+        _multi_gpu_barrier[
+            ngpus,
+            is_start=False,
+            sync_after_wait=True,
+            domain_id=domain_id,
+        ](rank_sigs, my_sig, _my_rank)
 
 
 @inline(.always)
@@ -1432,11 +1437,11 @@ def _allreduce_lamport_p2p[
         )
     if num_bytes > Lamport.MAX_SMALL_MESSAGE_BYTES:
         raise Error(
-            "Lamport allreduce message exceeds reserved workspace ("
-            + String(num_bytes)
-            + " > "
-            + String(Lamport.MAX_SMALL_MESSAGE_BYTES)
-            + " bytes); route to the 1-stage path"
+            String(
+                t"Lamport allreduce message exceeds reserved workspace ("
+                t"{num_bytes} > {Lamport.MAX_SMALL_MESSAGE_BYTES} bytes); route"
+                t" to the 1-stage path"
+            )
         )
 
     # Flatten through the engine so the view keeps whatever indirection the
@@ -1940,7 +1945,7 @@ def allreduce[
     # This device's group. `group_start` is 0 for a full-world collective
     # (group_size == ngpus), so every group_start-relative read below is
     # byte-identical to the pre-grouping `input_tensors[0]` in that case.
-    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     var group_start = ualign_down(global_rank, group_size)
 
     # Return early, if the input buffer is empty. Read from THIS DEVICE'S
@@ -1962,10 +1967,11 @@ def allreduce[
 
     if dispatch_config.num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND:
         raise Error(
-            "expected allreduce num_blocks less than upper bound: "
-            + String(MAX_NUM_BLOCKS_UPPER_BOUND)
-            + " but got: "
-            + String(dispatch_config.num_blocks)
+            String(
+                t"expected allreduce num_blocks less than upper bound: "
+                t"{MAX_NUM_BLOCKS_UPPER_BOUND} but got: "
+                t"{dispatch_config.num_blocks}"
+            )
         )
 
     # Check P2P availability. The non-P2P fallback assumes a full-world,

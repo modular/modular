@@ -16,9 +16,11 @@ from max.gpu.host import DeviceContext
 from std.testing import *
 
 
-def add_constant_fn(
-    output: MutPointer[Float32, MutAnyOrigin],
-    input: ImmPointer[Float32, ImmutAnyOrigin],
+def add_constant_fn[
+    output_origin: MutOrigin, input_origin: ImmOrigin
+](
+    output: MutPointer[Float32, output_origin],
+    input: ImmPointer[Float32, input_origin],
     constant: Float32,
     len_dev: Int32,
 ):
@@ -42,7 +44,9 @@ def run_add_constant(ctx: DeviceContext) raises:
     var block_dim = 32
     comptime constant = Float32(33)
 
-    comptime kernel = add_constant_fn
+    comptime kernel = add_constant_fn[
+        origin_of(out_device), ImmOrigin(origin_of(in_device))
+    ]
     ctx.enqueue_function[kernel](
         out_device,
         in_device,

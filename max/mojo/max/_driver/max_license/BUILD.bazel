@@ -1,0 +1,65 @@
+load("//bazel:api.bzl", "mojo_library", "overlay_layer", "overlay_srcs")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+
+package(default_visibility = ["//max:consumers"])
+
+# The HAL client API (`hal`), `machine`, and the HAL DeviceContext
+# (`device_context_hal`) compile as part of `max`, as `max._driver.max_license`.
+# This package boundary hides them from //max/mojo/max's glob, so `max_srcs`
+# includes them through this filegroup.
+filegroup(
+    name = "srcs",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//max/mojo/max:__pkg__"],
+)
+
+# Preserve the old configuration label while DeviceContext moves to MAX.
+alias(
+    name = "std",
+    actual = "//Mojo/stdlib/std",
+    visibility = ["//visibility:public"],
+)
+
+overlay_layer(
+    name = "max_base_layer",
+    srcs = ["//max/mojo/max:max_srcs"],
+    strip_prefix = "max/mojo/",
+)
+
+# Points `max.gpu.host._overlay`, and through it `max.gpu.host`, at the HAL
+# DeviceContext. Shared: both this package's `max_srcs_hal` and a downstream
+# HAL max variant stack it over their own base (+ overlay) layers.
+overlay_layer(
+    name = "dcc_overlay",
+    file_map = {
+        "device_context_hal/_dcc_overlay.mojo": "max/gpu/host/_overlay.mojo",
+    },
+    visibility = ["//visibility:public"],
+)
+
+overlay_srcs(
+    name = "max_srcs_hal",
+    exclude = [
+        # Nothing reaches the legacy device graph once the overlay names the
+        # HAL one, and it does not compile against the HAL `DeviceBuffer` that
+        # `max.runtime.async_value` takes from `max.gpu.host`.
+        "max/gpu/host/_legacy/device_graph.mojo",
+    ],
+    layers = [
+        ":max_base_layer",
+        ":dcc_overlay",
+    ],
+)
+
+mojo_library(
+    name = "max",
+    srcs = [":max_srcs_hal"],
+    tags = [
+        "manual",
+        # Only reached through //max:max_mojo under --config=hal-device-context
+        TOP_LEVEL_TAG,
+    ],
+    # As with `:std`, the selecting alias lives in a generated external repo.
+    visibility = ["//visibility:public"],
+    deps = ["@mojo//:std"],
+)

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Mamba pipeline model."""
 
 from __future__ import annotations
 
@@ -22,9 +23,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import LogProbabilities, TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -143,6 +144,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return MambaConfig.get_num_layers(huggingface_config)
 
     @classmethod
@@ -178,7 +180,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
 
     @traced
     def _load_models(self, session: InferenceSession) -> tuple[Any, Any]:
-        from max.experimental import functional as F
+        from max import functional as F
         from max.graph import TensorType
         from max.pipelines.lib import CompilationTimer
 
@@ -228,7 +230,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
             DType.uint32, shape=["row_offsets_len"], device=device_ref
         )
 
-        from max.experimental.tensor import default_dtype
+        from max.tensor import default_dtype
 
         with CompilationTimer("prefill") as timer:
             with F.lazy(), default_dtype(self.dtype):
@@ -281,6 +283,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
         return prefill_model, step_model
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the model and returns its outputs."""
         assert isinstance(model_inputs, MambaModelInputs)
 
         if model_inputs.is_prefill:
@@ -320,6 +323,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
+        """Scores the sampled tokens' log probabilities."""
         logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits

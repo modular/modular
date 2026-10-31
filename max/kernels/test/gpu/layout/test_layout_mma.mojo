@@ -22,19 +22,23 @@ from layout import *
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core import *
 from std.testing import *
+from std.utils.coord import DynamicCoord
 
 
 def mma_layout_tc[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     layout_c: TensorLayout,
     layout_a: TensorLayout,
     layout_b: TensorLayout,
+    mat_c_origin: MutOrigin,
+    mat_a_origin: MutOrigin,
+    mat_b_origin: MutOrigin,
 ](
-    mat_c: TileTensor[out_type, layout_c, MutAnyOrigin],
-    mat_a: TileTensor[in_type, layout_a, MutAnyOrigin],
-    mat_b: TileTensor[in_type, layout_b, MutAnyOrigin],
+    mat_c: TileTensor[out_type, layout_c, mat_c_origin],
+    mat_a: TileTensor[in_type, layout_a, mat_a_origin],
+    mat_b: TileTensor[in_type, layout_b, mat_b_origin],
 ):
     var tc = TensorCore[out_type, in_type, shape]()
     var a = tc.load_a(mat_a)
@@ -49,10 +53,13 @@ def matmul_naive[
     layout_c: TensorLayout,
     layout_a: TensorLayout,
     layout_b: TensorLayout,
+    mat_c_origin: MutOrigin,
+    mat_a_origin: MutOrigin,
+    mat_b_origin: MutOrigin,
 ](
-    mat_c: TileTensor[out_type, layout_c, MutAnyOrigin],
-    mat_a: TileTensor[in_type, layout_a, MutAnyOrigin],
-    mat_b: TileTensor[in_type, layout_b, MutAnyOrigin],
+    mat_c: TileTensor[out_type, layout_c, mat_c_origin],
+    mat_a: TileTensor[in_type, layout_a, mat_a_origin],
+    mat_b: TileTensor[in_type, layout_b, mat_b_origin],
 ):
     comptime assert mat_c.rank == mat_c.flat_rank == 2
     var x = global_idx.x
@@ -73,7 +80,7 @@ def matmul_naive[
 def test_layout_mma[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     M: Int,
     N: Int,
     K: Int,
@@ -136,11 +143,14 @@ def test_layout_mma[
         type_of(layout_c),
         type_of(layout_a),
         type_of(layout_b),
+        mat_c_origin=origin_of(mat_c),
+        mat_a_origin=origin_of(mat_a),
+        mat_b_origin=origin_of(mat_b),
     ]
     ctx.enqueue_function[kernel](
-        mat_c.device_tensor().as_unsafe_any_origin(),
-        mat_a.device_tensor().as_unsafe_any_origin(),
-        mat_b.device_tensor().as_unsafe_any_origin(),
+        mat_c.device_tensor(),
+        mat_a.device_tensor(),
+        mat_b.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(ctx.default_device_info.warp_size),
     )
@@ -154,11 +164,14 @@ def test_layout_mma[
         type_of(layout_c),
         type_of(layout_a),
         type_of(layout_b),
+        mat_c_origin=origin_of(mat_c_n),
+        mat_a_origin=origin_of(mat_a_n),
+        mat_b_origin=origin_of(mat_b_n),
     ]
     ctx.enqueue_function[naive_func](
-        mat_c_n.device_tensor().as_unsafe_any_origin(),
-        mat_a_n.device_tensor().as_unsafe_any_origin(),
-        mat_b_n.device_tensor().as_unsafe_any_origin(),
+        mat_c_n.device_tensor(),
+        mat_a_n.device_tensor(),
+        mat_b_n.device_tensor(),
         grid_dim=(ceildiv(M, warps_per_block), ceildiv(N, warps_per_block)),
         block_dim=(warps_per_block, warps_per_block),
     )
@@ -180,13 +193,16 @@ def test_layout_mma[
 
 def c_fragment_kernel[
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     MatrixLayout: TensorLayout,
     FragmentLayout: TensorLayout,
+    c_origin: ImmOrigin,
+    d_origin: MutOrigin,
+    loaded_origin: MutOrigin,
 ](
-    c: TileTensor[dtype, MatrixLayout, ImmutAnyOrigin],
-    d: TileTensor[dtype, MatrixLayout, MutAnyOrigin],
-    loaded: TileTensor[dtype, FragmentLayout, MutAnyOrigin],
+    c: TileTensor[dtype, MatrixLayout, c_origin],
+    d: TileTensor[dtype, MatrixLayout, d_origin],
+    loaded: TileTensor[dtype, FragmentLayout, loaded_origin],
 ):
     comptime assert loaded.rank == loaded.flat_rank == 2
     var tc = TensorCore[
@@ -203,7 +219,7 @@ def c_fragment_kernel[
 
 def test_c_fragment_layout[
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     row_stride: Int,
     col_stride: Int,
 ](ctx: DeviceContext) raises:
@@ -244,12 +260,18 @@ def test_c_fragment_layout[
         d.device_tensor().unsafe_ptr().unsafe_offset(guard), matrix_layout
     )
     comptime kernel = c_fragment_kernel[
-        dtype, shape, type_of(matrix_layout), type_of(fragment_layout)
+        dtype,
+        shape,
+        type_of(matrix_layout),
+        type_of(fragment_layout),
+        c_origin=c_view.origin,
+        d_origin=d_view.origin,
+        loaded_origin=origin_of(loaded),
     ]
     ctx.enqueue_function[kernel](
-        c_view.as_imm().as_unsafe_any_origin(),
-        d_view.as_unsafe_any_origin(),
-        loaded.device_tensor().as_unsafe_any_origin(),
+        c_view.as_imm(),
+        d_view,
+        loaded.device_tensor(),
         grid_dim=1,
         block_dim=warp_size,
     )
@@ -282,7 +304,7 @@ def test_c_fragment_layout[
 
 
 def test_c_fragments[
-    dtype: DType, shape: IndexList[3]
+    dtype: DType, shape: DynamicCoord[.int, 3]
 ](ctx: DeviceContext) raises:
     test_c_fragment_layout[dtype, shape, shape[1], 1](ctx)
     test_c_fragment_layout[dtype, shape, shape[1] + 3, 1](ctx)
@@ -291,12 +313,14 @@ def test_c_fragments[
 
 def input_fragment_kernel[
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     InputLayout: TensorLayout,
     FragmentLayout: TensorLayout,
+    source_origin: ImmOrigin,
+    loaded_origin: MutOrigin,
 ](
-    source: TileTensor[dtype, InputLayout, ImmutAnyOrigin],
-    loaded: TileTensor[dtype, FragmentLayout, MutAnyOrigin],
+    source: TileTensor[dtype, InputLayout, source_origin],
+    loaded: TileTensor[dtype, FragmentLayout, loaded_origin],
 ):
     comptime assert loaded.rank == loaded.flat_rank == 3
     comptime assert shape[0] == shape[1]
@@ -316,7 +340,7 @@ def input_fragment_kernel[
 
 def test_input_fragment_layout[
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     k_groups: Int,
 ](ctx: DeviceContext, column_major: Bool) raises:
     comptime warp_size = ctx.default_device_info.warp_size
@@ -341,7 +365,12 @@ def test_input_fragment_layout[
         source.device_tensor().unsafe_ptr().unsafe_offset(guard), matrix_layout
     )
     comptime kernel = input_fragment_kernel[
-        dtype, shape, type_of(matrix_layout), type_of(fragment_layout)
+        dtype,
+        shape,
+        type_of(matrix_layout),
+        type_of(fragment_layout),
+        source_origin=source_view.origin,
+        loaded_origin=origin_of(loaded),
     ]
     # Base-eight digits keep every coordinate distinguishable even in FP8.
     comptime tag_count = 4 if dtype.is_float8() else 2
@@ -361,8 +390,8 @@ def test_input_fragment_layout[
         _ = loaded.host_tensor().fill(nan[dtype]())
         loaded.to_device()
         ctx.enqueue_function[kernel](
-            source_view.as_imm().as_unsafe_any_origin(),
-            loaded.device_tensor().as_unsafe_any_origin(),
+            source_view.as_imm(),
+            loaded.device_tensor(),
             grid_dim=1,
             block_dim=warp_size,
         )
@@ -385,7 +414,7 @@ def test_input_fragment_layout[
 
 
 def test_input_fragments[
-    dtype: DType, shape: IndexList[3], k_groups: Int = 1
+    dtype: DType, shape: DynamicCoord[.int, 3], k_groups: Int = 1
 ](ctx: DeviceContext) raises:
     test_input_fragment_layout[dtype, shape, k_groups](ctx, False)
     test_input_fragment_layout[dtype, shape, k_groups](ctx, True)
@@ -394,10 +423,10 @@ def test_input_fragments[
 def main() raises:
     with DeviceContext() as ctx:
         comptime if ctx.target.is_nvidia_gpu():
-            comptime shape_884 = IndexList[3](8, 8, 4)
-            comptime shape_1684 = IndexList[3](16, 8, 4)
-            comptime shape_1688 = IndexList[3](16, 8, 8)
-            comptime shape_16816 = IndexList[3](16, 8, 16)
+            comptime shape_884 = DynamicCoord[.int, 3](8, 8, 4)
+            comptime shape_1684 = DynamicCoord[.int, 3](16, 8, 4)
+            comptime shape_1688 = DynamicCoord[.int, 3](16, 8, 8)
+            comptime shape_16816 = DynamicCoord[.int, 3](16, 8, 16)
 
             test_c_fragments[.float64, shape_884](ctx)
             test_c_fragments[.float64, shape_16816](ctx)
@@ -434,8 +463,8 @@ def main() raises:
                 ctx, rtol=1e-01
             )
         elif ctx.target.is_amd_gpu():
-            comptime shape_161616 = IndexList[3](16, 16, 16)
-            comptime shape_16164 = IndexList[3](16, 16, 4)
+            comptime shape_161616 = DynamicCoord[.int, 3](16, 16, 16)
+            comptime shape_16164 = DynamicCoord[.int, 3](16, 16, 4)
 
             test_input_fragments[.float32, shape_16164](ctx)
             test_input_fragments[.float32, shape_16164, 4](ctx)

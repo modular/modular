@@ -218,18 +218,8 @@ def _run_prefill_sparse_diff[
     the caller to compare directly.
     """
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_heads:",
-        num_heads,
-        " num_kv_tokens:",
-        num_kv_tokens,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  seq_len: {seq_len} "
+        t" num_heads: {num_heads}  num_kv_tokens: {num_kv_tokens}  topk: {topk}"
     )
 
     var scale = Float32(1.0) / sqrt(Float32(SOFTMAX_SCALE_BASE_DIM))

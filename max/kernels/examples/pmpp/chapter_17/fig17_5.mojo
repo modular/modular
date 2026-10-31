@@ -11,7 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from spmv_utils import COOMatrix, generate_sparse_matrix, spmv_cpu, verify
+from spmv_utils import (
+    COOMatrix,
+    DeviceCOOMatrix,
+    generate_sparse_matrix,
+    spmv_cpu,
+    verify,
+)
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.atomic import Atomic
@@ -20,12 +26,12 @@ from std.memory.alloc import unsafe_alloc
 
 
 def spmv_coo_kernel(
-    cooMatrix: COOMatrix,
-    x: ImmPointer[Float32, ImmutAnyOrigin],
-    y: MutPointer[Float32, MutAnyOrigin],
+    cooMatrix: DeviceCOOMatrix,
+    x: ImmPointer[Float32, ImmUntrackedOrigin],
+    y: MutPointer[Float32, MutUntrackedOrigin],
 ):
     var i = block_idx.x * block_dim.x + thread_idx.x
-    if i < cooMatrix.numNonzeros:
+    if i < Int(cooMatrix.numNonzeros):
         var row = Int(cooMatrix.rowIdx[i])
         var col = Int(cooMatrix.colIdx[i])
         var val = cooMatrix.value[i]
@@ -102,9 +108,9 @@ def main() raises:
         numNonzeros,
         rows,
         cols,
-        d_rowIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
-        d_colIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
-        d_value_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_rowIdx_buf.unsafe_ptr(),
+        d_colIdx_buf.unsafe_ptr(),
+        d_value_buf.unsafe_ptr(),
     )
 
     var blockSize = 256

@@ -823,14 +823,14 @@ struct SubMatmulConfig(ImplicitlyCopyable):
     """Static configuration of sub-matrices in parallel matmul."""
 
     # Starting Indices of sub-matrices.
-    var offset: IndexList[3]
+    var offset: Tuple[Int, Int, Int]
 
     # Dimension of sub-matrices.
-    var shape: IndexList[3]
+    var shape: Tuple[Int, Int, Int]
 
     @inline(.always)
     def is_valid(self) -> Bool:
-        return self.shape > Index(0, 0, 0)
+        return self.shape[0] > 0 and self.shape[1] > 0 and self.shape[2] > 0
 
 
 # The work is first grouped into blocks for alignment and load/store efficiency.
@@ -959,8 +959,8 @@ def get_partitioned_matmul_mojo[
     var row_range = partition_work(row_task_id, num_row_tasks, m, kernel_rows)
     var col_range = partition_work(col_task_id, num_col_tasks, n, kernel_cols)
     return SubMatmulConfig(
-        Index(row_range[0], col_range[0], 0),
-        Index(row_range[1], col_range[1], k),
+        (row_range[0], col_range[0], 0),
+        (row_range[1], col_range[1], k),
     )
 
 

@@ -44,8 +44,9 @@ def tma_swizzle_load_kernel[
     layout: MixedLayout,
     tile_shape: Coord,
     desc_shape: Coord,
+    dst_origin: MutOrigin,
 ](
-    dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
+    dst: TileTensor[dtype, type_of(layout), dst_origin],
     tma_tile: TMATensorTile[dtype, tile_shape, desc_shape],
 ):
     comptime tileM = Int(tile_shape.element_types[0].static_value)
@@ -141,6 +142,7 @@ def test_tma_swizzle[
         type_of(tma_tensor).dtype,
         layout,
         type_of(tma_tensor).desc_shape,
+        dst_origin=origin_of(dst),
     ]
     ctx.enqueue_function[kernel](
         dst.device_tensor(),

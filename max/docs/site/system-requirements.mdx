@@ -1,0 +1,98 @@
+---
+title: System requirements
+description: Check the operating system, CPU, memory, and GPU requirements to install MAX and serve models.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+To install MAX and serve models, your system must meet the following
+requirements.
+
+For the GPUs you can program with Mojo, along with their architecture targets,
+drivers, and troubleshooting, see
+[Hardware compatibility](/gpu/hardware-compatibility/).
+
+<Tabs groupId="os">
+<TabItem value="linux" label="Linux">
+
+| Requirement      | Details                                                                                  |
+|------------------|------------------------------------------------------------------------------------------|
+| Operating system | Linux with glibc 2.34 or later. We test on Ubuntu 22.04 LTS and later.                   |
+| CPU              | x86-64 CPUs from about 2013 onward, or ARM64 Neoverse N1 or newer, such as AWS Graviton2 |
+| Memory           | 8 GiB minimum                                                                            |
+| Compiler         | A C compiler, such as `cc`, `gcc`, or `clang`. MAX uses it as a linker.                  |
+
+</TabItem>
+<TabItem value="mac" label="macOS">
+
+| Requirement      | Details                                       |
+|------------------|-----------------------------------------------|
+| Operating system | macOS Sequoia (15) or later                   |
+| CPU              | Apple silicon                                 |
+| Memory           | 8 GiB minimum                                 |
+| Developer tools  | Xcode or Xcode Command Line Tools 16 or later |
+
+For GPU programming, you might also need the Metal toolchain. To install it,
+run the following command:
+
+```sh
+xcodebuild -downloadComponent MetalToolchain
+```
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+MAX doesn't officially support Windows. To try MAX on Windows, install
+[Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install)
+with a version of Ubuntu that meets the requirements on the **Linux** tab.
+
+</TabItem>
+</Tabs>
+
+## GPU compatibility
+
+MAX supports a wide range of GPUs for accelerated inference, and we
+regularly verify model compatibility on NVIDIA B200 and AMD MI355X
+GPUs.
+
+For specific GPU architectures, driver versions, and troubleshooting, see
+[Hardware compatibility](/gpu/hardware-compatibility/).
+
+:::note Apple silicon GPUs
+
+We're actively developing Apple silicon GPU support, both for GPU programming
+with Mojo and for model inference with MAX. Apple silicon GPUs run a subset of
+models and don't yet have the same CI coverage as B200 and MI355X.
+
+For supported chips and Metal troubleshooting, see
+[Apple silicon GPUs](/gpu/hardware-compatibility/#apple-silicon-gpus).
+
+:::
+
+## Additional considerations
+
+- Models vary in memory requirements. Because of this, even if we list your GPU
+  architecture as compatible, you should confirm that the available memory is
+  sufficient for the model you're using. To check how much memory a model needs,
+  see its Hugging Face page.
+
+- On systems where the GPU shares system RAM (Apple silicon and integrated
+  GPUs such as those in DGX Spark and Strix Halo), a model's weights and
+  activations have to fit in memory alongside everything else the system is
+  running.
+
+- MAX can serve models on a CPU or GPU, but most of the latest models require
+  one or more GPUs. When you browse our [supported models](/models/), you can
+  check for multi-GPU support. To serve a model across multiple GPUs, see
+  [Parallelism](/serve/parallelism/).
+
+- On x86-64 hosts, your CPU must support the [x86-64-v3 microarchitecture
+  level](https://clang.llvm.org/docs/UsersManual.html#x86), which requires the
+  AVX, AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, and XSAVE instructions (this
+  doesn't apply to ARM64 hosts). To check your CPU, run the following command
+  and confirm that the output includes those flags:
+
+  ```sh
+  grep flags /proc/cpuinfo
+  ```

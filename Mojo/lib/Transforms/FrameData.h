@@ -23,33 +23,73 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include <memory>
 
 namespace M::KGEN {
 
 struct FrameData;
 
-using FrameStateTransform =
-    function_ref<void(FuncOp, DenseMap<Operation *, int> &)>;
+using VirtualBlock = Operation *;
 
-/// Populates `frameData` for `originalFunction`. Implementations assign a
-/// state to every op, invoke `transform` once states are known, and then lay
-/// out the frame.
+/// The queries the lowering makes about the coroutine frame, so each frame
+/// evaluation can answer them from its own analysis.
+class FrameInterface {
+public:
+  virtual ~FrameInterface() = default;
+
+  /// Returns true if this op existed in the function when the frame data was
+  /// calculated.
+  virtual bool isTracked(Operation *op) = 0;
+
+  /// Returns true if `use` reads its value after a suspend that follows the
+  /// value's definition.
+  virtual bool crossesSuspend(OpOperand &use) = 0;
+
+  /// Returns true if some path from `from` to `to` passes a suspend. Ops with
+  /// no suspend between them can share a frame load or a clone.
+  virtual bool suspendBetween(Operation *from, Operation *to) = 0;
+
+  /// Returns true if some path from the entry to `op` passes a suspend.
+  virtual bool isAfterSuspend(Operation *op) = 0;
+
+  /// Returns the first ops of the virtual blocks that no path from the entry
+  /// through a suspend reaches, in dominance order. A hot resume removes them.
+  virtual ArrayRef<VirtualBlock> firstStateVirtualBlocks() = 0;
+
+  /// Returns the suspends reachable from the entry without passing another
+  /// suspend.
+  // TODO(stumpOS): Remove once the liveness frame evaluation is adopted. The
+  // hot resume can walk every suspend and get the same parents to clear.
+  virtual const DenseSet<CO::SuspendOp> &firstSuspends() = 0;
+
+  /// Records that `clone`, a copy of `original`, was inserted for `user`.
+  virtual void registerClone(Operation *clone, Operation *original,
+                             Operation *user) = 0;
+};
+
+using FrameStateTransform = function_ref<void(FuncOp, FrameInterface &)>;
+
+/// Populates `frameData` for `originalFunction`. Implementations invoke
+/// `rematerializeFrameValues` with their answers to the cloner's queries, lay
+/// out the frame, and store the frame interface in `frameData`.
 using FrameEvaluator = void (*)(FrameData &frameData, FuncOp originalFunction,
                                 mlir::DominanceInfo &domInfo, Value errorValue,
                                 Value resultValue,
-                                FrameStateTransform transform, bool isHot);
+                                FrameStateTransform rematerializeFrameValues,
+                                bool isHot);
 
 /// Frame Data stores any metadata necessary to transform the async function
 /// into a suspendable procedure. This includes indexing information into the
-/// frame type so that we can generate loads and stores and state information so
-/// we can reuse loaded frame variables when legal.
+/// frame type so that we can generate loads and stores, and the frame
+/// interface that answers where the suspends are.
 struct FrameData {
   /// Error value and result value are excluded from the frame
   FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
-            Value errorValue, Value resultValue, FrameStateTransform transform,
-            bool isHot, FrameEvaluator evaluateFrame) {
+            Value errorValue, Value resultValue,
+            FrameStateTransform rematerializeFrameValues, bool isHot,
+            FrameEvaluator evaluateFrame) {
     evaluateFrame(*this, originalFunction, domInfo, errorValue, resultValue,
-                  transform, isHot);
+                  rematerializeFrameValues, isHot);
   }
   FrameData(const FrameData &) = delete;
   FrameData(FrameData &&) = default;
@@ -68,20 +108,14 @@ struct FrameData {
   SmallVector<Type> frameTypes;
   DenseMap<Value, unsigned> valueToIndexInFrame;
   DenseMap<Operation *, unsigned> operationToIndexInFrame;
-  DenseMap<Operation *, int> opToState;
-  SmallVector<Operation *> virtualBlocksFirstState;
   SmallVector<ArgInFrame> argsInFrame;
-  /// A suspend op 'S' is in this data structure if it is possible to reach 'S'
-  /// from the entry point without passing through another suspend op. This is
-  /// used to clear the state 0 blocks in hot resumes.
-  DenseSet<CO::SuspendOp> firstSuspends;
+  std::unique_ptr<FrameInterface> frame;
 };
 
-/// Clone constant-like ops (and struct GEPs / offsets) into every state that
-/// uses them so they never need to be stored in the frame.
+/// Clone constant-like ops (and struct GEPs / offsets) before every use that
+/// crosses a suspend so they never need to be stored in the frame.
 void cloneFrameArgs(FuncOp funcOp, ImplicitLocOpBuilder &b,
-                    mlir::DominanceInfo &domInfo,
-                    DenseMap<Operation *, int> &opToState);
+                    mlir::DominanceInfo &domInfo, FrameInterface &frame);
 
 struct COTypes {
   Type typeForField(AsyncContinuationField field) {
@@ -131,11 +165,9 @@ private:
   StructType promiseType;
 };
 
-using VirtualBlock = Operation *;
-
 /// Frame Variables is a Cache of extracted frame variables. We may for example
 /// reference a frame variable multiple times within a virtual block. We should
-/// only extract that variable once for that state.
+/// only extract that variable once while no suspend separates its uses.
 class FrameVariables {
 public:
   FrameVariables(ImplicitLocOpBuilder &builder, const FrameData *frameData,
@@ -146,19 +178,28 @@ public:
   /// Given the original operand, return the value extracted from the frame. Use
   /// a previously extracted value if available.
   Value getFrameValueForOperand(Value continuation, Value operand,
-                                Operation *opWithUse, int useState);
+                                Operation *opWithUse);
 
-  /// Overwrite the cached value for the variable in this state. A state can
-  /// contain nested control flow, resulting in frame variables extracted in
-  /// nested blocks. Sometime we could optimize this so that frame variables
-  /// used multiple times in the same state are extracted in the first shared
-  /// parent block, thus removing the need to overwrite state.
-  void overwriteValue(int state, Value value);
+  /// Overwrite the cached values for the variable that `op` could reuse. Uses
+  /// with no suspend between them can be in nested control flow, resulting in
+  /// frame variables extracted in nested blocks. Sometime we could optimize
+  /// this so that frame variables used multiple times are extracted in the
+  /// first shared parent block, thus removing the need to overwrite them.
+  void overwriteValue(Operation *op, Value value);
 
 private:
+  /// A value extracted from the frame, and the op it was extracted for.
+  struct ExtractedValue {
+    Operation *extractedFor;
+    Value image;
+  };
+
+  /// Removes the entries of `extracted` that `op` could reuse.
+  void eraseReusable(SmallVector<ExtractedValue> &extracted, Operation *op);
+
   ImplicitLocOpBuilder &builder;
   const FrameData *frameData;
-  DenseMap<Value, DenseMap<int, Value>> frameVariables;
+  DenseMap<Value, SmallVector<ExtractedValue>> frameVariables;
   Value errorValue;
   Value resultValue;
 };

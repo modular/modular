@@ -134,6 +134,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
     if (!foundExisting)
       indexReplacer.getNewOriginParamDecls().push_back(decl);
   }
+  Type adjustedResultType = indexReplacer.replace(resultType);
   size_t numImplicitOriginDecls = indexReplacer.getNewOriginParamDecls().size();
 
   auto metadata = FnMetaOriginDataAttr::get(
@@ -142,7 +143,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
                                    /*captureOrigins=*/nullptr),
       isNestedOriginsReadOnly, /*definesInteriorOrigins=*/false);
   FunctionType functionType =
-      builder.getFunctionType(adjustedArgTypes, {resultType});
+      builder.getFunctionType(adjustedArgTypes, {adjustedResultType});
   Location location = shared.translateLocation(loc);
   FnTypeGeneratorType sigGen = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, fnEffects, metadata, paramListAttrs,
@@ -458,10 +459,8 @@ StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
     return failure();
   }
 
-  SymbolRefAttr calleeSym =
-      LIT::getFullyResolvedSymbolRef(traitDefaultMethodOp);
-  TypedAttr typedSymbol = KGEN::SymbolConstantAttr::get(
-      calleeSym, specializedGenerator, callParamBindings);
+  TypedAttr typedSymbol = traitDefaultMethodOp.getBoundSymbolRef(
+      fnDecl.getShared().getEvaluationContext(), callParamBindings);
 
   SmallVector<Value> operands(fn.getArguments().begin(),
                               fn.getArguments().end());
@@ -1002,7 +1001,7 @@ LogicalResult StructEmitter::populateMoveCopy(DefASTDecl &fnDecl, bool isMove) {
                               EC_SynthesizedMethod);
   }
 
-  SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
+  GeneratorAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
   if (isMove)
     structDeclOp.setMoveInitAttr(ref);
   else
@@ -1565,9 +1564,9 @@ static CValue emitEnumInitCall(IREmitter &emitter, ASTDecl &enumDecl,
   TypedAttr caseType = getEnumCaseTypeValue(enumDecl, caseIndex);
   if (!indexValue || !caseType)
     return fail();
-  OverloadSet overloads = OverloadSet::lookup(
-      enumDecl, selfType, kEnumInitName, node, CallSyntax::kMethodCallSynthetic,
-      /*contextualType=*/selfType);
+  OverloadSet overloads =
+      OverloadSet::lookup(enumDecl, selfType, kEnumInitName, node,
+                          CallSyntax::kMethodCallSynthetic);
   if (!overloads) {
     emitter.shared.emitError(node->getLoc())
         << "internal error: enum has no '" << kEnumInitName

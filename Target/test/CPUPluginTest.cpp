@@ -14,6 +14,7 @@
 #include "../lib/CPU/Common.h"
 #include "Fixture.h"
 #include "HAL/M_driver_api.h"
+#include "Target/lib/Support/HostMemory.h"
 
 #include "llvm/ADT/ScopeExit.h"
 
@@ -73,6 +74,22 @@ TEST_F(DriverPluginContextTest, CurrentDriverContextIsNull) {
     M_driver_native_handle_t active = 1;
     ASSERT_SUCCESS(context_get_current_driver_context(context, &active));
     EXPECT_EQ(active, 0);
+  }
+}
+
+TEST_F(DriverPluginContextTest, MemoryInfoIsHostWide) {
+  // Free memory is what the whole host has left, not physical memory minus
+  // this process's footprint. Other processes can move it between reads.
+  constexpr uint64_t drift = 1024ull * 1024 * 1024;
+  for (M_driver_context_t context : contexts) {
+    uint64_t freeBytes = 0;
+    uint64_t totalBytes = 0;
+    ASSERT_SUCCESS(context_memory_info(context, &freeBytes, &totalBytes));
+    auto host = M::Target::queryHostMemory();
+    ASSERT_TRUE(bool(host)) << llvm::toString(host.takeError());
+    EXPECT_EQ(totalBytes, host->total);
+    EXPECT_LE(freeBytes, host->available + drift);
+    EXPECT_GE(freeBytes + drift, host->available);
   }
 }
 

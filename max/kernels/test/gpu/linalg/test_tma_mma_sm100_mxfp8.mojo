@@ -41,6 +41,7 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.math import align_up, ceildiv, inf
@@ -88,8 +89,8 @@ def block_scaled_mxfp8_kernel[
     b_scales_tile_shape: Coord,
     b_scales_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    umma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    umma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -279,7 +280,7 @@ def block_scaled_mxfp8_kernel[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype=.uint32](umma_shape[0], umma_shape[1]),
+        (UInt32(umma_shape[0]), UInt32(umma_shape[1])),
         transpose_b=transpose_b,
     ]()
 
@@ -502,8 +503,8 @@ def sm100_block_scaled_mxfp8[
     b_scales_layout: TensorLayout,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: DynamicCoord[.int, 3],
+    block_tile_shape: Coord[Int, Int, Int],
     SF_VECTOR_SIZE: Int,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -653,8 +654,8 @@ def test_block_scaled_mxfp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    umma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    umma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool,
     *,
     k: Int,
@@ -914,8 +915,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 256, BK),
-            Index(MMA_M, 256, MMA_K),
+            (MMA_M, 256, BK),
+            (MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[256], Idx[256])
@@ -923,8 +924,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 256, BK),
-            Index(MMA_M, 256, MMA_K),
+            (MMA_M, 256, BK),
+            (MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[256], Idx[256 * 2])
@@ -932,8 +933,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 256, BK),
-            Index(MMA_M, 256, MMA_K),
+            (MMA_M, 256, BK),
+            (MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[1000], Idx[256 * 4])
@@ -942,8 +943,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 128, BK),
-            Index(MMA_M, 128, MMA_K),
+            (MMA_M, 128, BK),
+            (MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[256], Idx[2 * 128])
@@ -951,8 +952,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 128, BK),
-            Index(MMA_M, 128, MMA_K),
+            (MMA_M, 128, BK),
+            (MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 2,
         ](ctx, Idx[256], Idx[3 * 128])
@@ -960,8 +961,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 128, BK),
-            Index(MMA_M, 128, MMA_K),
+            (MMA_M, 128, BK),
+            (MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[1000], Idx[3 * 128])

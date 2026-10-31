@@ -77,6 +77,7 @@ from max.gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
+from std.utils.coord import Coord
 from layout import (
     Coord,
     Idx,
@@ -88,7 +89,7 @@ from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -215,7 +216,7 @@ def _swizzled_smem_off[
 
 
 struct BlockScaledMmaOp[
-    mma_shape: IndexList[3],  # (16, 16, 128) for MXFP4 and MXFP8 alike
+    mma_shape: Coord[Int, Int, Int],  # (16, 16, 128) for MXFP4 and MXFP8 alike
     num_m_mmas: Int,
     num_n_mmas: Int,
     num_k_tiles: Int,
@@ -1330,7 +1331,7 @@ struct BlockScaledMatmulAMD[
 
         # === MMA operator ===
         var mma_op = BlockScaledMmaOp[
-            mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
+            mma_shape=(Self.MMA_M, Self.MMA_N, Self.MMA_K),
             num_m_mmas=num_m_mmas,
             num_n_mmas=num_n_mmas,
             num_k_tiles=num_k_tiles,
@@ -3144,7 +3145,7 @@ def _preshuffle_a_scale_4d_kernel[
     preshuffled once at load time), so this has to run once per matmul call.
     Pad rows (`mn >= M`) get zero, matching the CPU version's zero-fill.
     """
-    var idx = Int(global_idx.x)
+    var idx = global_idx.x
     var total = Int(padded_M) * K_SCALES
     if idx >= total:
         return

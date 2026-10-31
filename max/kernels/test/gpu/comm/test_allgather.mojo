@@ -205,12 +205,8 @@ def _verify_results[
                         input_idx,
                     )
                     print(
-                        "Index",
-                        j,
-                        "value:",
-                        host_output[j],
-                        "expected:",
-                        expected,
+                        t"Index {j} value: {host_output[j]} expected:"
+                        t" {expected}"
                     )
                     raise e^
 
@@ -327,12 +323,9 @@ def grouped_all_gather_test[
                     assert_equal(host_output[j], expected)
                 except e:
                     print(
-                        "Grouped verification failed: device",
-                        device_idx,
-                        "local input",
-                        local_idx,
-                        "global input",
-                        input_idx,
+                        t"Grouped verification failed: device"
+                        t" {device_idx} local input {local_idx} global input"
+                        t" {input_idx}"
                     )
                     raise e^
 
@@ -463,12 +456,8 @@ def relay_all_gather_test[
                     assert_equal(host_output[j], expected)
                 except e:
                     print(
-                        "Relay verification failed: device",
-                        device_idx,
-                        "source",
-                        input_idx,
-                        "index",
-                        j,
+                        t"Relay verification failed: device {device_idx} source"
+                        t" {input_idx} index {j}"
                     )
                     raise e^
 
@@ -511,7 +500,7 @@ def main() raises -> None:
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
-        print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
+        print(t"  Testing configuration: {test_idx} with {num_gpus} GPUs")
         all_gather_test[.bfloat16, ngpus=num_gpus](ctx, materialize[lengths]())
 
     if DeviceContext.number_of_devices() >= 4:

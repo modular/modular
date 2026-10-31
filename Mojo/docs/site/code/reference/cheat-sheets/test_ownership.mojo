@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/ownership.mdx
 # Tests for the Mojo Ownership cheat sheet.
 #
 # Each test asserts a behavioral claim the card makes, so the card fails CI if a

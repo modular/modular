@@ -39,6 +39,11 @@ from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.sync import named_barrier
@@ -216,12 +221,12 @@ def mha_sm90_dispatch[
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
-    comptime assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
-        BM
+    comptime assert BM % 64 == 0, String(
+        t"SM90 requires BM%64==0, but BM=={BM}"
     )
-    comptime assert (
-        BK % 64 == 0
-    ), "H100 requires BK%64==0 as it uses 128B swizzles, but BK==" + String(BK)
+    comptime assert BK % 64 == 0, String(
+        t"H100 requires BK%64==0 as it uses 128B swizzles, but BK=={BK}"
+    )
     comptime BN = new_config.block_n()
     # we add smem use for SharedMemBarrier synchronization
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
@@ -1060,6 +1065,7 @@ def _mha_sm90_enqueue[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1389,19 +1395,6 @@ def _mha_sm90[
     # The persistent kernels limit the grid size.
     # initial_seq_info = scheduler.unsafe_get_current_work_info(tile_summary, state)
 
-    var initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
-
-    comptime if not decoding:
-        if not initial_seq_info.is_valid():
-            comptime if persistent:
-                var seq_info = advance[True, MHASchedulerSynchronization.ALL](1)
-                if case .Some(seq_info) = seq_info:
-                    initial_seq_info = seq_info
-                else:
-                    return
-            else:
-                return
-
     if tid == 0:
         comptime for i in range(pipeline_stages):
             produced_mbar_kv[i].init(1)
@@ -1412,462 +1405,794 @@ def _mha_sm90[
                 produced_mbar_q[i].init(1)
                 consumed_mbar_q[i].init(Int32(num_consumer_threads))
 
-    comptime PositionType = MHAPosition[
-        BM,
-        BN,
-        config.depth,
-        config.padded_depth,
-        num_heads,
-        group,
-        decoding,
-    ]
+    with PDL():
+        var initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
 
-    @inline(.always)
-    def k_tile(
-        idx: UInt32,
-        out k_smem: TileTensor[
-            kv_type,
-            type_of(k_smem_layout),
-            MutUnsafeAnyOrigin,
-            address_space=.SHARED,
-            linear_idx_type=.int32,
-        ],
-    ) {imm}:
-        comptime sz = BN * config.padded_depth
-        k_smem = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
-            kv_smem.unsafe_offset(UInt32(sz) * idx).as_unsafe_any_origin(),
-            k_smem_layout,
-        )
+        comptime if not decoding:
+            if not initial_seq_info.is_valid():
+                comptime if persistent:
+                    var seq_info = advance[
+                        True, MHASchedulerSynchronization.ALL
+                    ](1)
+                    if case .Some(seq_info) = seq_info:
+                        initial_seq_info = seq_info
+                    else:
+                        return
+                else:
+                    return
 
-    @inline(.always)
-    def v_tile(
-        idx: UInt32,
-        out v_smem: TileTensor[
-            kv_type,
-            type_of(v_smem_layout),
-            MutUnsafeAnyOrigin,
-            address_space=.SHARED,
-            linear_idx_type=.int32,
-        ],
-    ) {imm}:
-        comptime sz = BN * config.padded_depth
-        v_smem = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
-            kv_smem.unsafe_offset(UInt32(sz) * idx).as_unsafe_any_origin(),
-            v_smem_layout,
-        )
-
-    @inline(.always)
-    def get_position(seq_info: SeqInfo) {imm} -> PositionType:
-        return _get_position[
+        comptime PositionType = MHAPosition[
             BM,
             BN,
             config.depth,
             config.padded_depth,
             num_heads,
             group,
-            ragged,
-            _is_cache_length_accurate,
-        ](
-            seq_info,
-            kv_lut,
-            max_seq_len,
-            num_keys_arg,
-            kv_input_row_offsets,
-        )
+            decoding,
+        ]
 
-    var position: PositionType = get_position(initial_seq_info)
+        @inline(.always)
+        def k_tile(
+            idx: UInt32,
+            out k_smem: TileTensor[
+                kv_type,
+                type_of(k_smem_layout),
+                MutUnsafeAnyOrigin,
+                address_space=.SHARED,
+                linear_idx_type=.int32,
+            ],
+        ) {imm}:
+            comptime sz = BN * config.padded_depth
+            k_smem = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
+                kv_smem.unsafe_offset(UInt32(sz) * idx).as_unsafe_any_origin(),
+                k_smem_layout,
+            )
 
-    var q_pipeline_state = PipelineState[2]()
+        @inline(.always)
+        def v_tile(
+            idx: UInt32,
+            out v_smem: TileTensor[
+                kv_type,
+                type_of(v_smem_layout),
+                MutUnsafeAnyOrigin,
+                address_space=.SHARED,
+                linear_idx_type=.int32,
+            ],
+        ) {imm}:
+            comptime sz = BN * config.padded_depth
+            v_smem = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
+                kv_smem.unsafe_offset(UInt32(sz) * idx).as_unsafe_any_origin(),
+                v_smem_layout,
+            )
 
-    barrier()
-    # For intra-warp overlap, we initiate wgmmas as
-    # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
-    # ..., Q @ K_{N-1}, P_{N-2} @ V_{N-2}, P_{N-1} @ V_{N-1}
-    #
-    # Due to this, we can overlap wgmmas and softmax calculations.
-    if warp_group_idx == 0:
-        # producer
-        warpgroup_reg_dealloc[num_producer_regs]()
-        if thread_idx.x == 0:
-            produce[
-                swizzle_mode,
-                pipeline_stages=pipeline_stages,
-                ragged=ragged,
-                _is_cache_length_accurate=_is_cache_length_accurate,
+        @inline(.always)
+        def get_position(seq_info: SeqInfo) {imm} -> PositionType:
+            return _get_position[
+                BM,
+                BN,
+                config.depth,
+                config.padded_depth,
+                num_heads,
+                group,
+                ragged,
+                _is_cache_length_accurate,
             ](
-                q_tma_op,
-                k_tma_op,
-                v_tma_op,
-                q_smem.as_unsafe_any_origin(),
-                kv_smem.as_unsafe_any_origin(),
-                produced_mbar_kv.as_unsafe_any_origin(),
-                consumed_mbar_kv.as_unsafe_any_origin(),
-                produced_mbar_q.as_unsafe_any_origin(),
-                consumed_mbar_q.as_unsafe_any_origin(),
+                seq_info,
                 kv_lut,
-                position,
-                partition,
-                scheduler,
-                mask,
-                tile_summary,
-                state,
                 max_seq_len,
                 num_keys_arg,
                 kv_input_row_offsets,
             )
 
-    else:
-        warpgroup_reg_alloc[num_consumer_regs]()
+        var position: PositionType = get_position(initial_seq_info)
 
-        # arrive to unblock the producers
-        # TODO: skip this by not waiting on the first set
-        comptime for i in range(pipeline_stages):
-            _ = consumed_mbar_kv[i].arrive()
+        var q_pipeline_state = PipelineState[2]()
 
-        comptime if persistent:
-            _ = consumed_mbar_q[0].arrive()
-        var local_warp_group_idx: UInt32 = warp_group_idx - 1
-
-        @inline(.nodebug)
-        def q_consumer(
-            q_idx: UInt32,
-        ) {imm} -> TileTensor[
-            kv_type,
-            type_of(q_smem_layout_consumer),
-            MutUnsafeAnyOrigin,
-            address_space=.SHARED,
-            linear_idx_type=.int32,
-        ]:
-            # Preserve the full parent Q layout and its pitch across warp groups.
-            return TileTensor[address_space=.SHARED, linear_idx_type=.int32](
-                q_smem.unsafe_offset(
-                    UInt32(q_size) * q_idx
-                ).as_unsafe_any_origin(),
-                q_smem_layout_consumer,
-            )
-
-        # layout is
-        # shape  = (2, num_m_mmas) x (2, num_n_mmas)
-        # stride = (2, 4*num_n_mmas) x (1, 4)
-        comptime s_reg_tile_layout = row_major[
-            num_m_mmas * num_n_mmas, p_frag_size
-        ]()
-        comptime o_reg_tile_layout = row_major[
-            num_m_mmas * num_n_mmas, o_frag_size
-        ]()
-        var p_reg_tile = stack_allocation[
-            dtype=accum_type, address_space=.LOCAL, alignment=4
-        ](s_reg_tile_layout)
-        var output_reg_buffer = stack_allocation[
-            dtype=accum_type,
-            address_space=.LOCAL,
-            alignment=align_of[accum_type](),
-        ](o_reg_tile_layout)
-        var output_reg_tile = output_reg_buffer.as_unsafe_any_origin().fill(0)
-        comptime p_reg_tile_layout = row_major[
-            num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
-        ]()
-        var p_frag_buffer = stack_allocation[
-            dtype=kv_type,
-            address_space=.LOCAL,
-            alignment=align_of[kv_type](),
-        ](p_reg_tile_layout)
-        var p_frag = p_frag_buffer.as_unsafe_any_origin()
-
-        # Nested TileTensor views over the flat register tiles: the
-        # hand-built nested layouts mirror the legacy `p_vec_output_layout`
-        # / `o_vec_output_layout` IntTuple geometry leaf-for-leaf (pinned by
-        # `test_mha_vec_output_layout_crd2idx_parity`). `frag_cols` is hoisted
-        # to an explicit param: a parameterized alias whose type arguments
-        # perform division trips a KGEN crash when the alias is instantiated
-        # through a function return type.
-        comptime p_frag_cols = p_frag_size // (
-            num_row_blocks_per_mma * frag_simdwidth
-        )
-        comptime o_frag_cols = o_frag_size // (
-            num_row_blocks_per_mma * frag_simdwidth
-        )
-        comptime _PVecTTLayout = TTLayout[
-            Coord[
-                Coord[
-                    ComptimeInt[num_row_blocks_per_mma],
-                    ComptimeInt[num_m_mmas],
-                ],
-                Coord[ComptimeInt[p_frag_cols], ComptimeInt[num_n_mmas]],
-            ].element_types,
-            Coord[
-                Coord[ComptimeInt[frag_simdwidth], ComptimeInt[p_frag_size]],
-                Coord[
-                    ComptimeInt[num_row_blocks_per_mma * frag_simdwidth],
-                    ComptimeInt[num_m_mmas * p_frag_size],
-                ],
-            ].element_types,
-        ]
-        comptime _OVecTTLayout = TTLayout[
-            Coord[
-                Coord[
-                    ComptimeInt[num_row_blocks_per_mma],
-                    ComptimeInt[num_m_mmas],
-                ],
-                Coord[ComptimeInt[o_frag_cols], ComptimeInt[num_n_mmas]],
-            ].element_types,
-            Coord[
-                Coord[ComptimeInt[frag_simdwidth], ComptimeInt[o_frag_size]],
-                Coord[
-                    ComptimeInt[num_row_blocks_per_mma * frag_simdwidth],
-                    ComptimeInt[num_m_mmas * o_frag_size],
-                ],
-            ].element_types,
-        ]
-        comptime VecPType = TileTensor[
-            accum_type,
-            _PVecTTLayout,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-            Engine=DefaultEngine[element_width=frag_simdwidth],
-        ]
-        comptime VecOType = TileTensor[
-            accum_type,
-            _OVecTTLayout,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-            Engine=DefaultEngine[element_width=frag_simdwidth],
-        ]
-
-        @inline(.always)
-        def vectorize_p_reg_tile(
-            out result: VecPType,
-        ) {imm}:
-            result = {
-                rebind[
-                    Pointer[
-                        SIMD[accum_type, frag_simdwidth],
-                        MutAnyOrigin,
-                        address_space=.LOCAL,
-                    ]
-                ](p_reg_tile.ptr.unsafe_origin_cast[MutAnyOrigin]()),
-                _PVecTTLayout(),
-            }
-
-        @inline(.always)
-        def vectorize_o_reg_tile(
-            out result: VecOType,
-        ) {imm}:
-            result = {
-                rebind[
-                    Pointer[
-                        SIMD[accum_type, frag_simdwidth],
-                        MutAnyOrigin,
-                        address_space=.LOCAL,
-                    ]
-                ](output_reg_buffer.ptr.unsafe_origin_cast[MutAnyOrigin]()),
-                _OVecTTLayout(),
-            }
-
-        var rowmax_buffer = stack_allocation[
-            dtype=accum_type,
-            address_space=.LOCAL,
-            alignment=align_of[accum_type](),
-        ](row_major[num_rows_per_warp]())
-        var rowmax = rowmax_buffer.as_unsafe_any_origin()
-        var rowsum_buffer = stack_allocation[
-            dtype=accum_type,
-            address_space=.LOCAL,
-            alignment=align_of[accum_type](),
-        ](row_major[num_rows_per_warp]())
-        var rowsum = rowsum_buffer.as_unsafe_any_origin()
-
-        # Mask global memory iterator.
-        var mask_warp_row = warp_y * UInt32(WM)
-        var scale_log2e: Scalar[accum_type] = (
-            scale.cast[
-                accum_type
-            ]() if MaskType.apply_log2e_after_mask else scale.cast[accum_type]()
-            * log2e
-        )
-
-        @inline(.always)
-        def q_mul_k(read_idx: UInt32, read_phase: UInt32, q_idx: UInt32) {imm}:
-            var k_smem_sub = k_tile(read_idx)
-            var q_smem_sub = q_consumer(q_idx)
-            produced_mbar_kv[read_idx].wait(read_phase)
-
-            warpgroup_fence(p_reg_tile)
-            wgmma_0.arrive()
-            wgmma_0.wgmma[
-                num_consumer,
-                scale_c=0,
-                num_k_iters=Optional[Int](
-                    uceildiv(depth, wgmma_0.mma_shape[2])
-                ),
-            ](
-                q_smem_sub,
-                k_smem_sub,
-                p_reg_tile,
-                Int(local_warp_group_idx),
-            )
-            wgmma_0.commit_group()
-            warpgroup_fence(p_reg_tile)
-
-        @inline(.always)
-        def p_mul_v(read_idx: UInt32, read_phase: UInt32) {imm}:
-            var v_smem_sub = v_tile(read_idx)
-            produced_mbar_kv[read_idx].wait(read_phase)
-            warpgroup_fence(output_reg_tile)
-            wgmma_1.arrive()
-            wgmma_1.wgmma(
-                p_frag,
-                v_smem_sub,
-                output_reg_tile,
-            )
-            wgmma_1.commit_group()
-            warpgroup_fence(output_reg_tile)
-
-        @inline(.always)
-        def wait_for_q_mul_k[wgmma_left_in_flight: Int](read_idx: UInt32) {imm}:
-            wgmma_0.wait_group[wgmma_left_in_flight]()  # P is available
-            _ = consumed_mbar_kv[read_idx].arrive()
-
-        @inline(.always)
-        def wait_for_p_mul_v(read_idx: UInt32) {imm}:
-            wgmma_1.wait_group[0]()  # output is available
-            _ = consumed_mbar_kv[read_idx].arrive()
-
-        @inline(.always)
-        def apply_mask(
-            position: PositionType,
-            mask_status: TileMaskStatus,
-            kv_tile_start_row: UInt32,
-        ) {imm}:
-            var max_len: UInt32 = (
-                num_keys_arg if decoding else max_seq_len.as_uint32()
-            )
-            _apply_mask[
-                frag_simdwidth,
-                WM,
-                MMA_N0,
-                num_m_mmas,
-                num_n_mmas,
-            ](
-                mask_warp_row,
-                position,
-                lane,
-                max_len,
-                scale_log2e,
-                kv_tile_start_row,
-                mask,
-                mask_status,
-                vectorize_p_reg_tile(),
-            )
-
-        @inline(.always)
-        def scale_output(correction: type_of(rowmax)) {imm}:
-            # we are now able to read/modify `output_reg_tile` and modify `p_frag`
-            var vout = vectorize_o_reg_tile()
-
-            # Correct output
-            # We could avoid this on the first iter
-            # if we specialize and unswitch on `first_iter`
-            # otherwise, the branch requires synchronization
-            comptime for row in range(num_rows_per_warp):
-                var c = SIMD[accum_type, frag_simdwidth](correction[Idx[row]])
-
-                comptime for col in range(num_cols_output):
-                    vout[Coord(Idx[row], Idx[col])] = (
-                        vout[Idx[row], Idx[col]] * c
-                    )
-
-        @inline(.always)
-        def elementwise_reciprocal(
-            old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
-        ):
-            # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
-            comptime for row in range(num_rows_per_warp):
-                var old = old_rowsum[Idx[row]]
-                var new = new_rowsum[Idx[row]]
-                new_rowsum[Coord(Idx[row])] = recip(old)[0]
-                old_rowsum[Coord(Idx[row])] = new
-
-        @inline(.always)
-        def write_output(
-            position: PositionType,
-            q_idx: UInt32,
-            rowsum_inv: type_of(rowsum),
-        ) {imm}:
-            var vout = vectorize_o_reg_tile()
-
-            # Apply softmax denumerator.
-            comptime for row in range(num_rows_per_warp):
-                var rs_inv = SIMD[accum_type, frag_simdwidth](
-                    rowsum_inv[Idx[row]]
+        barrier()
+        # For intra-warp overlap, we initiate wgmmas as
+        # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
+        # ..., Q @ K_{N-1}, P_{N-2} @ V_{N-2}, P_{N-1} @ V_{N-1}
+        #
+        # Due to this, we can overlap wgmmas and softmax calculations.
+        if warp_group_idx == 0:
+            # producer
+            warpgroup_reg_dealloc[num_producer_regs]()
+            if thread_idx.x == 0:
+                produce[
+                    swizzle_mode,
+                    pipeline_stages=pipeline_stages,
+                    ragged=ragged,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                ](
+                    q_tma_op,
+                    k_tma_op,
+                    v_tma_op,
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem.as_unsafe_any_origin(),
+                    produced_mbar_kv.as_unsafe_any_origin(),
+                    consumed_mbar_kv.as_unsafe_any_origin(),
+                    produced_mbar_q.as_unsafe_any_origin(),
+                    consumed_mbar_q.as_unsafe_any_origin(),
+                    kv_lut,
+                    position,
+                    partition,
+                    scheduler,
+                    mask,
+                    tile_summary,
+                    state,
+                    max_seq_len,
+                    num_keys_arg,
+                    kv_input_row_offsets,
                 )
 
-                comptime for col in range(num_cols_output):
-                    vout[Coord(Idx[row], Idx[col])] = (
-                        vout[Idx[row], Idx[col]] * rs_inv
+        else:
+            warpgroup_reg_alloc[num_consumer_regs]()
+
+            # arrive to unblock the producers
+            # TODO: skip this by not waiting on the first set
+            comptime for i in range(pipeline_stages):
+                _ = consumed_mbar_kv[i].arrive()
+
+            comptime if persistent:
+                _ = consumed_mbar_q[0].arrive()
+            var local_warp_group_idx: UInt32 = warp_group_idx - 1
+
+            @inline(.nodebug)
+            def q_consumer(
+                q_idx: UInt32,
+            ) {imm} -> TileTensor[
+                kv_type,
+                type_of(q_smem_layout_consumer),
+                MutUnsafeAnyOrigin,
+                address_space=.SHARED,
+                linear_idx_type=.int32,
+            ]:
+                # Preserve the full parent Q layout and its pitch across warp groups.
+                return TileTensor[
+                    address_space=.SHARED, linear_idx_type=.int32
+                ](
+                    q_smem.unsafe_offset(
+                        UInt32(q_size) * q_idx
+                    ).as_unsafe_any_origin(),
+                    q_smem_layout_consumer,
+                )
+
+            # layout is
+            # shape  = (2, num_m_mmas) x (2, num_n_mmas)
+            # stride = (2, 4*num_n_mmas) x (1, 4)
+            comptime s_reg_tile_layout = row_major[
+                num_m_mmas * num_n_mmas, p_frag_size
+            ]()
+            comptime o_reg_tile_layout = row_major[
+                num_m_mmas * num_n_mmas, o_frag_size
+            ]()
+            var p_reg_tile = stack_allocation[
+                dtype=accum_type, address_space=.LOCAL, alignment=4
+            ](s_reg_tile_layout)
+            var output_reg_buffer = stack_allocation[
+                dtype=accum_type,
+                address_space=.LOCAL,
+                alignment=align_of[accum_type](),
+            ](o_reg_tile_layout)
+            var output_reg_tile = output_reg_buffer.as_unsafe_any_origin().fill(
+                0
+            )
+            comptime p_reg_tile_layout = row_major[
+                num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
+            ]()
+            var p_frag_buffer = stack_allocation[
+                dtype=kv_type,
+                address_space=.LOCAL,
+                alignment=align_of[kv_type](),
+            ](p_reg_tile_layout)
+            var p_frag = p_frag_buffer.as_unsafe_any_origin()
+
+            # Nested TileTensor views over the flat register tiles: the
+            # hand-built nested layouts mirror the legacy `p_vec_output_layout`
+            # / `o_vec_output_layout` IntTuple geometry leaf-for-leaf (pinned by
+            # `test_mha_vec_output_layout_crd2idx_parity`). `frag_cols` is hoisted
+            # to an explicit param: a parameterized alias whose type arguments
+            # perform division trips a KGEN crash when the alias is instantiated
+            # through a function return type.
+            comptime p_frag_cols = p_frag_size // (
+                num_row_blocks_per_mma * frag_simdwidth
+            )
+            comptime o_frag_cols = o_frag_size // (
+                num_row_blocks_per_mma * frag_simdwidth
+            )
+            comptime _PVecTTLayout = TTLayout[
+                Coord[
+                    Coord[
+                        ComptimeInt[num_row_blocks_per_mma],
+                        ComptimeInt[num_m_mmas],
+                    ],
+                    Coord[ComptimeInt[p_frag_cols], ComptimeInt[num_n_mmas]],
+                ].element_types,
+                Coord[
+                    Coord[
+                        ComptimeInt[frag_simdwidth], ComptimeInt[p_frag_size]
+                    ],
+                    Coord[
+                        ComptimeInt[num_row_blocks_per_mma * frag_simdwidth],
+                        ComptimeInt[num_m_mmas * p_frag_size],
+                    ],
+                ].element_types,
+            ]
+            comptime _OVecTTLayout = TTLayout[
+                Coord[
+                    Coord[
+                        ComptimeInt[num_row_blocks_per_mma],
+                        ComptimeInt[num_m_mmas],
+                    ],
+                    Coord[ComptimeInt[o_frag_cols], ComptimeInt[num_n_mmas]],
+                ].element_types,
+                Coord[
+                    Coord[
+                        ComptimeInt[frag_simdwidth], ComptimeInt[o_frag_size]
+                    ],
+                    Coord[
+                        ComptimeInt[num_row_blocks_per_mma * frag_simdwidth],
+                        ComptimeInt[num_m_mmas * o_frag_size],
+                    ],
+                ].element_types,
+            ]
+            comptime VecPType = TileTensor[
+                accum_type,
+                _PVecTTLayout,
+                MutAnyOrigin,
+                address_space=.LOCAL,
+                Engine=DefaultEngine[element_width=frag_simdwidth],
+            ]
+            comptime VecOType = TileTensor[
+                accum_type,
+                _OVecTTLayout,
+                MutAnyOrigin,
+                address_space=.LOCAL,
+                Engine=DefaultEngine[element_width=frag_simdwidth],
+            ]
+
+            @inline(.always)
+            def vectorize_p_reg_tile(
+                out result: VecPType,
+            ) {imm}:
+                result = {
+                    rebind[
+                        Pointer[
+                            SIMD[accum_type, frag_simdwidth],
+                            MutAnyOrigin,
+                            address_space=.LOCAL,
+                        ]
+                    ](p_reg_tile.ptr.unsafe_origin_cast[MutAnyOrigin]()),
+                    _PVecTTLayout(),
+                }
+
+            @inline(.always)
+            def vectorize_o_reg_tile(
+                out result: VecOType,
+            ) {imm}:
+                result = {
+                    rebind[
+                        Pointer[
+                            SIMD[accum_type, frag_simdwidth],
+                            MutAnyOrigin,
+                            address_space=.LOCAL,
+                        ]
+                    ](output_reg_buffer.ptr.unsafe_origin_cast[MutAnyOrigin]()),
+                    _OVecTTLayout(),
+                }
+
+            var rowmax_buffer = stack_allocation[
+                dtype=accum_type,
+                address_space=.LOCAL,
+                alignment=align_of[accum_type](),
+            ](row_major[num_rows_per_warp]())
+            var rowmax = rowmax_buffer.as_unsafe_any_origin()
+            var rowsum_buffer = stack_allocation[
+                dtype=accum_type,
+                address_space=.LOCAL,
+                alignment=align_of[accum_type](),
+            ](row_major[num_rows_per_warp]())
+            var rowsum = rowsum_buffer.as_unsafe_any_origin()
+
+            # Mask global memory iterator.
+            var mask_warp_row = warp_y * UInt32(WM)
+            var scale_log2e: Scalar[accum_type] = (
+                scale.cast[
+                    accum_type
+                ]() if MaskType.apply_log2e_after_mask else scale.cast[
+                    accum_type
+                ]()
+                * log2e
+            )
+
+            @inline(.always)
+            def q_mul_k(
+                read_idx: UInt32, read_phase: UInt32, q_idx: UInt32
+            ) {imm}:
+                var k_smem_sub = k_tile(read_idx)
+                var q_smem_sub = q_consumer(q_idx)
+                produced_mbar_kv[read_idx].wait(read_phase)
+
+                warpgroup_fence(p_reg_tile)
+                wgmma_0.arrive()
+                wgmma_0.wgmma[
+                    num_consumer,
+                    scale_c=0,
+                    num_k_iters=Optional[Int](
+                        uceildiv(depth, wgmma_0.mma_shape[2])
+                    ),
+                ](
+                    q_smem_sub,
+                    k_smem_sub,
+                    p_reg_tile,
+                    Int(local_warp_group_idx),
+                )
+                wgmma_0.commit_group()
+                warpgroup_fence(p_reg_tile)
+
+            @inline(.always)
+            def p_mul_v(read_idx: UInt32, read_phase: UInt32) {imm}:
+                var v_smem_sub = v_tile(read_idx)
+                produced_mbar_kv[read_idx].wait(read_phase)
+                warpgroup_fence(output_reg_tile)
+                wgmma_1.arrive()
+                wgmma_1.wgmma(
+                    p_frag,
+                    v_smem_sub,
+                    output_reg_tile,
+                )
+                wgmma_1.commit_group()
+                warpgroup_fence(output_reg_tile)
+
+            @inline(.always)
+            def wait_for_q_mul_k[
+                wgmma_left_in_flight: Int
+            ](read_idx: UInt32) {imm}:
+                wgmma_0.wait_group[wgmma_left_in_flight]()  # P is available
+                _ = consumed_mbar_kv[read_idx].arrive()
+
+            @inline(.always)
+            def wait_for_p_mul_v(read_idx: UInt32) {imm}:
+                wgmma_1.wait_group[0]()  # output is available
+                _ = consumed_mbar_kv[read_idx].arrive()
+
+            @inline(.always)
+            def apply_mask(
+                position: PositionType,
+                mask_status: TileMaskStatus,
+                kv_tile_start_row: UInt32,
+            ) {imm}:
+                var max_len: UInt32 = (
+                    num_keys_arg if decoding else max_seq_len.as_uint32()
+                )
+                _apply_mask[
+                    frag_simdwidth,
+                    WM,
+                    MMA_N0,
+                    num_m_mmas,
+                    num_n_mmas,
+                ](
+                    mask_warp_row,
+                    position,
+                    lane,
+                    max_len,
+                    scale_log2e,
+                    kv_tile_start_row,
+                    mask,
+                    mask_status,
+                    vectorize_p_reg_tile(),
+                )
+
+            @inline(.always)
+            def scale_output(correction: type_of(rowmax)) {imm}:
+                # we are now able to read/modify `output_reg_tile` and modify `p_frag`
+                var vout = vectorize_o_reg_tile()
+
+                # Correct output
+                # We could avoid this on the first iter
+                # if we specialize and unswitch on `first_iter`
+                # otherwise, the branch requires synchronization
+                comptime for row in range(num_rows_per_warp):
+                    var c = SIMD[accum_type, frag_simdwidth](
+                        correction[Idx[row]]
                     )
 
-            var output_ptr: MutPointer[
-                Scalar[output_type], MutAnyOrigin
-            ] = o_ptr_arg
+                    comptime for col in range(num_cols_output):
+                        vout[Coord(Idx[row], Idx[col])] = (
+                            vout[Idx[row], Idx[col]] * c
+                        )
+
+            @inline(.always)
+            def elementwise_reciprocal(
+                old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
+            ):
+                # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
+                comptime for row in range(num_rows_per_warp):
+                    var old = old_rowsum[Idx[row]]
+                    var new = new_rowsum[Idx[row]]
+                    new_rowsum[Coord(Idx[row])] = recip(old)[0]
+                    old_rowsum[Coord(Idx[row])] = new
+
+            @inline(.always)
+            def write_output(
+                position: PositionType,
+                q_idx: UInt32,
+                rowsum_inv: type_of(rowsum),
+            ) {imm}:
+                var vout = vectorize_o_reg_tile()
+
+                # Apply softmax denumerator.
+                comptime for row in range(num_rows_per_warp):
+                    var rs_inv = SIMD[accum_type, frag_simdwidth](
+                        rowsum_inv[Idx[row]]
+                    )
+
+                    comptime for col in range(num_cols_output):
+                        vout[Coord(Idx[row], Idx[col])] = (
+                            vout[Idx[row], Idx[col]] * rs_inv
+                        )
+
+                var output_ptr: MutPointer[
+                    Scalar[output_type], MutAnyOrigin
+                ] = o_ptr_arg
+
+                comptime if decoding and PartitionType.do_partition:
+                    output_ptr = output_ptr.unsafe_offset(
+                        UInt32(depth * num_heads)
+                        * batch_size
+                        * position.prompt_offset
+                    )
+                var output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
+
+                comptime swizzle = make_swizzle[
+                    num_rows=MMA_M // 2, row_size=BN, access_size=8
+                ]()
+                # Reuse a_smem for c tile in smem
+                comptime q_tile_size: UInt32 = UInt32(q_smem_size // 2)
+
+                # ensure all threads have finished reading `q_smem`
+                named_barrier[Int32(num_consumer_threads)]()
+                var accum_smem_tile = output_reg_to_smem[
+                    BM,
+                    config.depth,
+                    config.padded_depth,
+                    swizzle,
+                    num_consumer,
+                ](
+                    tid,
+                    local_warp_group_idx,
+                    warp_y,
+                    q_smem.unsafe_offset(
+                        q_idx * q_tile_size
+                    ).as_unsafe_any_origin(),
+                    output_reg_tile,
+                )
+                # Guard writing to shared memory.
+                named_barrier[Int32(num_consumer_threads)]()
+                # Vectorized copy from shared to global memory, during which every 2 FP32
+                # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
+                # vector and stored using 16B store instruction.
+                copy_sram_to_dram[
+                    thread_layout=row_major[
+                        num_consumer_threads * simd_size // config.depth,
+                        config.depth // simd_size,
+                    ](),
+                    swizzle=swizzle,
+                    masked=True,
+                ](
+                    output_gmem_tile.vectorize[1, simd_size](),
+                    accum_smem_tile.vectorize[1, simd_size](),
+                    Int(position.q_tile_num_rows()),
+                )
+
+            var startend = position.get_start_and_end_for_partitions[
+                page_size=KVLUTType.page_size
+            ](partition, mask)
+            var kv_tile_start_row: UInt32 = startend[0]
+            var end: UInt32 = startend[1]
 
             comptime if decoding and PartitionType.do_partition:
-                output_ptr = output_ptr.unsafe_offset(
-                    UInt32(depth * num_heads)
-                    * batch_size
-                    * position.prompt_offset
+                if kv_tile_start_row >= end:
+                    if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
+                        4 * min(group, 8) + 128
+                    ):
+                        var exp_sum_ptr, qk_max_ptr = (
+                            position.exp_sum_qk_max_ptr(partition, batch_size)
+                        )
+                        var q_heads = get_q_head_idx(position, lane)
+
+                        comptime for i in range(q_heads.size):
+                            var q_head_idx = q_heads[i]
+                            exp_sum_ptr[q_head_idx] = Scalar[
+                                PartitionType.accum_dtype
+                            ](0)
+                            qk_max_ptr[q_head_idx] = min_or_neg_inf[
+                                PartitionType.accum_dtype
+                            ]()
+
+                    write_output(position, q_pipeline_state.index(), rowsum)
+                    return
+
+            var mask_status: TileMaskStatus
+            while True:
+                mask_status = position.mask_status(mask, kv_tile_start_row)
+                if mask_status != TileMaskStatus.FULL_MASK:
+                    break
+                kv_tile_start_row += UInt32(BN)
+
+            var read_pipeline_states = PipelineState[pipeline_stages]()
+
+            # q_mul_k must wait on fetching q and k
+            # therefore, we find `kv_tile_start_row` first.
+            var read_idx_q: UInt32 = read_pipeline_states.index()
+            q_mul_k(
+                read_idx_q,
+                read_pipeline_states.phase(),
+                q_pipeline_state.index(),
+            )
+            read_pipeline_states.step()
+            wait_for_q_mul_k[0](read_idx_q)
+
+            apply_mask(position, mask_status, kv_tile_start_row)
+
+            var sink_weight: Scalar[accum_type] = 0.0
+
+            # Include sink_weights in rowmax computation if present
+            comptime if not SinkType.is_null:
+                var q_head_indices = get_q_head_idx(position, lane)
+
+                comptime if decoding:
+                    comptime for i in range(q_head_indices.size):
+                        var head_idx = q_head_indices[i]
+                        sink_weight = (
+                            sink_weights_ptr.unsafe_value()[head_idx].cast[
+                                accum_type
+                            ]()
+                            * log2e
+                        )
+                        rowmax[Coord(Idx[i])] = sink_weight
+                else:
+                    sink_weight = (
+                        sink_weights_ptr.unsafe_value()[q_head_indices[0]].cast[
+                            accum_type
+                        ]()
+                        * log2e
+                    )
+
+                    comptime for i in range(num_rows_per_warp):
+                        rowmax[Coord(Idx[i])] = sink_weight
+
+            # Compute initial rowmax
+            var attention_rowmax = _rowmax_online_softmax[
+                # threads layout by warp
+                frag_simdwidth,
+                1,
+                mma_thread_layout,
+                use_exp2=True,
+            ](vectorize_p_reg_tile(), rowmax, init_rowmax=SinkType.is_null)
+
+            rowmax.copy_from(attention_rowmax)
+
+            # Compute rowsum
+            var attention_rowsum = _rowsum[
+                type_of(rowsum_buffer.layout),
+                frag_simdwidth,
+                mma_thread_layout,
+            ](vectorize_p_reg_tile())
+
+            # Add sink weight contribution to rowsum
+            comptime if not SinkType.is_null:
+                var q_head_indices = get_q_head_idx(position, lane)
+
+                comptime if decoding:
+                    comptime for i in range(q_head_indices.size):
+                        var sink_contribution = exp2(
+                            sink_weight - rowmax[Idx[i]]
+                        )
+                        attention_rowsum[Coord(Idx[i])] = (
+                            attention_rowsum[Idx[i]] + sink_contribution[0]
+                        )
+
+                else:
+                    comptime for i in range(num_rows_per_warp):
+                        # Compute exp2((sink_weight - rowmax[j]) * log2e)
+                        var sink_contribution = exp2(
+                            sink_weight - rowmax[Idx[i]]
+                        )
+                        attention_rowsum[Coord(Idx[i])] = (
+                            attention_rowsum[Idx[i]] + sink_contribution[0]
+                        )
+
+            rowsum.copy_from(attention_rowsum)
+
+            var position_prev: PositionType = position
+            var q_idx_old: UInt32 = q_pipeline_state.index()
+            var q_phase_old: UInt32 = q_pipeline_state.phase()
+
+            # Consumption order:
+            # Preheader: Q0, K0
+            # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
+            # Exit: V{-1}
+            comptime if persistent:
+                kv_tile_start_row += UInt32(BN)
+            while True:
+                while True:
+                    comptime if not persistent:
+                        kv_tile_start_row += UInt32(BN)
+                    if kv_tile_start_row >= end:
+                        break
+
+                    # this loops over num_keys
+                    mask_status = position.mask_status(mask, kv_tile_start_row)
+                    if mask_status == TileMaskStatus.FULL_MASK:
+                        comptime if persistent:
+                            kv_tile_start_row += UInt32(BN)
+                        continue
+                    # copy new pfrag, used by `p_mul_v` on next iter
+                    p_frag.copy_from(
+                        p_reg_tile.reshape(
+                            row_major[
+                                num_m_mmas * num_n_mmas * frag_ratio,
+                                a_frag_size,
+                            ]()
+                        )
+                    )
+
+                    # new pipeline states
+                    var read_idx_q: UInt32 = read_pipeline_states.index()
+                    # start wgmmas
+                    q_mul_k(
+                        read_idx_q,
+                        read_pipeline_states.phase(),
+                        q_pipeline_state.index(),
+                    )  # can't rw `p_reg_tile`
+                    read_pipeline_states.step()
+                    var read_idx_v: UInt32 = read_pipeline_states.index()
+                    p_mul_v(
+                        read_idx_v, read_pipeline_states.phase()
+                    )  # can't rw output or pfrag
+                    read_pipeline_states.step()
+                    wait_for_q_mul_k[1](read_idx_q)  # can rw `p_reg_tile`
+
+                    apply_mask(position, mask_status, kv_tile_start_row)
+                    var new_q = (
+                        persistent and q_idx_old != q_pipeline_state.index()
+                    )
+                    # Compute rowmax for current scores
+                    var current_rowmax = _rowmax_online_softmax[
+                        # threads layout by warp
+                        frag_simdwidth,
+                        1,
+                        mma_thread_layout,
+                        use_exp2=True,
+                    ](vectorize_p_reg_tile(), rowmax, new_q)
+
+                    var score_frag_rowmax = current_rowmax
+                    if new_q:
+                        comptime if decoding and PartitionType.do_partition:
+                            if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
+                                4 * min(group, 8) + 128
+                            ):
+                                var exp_sum_ptr, qk_max_ptr = (
+                                    position_prev.exp_sum_qk_max_ptr(
+                                        partition, batch_size
+                                    )
+                                )
+                                var q_heads = get_q_head_idx(position, lane)
+
+                                comptime for i in range(q_heads.size):
+                                    var q_head_idx = q_heads[i]
+                                    exp_sum_ptr[q_head_idx] = rebind[
+                                        Scalar[PartitionType.accum_dtype]
+                                    ](rowsum[Idx[i]])
+                                    qk_max_ptr[q_head_idx] = rebind[
+                                        Scalar[PartitionType.accum_dtype]
+                                    ](rowmax[Idx[i]])
+                        var score_frag_rowsum = _rowsum[
+                            type_of(rowsum_buffer.layout),
+                            frag_simdwidth,
+                            mma_thread_layout,
+                        ](vectorize_p_reg_tile())
+                        rowmax.copy_from(score_frag_rowmax)
+                        elementwise_reciprocal(rowsum, score_frag_rowsum)
+                        wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
+                        # we `^ 1` to access the previous
+                        # Two separate issues:
+                        # 0. Which q do we use for `accum_smem`?
+                        # 1. Which qs, if any, do we `arrive` at?
+                        #
+                        # If the next q_idx != the current q_idx (i.e. q_idx_n != q_idx)
+                        # then we can use the current q for writing smem.
+                        # If `q_idx_n == q_idx`, then we use the old q_idx (i.e. q_idx_o).
+                        # This means we were not allowed to `arrive` at `q_idx_o`.
+                        #
+                        # Letting `0` indicate inequality, and `1` equality,
+                        # let x = q_idx == q_idx_n
+                        # let y = q_idx_n == q_idx_n_n
+                        # We thus have 4 states `xy`:
+                        # 0. 00: We use q_idx and arrive
+                        # 1. 01: We use q_idx, but do not arrive on q_idx
+                        # 2. 10: We use q_idx_o, do not arrive on q_idx
+                        # 3. 11: We use q_idx_o, do not arrive on q_idx
+                        #
+                        # Only in `00` do we get to arrive on `q_idx` early.
+                        # Given `BN < num_keys`, it won't often be the case
+                        # that we can arrive at Q early; we need a series
+                        # of q_tile_idx and head_idx that have a lot of
+                        # `FULL_MASK`s, which our iteration scheme is supposed
+                        # to make unlikely.
+                        # Thus, we're going to simplify the problem by assuming
+                        # scenario `0.` is unlikely unless `BN >= num_keys`,
+                        # in which case it is guaranteed.
+                        # var q_idx: UInt32 = q_pipeline_state.index() if few_keys else q_idx_old
+                        write_output(
+                            position_prev, q_idx_old, score_frag_rowsum
+                        )
+                        var q_idx_new: UInt32 = q_pipeline_state.index()
+
+                        _ = consumed_mbar_q[q_idx_new].arrive()
+                        _ = output_reg_tile.fill(0)
+                        position_prev = position
+                        q_idx_old = q_idx_new
+                        q_phase_old = q_pipeline_state.phase()
+                    else:
+                        var score_frag_rowsum = _rowsum[
+                            type_of(rowsum_buffer.layout),
+                            frag_simdwidth,
+                            mma_thread_layout,
+                        ](vectorize_p_reg_tile())
+
+                        _online_softmax_correction[use_exp2=True](
+                            rowmax,
+                            score_frag_rowmax,
+                        )
+                        # rowmax now holds score_frag_rowmax
+                        # score_frag_rowmax now holds the correction
+
+                        comptime for i in range(num_rows_per_warp):
+                            rowsum[Coord(Idx[i])] = (
+                                rowsum[Idx[i]] * score_frag_rowmax[Idx[i]]
+                                + score_frag_rowsum[Idx[i]]
+                            )
+
+                        wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
+                        scale_output(score_frag_rowmax)  # scale output
+
+                    comptime if persistent:
+                        kv_tile_start_row += UInt32(BN)
+
+                comptime if persistent:
+                    var q_idx_old: UInt32 = q_pipeline_state.index()
+                    var q_phase_old: UInt32 = q_pipeline_state.phase()
+                    q_pipeline_state.step()
+                    produced_mbar_q[q_idx_old].wait(q_phase_old)
+                    var docontinue = advance[False](q_idx_old)
+                    if not docontinue:
+                        break
+                    position = get_position(docontinue.value())
+                    var start, new_end = (
+                        position.get_start_and_end_for_partitions[
+                            page_size=KVLUTType.page_size
+                        ](partition, mask)
+                    )
+                    kv_tile_start_row = start
+                    end = new_end
+                else:
+                    break
+
+            p_frag.copy_from(
+                p_reg_tile.reshape(
+                    row_major[
+                        num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
+                    ]()
                 )
-            var output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
-
-            comptime swizzle = make_swizzle[
-                num_rows=MMA_M // 2, row_size=BN, access_size=8
-            ]()
-            # Reuse a_smem for c tile in smem
-            comptime q_tile_size: UInt32 = UInt32(q_smem_size // 2)
-
-            # ensure all threads have finished reading `q_smem`
-            named_barrier[Int32(num_consumer_threads)]()
-            var accum_smem_tile = output_reg_to_smem[
-                BM,
-                config.depth,
-                config.padded_depth,
-                swizzle,
-                num_consumer,
-            ](
-                tid,
-                local_warp_group_idx,
-                warp_y,
-                q_smem.unsafe_offset(
-                    q_idx * q_tile_size
-                ).as_unsafe_any_origin(),
-                output_reg_tile,
             )
-            # Guard writing to shared memory.
-            named_barrier[Int32(num_consumer_threads)]()
-            # Vectorized copy from shared to global memory, during which every 2 FP32
-            # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
-            # vector and stored using 16B store instruction.
-            copy_sram_to_dram[
-                thread_layout=row_major[
-                    num_consumer_threads * simd_size // config.depth,
-                    config.depth // simd_size,
-                ](),
-                swizzle=swizzle,
-                masked=True,
-            ](
-                output_gmem_tile.vectorize[1, simd_size](),
-                accum_smem_tile.vectorize[1, simd_size](),
-                Int(position.q_tile_num_rows()),
+            p_mul_v(
+                read_pipeline_states.index(),
+                read_pipeline_states.phase(),
             )
 
-        var startend = position.get_start_and_end_for_partitions[
-            page_size=KVLUTType.page_size
-        ](partition, mask)
-        var kv_tile_start_row: UInt32 = startend[0]
-        var end: UInt32 = startend[1]
-
-        comptime if decoding and PartitionType.do_partition:
-            if kv_tile_start_row >= end:
+            comptime if decoding and PartitionType.do_partition:
                 if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                     4 * min(group, 8) + 128
                 ):
@@ -1878,302 +2203,15 @@ def _mha_sm90[
 
                     comptime for i in range(q_heads.size):
                         var q_head_idx = q_heads[i]
-                        exp_sum_ptr[q_head_idx] = Scalar[
-                            PartitionType.accum_dtype
-                        ](0)
-                        qk_max_ptr[q_head_idx] = min_or_neg_inf[
-                            PartitionType.accum_dtype
-                        ]()
+                        exp_sum_ptr[q_head_idx] = rebind[
+                            Scalar[PartitionType.accum_dtype]
+                        ](rowsum[Idx[i]])
+                        qk_max_ptr[q_head_idx] = rebind[
+                            Scalar[PartitionType.accum_dtype]
+                        ](rowmax[Idx[i]])
 
-                write_output(position, q_pipeline_state.index(), rowsum)
-                return
-
-        var mask_status: TileMaskStatus
-        while True:
-            mask_status = position.mask_status(mask, kv_tile_start_row)
-            if mask_status != TileMaskStatus.FULL_MASK:
-                break
-            kv_tile_start_row += UInt32(BN)
-
-        var read_pipeline_states = PipelineState[pipeline_stages]()
-
-        # q_mul_k must wait on fetching q and k
-        # therefore, we find `kv_tile_start_row` first.
-        var read_idx_q: UInt32 = read_pipeline_states.index()
-        q_mul_k(
-            read_idx_q,
-            read_pipeline_states.phase(),
-            q_pipeline_state.index(),
-        )
-        read_pipeline_states.step()
-        wait_for_q_mul_k[0](read_idx_q)
-
-        apply_mask(position, mask_status, kv_tile_start_row)
-
-        var sink_weight: Scalar[accum_type] = 0.0
-
-        # Include sink_weights in rowmax computation if present
-        comptime if not SinkType.is_null:
-            var q_head_indices = get_q_head_idx(position, lane)
-
-            comptime if decoding:
-                comptime for i in range(q_head_indices.size):
-                    var head_idx = q_head_indices[i]
-                    sink_weight = (
-                        sink_weights_ptr.unsafe_value()[head_idx].cast[
-                            accum_type
-                        ]()
-                        * log2e
-                    )
-                    rowmax[Coord(Idx[i])] = sink_weight
-            else:
-                sink_weight = (
-                    sink_weights_ptr.unsafe_value()[q_head_indices[0]].cast[
-                        accum_type
-                    ]()
-                    * log2e
-                )
-
-                comptime for i in range(num_rows_per_warp):
-                    rowmax[Coord(Idx[i])] = sink_weight
-
-        # Compute initial rowmax
-        var attention_rowmax = _rowmax_online_softmax[
-            # threads layout by warp
-            frag_simdwidth,
-            1,
-            mma_thread_layout,
-            use_exp2=True,
-        ](vectorize_p_reg_tile(), rowmax, init_rowmax=SinkType.is_null)
-
-        rowmax.copy_from(attention_rowmax)
-
-        # Compute rowsum
-        var attention_rowsum = _rowsum[
-            type_of(rowsum_buffer.layout),
-            frag_simdwidth,
-            mma_thread_layout,
-        ](vectorize_p_reg_tile())
-
-        # Add sink weight contribution to rowsum
-        comptime if not SinkType.is_null:
-            var q_head_indices = get_q_head_idx(position, lane)
-
-            comptime if decoding:
-                comptime for i in range(q_head_indices.size):
-                    var sink_contribution = exp2(sink_weight - rowmax[Idx[i]])
-                    attention_rowsum[Coord(Idx[i])] = (
-                        attention_rowsum[Idx[i]] + sink_contribution[0]
-                    )
-
-            else:
-                comptime for i in range(num_rows_per_warp):
-                    # Compute exp2((sink_weight - rowmax[j]) * log2e)
-                    var sink_contribution = exp2(sink_weight - rowmax[Idx[i]])
-                    attention_rowsum[Coord(Idx[i])] = (
-                        attention_rowsum[Idx[i]] + sink_contribution[0]
-                    )
-
-        rowsum.copy_from(attention_rowsum)
-
-        var position_prev: PositionType = position
-        var q_idx_old: UInt32 = q_pipeline_state.index()
-        var q_phase_old: UInt32 = q_pipeline_state.phase()
-
-        # Consumption order:
-        # Preheader: Q0, K0
-        # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
-        # Exit: V{-1}
-        comptime if persistent:
-            kv_tile_start_row += UInt32(BN)
-        while True:
-            while True:
-                comptime if not persistent:
-                    kv_tile_start_row += UInt32(BN)
-                if kv_tile_start_row >= end:
-                    break
-
-                # this loops over num_keys
-                mask_status = position.mask_status(mask, kv_tile_start_row)
-                if mask_status == TileMaskStatus.FULL_MASK:
-                    comptime if persistent:
-                        kv_tile_start_row += UInt32(BN)
-                    continue
-                # copy new pfrag, used by `p_mul_v` on next iter
-                p_frag.copy_from(
-                    p_reg_tile.reshape(
-                        row_major[
-                            num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
-                        ]()
-                    )
-                )
-
-                # new pipeline states
-                var read_idx_q: UInt32 = read_pipeline_states.index()
-                # start wgmmas
-                q_mul_k(
-                    read_idx_q,
-                    read_pipeline_states.phase(),
-                    q_pipeline_state.index(),
-                )  # can't rw `p_reg_tile`
-                read_pipeline_states.step()
-                var read_idx_v: UInt32 = read_pipeline_states.index()
-                p_mul_v(
-                    read_idx_v, read_pipeline_states.phase()
-                )  # can't rw output or pfrag
-                read_pipeline_states.step()
-                wait_for_q_mul_k[1](read_idx_q)  # can rw `p_reg_tile`
-
-                apply_mask(position, mask_status, kv_tile_start_row)
-                var new_q = persistent and q_idx_old != q_pipeline_state.index()
-                # Compute rowmax for current scores
-                var current_rowmax = _rowmax_online_softmax[
-                    # threads layout by warp
-                    frag_simdwidth,
-                    1,
-                    mma_thread_layout,
-                    use_exp2=True,
-                ](vectorize_p_reg_tile(), rowmax, new_q)
-
-                var score_frag_rowmax = current_rowmax
-                if new_q:
-                    comptime if decoding and PartitionType.do_partition:
-                        if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
-                            4 * min(group, 8) + 128
-                        ):
-                            var exp_sum_ptr, qk_max_ptr = (
-                                position_prev.exp_sum_qk_max_ptr(
-                                    partition, batch_size
-                                )
-                            )
-                            var q_heads = get_q_head_idx(position, lane)
-
-                            comptime for i in range(q_heads.size):
-                                var q_head_idx = q_heads[i]
-                                exp_sum_ptr[q_head_idx] = rebind[
-                                    Scalar[PartitionType.accum_dtype]
-                                ](rowsum[Idx[i]])
-                                qk_max_ptr[q_head_idx] = rebind[
-                                    Scalar[PartitionType.accum_dtype]
-                                ](rowmax[Idx[i]])
-                    var score_frag_rowsum = _rowsum[
-                        type_of(rowsum_buffer.layout),
-                        frag_simdwidth,
-                        mma_thread_layout,
-                    ](vectorize_p_reg_tile())
-                    rowmax.copy_from(score_frag_rowmax)
-                    elementwise_reciprocal(rowsum, score_frag_rowsum)
-                    wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
-                    # we `^ 1` to access the previous
-                    # Two separate issues:
-                    # 0. Which q do we use for `accum_smem`?
-                    # 1. Which qs, if any, do we `arrive` at?
-                    #
-                    # If the next q_idx != the current q_idx (i.e. q_idx_n != q_idx)
-                    # then we can use the current q for writing smem.
-                    # If `q_idx_n == q_idx`, then we use the old q_idx (i.e. q_idx_o).
-                    # This means we were not allowed to `arrive` at `q_idx_o`.
-                    #
-                    # Letting `0` indicate inequality, and `1` equality,
-                    # let x = q_idx == q_idx_n
-                    # let y = q_idx_n == q_idx_n_n
-                    # We thus have 4 states `xy`:
-                    # 0. 00: We use q_idx and arrive
-                    # 1. 01: We use q_idx, but do not arrive on q_idx
-                    # 2. 10: We use q_idx_o, do not arrive on q_idx
-                    # 3. 11: We use q_idx_o, do not arrive on q_idx
-                    #
-                    # Only in `00` do we get to arrive on `q_idx` early.
-                    # Given `BN < num_keys`, it won't often be the case
-                    # that we can arrive at Q early; we need a series
-                    # of q_tile_idx and head_idx that have a lot of
-                    # `FULL_MASK`s, which our iteration scheme is supposed
-                    # to make unlikely.
-                    # Thus, we're going to simplify the problem by assuming
-                    # scenario `0.` is unlikely unless `BN >= num_keys`,
-                    # in which case it is guaranteed.
-                    # var q_idx: UInt32 = q_pipeline_state.index() if few_keys else q_idx_old
-                    write_output(position_prev, q_idx_old, score_frag_rowsum)
-                    var q_idx_new: UInt32 = q_pipeline_state.index()
-
-                    _ = consumed_mbar_q[q_idx_new].arrive()
-                    _ = output_reg_tile.fill(0)
-                    position_prev = position
-                    q_idx_old = q_idx_new
-                    q_phase_old = q_pipeline_state.phase()
-                else:
-                    var score_frag_rowsum = _rowsum[
-                        type_of(rowsum_buffer.layout),
-                        frag_simdwidth,
-                        mma_thread_layout,
-                    ](vectorize_p_reg_tile())
-
-                    _online_softmax_correction[use_exp2=True](
-                        rowmax,
-                        score_frag_rowmax,
-                    )
-                    # rowmax now holds score_frag_rowmax
-                    # score_frag_rowmax now holds the correction
-
-                    comptime for i in range(num_rows_per_warp):
-                        rowsum[Coord(Idx[i])] = (
-                            rowsum[Idx[i]] * score_frag_rowmax[Idx[i]]
-                            + score_frag_rowsum[Idx[i]]
-                        )
-
-                    wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
-                    scale_output(score_frag_rowmax)  # scale output
-
-                comptime if persistent:
-                    kv_tile_start_row += UInt32(BN)
-
-            comptime if persistent:
-                var q_idx_old: UInt32 = q_pipeline_state.index()
-                var q_phase_old: UInt32 = q_pipeline_state.phase()
-                q_pipeline_state.step()
-                produced_mbar_q[q_idx_old].wait(q_phase_old)
-                var docontinue = advance[False](q_idx_old)
-                if not docontinue:
-                    break
-                position = get_position(docontinue.value())
-                var start, new_end = position.get_start_and_end_for_partitions[
-                    page_size=KVLUTType.page_size
-                ](partition, mask)
-                kv_tile_start_row = start
-                end = new_end
-            else:
-                break
-
-        p_frag.copy_from(
-            p_reg_tile.reshape(
-                row_major[num_m_mmas * num_n_mmas * frag_ratio, a_frag_size]()
-            )
-        )
-        p_mul_v(
-            read_pipeline_states.index(),
-            read_pipeline_states.phase(),
-        )
-
-        comptime if decoding and PartitionType.do_partition:
-            if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
-                4 * min(group, 8) + 128
-            ):
-                var exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
-                    partition, batch_size
-                )
-                var q_heads = get_q_head_idx(position, lane)
-
-                comptime for i in range(q_heads.size):
-                    var q_head_idx = q_heads[i]
-                    exp_sum_ptr[q_head_idx] = rebind[
-                        Scalar[PartitionType.accum_dtype]
-                    ](rowsum[Idx[i]])
-                    qk_max_ptr[q_head_idx] = rebind[
-                        Scalar[PartitionType.accum_dtype]
-                    ](rowmax[Idx[i]])
-
-        comptime for row in range(num_rows_per_warp):
-            rowsum[Coord(Idx[row])] = recip(rowsum[Idx[row]])[0]
-        wgmma_1.wait_group()
-        write_output(position, q_pipeline_state.index(), rowsum)
-        # don't arrive
+            comptime for row in range(num_rows_per_warp):
+                rowsum[Coord(Idx[row])] = recip(rowsum[Idx[row]])[0]
+            wgmma_1.wait_group()
+            write_output(position, q_pipeline_state.index(), rowsum)
+            # don't arrive

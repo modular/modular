@@ -45,6 +45,7 @@ from max.pipelines.modeling.types import (
     Pipeline,
     PipelinesFactory,
     PipelineTask,
+    ReasoningParser,
     RequestID,
     TextGenerationInputs,
     TextGenerationRequest,
@@ -302,6 +303,9 @@ async def test_ttft_recorded_once_per_chunk() -> None:
 
     # Verify TTFT called exactly once, ITL called for remaining 2 chunks
     assert mock_metrics.ttft.call_count == 1
+    mock_metrics.ttft_by_prompt_length.assert_called_once_with(
+        mock_metrics.ttft.call_args.args[0], 10
+    )
     assert mock_metrics.itl.call_count == 2
     assert len(chunks) == 3
 
@@ -564,6 +568,7 @@ async def _run_reasoning_pipeline(
     stop: list[str] | None = None,
     top_log_probs: AsyncMock | None = None,
     parse_reasoning: bool = True,
+    reasoning_parser: ReasoningParser | None = None,
 ) -> list[TokenGeneratorOutput]:
     """Build a mock TokenGeneratorPipeline with reasoning and collect all chunks."""
     from max.pipelines.architectures.kimik2_5.reasoning import (
@@ -604,7 +609,8 @@ async def _run_reasoning_pipeline(
     # Match the real ctor contract: coalescing is off by default (floor == 1).
     pipeline._min_chunk_tokens = 1
     pipeline._reasoning_parser = AsyncMock(
-        return_value=KimiK2_5ReasoningParser(
+        return_value=reasoning_parser
+        or KimiK2_5ReasoningParser(
             think_start_token_id=THINK_START_TOKEN_ID,
             think_end_token_id=THINK_END_TOKEN_ID,
             tool_section_start_token_id=TOOL_SECTION_START_TOKEN_ID,
@@ -724,6 +730,37 @@ async def test_next_token_chunk_reasoning(
         assert chunk.token_count == t_count
         assert chunk.decoded_reasoning_tokens == r_text
         assert chunk.decoded_tokens == t_text
+
+
+@pytest.mark.asyncio
+async def test_next_token_chunk_hy_v4_call_inside_open_reasoning() -> None:
+    """Hy4 can open a forced tool call inside still-open reasoning; the call
+    must stream as content, where the tool parser reads it."""
+    from max.pipelines.architectures.hy_v4.reasoning import (
+        HYV4ReasoningParser,
+    )
+
+    # Token ids from the published Hy4 checkpoint's tokenizer.
+    think_start, think_end, section_start, eos = 120029, 120030, 120035, 120025
+    call = [section_start, 120033, 7, 120034, 120036]
+
+    async def decode_ids(token_array: Any, **kwargs: Any) -> str:
+        return ",".join(map(str, token_array.tolist()))
+
+    chunks = await _run_reasoning_pipeline(
+        _make_responses([[10, 20], [30, *call[:2]], [*call[2:], eos]]),
+        prompt_tokens=[99, think_start],
+        decode=decode_ids,
+        reasoning_parser=HYV4ReasoningParser(
+            think_start, think_end, section_start
+        ),
+    )
+    assert [c.decoded_reasoning_tokens for c in chunks] == ["10,20", "30", None]
+    assert [c.decoded_tokens for c in chunks] == [
+        None,
+        "120035,120033",
+        "7,120034,120036,120025",
+    ]
 
 
 @pytest.mark.asyncio

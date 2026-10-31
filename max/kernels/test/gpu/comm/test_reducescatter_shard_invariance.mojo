@@ -99,16 +99,7 @@ def shard_invariance_test[
     comptime accum_t = get_accum_type[dtype]()
 
     print(
-        String(
-            "====reducescatter-shard-invariance-",
-            dtype,
-            "-",
-            ngpus,
-            "gpus-rows",
-            rows,
-            "-cols",
-            cols,
-        )
+        t"====reducescatter-shard-invariance-{dtype}-{ngpus}gpus-rows{rows}-cols{cols}"
     )
 
     var num_elements = rows * cols

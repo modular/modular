@@ -81,16 +81,8 @@ def run_case[
     past M).
     """
     print(
-        "[case] MNK=(",
-        M,
-        N,
-        K,
-        ") tile_m=",
-        tile_m,
-        " M % tile_m=",
-        M % tile_m,
-        " guard_rows=",
-        tile_m,
+        t"[case] MNK=( {M} {N} {K} ) tile_m= {tile_m}  M % tile_m="
+        t" {M % tile_m}  guard_rows= {tile_m}"
     )
 
     # The matmul sees an [M, N] output, but the C/A buffers carry `tile_m`

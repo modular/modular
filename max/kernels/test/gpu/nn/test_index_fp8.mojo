@@ -24,17 +24,9 @@ def test_index_fp8[
     depth: Int,
 ](batch_size: Int, seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     print(
-        "test_index_fp8 with params:",
-        "num_heads:",
-        num_heads,
-        "depth:",
-        depth,
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
+        t"test_index_fp8 with params: num_heads: {num_heads} depth:"
+        t" {depth} batch_size: {batch_size} seq_len: {seq_len} num_keys:"
+        t" {num_keys}"
     )
     var q_size = batch_size * seq_len * num_heads * depth
     var qs_size = batch_size * seq_len * num_heads

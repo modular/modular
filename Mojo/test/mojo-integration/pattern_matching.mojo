@@ -34,6 +34,16 @@ struct Point(ImplicitlyCopyable):
     var y: Int
 
 
+struct LinearPayload(Movable):
+    var value: Int
+
+    def __init__(out self, value: Int):
+        self.value = value
+
+    def take(deinit self) -> Int:
+        return self.value
+
+
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
@@ -45,6 +55,28 @@ def describe_optional(opt: Optional[Int]) -> String:
             return String("some:", value)
         case .None:
             return "none"
+
+
+def make_optional_linear_payload() -> Optional[LinearPayload]:
+    return LinearPayload(42)
+
+
+def take_optional_linear_payload() -> Int:
+    match make_optional_linear_payload():
+        case .Some(var payload):
+            return payload^.take()
+        case .None:
+            abort("unreachable")
+
+
+def make_linear_payload_pair() -> Tuple[LinearPayload, LinearPayload]:
+    return (LinearPayload(17), LinearPayload(25))
+
+
+def take_tuple_linear_payload() -> Int:
+    match make_linear_payload_pair():
+        case (var payload, _):
+            return payload^.take()
 
 
 def describe_token(tok: Token) -> String:
@@ -216,6 +248,18 @@ def classify_if_case_nested(value: Optional[Point]) -> String:
         return "other"
 
 
+def take_if_case_optional_linear_payload() -> Int:
+    if case .Some(var payload) = make_optional_linear_payload():
+        return payload^.take()
+    else:
+        abort("unreachable")
+
+
+def take_if_case_tuple_linear_payload() -> Int:
+    if case (var payload, _) = make_linear_payload_pair():
+        return payload^.take()
+
+
 def classify_while_case(var pair: Tuple[Int, Int]) -> String:
     var result = String("miss")
     while case ((0, value) | (value, 1)) as matched = pair:
@@ -301,6 +345,11 @@ def test_optional():
         case .None:
             # CHECK: tag-none
             print("tag-none")
+
+    # CHECK: moved-linear: 42
+    print("moved-linear:", take_optional_linear_payload())
+    # CHECK: moved-tuple-linear: 17
+    print("moved-tuple-linear:", take_tuple_linear_payload())
 
 
 def test_enum_like_token():
@@ -486,6 +535,11 @@ def test_if_case():
     print(classify_if_case_nested(Optional[Point](None)))
     # CHECK: other
     print(classify_if_case_nested(Optional(Point(3, 4))))
+
+    # CHECK: if-case-moved-linear: 42
+    print("if-case-moved-linear:", take_if_case_optional_linear_payload())
+    # CHECK: if-case-moved-tuple-linear: 17
+    print("if-case-moved-tuple-linear:", take_if_case_tuple_linear_payload())
 
 
 def test_while_case():

@@ -20,7 +20,7 @@ from typing import Any, Union, get_args, get_origin, get_type_hints
 
 from max._core.driver import Device
 from max.driver import Buffer
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 from typing_extensions import Self
 
 

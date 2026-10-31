@@ -10,37 +10,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Hy4 mixture of experts: noaux_tc router, clamped MXFP8 routed experts and
-an unclamped shared expert."""
+"""Hy4 mixture of experts.
+
+It pairs a noaux_tc router with clamped MXFP8 routed experts and an unclamped
+shared expert.
+"""
 
 from __future__ import annotations
 
 from typing import TypeVar
 
+from max import functional as F
 from max import tree
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Module
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.functional_kernels import (
     moe_create_indices,
     moe_finalize,
     moe_router_group_limited,
 )
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_tensor import MXFP8Tensor
-from max.experimental.sharding import (
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_tensor import MXFP8Tensor
+from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
+    DeepseekV3TopKRouter,
+)
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     NamedMapping,
     Partial,
 )
-from max.experimental.sharding.action import PerShard
-from max.experimental.tensor import Tensor
-from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
-    DeepseekV3TopKRouter,
-)
+from max.tensor.sharding.action import PerShard
 from typing_extensions import Self
 
 from ..model_config import HYV4Config
@@ -65,6 +68,7 @@ class HYV4TopKRouter(DeepseekV3TopKRouter):
     """
 
     def forward(self, hidden_states: Tensor) -> tuple[Tensor, Tensor]:
+        """Scores each token's experts and returns the routing weights."""
         weight = self.gate_score.weight.cast(DType.float32)
         logits = F.matmul(
             hidden_states.cast(DType.float32), F.transpose(weight, 0, 1)
@@ -118,6 +122,7 @@ class HYV4Experts(Module[..., Tensor]):
         expert_ids: Tensor,
         scales_offset: Tensor,
     ) -> Tensor:
+        """Runs the routed experts over the rows the router sent each token to."""
         # The block-scaled kernels pick their tile regime from the row count.
         rows = F.shape_to_tensor(x.shape)[0].cast(DType.uint32)
 
@@ -261,4 +266,5 @@ class HYV4MoE(Module[[Tensor], Tensor]):
         return moe_finalize(down, restore, topk_weight, x.dtype)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the routed and shared experts over ``x``."""
         return self.routed(x) + self.shared_experts(x)

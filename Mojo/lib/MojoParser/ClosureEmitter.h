@@ -73,7 +73,6 @@ public:
   promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclAttr> prependedParams = {},
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 TriBool capturingOverride = TriBool::unknown(),
                  OpASTDecl *targetParent = nullptr);
 
   /// Adapter overload for callsites that currently hold ParamDeclRefAttr.
@@ -81,7 +80,6 @@ public:
   promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclRefAttr> prependedParamRefs,
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 TriBool capturingOverride = TriBool::unknown(),
                  OpASTDecl *targetParent = nullptr);
 
   Value emitClosure(ModuleASTDecl &moduleDecl, DefASTDecl &nestedFnDecl,
@@ -194,10 +192,10 @@ private:
                             StringAttr fnName, SpecialFunctionKind specialFnID,
                             InlineLevel inlineLevel);
   struct DevicePassablePopulators {
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isConvertible;
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isEncodable;
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> toDeviceType;
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> typeName;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> isConvertible;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> isEncodable;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> toDeviceType;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> typeName;
     llvm::function_ref<TypedAttr()> deviceType;
   };
   /// Add DevicePassable conformance using callbacks that populate each

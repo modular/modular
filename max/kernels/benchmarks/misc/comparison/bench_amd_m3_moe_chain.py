@@ -66,7 +66,7 @@ if TYPE_CHECKING:
     from max.driver import Buffer
     from max.engine import Model
     from max.graph import TensorValue
-    from max.nn.quant_config import QuantConfig
+    from max.nn.legacy.quant_config import QuantConfig
 
     # A builder wires one chain shape into the graph and returns
     # (down, packed_intermediate | None, intermediate_scales | None). The
@@ -216,7 +216,7 @@ def _auto_ncopies(active_weight_bytes: int) -> int:
 
 def _chain_quant_config() -> QuantConfig:
     from max.dtype import DType
-    from max.nn.quant_config import (
+    from max.nn.legacy.quant_config import (
         InputScaleSpec,
         QuantConfig,
         QuantFormat,
@@ -263,9 +263,9 @@ def bench_chain(
     from max.dtype import DType
     from max.engine import InferenceSession
     from max.graph import DeviceRef, Graph, TensorType, ops
-    from max.nn.activation import GatedActivation
-    from max.nn.comm.ep.ep_kernels import fused_silu_quantized
-    from max.nn.kernels import (
+    from max.nn.legacy.activation import GatedActivation
+    from max.nn.legacy.comm.ep.ep_kernels import fused_silu_quantized
+    from max.nn.legacy.kernels import (
         block_scaled_preshuffle_b_5d,
         grouped_dynamic_block_scaled_matmul_amd,
         grouped_dynamic_block_scaled_matmul_amd_swiglu_quant,

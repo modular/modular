@@ -90,6 +90,9 @@ modular_cc_library(
         ],
     ),
     copts = ["-fvisibility=default"],
+    data = [
+        "//Mojo:CompilerRT",
+    ],
     deps = [
         ":MAPDialect",
         ":MAPToMOGG",
@@ -107,12 +110,12 @@ modular_cc_library(
         "//AsyncRT:RuntimeGlobals",
         "//MLRT:Driver/DeviceContext",
         "//MLRT:GraphRT/MLIRToMEF",
-        "//Mojo:CompilerRT",
         "//Support:Base",
         "//Support:BinaryID",
         "//Support:Diagnostics",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:MlirOptLib",
+        "@llvm-project//mlir:ReconcileUnrealizedCasts",
     ],
 )
 
@@ -981,6 +984,7 @@ modular_cc_library(
         "//Mojo:ObjectCompiler",
         "//Mojo:Support",
         "//Support:Context",
+        "//Support:Diagnostics",
         "//Support:HashUtils",
     ],
 )
@@ -1354,6 +1358,9 @@ modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["include/GraphCompiler/Support/*.h"]),
+    data = [
+        "//Mojo:CompilerRT",
+    ],
     local_defines = select({
         "@platforms//os:macos": ["GENERICML_LINKER_CMD=\\\"clang\\ -Wl,-undefined,dynamic_lookup\\\""],
         "@platforms//os:linux": ["GENERICML_LINKER_CMD=\\\"clang\\\""],
@@ -1365,7 +1372,6 @@ modular_cc_library(
         "//MLRT:Core/Tensor",
         "//MLRT:GraphRT/MEFExecutor",
         "//Mojo:Compiler",
-        "//Mojo:CompilerRT",
         "//Mojo:ExecutionEngine",
         "//Mojo:ObjectCompiler",
         "//Support:Base",

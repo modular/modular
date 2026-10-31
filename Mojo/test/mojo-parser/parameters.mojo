@@ -262,6 +262,21 @@ def infer_implicit_params():
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}, :!Int {:scalar<index> 3}, :!Int {:scalar<index> 4}>
     partial_bind(one, two)
 
+
+# Auto-param of a hole that binds an inner struct's own variadic: the
+# '...' unbinds the pack of Inner. The implicit parameters for the pack and
+# its ParameterList wrapper are plain (non-variadic) parameters — the
+# pos_var_arg marker stays on the user's own *Xs argument only.
+struct TakesVariadicParam[*vs: Int, tail: Int](Movable where False):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"implicit_params_with_variadic_element
+# CHECK-SAME: <?, *"Xs.vs.values``": param_list<!Int>, *"Xs.vs`1": !lit.struct<#ParameterList <:!AnyType !Int,
+# CHECK-SAME: :param_list<!Int> *"Xs.vs.values``">>, {{.*}} imm *"Xs`4"> imm_mem|pos_vararg)
+def implicit_params_with_variadic_element(*Xs: TakesVariadicParam[..., tail=1]):
+    pass
+
 def implicit_params_with_var_params[*Ts: Int](s: TwoParams[1, _]): pass
 
 # CHECK-LABEL: lit.fn @"test_implicit_params_with_var_params
@@ -280,7 +295,7 @@ def explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
 comptime TwoParamsSwap[b: Int, a: Int] = TwoParams[a, b]
 
 # CHECK-LABEL: lit.fn @"autoparam_param_alias
-# CHECK-SAME: <?, [[B0:.*]]: !Int, [[A0:.*]]: !Int, [[B1:.*]]: !Int>
+# CHECK-SAME: <?, [[B0:[^:]+]]: !Int, [[A0:[^:]+]]: !Int, [[B1:[^:]+]]: !Int>
 # CHECK-SAME: %x: {{.*}}#TwoParams <:!Int [[A0]], :!Int [[B0]]>
 # CHECK-SAME: %y: {{.*}}#TwoParams <:!Int {:scalar<index> 2}, :!Int [[B1]]>
 def autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
@@ -717,7 +732,7 @@ def useParamVariadics():
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
-  # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
+  # HECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
   # HECK-NEXT: %defLet = lit.var.decl "fnLet" : {{.*}}!lit.generator<() -> !kgen.none>
   # HECK-NEXT: lit.ref.store [[TMP]], %defLet
   # var defLet = fnWithVariadics
@@ -1659,7 +1674,7 @@ def take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
 
 # CHECK-LABEL: call_variadic_pack_with_function
 def call_variadic_pack_with_function():
-  # CHECK: [[FP:%.*]] = kgen.create_closure[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
+  # CHECK: [[FP:%.*]] = kgen.create_func_ptr[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)
 

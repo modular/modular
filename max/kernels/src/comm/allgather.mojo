@@ -33,7 +33,7 @@ from std.math.uutils import ualign_down
 from std.math import ceildiv
 from std.sys import simd_width_of, align_of, size_of
 
-from layout import TensorEngine, TileTensor
+from layout import DefaultEngine, TensorEngine, TileTensor, row_major
 from layout.tile_layout import TensorLayout
 from layout.tma_async import SharedMemBarrier
 from max.gpu import (
@@ -229,14 +229,19 @@ def _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: ImmOrigin,
+    in_engine: TensorEngine,
     *,
     BLOCK_SIZE: Int,
     domain_id: Int = 0,
 ](
-    outputs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
-    src_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
+    outputs: Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    src_tensors: Array[
+        TileTensor[dtype, in_layout, in_origin, Engine=in_engine], ngpus
+    ],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
-    lengths: StaticTuple[Int32, ngpus],
+    lengths: Array[Int32, ngpus],
     max_num_blocks: Int32,
     my_rank: Int32,
 ):
@@ -255,9 +260,9 @@ def _allgather_p2p_kernel[
 
     comptime SrcPtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
     var src_ptrs_rr = Array[_, ngpus](
-        fill_with_unrolled=lambda [i: Int]() -> SrcPtrType: src_ptrs[
-            circular_add[ngpus](_my_rank, i)
-        ]
+        fill_with_unrolled=lambda [i: Int]() -> SrcPtrType: rebind[SrcPtrType](
+            src_tensors[circular_add[ngpus](_my_rank, i)].ptr
+        )
     )
 
     comptime OutPtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
@@ -327,9 +332,9 @@ def _allgather_p2p_kernel[
                         ]
 
         # Synchronize after writing.
-        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, _my_rank
-        )
+        _multi_gpu_barrier[
+            ngpus, is_start=False, sync_after_wait=True, domain_id=domain_id
+        ](rank_sigs, my_sig, _my_rank)
 
 
 @__llvm_metadata(
@@ -339,15 +344,20 @@ def _allgather_p2p_kernel[
 def _allgather_tma_kernel[
     dtype: DType,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: ImmOrigin,
+    in_engine: TensorEngine,
     *,
     BLOCK_SIZE: Int,
     BYTES_PER_COPY: Int,
     domain_id: Int = 0,
 ](
-    outputs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
-    src_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
+    outputs: Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    src_tensors: Array[
+        TileTensor[dtype, in_layout, in_origin, Engine=in_engine], ngpus
+    ],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
-    lengths: StaticTuple[Int32, ngpus],
+    lengths: Array[Int32, ngpus],
     my_rank: Int32,
 ):
     """Allgather using cp.async.bulk TMA instructions.
@@ -383,8 +393,8 @@ def _allgather_tma_kernel[
     var my_src_idx = warp % ngpus
 
     var src_g = (
-        src_ptrs[my_src_idx]
-        .unsafe_bitcast[UInt8]()
+        src_tensors[my_src_idx]
+        .ptr.unsafe_bitcast[UInt8]()
         .unsafe_address_space_cast[.GLOBAL]()
     )
     var dst_g = (
@@ -433,23 +443,26 @@ def _allgather_tma_kernel[
                 cp_async_bulk_commit_group()
                 cp_async_bulk_wait_group[0]()
 
-        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, _my_rank
-        )
+        _multi_gpu_barrier[
+            ngpus, is_start=False, sync_after_wait=True, domain_id=domain_id
+        ](rank_sigs, my_sig, _my_rank)
 
 
 @inline(.always)
 def _allgather_p2p_tma[
     dtype: DType,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: ImmOrigin,
+    in_engine: TensorEngine,
     domain_id: Int = 0,
 ](
-    output_ptrs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
-    list_of_in_ptrs: StaticTuple[
-        ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus
+    output_ptrs: Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    src_tensors: Array[
+        TileTensor[dtype, in_layout, in_origin, Engine=in_engine], ngpus
     ],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
-    lengths: StaticTuple[Int32, ngpus],
+    lengths: Array[Int32, ngpus],
     ctx: DeviceContext,
     my_rank: Int,
 ) raises:
@@ -482,13 +495,16 @@ def _allgather_p2p_tma[
     comptime tma_kernel = _allgather_tma_kernel[
         dtype,
         ngpus,
+        in_layout,
+        in_origin,
+        in_engine,
         BLOCK_SIZE=TMA_BLOCK_SIZE,
         BYTES_PER_COPY=TMA_BYTES_PER_COPY,
         domain_id=domain_id,
     ]
     ctx.enqueue_function[tma_kernel](
         output_ptrs,
-        list_of_in_ptrs,
+        src_tensors,
         rank_sigs,
         lengths,
         Int32(my_rank),
@@ -507,21 +523,26 @@ def _allgather_p2p_tma[
 def _allgather_relay_kernel[
     dtype: DType,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: ImmOrigin,
+    in_engine: TensorEngine,
     *,
     BLOCK_SIZE: Int,
     domain_id: Int = 0,
 ](
-    outputs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
-    src_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
-    peer_src_ptrs: StaticTuple[
-        ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus
+    outputs: Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    src_tensors: Array[
+        TileTensor[dtype, in_layout, in_origin, Engine=in_engine], ngpus
     ],
-    peer_out_ptrs: StaticTuple[
+    peer_src_tensors: Array[
+        TileTensor[dtype, in_layout, in_origin, Engine=in_engine], ngpus
+    ],
+    peer_out_ptrs: Array[
         MutPointer[Scalar[dtype], MutAnyOrigin], ngpus * ngpus
     ],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], 2 * ngpus],
-    lengths: StaticTuple[Int32, ngpus],
-    peer_lengths: StaticTuple[Int32, ngpus],
+    lengths: Array[Int32, ngpus],
+    peer_lengths: Array[Int32, ngpus],
     relay_percent: Int32,
     num_direct_blocks: Int32,
     my_rank: Int32,
@@ -562,7 +583,7 @@ def _allgather_relay_kernel[
         var blocks_per_stream = Int(num_direct_blocks) // ngpus
         var stream_block = bid // ngpus
         var src_idx = circular_add[ngpus](group_rank, stream)
-        var src_ptr = src_ptrs[src_idx].unsafe_address_space_cast[
+        var src = src_tensors[src_idx].address_space_cast[
             _target_address_space
         ]()
         var out_ptr = outputs[src_idx].unsafe_address_space_cast[
@@ -588,9 +609,7 @@ def _allgather_relay_kernel[
             var elem_idx = idx * simd_width
             out_ptr.unsafe_store[width=simd_width, alignment=alignment](
                 elem_idx,
-                src_ptr.unsafe_load[
-                    width=simd_width, alignment=alignment, invariant=True
-                ](elem_idx),
+                src.raw_load[width=simd_width, alignment=alignment](elem_idx),
             )
 
         # Scalar remainder. It sits past the last whole vector, so it is
@@ -600,7 +619,7 @@ def _allgather_relay_kernel[
             for i in range(
                 num_simd_vectors * simd_width + tid, length, WARP_SIZE
             ):
-                out_ptr[i] = src_ptr[i]
+                out_ptr[i] = src.raw_load(i)
     else:
         # Relay role: forward the trailing slices of the *other* group's
         # shards over links that a grouped collective leaves idle. This GPU
@@ -616,7 +635,7 @@ def _allgather_relay_kernel[
         var src_idx = relay_bid % ngpus
         var blocks_per_src = (grid_dim.x - Int(num_direct_blocks)) // ngpus
         var src_block = relay_bid // ngpus
-        var src_ptr = peer_src_ptrs[src_idx].unsafe_address_space_cast[
+        var src = peer_src_tensors[src_idx].address_space_cast[
             _target_address_space
         ]()
 
@@ -659,10 +678,8 @@ def _allgather_relay_kernel[
             )
             comptime for u in range(UNROLL):
                 if idx + u * BLOCK_SIZE < end:
-                    data[u] = src_ptr.unsafe_load[
-                        width=simd_width,
-                        alignment=alignment,
-                        invariant=True,
+                    data[u] = src.raw_load[
+                        width=simd_width, alignment=alignment
                     ]((idx + u * BLOCK_SIZE) * simd_width)
 
             comptime for u in range(UNROLL):
@@ -686,17 +703,20 @@ def _allgather_relay_kernel[
 def _allgather_p2p_relay[
     dtype: DType,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: ImmOrigin,
+    in_engine: TensorEngine,
 ](
-    output_ptrs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
-    list_of_in_ptrs: StaticTuple[
-        ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus
+    output_ptrs: Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    src_tensors: Array[
+        TileTensor[dtype, in_layout, in_origin, Engine=in_engine], ngpus
     ],
-    lengths: StaticTuple[Int32, ngpus],
-    peer_input_ptrs: StaticTuple[
-        ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus
+    lengths: Array[Int32, ngpus],
+    peer_src_tensors: Array[
+        TileTensor[dtype, in_layout, in_origin, Engine=in_engine], ngpus
     ],
-    peer_lengths: StaticTuple[Int32, ngpus],
-    peer_output_ptrs: StaticTuple[
+    peer_lengths: Array[Int32, ngpus],
+    peer_output_ptrs: Array[
         MutPointer[Scalar[dtype], MutAnyOrigin], ngpus * ngpus
     ],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], 2 * ngpus],
@@ -724,13 +744,16 @@ def _allgather_p2p_relay[
     Parameters:
         dtype: Data type of the tensor elements.
         ngpus: Number of GPUs in one group; the relay world holds `2 * ngpus`.
+        in_layout: Layout of the input shards.
+        in_origin: Origin of the input shards.
+        in_engine: Engine of the input shards.
 
     Args:
         output_ptrs: This GPU's output buffers, by group-local source rank.
-        list_of_in_ptrs: This group's input shards, by group-local rank.
+        src_tensors: This group's input shards, by group-local rank.
         lengths: Elements in each of this group's shards.
-        peer_input_ptrs: The other group's input shards, by that group's local
-            rank. This GPU reads them when it acts as a relay.
+        peer_src_tensors: The other group's input shards, by that group's
+            local rank. This GPU reads them when it acts as a relay.
         peer_lengths: Elements in each of those shards, which is what tells a
             relay how much of each to forward.
         peer_output_ptrs: The other group's output buffers, with
@@ -779,12 +802,18 @@ def _allgather_p2p_relay[
 
     comptime BLOCK_SIZE = 256
     comptime relay_kernel = _allgather_relay_kernel[
-        dtype, ngpus, BLOCK_SIZE=BLOCK_SIZE, domain_id=relay_domain_id
+        dtype,
+        ngpus,
+        in_layout,
+        in_origin,
+        in_engine,
+        BLOCK_SIZE=BLOCK_SIZE,
+        domain_id=relay_domain_id,
     ]
     ctx.enqueue_function[relay_kernel](
         output_ptrs,
-        list_of_in_ptrs,
-        peer_input_ptrs,
+        src_tensors,
+        peer_src_tensors,
         peer_output_ptrs,
         rank_sigs,
         lengths,
@@ -843,26 +872,27 @@ def _allgather_p2p[
     var group_start = ualign_down(my_rank, group_size)
     var loc_rank = my_rank - group_start
 
-    var list_of_in_ptrs = StaticTuple[
-        ImmPointer[Scalar[dtype], ImmutAnyOrigin], group_size
-    ]()
-    var lengths = StaticTuple[Int, group_size]()
-
-    comptime for i in range(group_size):
-        list_of_in_ptrs[i] = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-            input_buffers[group_start + i].ptr
-        )
-        lengths[i] = input_buffers[group_start + i].num_elements()
+    comptime SrcType = TileTensor[
+        dtype, in_layout, ImmOrigin(in_origin), Engine=in_engine
+    ]
+    var group_srcs = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> SrcType: input_buffers[
+            group_start + i
+        ].as_imm()
+    )
+    var lengths = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> Int: input_buffers[
+            group_start + i
+        ].num_elements()
+    )
 
     # Prepare output pointers: this device's own slice of the world outputs.
-    var output_ptrs = StaticTuple[
-        MutPointer[Scalar[dtype], MutAnyOrigin], group_size
-    ]()
-
-    comptime for src_idx in range(group_size):
-        output_ptrs[src_idx] = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-            output_buffers[my_rank * group_size + src_idx].ptr
+    comptime OutPtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
+    var output_ptrs = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> OutPtrType: rebind[OutPtrType](
+            output_buffers[my_rank * group_size + i].ptr
         )
+    )
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
@@ -873,9 +903,9 @@ def _allgather_p2p[
     )
 
     # Build Int32 versions for passing to GPU kernels.
-    var lengths_i32 = StaticTuple[Int32, group_size]()
-    comptime for i in range(group_size):
-        lengths_i32[i] = Int32(lengths[i])
+    var lengths_i32 = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> Int32: Int32(lengths[i])
+    )
 
     # Relay path: with an even number of groups, adjacent groups pair up and
     # relay for each other, so part of every shard can travel over the
@@ -894,31 +924,36 @@ def _allgather_p2p[
             pair_base + group_size if group_start == pair_base else pair_base
         )
 
-        comptime SrcPtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
-        comptime OutPtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
-        var peer_input_ptrs = StaticTuple[SrcPtrType, group_size]()
-        var peer_lengths = StaticTuple[Int32, group_size]()
-        var peer_output_ptrs = StaticTuple[
-            OutPtrType, group_size * group_size
-        ]()
+        var peer_srcs = Array[_, group_size](
+            fill_with_unrolled=lambda [i: Int]() -> SrcType: input_buffers[
+                peer_start + i
+            ].as_imm()
+        )
+        var peer_lengths = Array[_, group_size](
+            fill_with_unrolled=lambda [i: Int]() -> Int32: Int32(
+                input_buffers[peer_start + i].num_elements()
+            )
+        )
+        # `[d * group_size + s]`: the buffer on the peer group's rank `d` that
+        # receives its rank `s`.
+        var peer_output_ptrs = Array[_, group_size * group_size](
+            fill_with_unrolled=lambda [k: Int]() -> OutPtrType: rebind[
+                OutPtrType
+            ](
+                output_buffers[
+                    (peer_start + k // group_size) * group_size + k % group_size
+                ].ptr
+            )
+        )
 
         # Every rank in the pair must reach the same verdict, so the lookup is
         # keyed on the largest shard anywhere in it rather than on this group's
         # shards, which the two groups see differently.
         var pair_max_length = 0
         comptime for i in range(group_size):
-            peer_input_ptrs[i] = rebind[SrcPtrType](
-                input_buffers[peer_start + i].ptr
-            )
-            var peer_length = input_buffers[peer_start + i].num_elements()
-            peer_lengths[i] = Int32(peer_length)
-            pair_max_length = max(pair_max_length, peer_length)
+            var input_length = input_buffers[peer_start + i].num_elements()
+            pair_max_length = max(pair_max_length, input_length)
             pair_max_length = max(pair_max_length, lengths[i])
-
-            comptime for src_idx in range(group_size):
-                peer_output_ptrs[i * group_size + src_idx] = rebind[OutPtrType](
-                    output_buffers[(peer_start + i) * group_size + src_idx].ptr
-                )
 
         comptime relay_sm_version = ctx.default_device_info.version
         var recipe = dispatch_select_comm_config[
@@ -934,9 +969,9 @@ def _allgather_p2p[
 
             return _allgather_p2p_relay(
                 output_ptrs,
-                list_of_in_ptrs,
+                group_srcs,
                 lengths_i32,
-                peer_input_ptrs,
+                peer_srcs,
                 peer_lengths,
                 peer_output_ptrs,
                 relay_sigs,
@@ -957,7 +992,7 @@ def _allgather_p2p[
         if tma_ok:
             return _allgather_p2p_tma[domain_id=domain_id](
                 output_ptrs,
-                list_of_in_ptrs,
+                group_srcs,
                 group_sigs,
                 lengths_i32,
                 ctx,
@@ -995,12 +1030,15 @@ def _allgather_p2p[
         dtype,
         rank,
         group_size,
+        in_layout,
+        in_origin,
+        in_engine,
         BLOCK_SIZE=BLOCK_SIZE,
         domain_id=domain_id,
     ]
     ctx.enqueue_function[allgather_p2p_kernel](
         output_ptrs,
-        list_of_in_ptrs,
+        group_srcs,
         group_sigs,
         lengths_i32,
         Int32(max_num_blocks),
@@ -1091,6 +1129,10 @@ def allgather[
         Error: `group_size != ngpus` (a grouped collective) and P2P access is
             not available -- the non-P2P fallback assumes a full-world,
             contiguous `0..ngpus-1` device layout and cannot be grouped.
+        Error: P2P access is not available and the input engine does not
+            expose a host-visible data pointer -- the non-P2P fallback stages
+            each peer's input through a `DeviceBuffer`, which needs that
+            pointer on the host.
     """
     comptime assert (
         group_size >= 2
@@ -1132,13 +1174,24 @@ def allgather[
                 "grouped allgather (group_size != ngpus) requires P2P access"
                 " between GPUs"
             )
-        comptime OutputTensorType = type_of(output_buffers[0])
-        var my_outputs = Array[_, ngpus](
-            fill_with_unrolled=lambda [i: Int]() -> OutputTensorType: (
-                output_buffers[my_rank * ngpus + i]
+        # The fallback stages each peer's input through a `DeviceBuffer`,
+        # which needs the input's data pointer on the host; engines that
+        # resolve their storage on the device (a stable address slot) cannot
+        # provide it. The check also prunes the naive branch: instantiating
+        # it for them trips `.ptr`'s comptime assert even with P2P available.
+        comptime if in_engine != DefaultEngine[element_width=1]:
+            raise Error(
+                "allgather without P2P access requires pointer-backed"
+                " input tensors"
             )
-        )
-        return _allgather_naive(input_buffers, my_outputs, ctx)
+        else:
+            comptime OutputTensorType = type_of(output_buffers[0])
+            var my_outputs = Array[_, ngpus](
+                fill_with_unrolled=lambda [i: Int]() -> OutputTensorType: (
+                    output_buffers[my_rank * ngpus + i]
+                )
+            )
+            return _allgather_naive(input_buffers, my_outputs, ctx)
 
     # P2P path: hand the collective the whole world plus the group width, and
     # let it derive the group-local slice, rank, and barrier domain itself.
@@ -1149,4 +1202,129 @@ def allgather[
         _max_num_blocks,
         ctx,
         my_rank,
+    )
+
+
+@inline(.always)
+def allgather_rows_slice[
+    dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
+    in_engine: TensorEngine,
+    out_engine: TensorEngine,
+](
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin, Engine=in_engine], ngpus
+    ],
+    output_buffers: Array[
+        TileTensor[mut=True, dtype, out_layout, out_origin, Engine=out_engine],
+        ngpus * ngpus,
+    ],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    row_elems: Int,
+    ctx: DeviceContext,
+    my_rank: Int,
+    _max_num_blocks: Optional[Int] = None,
+) raises:
+    """Per-device all-gather in which each device keeps only its own row block.
+
+    Every device holds a row-major `[rows, row_elems]` shard of one tensor
+    (typically a column-sharded GEMM output). Device `d` receives rows
+    `[d * rows / ngpus, (d + 1) * rows / ngpus)` of EVERY peer's shard, so
+    `output_buffers[d * ngpus + j]` holds that row block of shard `j`.
+    Concatenating those blocks along the column axis gives the same bytes as
+    `allgather` + concat + a row slice, with `ngpus` times fewer bytes moved.
+
+    A row block is contiguous in a row-major shard, so this is `allgather`
+    over per-reader windows: the pointer each reader pulls from peer `j` is
+    offset by `my_rank` row blocks. Barriers, P2P/TMA paths and the signal
+    protocol are `allgather`'s own.
+
+    Data movement only; no arithmetic touches the elements, so the result is
+    bit-identical to the reference composition for every dtype.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        ngpus: Number of devices; one full-world group.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+        out_layout: Layout of the output TileTensors.
+        out_origin: Origin of the output TileTensors.
+        in_engine: Engine of the input TileTensors.
+        out_engine: Engine of the output TileTensors.
+
+    Args:
+        input_buffers: Every device's flat `[rows * row_elems]` shard, indexed
+            by GLOBAL device rank. All shards must be the same size.
+        output_buffers: Every device's `ngpus` outputs, laid out
+            `[device * ngpus + source]`, each `rows / ngpus * row_elems`
+            elements.
+        rank_sigs: All `ngpus` devices' Signal pointers.
+        row_elems: Elements per row (the product of all dimensions after the
+            first).
+        ctx: Device context for THIS GPU.
+        my_rank: GLOBAL rank of this GPU in `[0, ngpus)`.
+        _max_num_blocks: Maximum number of blocks for kernel launch (optional).
+
+    Raises:
+        Error: The shards differ in size, `rows` is not a multiple of `ngpus`,
+            a row block is not a multiple of 16 bytes (the window offset must
+            stay vector-aligned), or an output buffer is not one row block.
+    """
+    comptime assert ngpus >= 2, "allgather_rows_slice requires at least 2 GPUs"
+
+    var total = input_buffers[0].num_elements()
+    comptime for i in range(1, ngpus):
+        if input_buffers[i].num_elements() != total:
+            raise Error(
+                "allgather_rows_slice requires the same shard size on every"
+                " device"
+            )
+    if row_elems <= 0 or total % row_elems != 0:
+        raise Error(
+            "allgather_rows_slice: shard size is not a whole number of rows"
+        )
+    var rows = total // row_elems
+    if rows % ngpus != 0:
+        raise Error(
+            String(
+                (
+                    "allgather_rows_slice requires the row count to be a"
+                    " multiple of the device count: "
+                ),
+                rows,
+                " rows over ",
+                ngpus,
+                " devices",
+            )
+        )
+    var slice_elems = (rows // ngpus) * row_elems
+    if (slice_elems * size_of[dtype]()) % 16 != 0:
+        raise Error(
+            "allgather_rows_slice requires each device's row block to be a"
+            " multiple of 16 bytes"
+        )
+    # A rejected peer must not leave other ranks spinning at the barrier.
+    comptime for j in range(ngpus * ngpus):
+        if output_buffers[j].num_elements() != slice_elems:
+            raise Error(
+                "allgather_rows_slice: an output buffer is not one row block"
+            )
+
+    # Reader-specific windows: this device pulls its own row block from every
+    # peer. The windows keep the input type so `allgather` is reused as is.
+    comptime InTileType = type_of(input_buffers[0])
+    var windows = Array[InTileType, ngpus](
+        fill_with_unrolled=lambda [j: Int]() -> InTileType: rebind[InTileType](
+            TileTensor(
+                input_buffers[j].ptr.unsafe_offset(my_rank * slice_elems),
+                row_major(slice_elems),
+            )
+        )
+    )
+    return allgather(
+        windows, output_buffers, rank_sigs, ctx, my_rank, _max_num_blocks
     )

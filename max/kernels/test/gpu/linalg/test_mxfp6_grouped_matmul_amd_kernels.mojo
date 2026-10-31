@@ -272,28 +272,9 @@ def _run_preb[
     comptime label = "[persistent]" if persistent else "[direct]    "
     comptime fmt_name = "E2M3" if fmt == FP6Format.E2M3 else "E3M2"
     print(
-        "  ",
-        label,
-        fmt_name,
-        name,
-        " E=",
-        num_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " active=",
-        num_active,
-        " total_tokens=",
-        total_tokens,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK_ELEMS=",
-        BK_ELEMS,
-        " WN=",
-        WN,
+        t"   {label} {fmt_name} {name}  E= {num_experts}  N= {N}  K= {K} "
+        t" active= {num_active}  total_tokens= {total_tokens}  BM= {BM}  BN="
+        t" {BN}  BK_ELEMS= {BK_ELEMS}  WN= {WN}"
     )
 
     # Host buffers + random init.
@@ -522,16 +503,8 @@ def _run_preb[
         if abs(got - want) > rel_tol * Float64(mag_h[i]):
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "] got=",
-                    got,
-                    " want=",
-                    want,
-                    " mag=",
-                    Float64(mag_h[i]),
+                    t"      [ {i // N} , {i % N} ] got= {got}  want= {want} "
+                    t" mag= {Float64(mag_h[i])}"
                 )
             mismatches += 1
 

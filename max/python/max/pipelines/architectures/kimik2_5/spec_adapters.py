@@ -17,10 +17,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from max.graph import TensorValue, ops
-from max.nn.kernels import scatter_nd_skip_oob_indices
-from max.nn.layer import Module
-from max.nn.transformer import ReturnHiddenStates
-from max.nn.transformer.transformer import (
+from max.nn.legacy.kernels import scatter_nd_skip_oob_indices
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.legacy.transformer.transformer import (
     captures_by_device,
     fuse_captured_hidden_states,
 )

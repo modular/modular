@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps Llama3 checkpoint names onto the MAX tree."""
 
 from __future__ import annotations
 
@@ -151,6 +152,7 @@ def convert_gguf_state_dict(
     model_config: MAXModelConfig | None = None,
     **unused_kwargs,
 ) -> dict[str, WeightData]:
+    """Maps a GGUF checkpoint's tensor names onto the MAX tree."""
     gguf_mapping = LLAMA_GGUF_UNFUSED_QKV_MAPPING
     if pipeline_config is not None:
         # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.

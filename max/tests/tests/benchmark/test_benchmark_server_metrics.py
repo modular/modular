@@ -42,6 +42,7 @@ from max.benchmark.benchmark_shared.server_metrics import (
     parse_metrics,
     parse_spec_decode_metrics,
     print_server_metrics,
+    verify_always_emitted_metrics,
 )
 
 if TYPE_CHECKING:
@@ -678,19 +679,23 @@ maxserve_spec_decode_avg_acceptance_length_count 5
 def test_calculate_spec_decode_stats_from_maxserve_avg_length_histogram_only() -> (
     None
 ):
-    """Acceptance length is derived from the avg-acceptance-length histogram delta."""
+    """Acceptance length adds the bonus token to the histogram delta mean.
+
+    The histogram records accepted drafts per verification, so a window mean
+    of 3.0 drafts is reported as 4.0 tokens committed per step.
+    """
     before = SpecDecodeMetrics(
-        avg_acceptance_length_sum=10.0, avg_acceptance_length_count=2.0
+        avg_acceptance_length_sum=9.0, avg_acceptance_length_count=3.0
     )
     after = SpecDecodeMetrics(
-        avg_acceptance_length_sum=30.0, avg_acceptance_length_count=5.0
+        avg_acceptance_length_sum=15.0, avg_acceptance_length_count=5.0
     )
 
     stats = calculate_spec_decode_stats(before, after)
 
     assert stats is not None
     assert stats.acceptance_rate is None
-    assert stats.acceptance_length == pytest.approx((30.0 - 10.0) / (5.0 - 2.0))
+    assert stats.acceptance_length == pytest.approx(4.0)
 
 
 def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
@@ -1214,7 +1219,8 @@ class TestMachSpecDecode:
         # (13500-6000)/100=75%, normalized to fractions.
         assert stats.per_position_acceptance_rates == pytest.approx([0.9, 0.75])
         assert stats.acceptance_rate == pytest.approx(82.5)
-        assert stats.acceptance_length == pytest.approx(5.0)
+        # Histogram delta mean 5.0 accepted drafts plus the bonus token.
+        assert stats.acceptance_length == pytest.approx(6.0)
 
 
 @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
@@ -1316,6 +1322,30 @@ mach_batch_size_count{batch_type="decode"} 1.0
                 verify_required_metrics=True,
             )
         assert "mach_batch_execution_time_milliseconds" in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        "gauge", ["mach_pipeline_held_seats", "max_pipeline_held_seats"]
+    )
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_pipeline_engine_without_batch_metrics_does_not_raise(
+        self, mock_fetch: MagicMock, gauge: str
+    ) -> None:
+        """A Mach PP prefill runs the pipeline loop, which records no batch
+        histograms; its scrape is still the engine's, so it must pass."""
+        mock_fetch.return_value = f"""
+# TYPE {gauge} gauge
+{gauge} 0.0
+# TYPE mach_request_count counter
+mach_request_count_total 12.0
+"""
+
+        result = collect_benchmark_metrics(
+            urls={"prefill": "http://prefill:9090/metrics"},
+            backend="mach",
+            base_url="http://localhost:8091",
+            verify_required_metrics=True,
+        )
+        assert "prefill" in result
 
     @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
     def test_missing_optional_metric_does_not_raise(
@@ -1437,3 +1467,110 @@ mach_batch_execution_time_milliseconds_count{batch_type="prefill"} 1.0
         )
 
         assert result == {}
+
+
+@pytest.mark.parametrize(
+    "backend,legacy", [("mach", "mach_"), ("modular", "maxserve_")]
+)
+def test_unified_namespace_preserves_batch_results(
+    backend: Backend, legacy: str
+) -> None:
+    old = (
+        _mach_endpoint()
+        if backend == "mach"
+        else _endpoint_with_batch_histograms()
+    )
+    old.backend = backend
+    new = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            key.replace(legacy, "max_", 1): value
+            for key, value in old.histograms.items()
+        },
+        raw_text="",
+        backend=backend,
+    )
+    verify_always_emitted_metrics(backend, new, "http://engine/metrics")
+    before, after = (
+        _make_metrics({"engine": old}),
+        _make_metrics({"engine": new}),
+    )
+    assert before.mean_prefill_batch_time_ms == after.mean_prefill_batch_time_ms
+    assert before.mean_decode_batch_time_ms == after.mean_decode_batch_time_ms
+    assert before.prefill_batch_count == after.prefill_batch_count
+    assert before.decode_batch_count == after.decode_batch_count
+
+
+def test_unified_histogram_alias_is_not_counted_twice() -> None:
+    parsed = ParsedMetrics(
+        {},
+        {},
+        {
+            'max_spec_decode_acceptance_rate_per_position{position="0"}': _hist(
+                80, 1
+            ),
+            'mach_spec_decode_acceptance_rate_per_position{position="0"}': _hist(
+                20, 1
+            ),
+        },
+        "",
+    )
+    family = parsed.histogram_family(
+        "mach_spec_decode_acceptance_rate_per_position"
+    )
+    assert len(family) == 1
+    assert next(iter(family.values())).sum == 80
+
+
+@pytest.mark.parametrize("prefix", ["maxserve_", "max_"])
+def test_real_spec_decode_exporter_unit_suffixes(prefix: str) -> None:
+    rate = f"{prefix}spec_decode_acceptance_rate_per_position_percent"
+    length = f"{prefix}spec_decode_avg_acceptance_length_tokens"
+    parsed = parse_spec_decode_metrics(
+        f"# TYPE {rate} histogram\n"
+        f'{rate}_sum{{position="0"}} 8400\n'
+        f'{rate}_count{{position="0"}} 100\n'
+        f"# TYPE {length} histogram\n"
+        f"{length}_sum 25\n{length}_count 5\n"
+    )
+    assert parsed is not None
+    assert parsed.per_pos_rate_sum == {0: 8400}
+    assert parsed.per_pos_rate_count == {0: 100}
+    assert parsed.avg_acceptance_length_sum == 25
+    assert parsed.avg_acceptance_length_count == 5
+
+
+@pytest.mark.parametrize("batch_type", ["CE", "TG", "unknown", None])
+def test_unified_required_metrics_reject_wrong_backend_labels(
+    batch_type: str | None,
+) -> None:
+    labels = {} if batch_type is None else {"batch_type": batch_type}
+    parsed = ParsedMetrics(
+        {},
+        {},
+        {
+            _format_metric_key("max_batch_size", labels): _hist(1, 1),
+            _format_metric_key(
+                "max_batch_execution_time_milliseconds", labels
+            ): _hist(10, 1),
+        },
+        "",
+        backend="mach",
+    )
+    with pytest.raises(MissingEngineMetricsError, match="wrong-endpoint"):
+        verify_always_emitted_metrics("mach", parsed, "http://engine/metrics")
+
+
+@pytest.mark.parametrize("legacy", ["mach_", "maxserve_"])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_delta_rejects_metric_generation_change(
+    legacy: str, reverse: bool
+) -> None:
+    old = ParsedMetrics({}, {}, {f"{legacy}batch_size": _hist(100, 10)}, "")
+    new = ParsedMetrics({}, {}, {"max_batch_size": _hist(400, 20)}, "")
+    baseline, final = (new, old) if reverse else (old, new)
+    with pytest.raises(
+        MissingEngineMetricsError, match="naming generation changed"
+    ):
+        compute_metrics_delta(baseline, final)

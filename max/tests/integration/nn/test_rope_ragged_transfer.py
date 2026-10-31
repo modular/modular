@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import rope_ragged
+from max.nn.legacy.kernels import rope_ragged
 
 _N_TOKENS = 8
 _N_HEADS = 4

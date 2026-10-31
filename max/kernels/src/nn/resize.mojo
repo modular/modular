@@ -779,8 +779,8 @@ def resize_linear_gpu[
 
 
 def resize_cubic[
-    in_dtype: DType, //
-](input: ImmTileTensor[in_dtype, ...], output: MutTileTensor[.float32, ...],):
+    in_dtype: DType, out_dtype: DType, //
+](input: ImmTileTensor[in_dtype, ...], output: MutTileTensor[out_dtype, ...],):
     """Resizes the height and width of an `[outer, H, W, inner]` tensor with
     antialiased cubic interpolation.
 
@@ -799,6 +799,10 @@ def resize_cubic[
         in_dtype: The type of the input: float32, or an integer type such as
             uint8. The result is the same as when you convert the input to
             float32 first.
+        out_dtype: The type of the output: float32, or uint8 for a uint8
+            input. A uint8 output is the float32 result rounded half to
+            even, as `mo.round` rounds, and clamped to [0, 255]. Only the
+            final store rounds; the passes in between stay float32.
 
     Args:
         input: The input to be resized, contiguous and row-major.
@@ -808,6 +812,7 @@ def resize_cubic[
 
     Constraints:
         Both tensors are rank 4. The input is float32 or an integer type.
+        The output is float32, or uint8 for a uint8 input.
     """
     _check_resize_shapes(input, output)
     comptime assert (
@@ -816,6 +821,9 @@ def resize_cubic[
     comptime assert (
         in_dtype == .float32 or in_dtype.is_integral()
     ), "input must be float32 or an integer type"
+    comptime assert out_dtype == .float32 or (
+        out_dtype == .uint8 and in_dtype == .uint8
+    ), "output must be float32, or uint8 for a uint8 input"
 
     var in_shape = rebind[IndexList[4]](
         coord_to_index_list(input.layout.shape_coord())
@@ -977,18 +985,19 @@ def _tap_offset(pos: Int, center: Float32, inv_stretch: Float32) -> Float32:
 
 @inline(.always)
 def _weighted_row_sum[
-    wraps: Bool
+    out_dtype: DType, //, wraps: Bool
 ](
     taps: _AxisTaps,
     i: Int,
     rows: TileTensor[.float32, ...],
-    dst: MutTileTensor[.float32, ...],
+    dst: MutTileTensor[out_dtype, ...],
     begin: Int,
     end: Int,
 ):
     """Writes columns [begin, end) of row i of dst as a weighted sum of input
-    rows. begin is a multiple of _GROUP vectors. With wraps, rows is a ring
-    of a power-of-two size holding input row r at r % size."""
+    rows, converted by _narrow. begin is a multiple of _GROUP vectors. With
+    wraps, rows is a ring of a power-of-two size holding input row r at
+    r % size."""
     comptime block = _GROUP * _WIDTH
     debug_assert(begin % block == 0, "begin must be block aligned")
     var first = taps.start_of(i)
@@ -1017,15 +1026,28 @@ def _weighted_row_sum[
                         w, acc[q]
                     )
             comptime for q in range(group):
-                dst.store((i, c + q * _WIDTH), acc[q])
+                dst.store((i, c + q * _WIDTH), _narrow[out_dtype](acc[q]))
             c += span
     while c < end:
         var acc = Float32(0)
         for k in range(n):
             var r = (first + k) & mask if wraps else first + k
             acc = rows.load[width=1]((r, c)).fma(weights.unsafe_get(k), acc)
-        dst.store((i, c), acc)
+        dst.store((i, c), _narrow[out_dtype](acc))
         c += 1
+
+
+@inline(.always)
+def _narrow[
+    width: SIMDLength, //, dtype: DType
+](sums: SIMD[.float32, width]) -> SIMD[dtype, width]:
+    """Converts float32 sums to a float32 or uint8 output. A uint8 output
+    rounds half to even, as `mo.round` does, and clamps to [0, 255]."""
+    comptime if dtype == .float32:
+        return rebind[SIMD[dtype, width]](sums)
+    else:
+        comptime assert dtype == .uint8, "output must be float32 or uint8"
+        return round(sums).clamp(0, 255).cast[dtype]()
 
 
 def _lane_group_mask[
@@ -1597,12 +1619,12 @@ def _resize_rows[
 
 
 def _resize_2d_fused[
-    in_dtype: DType, //
+    in_dtype: DType, out_dtype: DType, //
 ](
     var taps_w: _AxisTaps,
     taps_h: _AxisTaps,
     src: TileTensor[in_dtype, ...],
-    dst: MutTileTensor[.float32, ...],
+    dst: MutTileTensor[out_dtype, ...],
     in_w: Int,
     out_w: Int,
     inner: Int,
@@ -1611,11 +1633,12 @@ def _resize_2d_fused[
     [outer, H, W, inner] tensors, keeping only the W-resampled rows the H
     filter still needs in a ring. Integer input is converted a batch of rows
     at a time, as the W pass reaches it. An unchanged H writes the W pass
-    straight into dst.
+    straight into a float32 dst. A uint8 dst rounds as the H pass stores it,
+    so it runs the H pass even then, one tap of weight one per row.
     """
     var mid_row = out_w * inner
     var in_h = Int(src.dim[1]())
-    var same_h = in_h == Int(dst.dim[1]())
+    var same_h = out_dtype == .float32 and in_h == Int(dst.dim[1]())
     var w_pass = _SlabPass(taps_w^, in_w, out_w, inner, in_h)
     # Filling batch rows while the previous max_count - 1 are live needs
     # max_count + batch - 1 slots. A power of two makes a slot a mask, and a
@@ -1642,10 +1665,14 @@ def _resize_2d_fused[
                 var rows = w_pass.batch(in_h - produced)
                 var batch_rows = src_rows[produced : produced + rows, :]
                 if same_h:
+                    # Only a float32 dst takes this path, so the bitcast
+                    # keeps its dtype.
                     _resize_rows(
                         w_pass,
                         batch_rows,
-                        dst_rows[produced : produced + rows, :],
+                        dst_rows[produced : produced + rows, :].bitcast[
+                            .float32
+                        ](),
                         stage,
                     )
                 else:

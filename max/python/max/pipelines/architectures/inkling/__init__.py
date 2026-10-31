@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Inkling architecture: a text-and-vision pipeline model with KV cache
-and SSM state support.
+"""The Inkling architecture.
+
+A text-and-vision pipeline model with KV cache and SSM state support.
 """
 
 from .arch import inkling_arch

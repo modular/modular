@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V4 attention: shared-latent MQA over a sliding window plus CSA.
 
 Reference: ``inference/model.py`` class ``Attention``. The reference has two
@@ -68,9 +67,9 @@ from dataclasses import dataclass
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.kernels import latent_sparse_attention_ragged
-from max.nn.layer import Module
-from max.nn.norm.rms_norm import RMSNorm
+from max.nn.legacy.kernels import latent_sparse_attention_ragged
+from max.nn.legacy.layer import Module
+from max.nn.legacy.norm.rms_norm import RMSNorm
 
 from ..model_config import DeepseekV4Config
 from .cache import (

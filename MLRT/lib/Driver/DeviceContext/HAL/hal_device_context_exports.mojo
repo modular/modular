@@ -28,8 +28,8 @@ frees it with `MojoHAL_strfree`.
 from std.atomic import Atomic, Ordering
 from std.ffi import c_char, CStringSpan, external_call
 from std.sys import size_of
-from max.gpu.host._hal import get_device_spec
-from max.gpu.host._hal.context import Buffer
+from max._driver import get_device_spec
+from max._driver.max_license.hal.context import Buffer
 
 comptime _HALRawBuffer = Buffer[get_device_spec[0]()]
 from max.gpu.host import (
@@ -39,9 +39,12 @@ from max.gpu.host import (
     DeviceStream,
     HostBuffer,
 )
-from max.gpu.host._legacy.device_context import _CString
-from max.gpu.host._legacy.device_attribute import DeviceAttribute
-from max.gpu.host._legacy.device_context import _DeviceContextScopeHAL
+from max.gpu.host import _CString
+from max.gpu.host import DeviceAttribute
+from max._driver.max_license.device_context_hal.device_context_hal import (
+    _DeviceContextScopeHAL,
+    _accelerator_api_and_arch,
+)
 from std.memory import (
     alloc,
     dealloc,
@@ -125,6 +128,21 @@ def MojoHAL_DeviceContext_enableAllPeerAccess() abi("C") -> _CString[]:
 
 
 @export
+def MojoHAL_Device_getApiAndArch(
+    out_api: _OutPtr[Pointer[c_char, MutUntrackedOrigin]],
+    out_arch: _OutPtr[Pointer[c_char, MutUntrackedOrigin]],
+    device_id: Int32,
+) abi("C") -> _CString[]:
+    try:
+        var api_and_arch = _accelerator_api_and_arch(Int(device_id))
+        out_api[] = _alloc_cstr(api_and_arch[0])
+        out_arch[] = _alloc_cstr(api_and_arch[1])
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
 def MojoHAL_DeviceContext_create(
     out_ctx: _OutPtr[_DeviceContextBoxPtr],
     api: Pointer[mut=False, c_char, ImmUntrackedOrigin],
@@ -140,6 +158,17 @@ def MojoHAL_DeviceContext_create(
         return None
     except e:
         return _err_cstr(String(e))
+
+
+@export
+def MojoHAL_DeviceContext_copy(
+    out_ctx: _OutPtr[_DeviceContextBoxPtr],
+    ctx: _DeviceContextBoxPtr,
+) abi("C"):
+    # The copy shares `ctx`'s HAL context and default stream.
+    var boxed = alloc(Layout[DeviceContext].single())
+    boxed.unsafe_ptr().unsafe_write(ctx[])
+    out_ctx[] = boxed^.unsafe_leak()
 
 
 @export
@@ -384,7 +413,7 @@ def MojoHAL_DeviceContext_getArchName(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_name[] = _alloc_cstr(ctx[].arch_name())
+        out_name[] = _alloc_cstr(ctx[].device().get_arch())
         return None
     except e:
         return _err_cstr(String(e))
@@ -396,7 +425,7 @@ def MojoHAL_DeviceContext_isHostUnified(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_unified[] = ctx[].is_host_unified()
+        out_unified[] = ctx[].device().is_host_unified()
         return None
     except e:
         return _err_cstr(String(e))
@@ -433,7 +462,7 @@ def MojoHAL_DeviceContext_getName(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_name[] = _alloc_cstr(ctx[].name())
+        out_name[] = _alloc_cstr(ctx[].device().get_name())
         return None
     except e:
         return _err_cstr(String(e))
@@ -464,7 +493,7 @@ def MojoHAL_DeviceContext_canAccess(
 ) abi("C") -> Bool:
     # The C++ signature has no error channel; a failed query is "no".
     try:
-        return ctx[].can_access(peer[])
+        return ctx[].device().can_access_peer(peer[].device())
     except:
         return False
 
@@ -476,9 +505,11 @@ def MojoHAL_DeviceContext_getMemoryInfo(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        var info = ctx[].get_memory_info()
-        out_free[] = UInt64(info[0])
-        out_total[] = UInt64(info[1])
+        # The raw HAL context, not `DeviceContext.get_memory_info`, which
+        # raises on `M_DRIVER_MEMORY_UNKNOWN` instead of passing it to C++.
+        var info = ctx[]._context[].get_memory_info()
+        out_free[] = info[0]
+        out_total[] = info[1]
         return None
     except e:
         return _err_cstr(String(e))
@@ -493,7 +524,7 @@ def MojoHAL_DeviceContext_getAttribute(
     # `attr` is a CUDA-style `CUdevice_attribute` code (the values of
     # `DeviceAttribute`); the plugin translates it to its native equivalent.
     try:
-        out_value[] = Int32(ctx[].get_attribute(DeviceAttribute(attr)))
+        out_value[] = Int32(ctx[].device().get_attribute(DeviceAttribute(attr)))
         return None
     except e:
         return _err_cstr(String(e))
@@ -574,6 +605,15 @@ def MojoHAL_DeviceContext_reassignWait(
         return _err_cstr(String(e))
 
 
+@export
+def MojoHAL_DeviceContext_sameStream(
+    a: _DeviceContextBoxPtr,
+    b: _DeviceContextBoxPtr,
+) abi("C") -> Bool:
+    # A `selectStream` view shares its context's stream: compare streams.
+    return a[]._stream is b[]._stream
+
+
 # A memmapped file wrapped as a host-visible buffer view; munmaps on release.
 @fieldwise_init
 struct _MmapBox(Movable):
@@ -610,7 +650,7 @@ def MojoHAL_DeviceContext_memmapFile(
         _ = external_call["close", Int32](fd)
         return _err_cstr("failed to query file size")
     # NULL address hint, modeled as Optional's null niche.
-    var no_hint = OptionalPointer[NoneType, MutUntrackedOrigin](None)
+    var no_hint = Optional[Pointer[NoneType, MutUntrackedOrigin]](None)
     var base = external_call["mmap", _RawMemoryPtr](
         no_hint,
         UInt64(size),
@@ -1002,6 +1042,19 @@ def MojoHAL_CompletionFlag_reset(host_ptr: _RawMemoryPtr) abi("C"):
     Atomic[UInt64].store[ordering=Ordering.RELAXED](
         host_ptr.unsafe_bitcast[UInt64](), 0
     )
+
+
+@export
+def MojoHAL_DeviceStream_launchHostFunc(
+    stream: _DeviceStreamBoxPtr,
+    func: def(OpaquePointer[MutUntrackedOrigin]) thin -> None,
+    user_data: OpaquePointer[MutUntrackedOrigin],
+) abi("C") -> _CString[]:
+    try:
+        stream[]._stream[].enqueue_host_func(func, user_data)
+        return None
+    except e:
+        return _err_cstr(String(e))
 
 
 @export

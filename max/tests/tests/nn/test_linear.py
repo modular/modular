@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for Linear layer in max.nn, focusing on sharding functionality."""
+"""Tests for Linear layer in max.nn.legacy, focusing on sharding functionality."""
 
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
 from max.graph.quantization import QuantizationEncoding
-from max.nn import linear as nn_linear
-from max.nn.linear import Linear
-from max.nn.quant_config import (
+from max.nn.legacy import linear as nn_linear
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

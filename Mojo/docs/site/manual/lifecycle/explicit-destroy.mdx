@@ -1,16 +1,22 @@
 ---
-title: Explicit destruction
+title: Requiring explicit destruction
 sidebar_position: 5
-description: Require values to be deliberately destroyed in code.
+description: >
+  Define types whose lifetimes must end deliberately (sometimes called linear
+  types), through named or raising deinitializers, including in generic code.
 ---
+
+<!-- Compiler verified: 2026-10-16, Mojo 1.2.0.dev2026101520 (d2872eb2) -->
+<!-- Last updated: 2026-10-16 -->
 
 Normally, Mojo automatically destroys a value after its last use. Explicit
 destruction lets a type opt out of that behavior and require its values to
 be deliberately destroyed. A type that does this is an explicitly destroyed
-type.
+type, sometimes called a linear type.
 
-Explicit destruction opts a type out of the `Deinitable` trait. Mark types
-with a `not Deinitable` entry in the conformance list:
+To require explicit destruction, opt the type out of `Deinitable` by adding
+`not Deinitable` to its [conformance
+list](/docs/reference/struct-declarations/#conformance-lists):
 
 ```mojo
 @fieldwise_init
@@ -25,10 +31,8 @@ def main():
     value^.cleanup()
 ```
 
-Provide named deinitializer methods that use the `deinit self` argument
-convention. Make the error message actionable and follow Mojo best practices:
-use lower case for `call`, put method and function names in single quotes,
-include the parentheses, and omit the final period.
+Provide named deinitializer methods that use the [`deinit self` argument
+convention](/docs/reference/function-declarations/#deinit).
 
 Values that require explicit destruction must be consumed by a named
 deinitializer or transferred out of scope. Otherwise, the compiler reports
@@ -59,7 +63,7 @@ struct Transaction(not Deinitable else "call 'commit()' or 'rollback()'"):
         pass
 
 # Order matters
-struct MutexGuard(not Deinitable):
+struct MutexGuard(not Deinitable else "call 'unlock()' to release the lock"):
     # Must be called to release the lock before other operations
     def unlock(deinit self):
         # ...
@@ -68,9 +72,9 @@ struct MutexGuard(not Deinitable):
 
 ### Raising deinitializers
 
-`__deinit__()` can't raise; the compiler rejects the `raises` keyword on it.
-A named deinitializer can raise, which lets cleanup report failure to its
-caller.
+`__deinit__()` can't raise; the compiler rejects the
+[`raises`](/docs/reference/function-declarations/#raises) keyword on it. A named
+deinitializer can raise, which lets cleanup report failure to its caller.
 
 Because `deinit self` consumes the value at the call, the binding is consumed
 whether the call returns or raises. The caller can't invoke another
@@ -82,7 +86,7 @@ up during unwinding.
 
 ## Custom error messages
 
-Add a custom message to the opt-out to improve compiler diagnostics:
+Add a message to the opt-out with `else` to improve compiler diagnostics:
 
 ```mojo
 struct CustomFileHandle(
@@ -94,6 +98,10 @@ struct CustomFileHandle(
     def discard(deinit self):
         pass
 ```
+
+Make the error message actionable and follow Mojo best practices: use lower
+case for `call`, put method and function names in single quotes, include
+the parentheses, and omit the final period.
 
 ## Parameterized code and explicit destruction
 
@@ -195,8 +203,9 @@ def consuming_method[
 ```
 
 Each explicitly destroyed type has an unknown set of deinitializer methods.
-Parametric code can't anticipate what these are. Using a lambda helps you
-pass a type-specific deinitializer to a consuming parametric function.
+Parametric code can't anticipate what these are. Using a
+[lambda](/docs/reference/lambda-expressions/) helps you pass a type-specific
+deinitializer to a consuming parametric function.
 
 For example, a `Tally` value:
 
@@ -208,14 +217,15 @@ comptime tally_consumer = lambda (var t: Tally): t^.destroy()
 consuming_method(tally^, tally_consumer)
 
 # Output:
-# Consuming: <module_name>.Tally (consuming_method)
-# Destroying Tally: [0, 1] (destroy())
+# Consuming: <module_name>.Tally    <- consuming_method()
+# Destroying Tally: [0, 1]          <- destroy()
 ```
 
 ### Parametric consumption: Deinitable
 
-There's nothing to pass for all-Deinitable types that use no-argument
-deinitializers:
+Every `Deinitable` type has a `__deinit__()`, either one you write or one
+Mojo synthesizes. Because the name is always the same, one generic lambda,
+`implicit_consumer`, can consume any of them:
 
 ```mojo
 # Works across all Deinitable types
@@ -231,14 +241,14 @@ var basic = Basic("World")
 consuming_method(basic^, implicit_consumer[Basic])
 
 # Output:
-# Consuming: <module_name>.Basic (from `consuming_method()`)
-# Destroying Basic: World (from `__deinit__()`)
+# Consuming: <module_name>.Basic    <- consuming_method()
+# Destroying Basic: World           <- __deinit__()
 ```
 
 ## Related
 
-- [Value destruction](/docs/manual/lifecycle/death/) - Complete coverage of
-  value destruction and lifetime management
+- [Automatic value destruction](/docs/manual/lifecycle/death/) - Complete
+  coverage of value destruction and lifetime management
 - [`AnyType`](/docs/std/traits/anytype/AnyType/) - Base trait for all types
 - [`Deinitable`](/docs/std/traits/deinitable/Deinitable/) - Trait for
   automatically deinitializable types

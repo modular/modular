@@ -5,6 +5,9 @@ package(default_visibility = ["//Mojo:consumers"])
 modular_cc_binary(
     name = "kgen-opt",
     srcs = glob(["*.cpp"]),
+    data = [
+        "//Mojo:CompilerRT",
+    ],
     internal_deps = select({
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
@@ -31,7 +34,6 @@ modular_cc_binary(
         "//AsyncRT:RuntimeGlobals",
         "//Init",
         "//Mojo:Compiler",
-        "//Mojo:CompilerRT",
         "//Mojo:ExecutionEngine",
         "//Mojo:KGENDialect",
         "//Mojo:LITDialect",

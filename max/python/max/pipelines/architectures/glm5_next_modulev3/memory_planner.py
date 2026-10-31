@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Memory planner for GLM-5.3-Flash on ModuleV3.
 
-Adds the two costs the graph-API planner adds -- the KDA state pools, which cap
-concurrency below roughly 12K context, and the 4x mHC residual -- to the
+Adds the costs the graph-API planner adds -- the KDA state pools, which cap
+concurrency below roughly 12K context, the 4x mHC residual and, on gfx950, the
+``kda_chunk`` prefill workspaces -- to the
 ModuleV3 DeepSeek planner, which reserves the EP buffers the way the ModuleV3
 MoE uses them.
 """
@@ -21,6 +22,7 @@ MoE uses them.
 from __future__ import annotations
 
 from max.driver import Device
+from max.nn.legacy.state_space.kimi_delta import amd_kda_chunk_workspace_bytes
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import override
@@ -32,9 +34,14 @@ __all__ = ["Glm5NextMemoryPlanner"]
 
 
 class Glm5NextMemoryPlanner(DeepseekV3ModuleV3MemoryPlanner):
-    """Adds the KDA state pools and the widened mHC residual."""
+    """Adds the KDA state pools, the mHC residual and the chunk workspaces."""
 
     _always_signal_buffers = True
+
+    _inferred_max_batch_size: int | None = None
+    """The batch size :meth:`infer_max_batch_size` chose, which planning does
+    not write back to ``runtime.max_batch_size`` before it asks
+    :meth:`estimate_activation_memory`."""
 
     @override
     def infer_max_batch_size(
@@ -45,13 +52,15 @@ class Glm5NextMemoryPlanner(DeepseekV3ModuleV3MemoryPlanner):
     ) -> int | None:
         config = self._config
         assert isinstance(config, Glm5NextConfig)
-        return config.infer_optimal_batch_size(
+        inferred = config.infer_optimal_batch_size(
             devices,
             weights_size=weights_size,
             device_memory_utilization=(
                 pipeline_config.model.kv_cache.device_memory_utilization
             ),
         )
+        self._inferred_max_batch_size = inferred
+        return inferred
 
     @override
     def estimate_activation_memory(
@@ -60,16 +69,31 @@ class Glm5NextMemoryPlanner(DeepseekV3ModuleV3MemoryPlanner):
         huggingface_config: AutoConfig,
     ) -> int:
         # The state pools are cache leaves and already paid for; the residual
-        # streams are a real activation, replicated over the whole batch.
+        # streams are a real activation, replicated over the whole batch, and
+        # so are the chunk workspaces gfx950 prefill allocates per call.
         config = self._config
         assert isinstance(config, Glm5NextConfig)
+        runtime = pipeline_config.runtime
         residual_bytes = (
-            pipeline_config.runtime.max_batch_input_tokens
-            * config.activation_bytes_per_token()
+            runtime.max_batch_input_tokens * config.activation_bytes_per_token()
+        )
+        chunk_workspace_bytes = amd_kda_chunk_workspace_bytes(
+            num_heads=config.linear_num_heads,
+            head_dim=config.linear_head_dim,
+            lower_bound=config.linear_lower_bound,
+            state_dtype=config.state_pool_dtype,
+            decode_only=runtime.pipeline_role == "decode_only",
+            max_batch_input_tokens=runtime.max_batch_input_tokens,
+            enable_chunked_prefill=runtime.enable_chunked_prefill,
+            max_batch_size=(
+                runtime.max_batch_size or self._inferred_max_batch_size
+            ),
+            max_length=pipeline_config.model.max_length,
         )
         return (
             super().estimate_activation_memory(
                 pipeline_config, huggingface_config
             )
             + residual_bytes
+            + chunk_workspace_bytes
         )

@@ -310,11 +310,12 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
 
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
-  SymbolConstantAttr callee =
-      extractSymbolConstantAttr(op.getOperands().front());
-  if (hasUnresolvedParamValue(callee))
+  FuncSymbolGenerator callee =
+      extractFuncSymbolGenerator(op.getOperands().front());
+  if (!callee)
     return failure();
-
+  assert(!hasUnresolvedParamValue(callee) &&
+         "the symbol must be fully bound for calls");
   // Attempt to concretize the function first.
   ErrorTreeOr<FuncOp> funcOr =
       elaborator->getConcreteFunction(parent, *errorLoc, callee);
@@ -542,7 +543,7 @@ GeneratorOp IREvaluator::getGenerator(SymbolRefAttr symbol) {
 
 ErrorOr<CrossDeviceFunction>
 IREvaluator::compileAsm(MLIRContext *ctx, GeneratorOp func,
-                        SymbolConstantAttr symbol, StringAttr name,
+                        FuncSymbolAttr symbol, StringAttr name,
                         TargetInfoAttr target, EmitAs emissionKind,
                         EmissionOptions emissionOptions) {
   SymbolTable symtabCopy = elaborator->oldSymTab;

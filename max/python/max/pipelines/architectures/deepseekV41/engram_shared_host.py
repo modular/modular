@@ -910,6 +910,11 @@ class CudaHostRegistrar:
             self._cu.cuDevicePrimaryCtxRelease_v2(self._device)
 
     def __call__(self, address: int, size: int) -> Callable[[], None]:
+        """Registers ``size`` bytes at ``address`` as device-visible memory.
+
+        Returns:
+            A callable that unregisters the range.
+        """
         flags = _CU_MEMHOSTREGISTER_PORTABLE | _CU_MEMHOSTREGISTER_DEVICEMAP
         if self.read_only:
             flags |= _CU_MEMHOSTREGISTER_READ_ONLY

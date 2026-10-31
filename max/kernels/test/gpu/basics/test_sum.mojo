@@ -24,9 +24,11 @@ comptime dtype = DType.uint64
 
 def warp_sum_kernel[
     dtype: DType,
+    output_origin: MutOrigin,
+    input_origin: ImmOrigin,
 ](
-    output: MutPointer[Scalar[dtype], MutAnyOrigin],
-    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], output_origin],
+    input: ImmPointer[Scalar[dtype], input_origin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -52,7 +54,11 @@ def test_warp_sum(ctx: DeviceContext) raises:
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    comptime kernel = warp_sum_kernel[dtype=dtype]
+    comptime kernel = warp_sum_kernel[
+        dtype=dtype,
+        output_origin=origin_of(out_device),
+        input_origin=ImmOrigin(origin_of(in_device)),
+    ]
     ctx.enqueue_function[kernel](
         out_device,
         in_device,
@@ -79,9 +85,11 @@ def test_warp_sum(ctx: DeviceContext) raises:
 def block_sum_kernel[
     dtype: DType,
     block_size: Int,
+    output_origin: MutOrigin,
+    input_origin: ImmOrigin,
 ](
-    output: MutPointer[Scalar[dtype], MutAnyOrigin],
-    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], output_origin],
+    input: ImmPointer[Scalar[dtype], input_origin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -109,7 +117,12 @@ def test_block_sum(ctx: DeviceContext) raises:
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    comptime kernel = block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]
+    comptime kernel = block_sum_kernel[
+        dtype=dtype,
+        block_size=BLOCK_SIZE,
+        output_origin=origin_of(out_device),
+        input_origin=ImmOrigin(origin_of(in_device)),
+    ]
     ctx.enqueue_function[kernel](
         out_device,
         in_device,

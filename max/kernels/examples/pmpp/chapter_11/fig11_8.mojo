@@ -45,8 +45,8 @@ def warp_scan(val: Float32) -> Float32:
 
 # ========================== TEST CODE ==========================
 def test_warp_scan(
-    input: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmUntrackedOrigin],
+    output: MutPointer[Float32, MutUntrackedOrigin],
     N: UInt32,
 ):
     """Test kernel for warp-level scan.

@@ -20,7 +20,7 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import moe_router_image_bias
+from max.nn.legacy.kernels import moe_router_image_bias
 from torch.utils.dlpack import from_dlpack
 
 N_EXPERTS = 384

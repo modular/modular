@@ -37,31 +37,30 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.comm import Allreduce
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.graph_groups import MRoPEPositions
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import MRoPEPositions
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
-    packed_page_stride,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.state_space import GatedDeltaReplayInputs
-from max.nn.transformer import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.state_space import GatedDeltaReplayInputs
+from max.nn.legacy.transformer import (
     DecoderOutputs,
     ReturnHiddenStates,
     forward_sequential_layers,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
-from max.nn.transformer.transformer import forward_sharded_layers
+from max.nn.legacy.transformer.transformer import forward_sharded_layers
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_batch_inputs,
     signal_inputs,
@@ -185,6 +184,7 @@ class Qwen3_5FullAttentionBlock(Module):
         layer_idx: TensorValue,
         signal_buffers: list[BufferValue],
         kv_blocks: list[BufferValue],
+        page_stride: list[TensorValue],
         cache_lengths: list[TensorValue],
         lookup_table: list[TensorValue],
         max_prompt_length: list[TensorValue],
@@ -194,6 +194,7 @@ class Qwen3_5FullAttentionBlock(Module):
         input_row_offsets: list[TensorValue],
         freq_row_ids: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
+        """Runs the block over its sharded hidden states."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # `o_proj` is row-parallel, so each device holds a partial sum.
         attn_outs = self.allreduce(
@@ -203,7 +204,7 @@ class Qwen3_5FullAttentionBlock(Module):
                     norm_xs[i],
                     PagedCacheValues(
                         kv_blocks=kv_blocks[i],
-                        page_stride=packed_page_stride(kv_blocks[i]),
+                        page_stride=page_stride[i],
                         cache_lengths=cache_lengths[i],
                         lookup_table=lookup_table[i],
                         max_prompt_length=max_prompt_length[i],
@@ -306,6 +307,7 @@ class Qwen3_5LinearAttentionBlock(Module):
         state: list[GatedDeltaStateAccess],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
+        """Runs the linear-attention block and advances its recurrent state."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # Each device owns a slice of the value heads, so `out_proj` emits a
         # partial sum over the full hidden dim. The state rows arrive already
@@ -344,8 +346,11 @@ class Qwen3_5LinearAttentionBlock(Module):
 def rotary_embedding(
     config: Qwen3_5Config, *, mrope: bool
 ) -> Llama3RotaryEmbedding:
-    """Returns the full-attention layers' rotary embedding, which rotates
-    only the partial rotary dims, over 3-axis positions under ``mrope``."""
+    """Returns the rotary embedding for the full-attention layers.
+
+    It rotates only the partial rotary dims, over 3-axis positions when
+    ``mrope`` is set.
+    """
     rotary_dim = int(
         config.attn_kv_params.head_dim * config.partial_rotary_factor
     )
@@ -373,8 +378,9 @@ def rotary_embedding(
 
 
 def norm_factory(config: Qwen3_5Config) -> Callable[..., RMSNorm]:
-    """Returns the factory of Qwen3.5's RMSNorms, which scale by
-    ``1 + weight``.
+    """Returns the factory for Qwen3.5's RMSNorms.
+
+    Every norm it builds scales by ``1 + weight``.
 
     Raises:
         ValueError: If the config doesn't name RMSNorm and its epsilon.
@@ -637,6 +643,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                     layer_idx_tensor,
                     signal_buffers,
                     [kv.kv_blocks for kv in kv_collections],
+                    [kv.page_stride for kv in kv_collections],
                     [kv.cache_lengths for kv in kv_collections],
                     [kv.lookup_table for kv in kv_collections],
                     [kv.max_prompt_length for kv in kv_collections],
@@ -761,8 +768,9 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are the leaves of
-        :meth:`input_tree` for :attr:`kv_params`.
+        """Traces the language graph for :attr:`kv_params`.
+
+        The graph's inputs are the leaves of :meth:`input_tree`.
 
         Adapts the flat graph inputs to :meth:`__call__`: splits the cache
         into its attention collections and recurrent state, and passes the

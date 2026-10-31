@@ -480,10 +480,10 @@ def main() raises:
 
     print("Running MHA sparse (BLASST tag-space) benchmark with config:")
     print("  qkv_type:", qkv_type)
-    print("  mask_type:", mask_type, "(NullMask / full visibility)")
+    print(t"  mask_type: {mask_type} (NullMask / full visibility)")
     print("  depth:", depth)
     print("  num_heads:", num_heads)
-    print("  group:", group, "(kv_num_heads =", num_heads // group, ")")
+    print(t"  group: {group} (kv_num_heads = {num_heads // group} )")
     print("  seq_len:", seq_len)
     print("  num_keys:", num_keys)
     print("  batch_size:", batch_size)
@@ -505,13 +505,8 @@ def main() raises:
         if (b % n_buckets) != 0:
             expected_skips += 1
     print(
-        "  EXPECTED skip fraction ~",
-        ideal_pct,
-        "% (ideal 1-1/n) => peel-adjusted",
-        expected_skips,
-        "of",
-        total_blocks - 1,
-        "blocks",
+        t"  EXPECTED skip fraction ~ {ideal_pct} % (ideal 1-1/n) =>"
+        t" peel-adjusted {expected_skips} of {total_blocks - 1} blocks"
     )
 
     var m = Bench()

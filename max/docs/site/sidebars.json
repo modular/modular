@@ -1,4 +1,10 @@
 {
+  "installSidebar": [
+    "install",
+    "packages",
+    "system-requirements",
+    "coding-assistants"
+  ],
   "servingDevSidebar": [
     {
       "label": "Get started",
@@ -7,7 +13,6 @@
       "collapsed": false,
       "items": [
         "get-started",
-        "packages",
         "container",
         {
           "label": "Cookbook",
@@ -59,8 +64,7 @@
         "serve/lora-adapters",
         "serve/speculative-decoding",
         "serve/parallelism",
-        "serve/recipes",
-        "serve/metrics"
+        "serve/recipes"
       ]
     },
     {
@@ -76,7 +80,7 @@
       ]
     },
     {
-      "label": "Tools",
+      "label": "Reference",
       "className": "sidebar-heading",
       "type": "category",
       "collapsed": false,
@@ -93,13 +97,7 @@
           ]
         },
         "environment-variables",
-        "coding-assistants",
-        {
-          "label": "kbench",
-          "type": "link",
-          "href": "https://modul.ar/kbench",
-          "className": "external-link"
-        }
+        "serve/metrics"
       ]
     }
   ],
@@ -117,6 +115,7 @@
         },
         "develop/model-bringup-skills",
         "develop/serve-custom-model-architectures",
+        "develop/max-pipeline-bring-your-own-model",
         {
           "label": "Graphs",
           "type": "category",
@@ -136,6 +135,7 @@
             "develop/read-model-config",
             "develop/weight-adapters",
             "develop/pipelines",
+            "develop/supported-layers",
             "develop/quantize"
           ]
         },
@@ -251,139 +251,6 @@
           "items": [
             {
               "type": "category",
-              "label": "compilation",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.compilation"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.compilation__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "custom",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.custom"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.custom__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "executor",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.executor"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.executor__"
-              ]
-            },
-            "api/python/experimental.functional",
-            {
-              "type": "category",
-              "label": "nn",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.nn"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.nn__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "nn.norm",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.nn.norm"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.nn.norm__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "nn.rope",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.nn.rope"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.nn.rope__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "random",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.random"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.random__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "realization_context",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.realization_context"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.realization_context__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "sharding",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.sharding"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.sharding__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "sharding.per_shard_dim",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.sharding.per_shard_dim"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.sharding.per_shard_dim__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "tensor",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.tensor"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.tensor__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "testing",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.testing"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.testing__"
-              ]
-            },
-            {
-              "type": "category",
               "label": "torch",
               "link": {
                 "type": "doc",
@@ -392,19 +259,39 @@
               "items": [
                 "__AUTOGEN:max.experimental.torch__"
               ]
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.functional",
+          "link": {
+            "type": "doc",
+            "id": "api/python/functional"
+          },
+          "items": [
+            {
+              "type": "category",
+              "label": "custom_op",
+              "link": {
+                "type": "doc",
+                "id": "api/python/functional.custom_op"
+              },
+              "items": [
+                "__AUTOGEN:max.functional.custom_op__"
+              ]
             },
             {
               "type": "category",
-              "label": "validation",
+              "label": "random",
               "link": {
                 "type": "doc",
-                "id": "api/python/experimental.validation"
+                "id": "api/python/functional.random"
               },
               "items": [
-                "__AUTOGEN:max.experimental.validation__"
+                "__AUTOGEN:max.functional.random__"
               ]
-            },
-            "__AUTOGEN:max.experimental__"
+            }
           ]
         },
         {
@@ -462,91 +349,124 @@
           "items": [
             {
               "type": "category",
-              "label": "attention",
+              "label": "legacy",
               "link": {
                 "type": "doc",
-                "id": "api/python/nn.attention"
-              },
-              "items": [
-                "__AUTOGEN:max.nn.attention__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "comm",
-              "link": {
-                "type": "doc",
-                "id": "api/python/nn.comm"
-              },
-              "items": [
-                "__AUTOGEN:max.nn.comm__"
-              ]
-            },
-            "api/python/nn.kernels",
-            {
-              "type": "category",
-              "label": "graph_groups",
-              "link": {
-                "type": "doc",
-                "id": "api/python/nn.graph_groups"
-              },
-              "items": [
-                "__AUTOGEN:max.nn.graph_groups__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "kv_cache",
-              "link": {
-                "type": "doc",
-                "id": "api/python/nn.kv_cache"
-              },
-              "items": [
-                "__AUTOGEN:max.nn.kv_cache__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "moe",
-              "link": {
-                "type": "doc",
-                "id": "api/python/nn.moe"
-              },
-              "items": [
-                "__AUTOGEN:max.nn.moe__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "sampling",
-              "link": {
-                "type": "doc",
-                "id": "api/python/nn.sampling"
-              },
-              "items": [
-                "__AUTOGEN:max.nn.sampling__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "state_space",
-              "link": {
-                "type": "doc",
-                "id": "api/python/nn.state_space"
+                "id": "api/python/nn.legacy"
               },
               "items": [
                 {
                   "type": "category",
-                  "label": "kimi_delta",
+                  "label": "attention",
                   "link": {
                     "type": "doc",
-                    "id": "api/python/nn.state_space.kimi_delta"
+                    "id": "api/python/nn.legacy.attention"
                   },
                   "items": [
-                    "__AUTOGEN:max.nn.state_space.kimi_delta__"
+                    "__AUTOGEN:max.nn.legacy.attention__"
                   ]
                 },
-                "__AUTOGEN:max.nn.state_space__"
+                {
+                  "type": "category",
+                  "label": "comm",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/nn.legacy.comm"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.nn.legacy.comm__"
+                  ]
+                },
+                "api/python/nn.legacy.kernels",
+                {
+                  "type": "category",
+                  "label": "graph_groups",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/nn.legacy.graph_groups"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.nn.legacy.graph_groups__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "kv_cache",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/nn.legacy.kv_cache"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.nn.legacy.kv_cache__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "moe",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/nn.legacy.moe"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.nn.legacy.moe__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "sampling",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/nn.legacy.sampling"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.nn.legacy.sampling__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "state_space",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/nn.legacy.state_space"
+                  },
+                  "items": [
+                    {
+                      "type": "category",
+                      "label": "kimi_delta",
+                      "link": {
+                        "type": "doc",
+                        "id": "api/python/nn.legacy.state_space.kimi_delta"
+                      },
+                      "items": [
+                        "__AUTOGEN:max.nn.legacy.state_space.kimi_delta__"
+                      ]
+                    },
+                    "__AUTOGEN:max.nn.legacy.state_space__"
+                  ]
+                },
+                "__AUTOGEN:max.nn.legacy__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "norm",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.norm"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.norm__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "rope",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.rope"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.rope__"
               ]
             },
             "__AUTOGEN:max.nn__"
@@ -569,6 +489,7 @@
               },
               "items": [
                 "api/python/pipelines.architectures.bert",
+                "api/python/pipelines.architectures.d1",
                 "api/python/pipelines.architectures.deepseekV2",
                 "api/python/pipelines.architectures.deepseekV3",
                 "api/python/pipelines.architectures.deepseekV3_2",
@@ -581,10 +502,13 @@
                 "api/python/pipelines.architectures.dflash_mimo_v2",
                 "api/python/pipelines.architectures.diffusion_gemma",
                 "api/python/pipelines.architectures.dspark_deepseekV4",
+                "api/python/pipelines.architectures.dspark_deepseekV41",
                 "api/python/pipelines.architectures.dspark_draft",
                 "api/python/pipelines.architectures.dspark_gemma4",
+                "api/python/pipelines.architectures.dspark_qwen3",
                 "api/python/pipelines.architectures.eagle3_deepseekV3",
                 "api/python/pipelines.architectures.eagle_llama3",
+                "api/python/pipelines.architectures.flint",
                 "api/python/pipelines.architectures.flux2",
                 "api/python/pipelines.architectures.gemma3",
                 "api/python/pipelines.architectures.gemma3multimodal",
@@ -602,6 +526,10 @@
                 "api/python/pipelines.architectures.kimik2_5",
                 "api/python/pipelines.architectures.laguna",
                 "api/python/pipelines.architectures.lfm2",
+                "api/python/pipelines.architectures.lfm3",
+                "api/python/pipelines.architectures.lfm3_audio",
+                "api/python/pipelines.architectures.lfm3_omni",
+                "api/python/pipelines.architectures.lfm3_vl",
                 "api/python/pipelines.architectures.llama3",
                 "api/python/pipelines.architectures.llama4",
                 "api/python/pipelines.architectures.mamba",
@@ -612,6 +540,7 @@
                 "api/python/pipelines.architectures.mistral3",
                 "api/python/pipelines.architectures.mpnet",
                 "api/python/pipelines.architectures.mtp_deepseekV3",
+                "api/python/pipelines.architectures.mtp_glm5_next",
                 "api/python/pipelines.architectures.mtp_inkling",
                 "api/python/pipelines.architectures.mtp_qwen3_5",
                 "api/python/pipelines.architectures.muse_glimmer",
@@ -630,8 +559,6 @@
                 "api/python/pipelines.architectures.qwen_image",
                 "api/python/pipelines.architectures.qwen_image_edit",
                 "api/python/pipelines.architectures.step3p5",
-                "api/python/pipelines.architectures.unified_dspark_deepseekV41",
-                "api/python/pipelines.architectures.unified_dspark_nemotron_h",
                 "api/python/pipelines.architectures.unified_mtp_glm5_2",
                 "api/python/pipelines.architectures.wan"
               ]
@@ -699,6 +626,17 @@
                 "id": "api/python/pipelines.kv_cache"
               },
               "items": [
+                {
+                  "type": "category",
+                  "label": "checkpoint",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.kv_cache.checkpoint"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.kv_cache.checkpoint__"
+                  ]
+                },
                 {
                   "type": "category",
                   "label": "paged_kv_cache",
@@ -774,6 +712,28 @@
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.lib.generate__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "generate_images",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.generate_images"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.generate_images__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "graph_specs",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.graph_specs"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.graph_specs__"
                   ]
                 },
                 {
@@ -914,6 +874,39 @@
                 "id": "api/python/pipelines.speculative"
               },
               "items": [
+                {
+                  "type": "category",
+                  "label": "driver",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.driver"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.driver__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "spec_width_policy",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.spec_width_policy"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.spec_width_policy__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "spec_adapters",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.spec_adapters"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.spec_adapters__"
+                  ]
+                },
                 "__AUTOGEN:max.pipelines.speculative__"
               ]
             },
@@ -988,6 +981,84 @@
         },
         {
           "type": "category",
+          "label": "max.tensor",
+          "link": {
+            "type": "doc",
+            "id": "api/python/tensor"
+          },
+          "items": [
+            {
+              "type": "category",
+              "label": "compilation",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.compilation"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.compilation__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "executor",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.executor"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.executor__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "realization_context",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.realization_context"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.realization_context__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "sharding",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.sharding"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.sharding__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "sharding.per_shard_dim",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.sharding.per_shard_dim"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.sharding.per_shard_dim__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "testing",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.testing"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.testing__"
+              ]
+            },
+            "api/python/tensor.validation",
+            "__AUTOGEN:max.tensor__"
+          ]
+        },
+        {
+          "type": "category",
           "label": "max.tree",
           "link": {
             "type": "doc",
@@ -1037,6 +1108,12 @@
               "dirName": "layout"
             }
           ]
+        },
+        {
+          "label": "kbench",
+          "type": "link",
+          "href": "https://modul.ar/kbench",
+          "className": "external-link"
         }
       ]
     },

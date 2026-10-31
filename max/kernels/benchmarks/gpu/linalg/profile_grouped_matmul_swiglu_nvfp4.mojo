@@ -279,25 +279,10 @@ def main() raises:
     var tok_str = "[" + ", ".join(num_tokens_by_expert) + "]"
     var eid_str = "[" + ", ".join(expert_ids_input) + "]"
     print(
-        "Config: variant=",
-        variant,
-        " match_bf16=",
-        match_bf16 if fused else False,
-        " M=",
-        M,
-        " (nae=",
-        num_active_experts,
-        ", ragged=",
-        ragged_tokens,
-        ") N=",
-        N,
-        " K=",
-        K,
-        " num_experts=",
-        num_experts,
-        " bytes_per_iter=",
-        bytes_per_iter,
-        sep="",
+        t"Config:"
+        t" variant={variant} match_bf16={match_bf16 if fused else False} M={M} (nae={num_active_experts},"
+        t" ragged={ragged_tokens})"
+        t" N={N} K={K} num_experts={num_experts} bytes_per_iter={bytes_per_iter}"
     )
     print("  num_tokens_by_expert: ", tok_str, sep="")
     print("  expert_ids: ", eid_str, sep="")

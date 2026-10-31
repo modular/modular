@@ -69,6 +69,7 @@ struct M_driver_queue {
     uint64_t value = 0;
     std::shared_ptr<std::atomic<bool>> retired; // first carrier completed
     bool handlerInstalled = false;
+    bool carried = false; // encoded into at least one committed CB
   };
   std::vector<DonatedWait> mDonatedWaits; // guarded by mMutex
 
@@ -80,5 +81,16 @@ struct M_driver_queue {
   // Prunes satisfied entries and encodes the rest; call under mMutex.
   void encodeDonatedWaits(MTL::CommandBuffer *cb);
 
+  // Call under mMutex.
+  void commitWithTimeline(MTL::CommandBuffer *cb);
+  bool allDonatedWaitsCarried() const;
+
   std::mutex mMutex;
+
+  // Signalled by every committed CB. CBs on one queue complete in commit order
+  // (measured on M5), so reaching n means every CB up to n is done.
+  NS::SharedPtr<MTL::Event> mTimeline;
+  uint64_t mTimelineSeq = 0; // guarded by mMutex
+  // Foreign command buffers on the exported queue are not on the timeline.
+  std::atomic<bool> mNativeHandleExported{false};
 };

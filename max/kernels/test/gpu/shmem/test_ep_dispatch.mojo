@@ -111,18 +111,9 @@ def test_dispatch[
 
     if my_rank == 0:
         print(
-            "Running ep_dispatch test: input_type:",
-            input_type,
-            "hidden_size:",
-            hidden_size,
-            "top_k:",
-            top_k,
-            "n_experts:",
-            n_experts,
-            "n_ranks:",
-            n_ranks,
-            "n_tokens_per_rank:",
-            n_tokens_per_rank,
+            t"Running ep_dispatch test: input_type: {input_type} hidden_size:"
+            t" {hidden_size} top_k: {top_k} n_experts: {n_experts} n_ranks:"
+            t" {n_ranks} n_tokens_per_rank: {n_tokens_per_rank}"
         )
 
     var send_buf = shmem_malloc[.uint8](n_tokens_per_rank * msg_bytes)
@@ -164,24 +155,24 @@ def test_dispatch[
         n_tokens_per_rank * n_ranks * n_local_experts * 2
     )
 
-    var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
+    var topk_ids_tensor = TileTensor(
         device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k])
-    )
-    var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
+    ).as_imm()
+    var input_tokens_tensor = TileTensor(
         device_input_buf,
         row_major(n_tokens_per_rank, Idx[hidden_size]),
-    )
-    var output_tensor = TileTensor[origin=MutAnyOrigin](
+    ).as_imm()
+    var output_tensor = TileTensor(
         device_output_buf,
         row_major(Idx[max_recv_num_tokens], Idx[hidden_size]),
     )
-    var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
+    var row_offsets_tensor = TileTensor(
         device_row_offsets_buf, row_major[n_local_experts + 1]()
     )
-    var expert_ids_tensor = TileTensor[origin=MutAnyOrigin](
+    var expert_ids_tensor = TileTensor(
         device_expert_ids_buf, row_major[n_local_experts]()
     )
-    var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
+    var src_token_info_tensor = TileTensor(
         device_src_token_info_buf,
         row_major(Idx[max_recv_num_tokens], Idx[2]),
     )
@@ -232,8 +223,10 @@ def test_dispatch[
     @inline(.always)
     def run_dispatch_async(ctx: DeviceContext) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [recv_buf]
-        var recv_count_ptrs: Array[Pointer[UInt64, MutAnyOrigin], 1] = [
+        var recv_buf_ptrs: Array[Pointer[UInt8, MutUntrackedOrigin], 1] = [
+            recv_buf
+        ]
+        var recv_count_ptrs: Array[Pointer[UInt64, MutUntrackedOrigin], 1] = [
             recv_count
         ]
 

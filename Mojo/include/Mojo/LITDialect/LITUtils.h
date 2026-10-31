@@ -45,6 +45,7 @@ class ErrorOr;
 
 namespace KGEN {
 class FnEffects;
+class KGENParamPrinter;
 class ParamDeclAttr;
 class ParamDeclRefAttr;
 class ParamIndexRefAttr;
@@ -95,6 +96,8 @@ TypedAttr getEmptyStructValue(Type type);
 /// without quotes. This prints "kgen style" not user style.
 ParseResult parseOriginParamValue(AsmParser &p, TypedAttr &result);
 void printOriginParamValue(AsmPrinter &p, TypedAttr value);
+void printOriginParamValue(AsmPrinter &p, TypedAttr value,
+                           KGEN::KGENParamPrinter &printer);
 inline void printOriginParamValue(AsmPrinter &p, Operation *, TypedAttr value) {
   printOriginParamValue(p, value);
 }

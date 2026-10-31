@@ -32,14 +32,14 @@ struct _AsyncValueCpp:
 
 
 # Typed, nullable C pointer to the C++ `AsyncValue`. A null handle is the empty /
-# non-tracked reference, so `OptionalPointer` (nullable) is required rather than a bare
+# non-tracked reference, so `Optional[Pointer]` (nullable) is required rather than a bare
 # `UnsafePointer`; the default `UntrackedOrigin` marks the pointee as living
 # outside the Mojo program, mirroring `_DeviceBufferPtr`.
 comptime _AsyncValuePtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_AsyncValueCpp, origin]
+] = Optional[Pointer[_AsyncValueCpp, origin]]
 
 
 struct AnyAsyncValueRef(ImplicitlyCopyable, Movable):

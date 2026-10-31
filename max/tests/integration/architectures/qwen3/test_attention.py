@@ -24,9 +24,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import masked_flash_attention_gpu
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.kernels import masked_flash_attention_gpu
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
 )

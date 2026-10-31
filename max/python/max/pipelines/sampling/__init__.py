@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Token sampling for MAX pipelines: samplers, logits processors, and the
-acceptance runners used in speculative decoding.
+"""Token sampling for MAX pipelines.
+
+It holds the samplers, the logits processors, and the acceptance runners used in
+speculative decoding.
 """
 
 from .label_scoring import LabelScorer
@@ -42,6 +44,7 @@ from .sampling_logits_processor import (
     PenaltyInputs,
     SamplerInputs,
     batch_max_k,
+    greedy_argmax_suffices,
 )
 from .seeds import request_row_seed
 
@@ -64,6 +67,7 @@ __all__ = [
     "build_greedy_acceptance_sampler_graph",
     "build_stochastic_acceptance_sampler_graph",
     "build_synthetic_acceptance_sampler_graph",
+    "greedy_argmax_suffices",
     "rejection_runner_registry",
     "rejection_sampler",
     "rejection_sampler_with_residuals",

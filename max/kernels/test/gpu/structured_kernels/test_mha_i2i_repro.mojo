@@ -192,26 +192,10 @@ def run_partial_k_case[
                 mismatches += 1
 
     print(
-        "  [",
-        label,
-        "] H=",
-        num_heads,
-        " D=",
-        depth,
-        " num_keys=",
-        num_keys,
-        " (% KV_BLOCK=",
-        num_keys % KV_BLOCK,
-        ", oob_rows=",
-        num_oob,
-        ") expected=",
-        expected,
-        " max_diff=",
-        max_diff,
-        " mismatches=",
-        mismatches,
-        "/",
-        o_size,
+        t"  [ {label} ] H= {num_heads}  D= {depth}  num_keys= {num_keys}  (%"
+        t" KV_BLOCK= {num_keys % KV_BLOCK} , oob_rows= {num_oob} ) expected="
+        t" {expected}  max_diff= {max_diff}  mismatches= {mismatches} /"
+        t" {o_size}"
     )
     assert_almost_equal(Float32(mismatches), Float32(0))
     print("  PASSED")

@@ -29,11 +29,11 @@
 // CHECK: raise Error("unexpected device index in collective device graph key")
 
 // The per-device contexts are assembled into an Array[DeviceContext, 2].
-// CHECK: var {{[a-zA-Z_0-9]+}}: std.collections.Array[max.gpu.host._legacy.device_context.DeviceContext, 2]
+// CHECK: var {{[a-zA-Z_0-9]+}}: std.collections.Array[max.gpu.host.DeviceContext, 2]
 // CHECK: {{[a-zA-Z_0-9]+}} = [{{var[_0-9]+}}, {{var[_0-9]+}}]
 
 // The collective is built/reused through `DeviceGraph.create_collective`.
-// CHECK: [[ARRAY:var[_0-9]+]] = max.gpu.host._legacy.device_graph.DeviceGraph.create_collective({{[a-zA-Z_0-9]+}}, [[BUILD]], [[KEY]], cache = {{var[_0-9]+}})
+// CHECK: [[ARRAY:var[_0-9]+]] = max.gpu.host.DeviceGraph.create_collective({{[a-zA-Z_0-9]+}}, [[BUILD]], [[KEY]], cache = {{var[_0-9]+}})
 
 // Each per-device graph is unpacked into its own origin-trackable variable
 // before the terminator lowers the transfer.
@@ -81,7 +81,7 @@ mgp.model @dg_collective device_graph : mof devices [#M.device_ref<"gpu", 0>, #M
 // CHECK: [[SLOT:var[_0-9]+]] = builder.get_stable(0)
 // CHECK: [[SPEC:var[_0-9]+]] = builtin_primitives.primitives.mgp_tensor_spec_create[
 // CHECK: builtin_primitives.primitives.mgp_device_graph_stable_tensor[2, 2, DType.float32]([[SLOT]], [[SPEC]])
-// CHECK: max.gpu.host._legacy.device_graph.DeviceGraph.create_collective({{[a-zA-Z_0-9]+}}, [[BUILD]], {{[a-zA-Z_0-9]+}}, cache = {{var[_0-9]+}}, stable_devices = [0])
+// CHECK: max.gpu.host.DeviceGraph.create_collective({{[a-zA-Z_0-9]+}}, [[BUILD]], {{[a-zA-Z_0-9]+}}, cache = {{var[_0-9]+}}, stable_devices = [0])
 
 mgp.model @dg_collective_stable device_graph : mof devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
@@ -116,7 +116,7 @@ mgp.model @dg_collective_stable device_graph : mof devices [#M.device_ref<"gpu",
 // stable copy it adds the tensor rebound to the `shape_only` kind: recorded in
 // place, keyed on shape alone. Its own tensor still gets an ordinary
 // `add_input`.
-// CHECK: var [[SHAPE_ONLY:var[_0-9]+]] = {{var[_0-9]+}}.with_kind[max.gpu.host._legacy.device_graph.DeviceGraphInputKind.shape_only]()
+// CHECK: var [[SHAPE_ONLY:var[_0-9]+]] = {{var[_0-9]+}}.with_kind[max.gpu.host.DeviceGraphInputKind.shape_only]()
 // CHECK-NEXT: builder.add_input([[SHAPE_ONLY]])
 // CHECK-NEXT: builder.add_input({{var[_0-9]+}})
 

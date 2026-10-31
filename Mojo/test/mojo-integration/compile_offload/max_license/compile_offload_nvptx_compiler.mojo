@@ -13,9 +13,9 @@
 
 # REQUIRES: NVIDIA-GPU
 # UNSUPPORTED: asan, ubsan
-# RUN: kgen --emit=object -kgen-debug-only=object-compiler %s -o %t.o 2>&1 | FileCheck %s --check-prefix=CHECK
+# RUN: kgen --emit=object -mllvm -kgen-debug-only=object-compiler %s -o %t.o 2>&1 | FileCheck %s --check-prefix=CHECK
 # COM: run with env MODULAR_NVPTX_COMPILER_PATH should invalidate the cache generated without this env var.
-# RUN: env MODULAR_NVPTX_COMPILER_PATH=/my/path not kgen --emit=object -kgen-debug-only=object-compiler %s -o %t.s 2>&1 | FileCheck %s --check-prefix=CHECK-PTXAS-PATH
+# RUN: env MODULAR_NVPTX_COMPILER_PATH=/my/path not kgen --emit=object -mllvm -kgen-debug-only=object-compiler %s -o %t.s 2>&1 | FileCheck %s --check-prefix=CHECK-PTXAS-PATH
 
 
 from std.sys.info import CompilationTarget

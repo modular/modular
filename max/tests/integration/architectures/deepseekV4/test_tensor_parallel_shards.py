@@ -26,7 +26,7 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Weight
-from max.nn import LayerList, Linear
+from max.nn.legacy import LayerList, Linear
 from max.pipelines.architectures.deepseekV4.deepseekV4 import (
     DeepseekV4,
     DeepseekV4Block,

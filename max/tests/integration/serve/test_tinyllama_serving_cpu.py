@@ -60,6 +60,9 @@ async def test_tinyllama_serving_cpu(app: FastAPI) -> None:
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
                 "max_tokens": 3,
+                # The default is random sampling, which can pick EOS in the
+                # first 3 tokens. Greedy output never does.
+                "temperature": 0,
             },
         )
         response = CreateChatCompletionResponse.model_validate(

@@ -203,25 +203,8 @@ def _report(
     check: String,
 ):
     print(
-        "RESULT kernel=",
-        kernel,
-        " dtype=",
-        dtype,
-        " idx=",
-        idx_type,
-        " rows=",
-        rows,
-        " N=",
-        N,
-        " K=",
-        K,
-        " mean_us=",
-        mean_us,
-        " tbs=",
-        Float64(num_bytes) / mean_us / 1.0e6,
-        " check=",
-        check,
-        sep="",
+        t"RESULT"
+        t" kernel={kernel} dtype={dtype} idx={idx_type} rows={rows} N={N} K={K} mean_us={mean_us} tbs={Float64(num_bytes) / mean_us / 1.0e6} check={check}"
     )
 
 

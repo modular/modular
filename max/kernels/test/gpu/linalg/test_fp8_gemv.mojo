@@ -100,7 +100,7 @@ def _check_vs_host_ref[
             var got = Float32(out_host[i * N + j])
             if abs(got - acc) > Float32(1e-2) + Float32(1.6e-2) * abs(acc):
                 if pass_:
-                    print("FAIL[", name, "]:", i, j, "got", got, "exp", acc)
+                    print(t"FAIL[ {name} ]: {i} {j} got {got} exp {acc}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (", name, "; see FAIL lines above)")
@@ -115,7 +115,7 @@ def _run_fp8_matmul[
     the production launcher, so `M == 1` exercises the GEMV and `M > 1` the
     materialize -> dense path. Runs for the requested output `c_type`.
     """
-    print("== fp8-matmul", name, M, "x", N, "x", K, "c_type", c_type)
+    print(t"== fp8-matmul {name} {M} x {N} x {K} c_type {c_type}")
 
     # Host inputs.
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
@@ -160,7 +160,7 @@ def _run_fp8_matmul_epilogue(
     The epilogue writes `2 * x + 1` to its own buffer; it must match the same
     launch without one, at every `(row, col)`.
     """
-    print("== fp8-matmul-epilogue", name, M, "x", N, "x", K)
+    print(t"== fp8-matmul-epilogue {name} {M} x {N} x {K}")
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
@@ -225,7 +225,7 @@ def _run_fp8_gemv_direct[
     route), so the decode kernel stays validated even if the launcher dispatch
     changes.
     """
-    print("== fp8-gemv", name, "1 x", N, "x", K, "c_type", c_type)
+    print(t"== fp8-gemv {name} 1 x {N} x {K} c_type {c_type}")
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](K)
     var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
@@ -275,17 +275,7 @@ def _run_tiled_fp8[
       identical E4M3 weight to the same bf16 (bf16 is exact for E4M3) and use a
       bf16 MMA, so they differ only in fp32 reduction ORDER -- a tight tolerance.
     """
-    print(
-        "== tiled-fp8",
-        name,
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        "c_type",
-        c_type,
-    )
+    print(t"== tiled-fp8 {name} {M} x {N} x {K} c_type {c_type}")
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
@@ -345,14 +335,7 @@ def _run_tiled_fp8[
             if abs(f - o) > Float32(1e-2) + Float32(1.6e-2) * abs(o):
                 if pass_:
                     print(
-                        "PARITY FAIL[",
-                        name,
-                        "]: idx",
-                        i,
-                        "tiled",
-                        f,
-                        "oracle",
-                        o,
+                        t"PARITY FAIL[ {name} ]: idx {i} tiled {f} oracle {o}"
                     )
                 pass_ = False
         if not pass_:

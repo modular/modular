@@ -24,7 +24,7 @@ than through an address baked in at record time.
 
 from std.sys import size_of
 
-from builtin_kernels.kernels import BundledAllReduceSum
+from builtin_kernels.bundled import BundledAllReduceSum
 from comm import Signal
 from comm.sync import enable_p2p, init_signal_buffer
 from extensibility import (
@@ -36,7 +36,7 @@ from extensibility import (
     VariadicTensors,
     get_row_major_tensor_spec_static,
 )
-from layout import to_index_list
+from layout import coord_to_index_list, to_index_list
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,

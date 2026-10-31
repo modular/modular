@@ -262,9 +262,9 @@ def bench_conv3d[
             input_tt,
             filter_qrscf_tt,
             output_tt,
-            stride_idx,
-            dilation_idx,
-            pad_idx,
+            (stride_idx[0], stride_idx[1], stride_idx[2]),
+            (dilation_idx[0], dilation_idx[1], dilation_idx[2]),
+            (pad_idx[0], pad_idx[1], pad_idx[2]),
             1,
             ctx,
         )
@@ -357,9 +357,9 @@ def bench_conv3d[
                     input_tt,
                     filter_qrscf_tt,
                     output_tt,
-                    stride_idx,
-                    dilation_idx,
-                    pad_idx,
+                    (stride_idx[0], stride_idx[1], stride_idx[2]),
+                    (dilation_idx[0], dilation_idx[1], dilation_idx[2]),
+                    (pad_idx[0], pad_idx[1], pad_idx[2]),
                     1,
                     ctx,
                 )
@@ -597,7 +597,7 @@ def bench_conv3d[
             var d = abs(a - c)
             if d > max_diff:
                 max_diff = d
-        print("verify max |", impl, " - cuDNN| = ", max_diff, sep="")
+        print(t"verify max |{impl} - cuDNN| = {max_diff}")
         _ = output_host^
         _ = output_ref_host^
 

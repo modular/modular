@@ -459,24 +459,11 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "batch=",
-                specs[i].batch,
-                "nheads8=",
-                specs[i].nheads8,
-                "head_dim=",
-                specs[i].head_dim,
-                "max_len=",
-                specs[i].max_len,
-                "len_seed=",
-                specs[i].len_seed,
-                "pad_units=",
-                specs[i].pad_units,
-                "init_mode=",
-                specs[i].init_mode,
-                "slot_seed=",
-                specs[i].slot_seed,
+                t"FUZZ_SPEC idx= {i} batch= {specs[i].batch} nheads8="
+                t" {specs[i].nheads8} head_dim= {specs[i].head_dim} max_len="
+                t" {specs[i].max_len} len_seed= {specs[i].len_seed} pad_units="
+                t" {specs[i].pad_units} init_mode="
+                t" {specs[i].init_mode} slot_seed= {specs[i].slot_seed}"
             )
         return
 
@@ -497,9 +484,7 @@ def main() raises:
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print(
-        "=== fuzz_mamba2_ssd_scan seed=", the_seed, "budget=", the_budget, "==="
-    )
+    print(t"=== fuzz_mamba2_ssd_scan seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

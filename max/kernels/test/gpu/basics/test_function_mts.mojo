@@ -31,9 +31,11 @@ comptime gray_spec = StaticTensorSpec[int_dtype, 2, ...].get_unknown()
 comptime gray_layout = OutputTensor[static_spec=gray_spec].RuntimeLayout
 
 
-def color_to_grayscale(
-    rgb_tensor: TileTensor[int_dtype, rgb_layout, ImmutAnyOrigin],
-    gray_tensor: TileTensor[int_dtype, gray_layout, MutAnyOrigin],
+def color_to_grayscale[
+    rgb_origin: ImmOrigin, gray_origin: MutOrigin
+](
+    rgb_tensor: TileTensor[int_dtype, rgb_layout, rgb_origin],
+    gray_tensor: TileTensor[int_dtype, gray_layout, gray_origin],
 ):
     """Converts each RGB pixel to grayscale on the GPU."""
     var row = global_idx.y
@@ -97,9 +99,13 @@ def test_color_to_grayscale() raises:
         var num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
         var num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
 
-        ctx.enqueue_function[color_to_grayscale](
-            rgb_tensor.to_tile_tensor().as_imm(),
-            gray_tensor.to_tile_tensor(),
+        var rgb_tile = rgb_tensor.to_tile_tensor().as_imm()
+        var gray_tile = gray_tensor.to_tile_tensor()
+        ctx.enqueue_function[
+            color_to_grayscale[rgb_tile.origin, gray_tile.origin]
+        ](
+            rgb_tile,
+            gray_tile,
             grid_dim=(num_col_blocks, num_row_blocks),
             block_dim=(BLOCK_SIZE, BLOCK_SIZE),
         )

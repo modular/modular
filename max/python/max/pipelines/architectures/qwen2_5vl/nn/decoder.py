@@ -41,29 +41,29 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.attention.attention_with_rope import _compute_shard_range
-from max.nn.comm.allreduce import Allreduce
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.graph_groups import MRoPEPositions
-from max.nn.kernels import (
+from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import MRoPEPositions
+from max.nn.legacy.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, Shardable
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     ShardableCallable,
     forward_sharded_layers,
@@ -122,8 +122,9 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             linear_cls: Linear class to use for the outputs dense layer.
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias.
+            quant_config: The quantization to apply to the linear layers, or
+                none to keep them unquantized.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -180,7 +181,6 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
     @property
     def wqkv(self) -> TensorValue:
         """The concatenation of q, k, and v weight vectors."""
-
         wq: TensorValue = self.q_proj.weight
         wk: TensorValue = self.k_proj.weight
         wv: TensorValue = self.v_proj.weight
@@ -212,6 +212,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         position_ids: TensorValue,
         mrope_section: list[int],
     ) -> TensorValue:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         # Keep attention stack in BF16.
         total_seq_len = x.shape[0]
         self.kv_params.dtype = DType.bfloat16
@@ -285,6 +286,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -436,6 +438,7 @@ class Qwen25VLDecoderTransformerBlock(Module):
         mrope_section: list[int],
         signal_buffers: list[BufferValue],
     ) -> list[TensorValue]:
+        """Runs the block's attention, then its MLP."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
         attn_out = [
@@ -650,8 +653,7 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s leaves.
 
         Args:
             *input_types: The graph's input types, the leaves of
@@ -719,6 +721,7 @@ class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
         input_row_offsets: list[TensorValue],
         signal_buffers: list[BufferValue],
     ) -> DecoderOutputs:
+        """Runs the decoder stack over the tokens."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         # Merge image embeddings into text embeddings.

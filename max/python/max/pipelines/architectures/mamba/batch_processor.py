@@ -20,8 +20,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     RaggedBatchProcessor,
@@ -48,6 +48,7 @@ class MambaBatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The symbolic inputs one ragged step declares."""
         return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,
@@ -64,6 +65,7 @@ class MambaBatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> MambaModelInputs:
+        """Packs the first step's inputs for each replica."""
         from .model import MambaModelInputs
 
         assert self._ssm_cache is not None, (
@@ -123,6 +125,7 @@ class MambaBatchProcessor(
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
     ) -> ModelOutputs:
+        """Turns the graph outputs into the batch's results."""
         return process_ragged_kv_outputs(
             outputs,
             return_logits=self.runtime.return_logits,

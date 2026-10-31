@@ -327,12 +327,11 @@ __extension Attention:
                     return
 
             k_buffer.load_from_shared(0)
-            # AITER-style register-side zero pad for the partial K-tile's
-            # OOB tail.  No-op when depth % BK == 0.  Mirrors
-            # `QRegisterBuffer.__init__`'s partial-tile zero on the Q side;
-            # both zero the upper half of each lane's partial-tile fragment
-            # (the pad K-positions in MFMA-K), preserving the lower half
-            # which holds valid K-rope / Q-rope data.
+            # Register-side zero pad for the partial K-tile's OOB tail.  No-op
+            # when depth % BK == 0.  Mirrors `QRegisterBuffer.__init__`'s
+            # partial-tile zero on the Q side; both zero the upper half of each
+            # lane's partial-tile fragment (the pad K-positions in MFMA-K),
+            # preserving the lower half which holds valid K-rope / Q-rope data.
             k_buffer.zero_partial_tile_pad()
             mma_qk()
 
@@ -379,11 +378,10 @@ __extension Attention:
         # SMEM and is consumed mid-tile after K's reads finish.
         _ = k_buffer.load_from_dram[0]()
 
-        # The valid length is applied only now, so its load overlaps the
-        # loader's index reads instead of gating them. Capping the key
-        # bound at it makes the tile mask cover the padding too; a partition
-        # wholly past it issued no copies (only zero writes) and is empty.
-        comptime if Self.k_t.rows_predicated:
+        # Capping the key bound at the row's valid length makes the tile
+        # mask cover the padding; a partition wholly past it is empty,
+        # regardless of any prefetched rows.
+        comptime if Self.k_t.rows_indexed:
             var valid_end = min(
                 end, self.k.indexed_valid_length(UInt32(self.batch_idx))
             )
@@ -399,6 +397,9 @@ __extension Attention:
                 # so store the zero accumulator, as the gather path does.
                 if num_partitions <= 1:
                     self.store_output()
+                # The prologue's LDS DMA may still be in flight; drain it so
+                # no write lands after this workgroup's LDS is released.
+                s_waitcnt[vmcnt=0]()
                 return
             self.num_keys = valid_end
             num_tiles = ceildiv(valid_end - start, Self.BN)

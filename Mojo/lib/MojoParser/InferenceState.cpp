@@ -57,7 +57,12 @@ InferenceState::InferenceState(ASTDecl &declScope,
 void InferenceState::setInferredValue(size_t paramIdx, TypedAttr paramVal,
                                       bool isDefaulted) {
   paramVal = evaluator.getReboundAttribute(paramVal);
-  ASTType targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
+  ASTType targetType;
+  {
+    // The decl is always at depth 0.
+    auto declScope = evaluator.enterDeclScope();
+    targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
+  }
 
   // If the parameter being inferred is a type, and if the source value is
   // non-mterializable, infer to the materialized type. This ensures that things
@@ -156,9 +161,10 @@ LogicalResult InferenceState::checkBodyConstraints(
     ArrayRef<ConstraintAttr> extraConstraints) {
   // Substitute the parameters that are bound, but leave the unbound ones as
   // references rather than inlining their `UnboundAttr` marker.
+  assert(evaluator.getDepth() == 0 &&
+         "body constraints are checked from the decl scope");
   ParameterEvaluator partialEvaluator;
   partialEvaluator.setEvaluationContext(evaluator.getEvaluationContext());
-  partialEvaluator.setInputDepth(evaluator.getInputDepth());
   for (TypedAttr binding : evaluator.getIndexBindings())
     partialEvaluator.appendIndexBinding(
         binding && sugarIsa<UnboundAttr>(binding) ? TypedAttr() : binding);

@@ -34,11 +34,13 @@ Not every example runs on every platform:
 - Most example tests are marked incompatible with macOS and run on Linux; on
   Apple silicon they're skipped. They time out on remote macOS CI workers, and
   Linux CI provides equivalent coverage.
-- A few `basic-ops` tests are additionally skipped on Apple GPUs, whose Metal
-  compiler doesn't yet support the bf16 math intrinsics they use.
+- The examples under `gpu/` and some examples under `tile-tensor/` require a
+  GPU. The `gpu/fundamentals:print_threads_test` target is also incompatible
+  with Apple GPUs because of a Metal compiler limitation.
 - `logit-comparison` requires a GPU and downloads a large model checkpoint, so
-  it's tagged `manual` and isn't run in normal CI. Run it explicitly on a
-  machine with a GPU.
+  it's tagged `manual`. Wildcard test commands and normal CI exclude it; run
+  its test target explicitly on a supported GPU system or with a remote GPU
+  configuration.
 
 ## How the docs stay in sync
 
@@ -72,8 +74,26 @@ Both directories hold tested MAX code, but they serve different owners:
   projects that stand on their own as runnable applications; some also carry
   `# DOC:` backrefs when a docs page references them.
 
-## Contributing
+## Coverage report
 
-If you see something in the documentation or a code example that's incorrect or
-could be improved, we'd love to accept your contributions. For more information,
-see the [Contributor Guide](../../CONTRIBUTING.md).
+To see which MAX docs pages have tested Python and Mojo snippets, run the
+on-demand coverage script from the repo root:
+
+```bash
+python3 max/docs/site/scripts/report-code-coverage.py
+# or:
+./bazelw run //max/docs/site/scripts:report-code-coverage
+```
+
+That writes `max/docs/site/scripts/code-coverage.md` by default. Pass
+`--markdown PATH` to write somewhere else.
+
+The report groups every page under `max/docs/site/` (except `code/`,
+`_includes/`, `releases/`, and `scripts/`) into pages with no code examples,
+pages with examples but no tests, and pages with examples plus tests. For the
+last group it reports how many Python and Mojo fences match a file in
+`max/docs/site/code/` or a `# DOC:`-tagged file in `max/examples/`.
+
+Pass `--json PATH` to also write a machine-readable report for later
+automation. `--fail-under PERCENT` exits non-zero when overall block coverage
+drops below that threshold; it is off by default.

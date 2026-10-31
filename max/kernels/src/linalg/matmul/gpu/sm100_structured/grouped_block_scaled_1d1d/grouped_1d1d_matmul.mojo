@@ -248,25 +248,21 @@ def grouped_matmul_block_scaled[
     )
     comptime K = type_of(a_device).static_shape[1] * (2 if a_packed_fp4 else 1)
     comptime K_WEIGHT_BYTES = type_of(_b_device).static_shape[2]
-    comptime assert K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1) == K, (
-        "activations and weights must span the same number of K elements, but"
-        " got "
-        + String(K)
-        + " and "
-        + String(K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1))
+    comptime assert K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1) == K, String(
+        t"activations and weights must span the same number of K elements, "
+        t"but got {K} and {K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1)}"
     )
-    comptime assert K % 16 == 0, (
-        "Due to TMA limitations, K must be a multiple of 16 elements"
-        + " but got K = "
-        + String(K)
+    comptime assert K % 16 == 0, String(
+        t"Due to TMA limitations, K must be a multiple of 16 elements but "
+        t"got K = {K}"
     )
     # `cuTensorMapEncodeTiled` rejects an ALIGN16B packed-FP4 descriptor whose
     # innermost extent is not a multiple of 128. The descriptor helper only
     # `debug_assert`s that, which is compiled out at the default assert level,
     # so gate it here where K is comptime.
-    comptime assert not (a_packed_fp4 or b_packed_fp4) or K % 128 == 0, (
-        "packed FP4 requires K to be a multiple of 128 elements but got K = "
-        + String(K)
+    comptime assert not (a_packed_fp4 or b_packed_fp4) or K % 128 == 0, String(
+        t"packed FP4 requires K to be a multiple of 128 elements but got K "
+        t"= {K}"
     )
 
     # Reshape B from (num_experts, N, K bytes) to (num_experts * N, K bytes)
@@ -315,11 +311,7 @@ def grouped_matmul_block_scaled[
         transpose_b,
         config=config,
         static_N=expert_n,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         pdl_level=pdl_level,
         fuse_swiglu=fuse_swiglu,
         SwiGLUOutputT=SwiGLUOutputT,

@@ -323,10 +323,7 @@ def main() raises:
             mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
         ]
     ):
-        var flat_buf = TileTensor(
-            buf._storage,
-            row_major(buf.num_elements()),
-        )
+        var flat_buf = buf.reshape(row_major(buf.num_elements()))
 
         for i in range(flat_buf.num_elements()):
             flat_buf[i] = Scalar[dtype](flat_buf.num_elements() - i - 1)

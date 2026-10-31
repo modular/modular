@@ -20,7 +20,7 @@ handles. Every linear weight is ``float8_e4m3fn`` with a scalar
 ``scale_weight`` and scalar ``scale_input`` (static per-tensor W8A8). This
 adapter maps native names onto the MAX Wan DiT module names and emits the
 ``weight`` / ``bias`` / ``weight_scale`` / ``input_scale`` tensors each FP8
-:class:`~max.nn.linear.Linear` expects.
+:class:`~max.nn.legacy.linear.Linear` expects.
 
 Both the high-noise (``transformer``) and low-noise (``transformer_2``)
 experts share this layout. Wan 2.2 T2V and I2V differ only in the

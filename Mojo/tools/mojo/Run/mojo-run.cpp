@@ -35,6 +35,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/OptionMarshalling.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
@@ -77,14 +78,20 @@ using namespace mlir;
 //===----------------------------------------------------------------------===//
 
 #define DRIVER_OPTIONS_PATH "Run/RunOptions.inc"
+#include "Run/RunOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
 
-namespace {
-struct RunOptTable : public llvm::opt::OptTable {
-  RunOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-
-} // namespace
+static void expandMarshalledOptions(const llvm::opt::InputArgList &args,
+                                    State &state, DriverOptions &driverOptions,
+                                    FrontendOptions &frontendOptions,
+                                    CompilationOptions &compilationOptions,
+                                    TargetArgs &targetArgs,
+                                    MarshallingErrors &errors) {
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
+#include "Run/RunOptions.inc"
+#undef MOJO_OPTION_WITH_MARSHALLING
+}
 
 /// Parses the command line arguments from the given `state` object.
 /// Command line argument parsing is unique for this command:
@@ -107,110 +114,17 @@ struct RunOptTable : public llvm::opt::OptTable {
 ///    argument ("Foo.mojo" from the example above).
 static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     llvm::SourceMgr &sourceManager,
+                                    DriverOptions &driverOptions,
                                     CompilationOptions &compilationOptions,
+                                    FrontendOptions &frontendOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target,
-                                    RunOptTable &options) {
-  // First, parse all arguments to find the input file location.
-  // For `mojo run`, we need special handling: arguments BEFORE the input file
-  // are parsed as options to mojo run, but arguments AFTER are passed to the
-  // program itself.
-  unsigned unused = 0;
-  llvm::opt::InputArgList allArgs =
-      options.ParseArgs(state.arguments, unused, unused);
+                                    const options::Table &optTable) {
+  if (std::optional<int> exitCode = state.parseArguments(
+          optTable, options::helpTexts(), args, /*stopAtFirstInput=*/true))
+    return exitCode;
 
-  // Find the input file position.
-  auto inputArgs = allArgs.filtered(options::OPT_INPUT);
-  if (inputArgs.empty()) {
-    // No input file - check if user wanted help.
-    if (allArgs.hasArg(options::OPT_help)) {
-      return state.printHelp(
-#include "Run/RunOptionsHelpText.inc"
-      );
-    } else if (allArgs.hasArg(options::OPT_help_hidden)) {
-      return state.printHelp(
-#include "Run/RunOptionsHelpHiddenText.inc"
-      );
-    }
-    // No input and no help request is an error, which will be caught below.
-  } else {
-    // We have an input file. Parse only the arguments up to and including it.
-    llvm::opt::InputArgList argsBeforeInput = options.ParseArgs(
-        state.arguments.slice(0, (*inputArgs.begin())->getIndex() + 1), unused,
-        unused);
-
-    // Check if help was requested BEFORE the input file.
-    if (argsBeforeInput.hasArg(options::OPT_help)) {
-      return state.printHelp(
-#include "Run/RunOptionsHelpText.inc"
-      );
-    } else if (argsBeforeInput.hasArg(options::OPT_help_hidden)) {
-      return state.printHelp(
-#include "Run/RunOptionsHelpHiddenText.inc"
-      );
-    }
-  }
-
-  // Set up common option IDs.
-  CommonOptionIDs optionIDs{
-      .help = options::OPT_help,
-      .helpHidden = options::OPT_help_hidden,
-      .diagnosticFormat = options::OPT_diagnostic_format,
-      .disableWarnings = options::OPT_disable_warnings,
-      .warningsAsErrors = options::OPT_werror,
-      .noWarningsAsErrors = options::OPT_wno_error,
-      .ignoreIncompatiblePrecompiledFileErrors =
-          options::OPT_ignore_incompatible_precompiled_file_errors,
-      .unknown = options::OPT_UNKNOWN,
-      .input = options::OPT_INPUT,
-      .includeDirs = options::OPT_I,
-      .optimizationLevel = options::OPT_optimization_level,
-      .fpMode = options::OPT_fp_mode,
-      .debugLevel = options::OPT_debug_level,
-      .sanitize = options::OPT_sanitize,
-      .sharedLibasan = options::OPT_shared_libasan,
-      .externalLibasan = options::OPT_external_libasan,
-      .bitcodeLibs = options::OPT_bitcode_libs,
-      .debugInfoLanguage = options::OPT_debug_info_language,
-      .numThreads = options::OPT_num_threads,
-      .mojoSearchPaths = options::OPT_mojo_search_paths,
-      .loopUnrollingWarnThreshold = options::OPT_loop_unrolling_warn_threshold,
-      .elaborationErrorLimit = options::OPT_elaboration_error_limit,
-      .elaborationErrorIncludePrelude =
-          options::OPT_elaboration_error_include_prelude,
-      .elaborationErrorVerbose = options::OPT_elaboration_error_verbose,
-      .elaborationMaxDepth = options::OPT_elaboration_max_depth,
-      .targetTriple = options::OPT_target_triple,
-      .targetCpu = options::OPT_target_cpu,
-      .targetFeatures = options::OPT_target_features,
-      .targetAbi = options::OPT_target_abi,
-      .march = options::OPT_march,
-      .mcpu = options::OPT_mcpu,
-      .mtune = options::OPT_mtune,
-      .targetAccelerator = options::OPT_target_accelerator,
-      .mcmodel = options::OPT_mcmodel,
-      .largeDataThreshold = options::OPT_large_data_threshold,
-      .relocationModel = options::OPT_relocation_model,
-      .diagnoseMissingDocStrings = options::OPT_diagnose_missing_doc_strings,
-      .maxNotes = options::OPT_max_notes,
-      .defines = options::OPT_D,
-      .stripFilePrefix = options::OPT_strip_file_prefix,
-      .disableBuiltins = options::OPT_disable_builtins,
-      .fixit = options::OPT_fixit,
-      .exportFixit = options::OPT_export_fixit,
-      .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
-      .ignoreDeprecated = options::OPT_ignore_deprecated,
-      .lldPath = options::OPT_lld_path,
-  };
-
-  // Configure parsing for `mojo run` - only parse args up to the input file.
-  CommonParseConfig config{
-      .parseAllArguments = false,
-      .requireSingleInput = true,
-  };
-
-  // Parse common arguments.
   ErrorOr<CommonParseResult> result = parseCommonMojoArguments(
-      state, sourceManager, ctx, options, optionIDs, config);
+      state, args, sourceManager, ctx, expandMarshalledOptions);
   if (failed(result))
     return state.reportError(result.getError());
 
@@ -218,8 +132,9 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
     return *result->exitCode;
 
   // Extract results.
-  args = std::move(result->args);
+  driverOptions = std::move(result->driverOptions);
   compilationOptions = std::move(result->compilationOptions);
+  frontendOptions = std::move(result->frontendOptions);
   target = std::move(result->target);
   return {};
 }
@@ -352,14 +267,17 @@ executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
 static int run(const State &subcommandState) {
   // Parse arguments.
   State state = subcommandState;
-  RunOptTable optionsTable;
+  options::Table optTable;
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceManager;
+  DriverOptions driverOptions;
   CompilationOptions options;
+  FrontendOptions frontendOptions;
   MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
   TargetInfoAttr target;
-  if (std::optional<int> exitCode = parseArgs(
-          state, args, sourceManager, options, mlirCtx, target, optionsTable))
+  if (std::optional<int> exitCode =
+          parseArgs(state, args, sourceManager, driverOptions, options,
+                    frontendOptions, mlirCtx, target, optTable))
     return *exitCode;
 
 #ifdef KGEN_ENABLE_PASS_OPTIONS
@@ -374,14 +292,13 @@ static int run(const State &subcommandState) {
   // Declared first so it outlives both timing objects, which write their
   // reports into it from their destructors.
   TimingReportSink timingReport;
-  if (ErrorOrSuccess err = timingReport.configure(
-          args, options::OPT_timing_json, options::OPT_timing_file))
+  if (ErrorOrSuccess err = timingReport.configure(driverOptions))
     return state.reportError(err.getError());
 
   // Before the CPU device, because the option pins the thread count to one;
   // before the MLIR timing, so the MLIR report comes out first.
   LLVMPassTiming llvmTiming;
-  llvmTiming.configure(args, options::OPT_llvm_timing, options, timingReport);
+  llvmTiming.configure(driverOptions, options, timingReport);
 
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
@@ -397,24 +314,21 @@ static int run(const State &subcommandState) {
   // Lower the input file to an MLIR module.
   AsyncRT::CPUDevice &cpuDevice = *ctx->get<AsyncRT::CPUDevice>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &mlirCtx);
-  ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
-                                          options.warningsAsErrors);
+  ScopedMLIRWarningHandler warningHandler(&mlirCtx,
+                                          frontendOptions.disableWarnings,
+                                          frontendOptions.warningsAsErrors);
 
   // The timing shows the parse, the passes, and the code generation.
   MLIRPassTiming timing;
-  if (ErrorOrSuccess err =
-          timing.configure(args, options::OPT_mlir_timing,
-                           options::OPT_mlir_timing_display, timingReport))
+  if (ErrorOrSuccess err = timing.configure(driverOptions, timingReport))
     return state.reportError(err.getError());
 
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
-      state, args, options, &mlirCtx, cpuDevice,
-      options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
-      options::OPT_D, options::OPT_strip_file_prefix,
-      options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit, options::OPT_export_fixit, &timing.rootScope(),
-      [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        return LIT::importMojoFile(ctx, sourceManager, parserConfig, ts);
+      state, driverOptions, /*tagEnvironment=*/true, options, frontendOptions,
+      &mlirCtx, cpuDevice, &timing.rootScope(),
+      [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
+        return LIT::importMojoFile(ctx, sourceManager, &mlirCtx, options,
+                                   parserOptions, ts);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
@@ -423,7 +337,7 @@ static int run(const State &subcommandState) {
     // Only --experimental-fixit returns a null module (after applying fixes).
     // --experimental-export-fixit continues normal execution after writing
     // YAML.
-    assert(args.hasArg(options::OPT_fixit));
+    assert(driverOptions.applyFixIts);
     return EXIT_SUCCESS;
   }
 

@@ -87,6 +87,8 @@ public:
 
   ErrorOr<std::string> getPciBusId() const override;
 
+  ErrorOr<std::optional<std::array<uint8_t, 16>>> getUuid() const override;
+
   ErrorOr<bool> supportsMulticast() const override;
 
   ErrorOr<bool> isHostUnified() const override;
@@ -475,6 +477,7 @@ public:
   ErrorOr<DeviceStreamRef> createStream(int priority = 0) override;
   ErrorOr<DeviceStreamRef> createExternalStream(void *externalStream) override;
   ErrorOr<DeviceContextRef> selectStream(unsigned streamId) override;
+  bool flushIdleStreamViews() override;
   ErrorOr<DeviceGraphBuilderRef>
   createGraphBuilder(DeviceGraphMemoryPoolRef pool) override;
 
@@ -482,6 +485,8 @@ public:
 
   ErrorOr<DeviceEventRef> enqueueEvent() override;
   ErrorOrSuccess enqueueEvent(const DeviceEvent &event) override;
+  ErrorOr<DeviceEventRef> enqueueBaseStreamEvent() override;
+  bool isBaseStreamCapturing() const override;
   ErrorOr<DeviceEventRef> eventCreate(bool enableTiming) override;
   ErrorOrSuccess enqueueWaitFor(DeviceEvent &event) override;
   ErrorOrSuccess enqueueWaitFor(DeviceContext &ctx) override;
@@ -558,6 +563,15 @@ private:
   // Stress knob for tests: skips function-cache hits, so every launch is a
   // cold kernel load.
   bool bypassFunctionCache_ = false;
+
+  // `selectStream` views by stream id, kept for this context's lifetime. A
+  // captured device graph keeps using the memory its side-stream ops allocated
+  // during capture, which lives in the view's `graphFreeList`; a view dropped
+  // after one execution would flush that memory to the root free list while
+  // the graph still references it. Ordinary frees stay reclaimable through
+  // `flushIdleStreamViews`.
+  std::mutex streamViewsMu_;
+  std::vector<DeviceContextRef> streamViews_;
 
   ErrorOrSuccess memAlloc(void **ptr, size_t byteSize,
                           Device::AllocMode mode) override;

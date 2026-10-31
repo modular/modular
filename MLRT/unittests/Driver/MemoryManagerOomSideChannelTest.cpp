@@ -72,7 +72,7 @@ TEST_F(MemoryManagerOomSideChannelTest, UntrackedAllocationExhaustsDevice) {
   // Raw device free/total (driver query, not the MM's budget view).
   ASSIGN_NO_ERR(Device::MemInfo, mem, device.getMemoryInfo());
   if (mem.free < (mem.total * 8) / 10)
-    GTEST_SKIP() << "GPU is not near-empty (free=" << mem.free
+    GTEST_SKIP() << "GPU is not near-empty (free=" << mem.free.value_or(0)
                  << ", total=" << mem.total
                  << "); another process is resident, skipping to avoid a "
                     "spurious failure";
@@ -85,7 +85,7 @@ TEST_F(MemoryManagerOomSideChannelTest, UntrackedAllocationExhaustsDevice) {
 
   auto freeNow = [&device]() -> size_t {
     ErrorOr<Device::MemInfo> m = device.getMemoryInfo();
-    return m.isError() ? 0 : m->free;
+    return m.isError() ? 0 : m->free.value_or(0);
   };
 
   // Consume the physical memory out-of-band in chunks the MM does not track.

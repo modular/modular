@@ -102,6 +102,7 @@ async def chat_session_driver(
     disable_ignore_eos: bool = False,
     max_output_len: int | None = None,
 ) -> list[RequestFuncOutput]:
+    """Runs one chat session's turns through the request driver."""
     request_func_input = RequestFuncInput(
         model=model_id,
         session_id=str(chat_session.id),
@@ -462,7 +463,6 @@ async def run_multiturn_benchmark(
     chat_sessions is already reordered (warmup picks first, with
     prefix_turns set). The orchestrator runs warmup before the timer.
     """
-
     # Track total sent requests among chat sessions
     request_counter = RequestCounter(
         max_requests=max_requests,
@@ -586,6 +586,7 @@ class ConcurrentTurnsRequestDriver(RequestDriver):
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> BaseRequestFuncOutput:
+        """Sends the request under the driver's concurrency limit."""
         async with self._semaphore:
             if deadline_passed(self._benchmark_should_end_time):
                 return request_func_input.get_output_type()(
@@ -801,9 +802,11 @@ async def chat_judge_session_driver(
     benchmark_should_end_time: int | None = None,
     use_session_id_as_cache_salt: bool = False,
 ) -> list[RequestFuncOutput]:
-    """Drive one chat-judge session: every turn already has its full
-    context inlined as text in the user message, so we send
-    ``[system?, user]`` per turn without accumulating assistant responses.
+    """Drive one chat-judge session.
+
+    Every turn already has its full context inlined as text in the user
+    message, so we send ``[system?, user]`` per turn without accumulating
+    assistant responses.
 
     If the session's first message is a system prompt
     (``source="system"``), it is prepended to every user turn; otherwise

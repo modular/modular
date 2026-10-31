@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import isnan, remainder
+from std.math import align_up, isnan, remainder
 from std.sys import simd_width_of
 from std.utils.numerics import FPUtils
 
@@ -151,7 +151,7 @@ def _run_unary[
     var n = len(xs)
     comptime pack_size = simd_width_of[dtype, target=ctx.target]()
     # Pad to a whole number of packs so every lane holds a real input.
-    var padded = ((n + pack_size - 1) // pack_size) * pack_size
+    var padded = align_up(n, pack_size)
     var in_device = ctx.enqueue_create_buffer[dtype](padded)
     var out_device = ctx.enqueue_create_buffer[dtype](padded)
     with in_device.map_to_host() as in_host:

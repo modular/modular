@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 
 
 class BertTokenizer(TextTokenizer):
+    """Tokenizer for the BERT pipeline."""
+
     def __init__(
         self,
         model_path: str,

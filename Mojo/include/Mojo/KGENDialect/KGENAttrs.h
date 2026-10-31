@@ -220,6 +220,67 @@ template <typename To, typename From>
 /// upcast, downcast, and extension.
 TypedAttr stripIdentityWrappers(TypedAttr attr);
 
+//===----------------------------------------------------------------------===//
+// FuncSymbolGenerator
+//===----------------------------------------------------------------------===//
+
+/// A view of a `GeneratorAttr` whose body is a `FuncSymbolAttr`.
+class FuncSymbolGenerator {
+public:
+  FuncSymbolGenerator() = default;
+  /// Wraps `attr`, which must be null or a `GeneratorAttr` wrapping a
+  /// `FuncSymbolAttr`.
+  /*implicit*/ FuncSymbolGenerator(TypedAttr attr);
+
+  /// Returns a generator over `inputParamTypes` whose body is `funcSymbol`.
+  static FuncSymbolGenerator get(ArrayRef<Type> inputParamTypes,
+                                 FuncSymbolAttr funcSymbol,
+                                 Attribute metadata = {});
+
+  /// Returns a fully bound generator referencing the non-parametric function
+  /// `symbol` of type `type`.
+  static FuncSymbolGenerator get(SymbolRefAttr symbol, FuncType type,
+                                 Attribute metadata = {});
+
+  /// Returns a fully bound generator referencing `func`.
+  static FuncSymbolGenerator get(FuncOp func);
+
+  /// Returns a generator of type `type` referencing `symbol` with
+  /// `paramValues` bound. An `UnboundAttr` value, or a parameter left off the
+  /// end, binds to the generator's next input parameter.
+  static FuncSymbolGenerator get(SymbolRefAttr symbol,
+                                 FuncTypeGeneratorType type,
+                                 ArrayRef<TypedAttr> paramValues = {});
+  static FuncSymbolGenerator get(StringAttr name, FuncTypeGeneratorType type,
+                                 ArrayRef<TypedAttr> paramValues = {});
+
+  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr`.
+  static FuncSymbolGenerator dynCast(Attribute attr);
+
+  /*implicit*/ operator Attribute() const { return storage; }
+  /*implicit*/ operator TypedAttr() const { return storage; }
+  /*implicit*/ operator GeneratorAttr() const { return storage; }
+  explicit operator bool() const { return static_cast<bool>(storage); }
+
+  FuncTypeGeneratorType getType() const;
+  ArrayRef<Type> getInputParamTypes() const;
+  bool isFullyBound();
+
+  /// Returns the wrapped `FuncSymbolAttr`. Its parameter values are inside the
+  /// generator, one scope deeper than the generator itself.
+  FuncSymbolAttr getFuncSymbol() const;
+  SymbolRefAttr getSymbol() const;
+
+  /// Returns the wrapped `FuncSymbolAttr` as seen from the scope enclosing the
+  /// generator. The generator must be fully bound.
+  FuncType getInstantiatedType();
+  FuncSymbolAttr getInstantiatedFuncSymbol();
+  ArrayRef<TypedAttr> getParamValues();
+
+private:
+  GeneratorAttr storage;
+};
+
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//

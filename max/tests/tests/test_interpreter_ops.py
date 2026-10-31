@@ -25,6 +25,7 @@ import ml_dtypes
 import numpy as np
 import pytest
 from max import _core, _eager_policy, engine
+from max import functional as F
 from max._core.dialects import mo, rmo
 from max._interpreter_ops import (
     data_movement_gc,
@@ -56,34 +57,33 @@ from max._interpreter_ops.handlers import (
 from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import MissingArtifactError
-from max.experimental import functional as F
-from max.experimental import random as max_random
-from max.experimental import realization_context as rc
-from max.experimental.executor import (
+from max.functional import random as max_random
+from max.functional import (
+    reduce_scatter,
+)
+from max.functional import (
+    transfer_to as df_shard,
+)
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph import ops as graph_ops
+from max.graph.ops import CoordinateTransformMode, RoundMode
+from max.nn import Linear as ExperimentalLinear
+from max.tensor import realization_context as rc
+from max.tensor.executor import (
     CompilingExecutor,
     InterpreterExecutor,
     UnsupportedGraphError,
     set_default_executor,
 )
-from max.experimental.functional import (
-    reduce_scatter,
-)
-from max.experimental.functional import (
-    transfer_to as df_shard,
-)
-from max.experimental.nn import Linear as ExperimentalLinear
-from max.experimental.realization_context import set_seed
-from max.experimental.sharding import (
+from max.tensor.realization_context import set_seed
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor, realization_context
-from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
-from max.graph import ops as graph_ops
-from max.graph.ops import CoordinateTransformMode, RoundMode
+from max.tensor.tensor import Tensor, realization_context
 
 
 @pytest.fixture(autouse=True)
@@ -9670,6 +9670,102 @@ class TestResizeBicubicOp:
 
         with pytest.raises(ValueError, match="rank-4"):
             F.resize_bicubic(x, out_shape)
+
+    @staticmethod
+    def _antialiased_ref(x_np: np.ndarray, out_shape: list[int]) -> np.ndarray:
+        """NumPy reference: torch's CPU antialiased bicubic (a=-0.5).
+
+        The cubic is stretched by the downscale factor, taps outside the
+        input are dropped, and the remaining weights are normalized.
+        """
+
+        def cubic(t: np.ndarray) -> np.ndarray:
+            a = -0.5
+            t = np.abs(t)
+            return np.where(
+                t < 1.0,
+                ((a + 2.0) * t - (a + 3.0)) * t * t + 1.0,
+                np.where(t < 2.0, (((t - 5.0) * t + 8.0) * t - 4.0) * a, 0.0),
+            )
+
+        def axis_pass(a: np.ndarray, axis: int, size_out: int) -> np.ndarray:
+            size_in = a.shape[axis]
+            scale = size_in / size_out
+            stretch = max(scale, 1.0)
+            moved = np.moveaxis(a, axis, -1).astype(np.float64)
+            out = np.empty((*moved.shape[:-1], size_out))
+            for j in range(size_out):
+                center = (j + 0.5) * scale
+                lo = max(int(center - 2.0 * stretch + 0.5), 0)
+                hi = min(int(center + 2.0 * stretch + 0.5), size_in)
+                taps = np.arange(lo, hi)
+                weights = cubic((taps - center + 0.5) / stretch)
+                out[..., j] = moved[..., lo:hi] @ (weights / weights.sum())
+            return np.moveaxis(out, -1, axis)
+
+        y = axis_pass(x_np, 3, out_shape[3])
+        return axis_pass(y, 2, out_shape[2]).astype(np.float32)
+
+    @pytest.mark.parametrize(
+        "in_shape,out_shape",
+        [([1, 2, 17, 23], [1, 2, 5, 7]), ([1, 1, 4, 6], [1, 1, 9, 13])],
+    )
+    def test_antialias(self, in_shape: list[int], out_shape: list[int]) -> None:
+        """Down- and upsamples through the eager antialiased path."""
+        rng = np.random.default_rng(201)
+        x_np = rng.standard_normal(in_shape).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_bicubic(x, out_shape, antialias=True)
+
+        ref = self._antialiased_ref(x_np, out_shape)
+        np.testing.assert_allclose(
+            np.from_dlpack(out), ref, rtol=1e-5, atol=1e-5
+        )
+
+    def test_antialias_uint8(self) -> None:
+        """A uint8 input resizes eagerly to uint8: the float32 resize rounded
+        half to even and clamped to [0, 255]."""
+        rng = np.random.default_rng(202)
+        x_np = rng.integers(0, 256, (1, 3, 9, 23), dtype=np.uint8)
+        out_shape = [1, 3, 20, 7]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_bicubic(
+                Tensor.from_dlpack(x_np), out_shape, antialias=True
+            )
+            as_f32 = F.resize_bicubic(
+                Tensor.from_dlpack(x_np.astype(np.float32)),
+                out_shape,
+                antialias=True,
+            )
+
+        got = np.from_dlpack(out)
+        assert got.dtype == np.uint8
+        want = np.clip(np.rint(np.from_dlpack(as_f32)), 0, 255)
+        np.testing.assert_array_equal(got, want.astype(np.uint8))
+
+    @pytest.mark.parametrize("antialias", [False, True])
+    def test_rejects_an_empty_input_to_a_non_empty_size(
+        self, antialias: bool
+    ) -> None:
+        """No output pixel has input pixels to read."""
+        x = Tensor.from_dlpack(np.zeros((1, 1, 0, 4), dtype=np.float32))
+
+        with pytest.raises(Exception, match="empty input"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                out = F.resize_bicubic(x, [1, 1, 4, 4], antialias=antialias)
+            np.from_dlpack(out)
 
 
 class TestDistributedScatterSimulated:

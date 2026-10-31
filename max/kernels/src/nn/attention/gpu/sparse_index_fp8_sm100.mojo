@@ -80,6 +80,11 @@ from max.gpu import (
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
@@ -270,9 +275,9 @@ def _fp8_index_body[
         dtype
     ](), "MXFP4 runs on the warp-specialized kernel only"
     comptime MMA_N = N_TOKENS * num_heads
-    comptime assert (
-        MMA_N == 128
-    ), "MMA_N must pack to 128 (N_TOKENS * num_heads); got " + String(MMA_N)
+    comptime assert MMA_N == 128, String(
+        t"MMA_N must pack to 128 (N_TOKENS * num_heads); got {MMA_N}"
+    )
     comptime AT = DType.float32
     comptime SW = _INDEX_SWIZZLE
     comptime NTHREADS = _NTHREADS
@@ -280,9 +285,9 @@ def _fp8_index_body[
         "the epilogue drains one TMEM lane per thread, so BM_key must equal the"
         " consumer thread count"
     )
-    comptime assert (
-        MMA_N % epilogue_chunk == 0
-    ), "epilogue_chunk must divide MMA_N; got " + String(epilogue_chunk)
+    comptime assert MMA_N % epilogue_chunk == 0, String(
+        t"epilogue_chunk must divide MMA_N; got {epilogue_chunk}"
+    )
     comptime assert epilogue_chunk <= 64, (
         "a tcgen05.ld wider than 64 needs 64+ consecutive destination registers"
         " and trips ptxas C7602"
@@ -696,61 +701,63 @@ def _fp8_index_score_kernel_sm100[
     var causal = Int(causal_dev)
     var b = block_idx.x
     var key_start = block_idx.y * BM_key
-    var start_of_seq = Int(valid_length[b])
-    var seq_len = Int(valid_length[b + 1]) - start_of_seq
-    var num_keys = Int(k_operand.cache_length(b))
-    comptime if not _is_cache_length_accurate:
-        num_keys += seq_len
-    var num_rows = num_keys // kpool
 
-    # Tokens this entry contributes to the caller's row window (see the body).
-    var out_row_begin = Int(out_row_begin_dev)
-    var out_row_end = Int(out_row_end_dev)
-    var win_tokens = min(seq_len, out_row_end - start_of_seq) - max(
-        0, out_row_begin - start_of_seq
-    )
+    with PDL():
+        var start_of_seq = Int(valid_length[b])
+        var seq_len = Int(valid_length[b + 1]) - start_of_seq
+        var num_keys = Int(k_operand.cache_length(b))
+        comptime if not _is_cache_length_accurate:
+            num_keys += seq_len
+        var num_rows = num_keys // kpool
 
-    # Bail uniformly (every thread) before the helper's first collective op
-    # (TMA mbar / tcgen05 alloc); a divergent early return would deadlock them.
-    # OOB keys keep the caller's `-inf` fill.
-    if key_start >= num_rows or win_tokens <= 0:
-        return
+        # Tokens this entry contributes to the caller's row window (see the body).
+        var out_row_begin = Int(out_row_begin_dev)
+        var out_row_end = Int(out_row_end_dev)
+        var win_tokens = min(seq_len, out_row_end - start_of_seq) - max(
+            0, out_row_begin - start_of_seq
+        )
 
-    # Flat launch covers every windowed token tile of this sequence (grid.z == 1).
-    _fp8_index_body[
-        dtype,
-        KOperand,
-        KSOperand,
-        VLLT,
-        QSLT,
-        out_dtype,
-        OutLT,
-        num_heads,
-        depth,
-        BM_key,
-        N_TOKENS,
-        _is_cache_length_accurate,
-        kpool,
-        pool_row_tokens=pool_row_tokens,
-        k_box_rows=k_box_rows,
-        VLEngine=VLEngine,
-        QSEngine=QSEngine,
-        OutEngine=OutEngine,
-    ](
-        q_tma,
-        k_tma,
-        k_operand,
-        ks_operand,
-        valid_length,
-        q_s,
-        output,
-        max_num_keys,
-        causal,
-        0,
-        ceildiv(win_tokens, N_TOKENS),
-        out_row_begin,
-        out_row_end,
-    )
+        # Bail uniformly (every thread) before the helper's first collective op
+        # (TMA mbar / tcgen05 alloc); a divergent early return would deadlock them.
+        # OOB keys keep the caller's `-inf` fill.
+        if key_start >= num_rows or win_tokens <= 0:
+            return
+
+        # Flat launch covers every windowed token tile of this sequence (grid.z == 1).
+        _fp8_index_body[
+            dtype,
+            KOperand,
+            KSOperand,
+            VLLT,
+            QSLT,
+            out_dtype,
+            OutLT,
+            num_heads,
+            depth,
+            BM_key,
+            N_TOKENS,
+            _is_cache_length_accurate,
+            kpool,
+            pool_row_tokens=pool_row_tokens,
+            k_box_rows=k_box_rows,
+            VLEngine=VLEngine,
+            QSEngine=QSEngine,
+            OutEngine=OutEngine,
+        ](
+            q_tma,
+            k_tma,
+            k_operand,
+            ks_operand,
+            valid_length,
+            q_s,
+            output,
+            max_num_keys,
+            causal,
+            0,
+            ceildiv(win_tokens, N_TOKENS),
+            out_row_begin,
+            out_row_end,
+        )
 
 
 @__name(t"fp8_index_score_sm100_split_{dtype}")
@@ -796,67 +803,73 @@ def _fp8_index_score_kernel_sm100_split[
     var causal = Int(causal_dev)
     var b = block_idx.x
     var key_start = block_idx.y * BM_key
-    var start_of_seq = Int(valid_length[b])
-    var seq_len = Int(valid_length[b + 1]) - start_of_seq
-    var num_keys = Int(k_operand.cache_length(b))
-    comptime if not _is_cache_length_accurate:
-        num_keys += seq_len
-    var num_rows = num_keys // kpool
 
-    # Tokens this entry contributes to the caller's row window (see the body).
-    var out_row_begin = Int(out_row_begin_dev)
-    var out_row_end = Int(out_row_end_dev)
-    var win_tokens = min(seq_len, out_row_end - start_of_seq) - max(
-        0, out_row_begin - start_of_seq
-    )
+    with PDL():
+        var start_of_seq = Int(valid_length[b])
+        var seq_len = Int(valid_length[b + 1]) - start_of_seq
+        var num_keys = Int(k_operand.cache_length(b))
+        comptime if not _is_cache_length_accurate:
+            num_keys += seq_len
+        var num_rows = num_keys // kpool
 
-    # grid.z splits this sequence's windowed token tiles across CTAs; bounds are
-    # uniform per CTA.
-    var n_token_tiles = ceildiv(win_tokens, N_TOKENS)
-    var tiles_per_slice = ceildiv(n_token_tiles, grid_dim.z)
-    var nt_start = block_idx.z * tiles_per_slice
+        # Tokens this entry contributes to the caller's row window (see the body).
+        var out_row_begin = Int(out_row_begin_dev)
+        var out_row_end = Int(out_row_end_dev)
+        var win_tokens = min(seq_len, out_row_end - start_of_seq) - max(
+            0, out_row_begin - start_of_seq
+        )
 
-    # Bail uniformly (every thread) before the helper's first collective op
-    # (TMA mbar / tcgen05 alloc); a divergent early return would deadlock them.
-    # OOB keys keep the caller's `-inf` fill.
-    if key_start >= num_rows or win_tokens <= 0 or nt_start >= n_token_tiles:
-        return
-    var n_local = min(tiles_per_slice, n_token_tiles - nt_start)
+        # grid.z splits this sequence's windowed token tiles across CTAs; bounds are
+        # uniform per CTA.
+        var n_token_tiles = ceildiv(win_tokens, N_TOKENS)
+        var tiles_per_slice = ceildiv(n_token_tiles, grid_dim.z)
+        var nt_start = block_idx.z * tiles_per_slice
 
-    _fp8_index_body[
-        dtype,
-        KOperand,
-        KSOperand,
-        VLLT,
-        QSLT,
-        out_dtype,
-        OutLT,
-        num_heads,
-        depth,
-        BM_key,
-        N_TOKENS,
-        _is_cache_length_accurate,
-        kpool,
-        pool_row_tokens=pool_row_tokens,
-        k_box_rows=k_box_rows,
-        VLEngine=VLEngine,
-        QSEngine=QSEngine,
-        OutEngine=OutEngine,
-    ](
-        q_tma,
-        k_tma,
-        k_operand,
-        ks_operand,
-        valid_length,
-        q_s,
-        output,
-        max_num_keys,
-        causal,
-        nt_start,
-        n_local,
-        out_row_begin,
-        out_row_end,
-    )
+        # Bail uniformly (every thread) before the helper's first collective op
+        # (TMA mbar / tcgen05 alloc); a divergent early return would deadlock them.
+        # OOB keys keep the caller's `-inf` fill.
+        if (
+            key_start >= num_rows
+            or win_tokens <= 0
+            or nt_start >= n_token_tiles
+        ):
+            return
+        var n_local = min(tiles_per_slice, n_token_tiles - nt_start)
+
+        _fp8_index_body[
+            dtype,
+            KOperand,
+            KSOperand,
+            VLLT,
+            QSLT,
+            out_dtype,
+            OutLT,
+            num_heads,
+            depth,
+            BM_key,
+            N_TOKENS,
+            _is_cache_length_accurate,
+            kpool,
+            pool_row_tokens=pool_row_tokens,
+            k_box_rows=k_box_rows,
+            VLEngine=VLEngine,
+            QSEngine=QSEngine,
+            OutEngine=OutEngine,
+        ](
+            q_tma,
+            k_tma,
+            k_operand,
+            ks_operand,
+            valid_length,
+            q_s,
+            output,
+            max_num_keys,
+            causal,
+            nt_start,
+            n_local,
+            out_row_begin,
+            out_row_end,
+        )
 
 
 @inline(.always)
@@ -1292,6 +1305,7 @@ def fp8_index_score_sm100[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(smem_bytes)
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             ctx.enqueue_function[kernel_flat](
@@ -1312,6 +1326,7 @@ def fp8_index_score_sm100[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(smem_bytes)
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
 
@@ -1459,10 +1474,8 @@ def mxfp4_index_score_sm100[
     # 128-column stages already fill at 2 CTAs/SM. A 3-token tile (96
     # columns) leaves them room, so it is the only tile. Every shape takes
     # the warp-specialized kernel, as FP8 does at this head count.
-    comptime assert (
-        num_heads == 32
-    ), "the MXFP4 indexer scorer is built for 32 heads; got " + String(
-        num_heads
+    comptime assert num_heads == 32, String(
+        t"the MXFP4 indexer scorer is built for 32 heads; got {num_heads}"
     )
     comptime assert _k_tile_fits_pages[
         _BM_KEY, KOperand.page_size, pool_row_tokens, split_pages=True

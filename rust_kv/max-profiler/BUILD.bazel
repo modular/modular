@@ -12,8 +12,8 @@ package(default_visibility = ["//visibility:public"])
 # workspace consume them directly.
 exports_files(glob(["**/*"]))
 
-# Zero-dependency by design, so it adds nothing to @rust_kv_crates'
-# third-party set. The mach workspace consumes the same sources via cargo as a
+# Zero-dependency by design, so it adds nothing to the @crates third-party
+# set. The mach workspace consumes the same sources via cargo as a
 # cross-workspace path dependency. Marked `top-level` because those production
 # consumers are invisible to bazel; the other bazel dependents are the tests,
 # so the find-unused-targets lint would flag it otherwise.

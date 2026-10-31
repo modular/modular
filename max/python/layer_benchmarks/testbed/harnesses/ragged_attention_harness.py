@@ -34,7 +34,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import RequestID
@@ -102,6 +102,7 @@ class RaggedAttentionHarness(
 
     @staticmethod
     def dynamic_params_type() -> type:
+        """Returns ``AttentionDynamicParams`` as the per-shape type."""
         return AttentionDynamicParams
 
     def __init__(
@@ -135,6 +136,7 @@ class RaggedAttentionHarness(
         )
 
     def build_and_compile(self) -> CompiledLayerBundle:
+        """Compiles the attention graph through the runner's session."""
         graph, weights_registry = self.build_graph()
         compiled = self.session.load(graph, weights_registry=weights_registry)
 
@@ -149,6 +151,16 @@ class RaggedAttentionHarness(
         bundle: CompiledLayerBundle,
         dynamic_params: AttentionDynamicParams,
     ) -> tuple[list[Buffer], list[TextContext]]:
+        """Builds the per-shape inputs and claims the KV cache blocks.
+
+        Each sequence in the batch gets a ``TextContext`` that the KV cache
+        manager claims and allocates. The execute args hold the hidden
+        states, the row offsets, and the KV runtime inputs.
+
+        Returns:
+            The execute args and the batch contexts released by
+            ``cleanup_inputs``.
+        """
         device = bundle.device
         total_len = dynamic_params.ctx_len + dynamic_params.seq_len
 
@@ -197,14 +209,17 @@ class RaggedAttentionHarness(
         bundle: CompiledLayerBundle,
         context: list[TextContext],
     ) -> None:
+        """Releases the KV cache blocks claimed for each context."""
         for ctx in context:
             self._kv_manager.release(ctx)
 
     def cuda_graph_eligible(
         self, dynamic_params: AttentionDynamicParams
     ) -> bool:
+        """Returns whether the shape decodes one token per sequence."""
         return dynamic_params.seq_len == 1
 
     def postprocess_torch_output(self, output: object) -> torch.Tensor:
+        """Returns the first output element, without its leading axis."""
         assert isinstance(output, tuple)
         return output[0].squeeze(0)

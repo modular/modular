@@ -1643,11 +1643,11 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     TypedAttr conformsTo =
         shared.getEvaluationContext().getAndFold<TypeConformsToTraitAttr>(
             typePValue, trait.getPValue());
-    deferredTypingContext->deferredConstraints.push_back(
-        {ConstraintAttr::get(
-             conformsTo, shared.diags.translateLocation(value.expr->getLoc()),
-             /*message=*/StringAttr()),
-         value.expr->getLoc()});
+    deferredTypingContext->addInconclusive(
+        ConstraintAttr::get(
+            conformsTo, shared.diags.translateLocation(value.expr->getLoc()),
+            /*message=*/StringAttr()),
+        value.expr->getLoc());
     return DowncastAttr::get(trait, typePValue);
   }
 

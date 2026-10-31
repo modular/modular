@@ -208,17 +208,8 @@ def bench_scatter[
     # For scatter, busbw = algbw (data leaves root once per replica).
     var busbw = gbps
     print(
-        "|",
-        name,
-        "| slowest mean time",
-        max_time,
-        "ms |",
-        "algbw:",
-        gbps,
-        "GB/s |",
-        "busbw:",
-        busbw,
-        "GB/s |",
+        t"| {name} | slowest mean time {max_time} ms | algbw: {gbps} GB/s |"
+        t" busbw: {busbw} GB/s |"
     )
 
     # Copy results back and verify the benchmarked outputs directly.
@@ -232,12 +223,8 @@ def bench_scatter[
             var expected = _chunk_value[dtype](dp_idx, j)
             if verify_host[j] != expected:
                 print(
-                    "Verification failed at GPU",
-                    gpu_idx,
-                    "(replica",
-                    dp_idx,
-                    ") index",
-                    j,
+                    t"Verification failed at GPU {gpu_idx} (replica {dp_idx} )"
+                    t" index {j}"
                 )
                 print("Value:", verify_host[j])
                 print("Expected:", expected)

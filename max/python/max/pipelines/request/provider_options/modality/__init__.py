@@ -14,10 +14,11 @@
 
 from .audio import AudioProviderOptions
 from .common import GeneratedMediaResponseFormat, PixelProviderOptionsBase
-from .image import ImageProviderOptions
+from .image import MAX_NUM_IMAGES, ImageProviderOptions
 from .video import VideoProviderOptions
 
 __all__ = [
+    "MAX_NUM_IMAGES",
     "AudioProviderOptions",
     "GeneratedMediaResponseFormat",
     "ImageProviderOptions",

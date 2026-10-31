@@ -29,6 +29,10 @@ from std.random import rand, seed
 from std.time import perf_counter_ns
 
 from internal_utils import arg_parse
+from state_space.mamba2_ssd_scan import (
+    ssd_scan_tile_channels,
+    ssd_scan_tile_split,
+)
 from max.gpu.host import DeviceContext
 from ssd_scan_test_utils.ssd_scan import (
     SSD_BASELINE,
@@ -37,6 +41,7 @@ from ssd_scan_test_utils.ssd_scan import (
     SSDRunObserver,
     run_ssd_gpu,
 )
+from state_space.mamba2_ssd_out_mi355 import ssd_out_mi355_supported
 from state_space.mamba2_ssd_chunked import (
     GROUPED_CB_AUTO,
     GROUPED_CB_ON,
@@ -108,17 +113,13 @@ struct SSDSampling(SSDRunObserver):
                 baseline_event.append(baseline_ns)
                 candidate_event.append(candidate_ns)
             for i in range(30):
-                print(
+                var pair_label = (
                     "SSD_AUTO_EVENT_PAIR," if grouped_mode
-                    == GROUPED_CB_AUTO else "SSD_GROUPED_EVENT_PAIR,",
-                    i,
-                    ",",
-                    "AB" if i % 2 == 0 else "BA",
-                    ",",
-                    baseline_event[i],
-                    ",",
-                    candidate_event[i],
-                    sep="",
+                    == GROUPED_CB_AUTO else "SSD_GROUPED_EVENT_PAIR,"
+                )
+                var order = "AB" if i % 2 == 0 else "BA"
+                print(
+                    t"{pair_label}{i},{order},{baseline_event[i]},{candidate_event[i]}"
                 )
             _record_samples(report, "off_event_mean", baseline_event)
             _record_samples(
@@ -167,17 +168,13 @@ struct SSDSampling(SSDRunObserver):
                 baseline_wall.append(baseline_ns)
                 candidate_wall.append(candidate_ns)
             for i in range(30):
-                print(
+                var pair_label = (
                     "SSD_AUTO_WALL_PAIR," if grouped_mode
-                    == GROUPED_CB_AUTO else "SSD_GROUPED_WALL_PAIR,",
-                    i,
-                    ",",
-                    "AB" if i % 2 == 0 else "BA",
-                    ",",
-                    baseline_wall[i],
-                    ",",
-                    candidate_wall[i],
-                    sep="",
+                    == GROUPED_CB_AUTO else "SSD_GROUPED_WALL_PAIR,"
+                )
+                var order = "AB" if i % 2 == 0 else "BA"
+                print(
+                    t"{pair_label}{i},{order},{baseline_wall[i]},{candidate_wall[i]}"
                 )
             _record_samples(report, "off_wall_mean", baseline_wall)
             _record_samples(
@@ -223,24 +220,12 @@ struct SSDSampling(SSDRunObserver):
                     candidate_times.append(candidate_ns)
                 for i in range(30):
                     print(
-                        "SSD_PAIR_SAMPLE,",
-                        i,
-                        ",",
-                        "AB" if i % 2 == 0 else "BA",
-                        ",",
-                        serial_times[i],
-                        ",",
-                        candidate_times[i],
-                        sep="",
+                        t"SSD_PAIR_SAMPLE,{i},{"AB" if i % 2 == 0 else "BA"},{serial_times[i]},{candidate_times[i]}"
                     )
                 _record_samples(report, "serial_event_mean", serial_times)
                 _record_samples(report, "chunked_event_mean", candidate_times)
                 print(
-                    "SSD_PAIR_MEDIAN_NS,serial,",
-                    _median_ns(serial_times),
-                    ",chunked_candidate,",
-                    _median_ns(candidate_times),
-                    sep="",
+                    t"SSD_PAIR_MEDIAN_NS,serial,{_median_ns(serial_times)},chunked_candidate,{_median_ns(candidate_times)}"
                 )
             else:
                 for _ in range(5):
@@ -254,7 +239,7 @@ struct SSDSampling(SSDRunObserver):
                     operation(ctx, SSD_RESET)
                     times.append(ctx.execution_time(baseline, 1))
                 for i in range(len(times)):
-                    print("SSD_SAMPLE,", i, ",", times[i], sep="")
+                    print(t"SSD_SAMPLE,{i},{times[i]}")
                 _record_samples(report, "event_mean", times)
                 print("SSD_MEDIAN_NS,", _median_ns(times), sep="")
         report.dump_report()
@@ -331,25 +316,7 @@ def _bench_ssd[
                 (b + 1) * state_size + i, is_h.unsafe_load(b * state_size + i)
             )
     print(
-        "SSD_SHAPE,nheads=",
-        nheads,
-        ",head_dim=",
-        head_dim,
-        ",groups=",
-        ngroups,
-        ",batch=",
-        batch,
-        ",tokens=",
-        total_len,
-        ",split=",
-        DSTATE_SPLIT,
-        ",channels=",
-        CH_PER_THREAD,
-        ",prefill=",
-        prefill,
-        ",lengths=",
-        seq_lengths,
-        sep="",
+        t"SSD_SHAPE,nheads={nheads},head_dim={head_dim},groups={ngroups},batch={batch},tokens={total_len},split={DSTATE_SPLIT},channels={CH_PER_THREAD},prefill={prefill},lengths={seq_lengths}"
     )
     run_ssd_gpu[
         DSTATE,
@@ -413,22 +380,36 @@ def _benchmark_ssd_shape(
     seq_lengths: List[Int],
     var kernel: String,
 ) raises:
-    comptime WIDE = ctx.target.is_nvidia_gpu()
-    comptime SPLIT = 16 if WIDE else 8
-    comptime CHANNELS = 4 if WIDE else 1
+    # The production tile of each mode (dstate 128).
+    comptime NV = ctx.target.is_nvidia_gpu()
+    comptime AMD = ctx.target.is_amd_gpu()
+    comptime SPLIT = ssd_scan_tile_split(128, True, NV, AMD)
+    comptime CHANNELS = ssd_scan_tile_channels(128, True, NV, AMD)
+    comptime DEC_SPLIT = ssd_scan_tile_split(128, False, NV, AMD)
+    comptime DEC_CHANNELS = ssd_scan_tile_channels(128, False, NV, AMD)
     var total_len = 0
     for i in range(len(seq_lengths)):
         total_len += seq_lengths[i]
     var batch = len(seq_lengths)
     if kernel == "dispatch":
         kernel = "serial" if total_len > batch else "unstaged"
-        comptime if ctx.target._is_sm_8x_or_newer():
+        comptime if (
+            ctx.target._is_sm_8x_or_newer() or ctx.target.is_amd_gpu["gfx950"]()
+        ):
             if use_chunked_ssd(total_len, batch, head_dim, 512):
                 kernel = "chunked"
+            # MI355's chunk kernels take fewer shapes; the op keeps the rest
+            # on the serial scan.
+            comptime if ctx.target.is_amd_gpu():
+                if not ssd_out_mi355_supported(nheads, ngroups, head_dim, 128):
+                    kernel = "serial"
     match kernel:
         case "chunked" | "paired":
-            comptime if not (ctx.target._is_sm_8x_or_newer()):
-                raise Error("chunked SSD requires NVIDIA SM80 or newer")
+            comptime if not (
+                ctx.target._is_sm_8x_or_newer()
+                or ctx.target.is_amd_gpu["gfx950"]()
+            ):
+                raise Error("chunked SSD requires NVIDIA SM80+ or MI355")
             if head_dim % 64 != 0:
                 raise Error("chunked SSD requires head_dim divisible by 64")
             if kernel == "paired":
@@ -436,8 +417,8 @@ def _benchmark_ssd_shape(
                     comptime has_prefill = mode == 1
                     if has_prefill == (total_len > batch):
                         _bench_ssd[
-                            SPLIT,
-                            CH_PER_THREAD=CHANNELS,
+                            SPLIT if has_prefill else DEC_SPLIT,
+                            CH_PER_THREAD=CHANNELS if has_prefill else DEC_CHANNELS,
                             prefill=has_prefill,
                             paired=True,
                         ](
@@ -457,7 +438,7 @@ def _benchmark_ssd_shape(
                 raise Error("AUTO SSD requires NVIDIA SM80 or newer")
             if head_dim % 64 != 0:
                 raise Error("AUTO SSD requires head_dim divisible by 64")
-            print("SSD_AUTO_DEVICE_NAME,", ctx.name(), sep="")
+            print("SSD_AUTO_DEVICE_NAME,", ctx.device().get_name(), sep="")
             print(
                 "SSD_AUTO_SHAPE_ELIGIBLE,",
                 use_grouped_cb_ssd(total_len, batch, nheads, head_dim, ngroups),
@@ -469,7 +450,7 @@ def _benchmark_ssd_shape(
                     ctx.target.is_nvidia_gpu["sm_100"]()
                     or ctx.target.is_nvidia_gpu["sm_100a"]()
                 )
-                and ctx.name() == "NVIDIA B200",
+                and ctx.device().get_name() == "NVIDIA B200",
                 sep="",
             )
             _bench_ssd[
@@ -495,8 +476,8 @@ def _benchmark_ssd_shape(
             ](nheads, head_dim, ngroups, batch + 1, seq_lengths, ctx)
         case "unstaged":
             _bench_ssd[
-                SPLIT,
-                CH_PER_THREAD=CHANNELS,
+                DEC_SPLIT,
+                CH_PER_THREAD=DEC_CHANNELS,
                 prefill=False,
             ](nheads, head_dim, ngroups, batch + 1, seq_lengths, ctx)
         case _:

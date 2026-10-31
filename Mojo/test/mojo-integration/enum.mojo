@@ -237,6 +237,62 @@ def test_register_passable():
     print(shapes[0].area(), shapes[1].area(), shapes[2].area())
 
 
+struct BitwiseTracked(ImplicitlyCopyable, Movable):
+    """A payload that declares a trivial copy and move, so storage copies it
+    bitwise and its constructors print only if storage calls them anyway."""
+
+    comptime __copy_ctor_is_trivial = True
+    comptime __move_ctor_is_trivial = True
+
+    var id: Int
+
+    def __init__(out self, id: Int):
+        self.id = id
+
+    def __init__(out self, *, copy: Self):
+        self.id = copy.id
+        print("copy", self.id)
+
+    def __init__(out self, *, deinit move: Self):
+        self.id = move.id
+        print("move", self.id)
+
+
+__enum Bitwise(ImplicitlyCopyable):
+    case empty
+    case one(BitwiseTracked)
+    case pair(BitwiseTracked, Int)
+
+
+def describe(value: Bitwise) -> String:
+    match value:
+        case .empty:
+            return "empty"
+        case .one(t):
+            return String("one:", t.id)
+        case .pair((t, n)):
+            return String("pair:", t.id, ",", n)
+
+
+# CHECK-LABEL: == trivial lifecycle
+def test_trivial_lifecycle():
+    print("== trivial lifecycle")
+    var one: Bitwise = .one(BitwiseTracked(1))
+    var pair: Bitwise = .pair(BitwiseTracked(2), 3)
+    # CHECK: copying
+    print("copying")
+    var one_copy = one.copy()
+    var pair_copy = pair.copy()
+    # CHECK-NEXT: moving
+    print("moving")
+    var one_moved = one_copy^
+    var pair_moved = pair_copy^
+    # CHECK-NEXT: one:1 pair:2,3
+    print(describe(one_moved), describe(pair_moved))
+    _ = one
+    _ = pair
+
+
 # CHECK-LABEL: == comptime match
 def test_comptime_match():
     print("== comptime match")
@@ -259,6 +315,37 @@ __enum Key(Equatable, Hashable, ImplicitlyCopyable, Writable):
 
     def __hash__[H: Hasher](self, mut hasher: H):
         String(self).__hash__(hasher)
+
+
+__enum Derived(Equatable, Hashable):
+    case none
+    case one(Int)
+    case many(List[Int])
+
+
+# CHECK-LABEL: == derived equality and hashing
+def test_derived_equality_and_hashing() raises:
+    print("== derived equality and hashing")
+    # The defaults compare and hash the active case and its payload.
+    # TODO(MOCO-5104): plain `Derived.none` once a payload-less case value
+    # materializes in an enum that is not `ImplicitlyCopyable`.
+    # CHECK-NEXT: True True True
+    print(
+        materialize[Derived.none]() == materialize[Derived.none](),
+        Derived.one(1) == Derived.one(1),
+        Derived.many([1, 2]) == Derived.many([1, 2]),
+    )
+    # CHECK-NEXT: False False False
+    print(
+        materialize[Derived.none]() == Derived.one(1),
+        Derived.one(1) == Derived.one(2),
+        Derived.many([1]) == Derived.many([1, 2]),
+    )
+    # CHECK-NEXT: True True
+    print(
+        hash(Derived.one(1)) == hash(Derived.one(1)),
+        hash(Derived.many([1, 2])) == hash(Derived.many([1, 2])),
+    )
 
 
 # CHECK-LABEL: == user-written equality and hashing
@@ -340,7 +427,9 @@ def main() raises:
     test_function_value()
     test_generic()
     test_register_passable()
+    test_trivial_lifecycle()
     test_comptime_match()
+    test_derived_equality_and_hashing()
     test_user_equality_and_hashing()
     test_open_enum()
     test_caseless_enum()

@@ -277,7 +277,7 @@ public:
   // Factory methods configure the memory manager based on defaults or the
   // environment.
   // `memInfo` contains the total and free memory of the device.
-  // Setting memInfo.free to 0 will disable the memory manager.
+  // Unset memInfo.free sizes the memory manager against memInfo.total.
   // `memoryLimit` (bytes) is the maximum memory limit for the memory manager.
   // If -1, then the memory manager will use the default memory limit.
   // Note that MEMORY_MANAGER_SIZE_LIMIT environment variable overrides this.
@@ -288,6 +288,8 @@ public:
                                  size_t alignment, int64_t memoryLimit = -1,
                                  int64_t largeAllocAlignment = -1);
   static MemoryManager *onHost(Device &device, size_t alignment);
+  // A device memory manager with no budget, for devices that run without one.
+  static MemoryManager *disabled(Device &device, size_t alignment);
 
 private:
   friend class Chunk;
@@ -450,22 +452,23 @@ private:
       // Identity that outlives the unlocked window in drainCompletedFrees().
       uint64_t seq;
       // Device work that must complete before the buffer can migrate.
-      DeviceEventRef event;
+      llvm::SmallVector<DeviceEventRef, 2> events;
       // Free list owning the buffer; cancels its records when destroyed.
       MemoryManagerFreeList *fl;
       // Which of that free list's double-buffered lists to flush.
       int bufferId;
     };
 
-    void add(DeviceEventRef event, MemoryManagerFreeList *fl, int bufferId);
+    void add(llvm::SmallVector<DeviceEventRef, 2> events,
+             MemoryManagerFreeList *fl, int bufferId);
     // Drop every record naming `fl`.
     void cancel(const MemoryManagerFreeList *fl);
     // Remove and return the record identified by `seq`, or nullopt if it is
     // gone. Identity is by `seq` rather than position so a caller that released
     // `mu_` mid-drain cannot act on a record cancelled meanwhile.
     std::optional<Record> take(uint64_t seq);
-    // The (seq, event) of every record naming `fl`, or of all of them when `fl`
-    // is null.
+    // The (seq, event) of every event of every record naming `fl`, or of all
+    // of them when `fl` is null.
     llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>>
     collect(const MemoryManagerFreeList *fl) const;
     bool empty() const { return records_.empty(); }
@@ -583,6 +586,11 @@ public:
   ErrorOr<void *> allocate(size_t size, Device::AllocMode mode);
   ErrorOrSuccess free(void *buf);
 
+  // Queue every cached free buffer for the parent behind the work enqueued so
+  // far on this list's stream and its base stream, keeping this free list in
+  // service. Returns whether anything was queued.
+  bool deferCachedToParent();
+
   bool empty();
 
   // Enable out-of-bounds access checks
@@ -626,6 +634,8 @@ private:
   // so a later `free()` does not dispatch through `desc->allocatedBy_` after
   // this freelist is destroyed. Called only from the destructor.
   void flushToParent();
+  // Caller holds `mu_`.
+  void flushCachedToParentLocked();
 
   void selfCheck() const;
   bool contains(MemoryManager::Desc *desc) const;

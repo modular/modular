@@ -111,22 +111,10 @@ def _check_fused[
                 if err > 0.09 and shown < 8:
                     shown += 1
                     print(
-                        "      MISMATCH r=",
-                        r,
-                        " j=",
-                        j,
-                        " gate=",
-                        c_ref_h[r * N + 2 * j],
-                        " up=",
-                        c_ref_h[r * N + 2 * j + 1],
-                        " want=",
-                        want,
-                        " dq=",
-                        dq,
-                        " blockmax=",
-                        block_max,
-                        " e8m0=",
-                        e8m0,
+                        t"      MISMATCH r= {r}  j= {j}  gate="
+                        t" {c_ref_h[r * N + 2 * j]}  up="
+                        t" {c_ref_h[r * N + 2 * j + 1]}  want= {want}  dq="
+                        t" {dq}  blockmax= {block_max}  e8m0= {e8m0}"
                     )
                 worst = max(worst, err)
                 if abs(want) > 1e-3:
@@ -179,21 +167,9 @@ def _run_case[
         max_tokens = max(max_tokens, ne)
     var num_active = len(num_tokens_by_expert)
     print(
-        "  ",
-        "[persistent]" if persistent else "[direct]    ",
-        name,
-        " N=",
-        N,
-        " K=",
-        K,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " WN=",
-        WN,
-        " warps/E8M0-block=",
-        WARPS_PER_BLOCK,
+        t"   {'[persistent]' if persistent else '[direct]    '} {name}  N="
+        t" {N}  K= {K}  BM= {BM}  BN= {BN}  WN= {WN}  warps/E8M0-block="
+        t" {WARPS_PER_BLOCK}"
     )
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * packed_K)
@@ -407,18 +383,8 @@ def _run_dispatch_case[
     var max_padded_M = align_up(max_tokens, 32)
     var slot_stride = max_padded_M + 32
     print(
-        "  ",
-        name,
-        " N=",
-        N,
-        " K=",
-        K,
-        " tokens=",
-        total_tokens,
-        " decode_cap=",
-        decode_grid_m_cap,
-        " slot_stride=",
-        slot_stride,
+        t"   {name}  N= {N}  K= {K}  tokens= {total_tokens}  decode_cap="
+        t" {decode_grid_m_cap}  slot_stride= {slot_stride}"
     )
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * packed_K)

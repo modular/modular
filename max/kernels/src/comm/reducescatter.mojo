@@ -456,49 +456,67 @@ def _reducescatter_kernel[
             comptime assert (
                 in_layout.rank == 2
             ), "axis-aware reduce-scatter expects a rank-2 input layout"
-            # Both axes slice both dimensions, so either one names the type.
-            comptime SlicedTile = type_of(
-                reordered[0][u_start : u_start + n_units, :]
-            )
-            comptime SlicedRevTile = SlicedTile.ViewType[
-                Layout[
-                    SlicedTile.LayoutType._shape_types.reverse(),
-                    SlicedTile.LayoutType._stride_types.reverse(),
+            # `:` keeps the parent's extent type, so each axis slices to its own
+            # view type.
+            comptime if axis == 0:
+                # Scatter along rows.
+                comptime SlicedTile = type_of(
+                    reordered[0][u_start : u_start + n_units, :]
+                )
+                comptime SlicedRevTile = SlicedTile.ViewType[
+                    Layout[
+                        SlicedTile.LayoutType._shape_types.reverse(),
+                        SlicedTile.LayoutType._stride_types.reverse(),
+                    ]
                 ]
-            ]
 
-            def sliced_tiles_at[i: Int]() {imm} -> SlicedRevTile:
-                comptime if axis == 0:
-                    # Scatter along rows.
+                def row_tiles_at[i: Int]() {imm} -> SlicedRevTile:
                     var sliced = reordered[i][u_start : u_start + n_units, :]
                     return SlicedRevTile(
                         sliced._storage, sliced.layout.reverse()
                     )
-                else:
-                    # axis == 1: scatter along columns.
-                    var col_start = u_start * simd_width
-                    var sliced = reordered[i][
-                        :, col_start : col_start + n_units * simd_width
+
+                _reduce_scatter_impl[ngpus, use_multimem=use_multimem](
+                    Array[_, num_buffers](fill_with_unrolled=row_tiles_at),
+                    output_layout,
+                    output_lambda,
+                    n_elements,
+                    config.stride,
+                )
+            else:
+                # Scatter along columns.
+                var col_start = u_start * simd_width
+                var col_end = col_start + n_units * simd_width
+                comptime SlicedTile = type_of(
+                    reordered[0][:, col_start:col_end]
+                )
+                comptime SlicedRevTile = SlicedTile.ViewType[
+                    Layout[
+                        SlicedTile.LayoutType._shape_types.reverse(),
+                        SlicedTile.LayoutType._stride_types.reverse(),
                     ]
+                ]
+
+                def col_tiles_at[i: Int]() {imm} -> SlicedRevTile:
+                    var sliced = reordered[i][:, col_start:col_end]
                     return SlicedRevTile(
                         sliced._storage, sliced.layout.reverse()
                     )
 
-            var sliced_tiles = Array[_, num_buffers](
-                fill_with_unrolled=sliced_tiles_at
-            )
+                _reduce_scatter_impl[ngpus, use_multimem=use_multimem](
+                    Array[_, num_buffers](fill_with_unrolled=col_tiles_at),
+                    output_layout,
+                    output_lambda,
+                    n_elements,
+                    config.stride,
+                )
 
-            _reduce_scatter_impl[ngpus, use_multimem=use_multimem](
-                sliced_tiles,
-                output_layout,
-                output_lambda,
-                n_elements,
-                config.stride,
-            )
-
-        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, _my_rank
-        )
+        _multi_gpu_barrier[
+            ngpus,
+            is_start=False,
+            sync_after_wait=True,
+            domain_id=domain_id,
+        ](rank_sigs, my_sig, _my_rank)
 
 
 @__llvm_metadata(
@@ -1346,10 +1364,10 @@ def _reducescatter_plan[
     comptime if tensor_rank == 1:
         if output_layout.product() != expected_numel:
             raise Error(
-                "output buffer has "
-                + String(output_layout.product())
-                + " elements, expected "
-                + String(expected_numel)
+                String(
+                    t"output buffer has {output_layout.product()} elements, "
+                    t"expected {expected_numel}"
+                )
             )
     else:
         comptime assert (
@@ -1367,15 +1385,10 @@ def _reducescatter_plan[
         var out_cols = Int(output_layout.shape[1]())
         if out_rows != expected_rows or out_cols != expected_cols:
             raise Error(
-                "output buffer shape ("
-                + String(out_rows)
-                + ", "
-                + String(out_cols)
-                + "), expected ("
-                + String(expected_rows)
-                + ", "
-                + String(expected_cols)
-                + ")"
+                String(
+                    t"output buffer shape ({out_rows}, {out_cols}), expected ("
+                    t"{expected_rows}, {expected_cols})"
+                )
             )
 
     # AMD P2P reduce-scatter is PCIe-fabric-bound: ~128 blocks saturate it
@@ -1480,7 +1493,7 @@ def reducescatter[
             a grouped reduce-scatter has no non-P2P fallback).
         Error: If input buffer size is not a multiple of SIMD width.
     """
-    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     var plan = _reducescatter_plan[
         dtype,
         ngpus,
@@ -1586,7 +1599,7 @@ def reducescatter[
         Error: If P2P access is not available between GPUs.
         Error: If the input or output shapes do not partition evenly.
     """
-    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     var plan = _reducescatter_plan[
         dtype,
         ngpus,

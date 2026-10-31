@@ -90,17 +90,9 @@ def test[
     batch_size: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_decode_qkv_fp8_sliding_window",
-        "W:",
-        window_size,
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "num_heads:",
-        num_heads,
+        t"test_mla_decode_qkv_fp8_sliding_window W: {window_size} batch_size:"
+        t" {batch_size} seq_len: {seq_len} num_keys: {num_keys} num_heads:"
+        t" {num_heads}"
     )
 
     comptime scale = Float32(0.125)

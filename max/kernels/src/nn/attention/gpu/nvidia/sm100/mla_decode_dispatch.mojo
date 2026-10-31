@@ -781,8 +781,10 @@ def compute_mla_dispatch_scalars_runtime(
             sm_count,
         )
     raise Error(
-        "Unsupported MLA num_heads for direct dispatch metadata binding: "
-        + String(num_heads)
+        String(
+            t"Unsupported MLA num_heads for direct dispatch metadata binding: "
+            t"{num_heads}"
+        )
     )
 
 
@@ -2925,9 +2927,9 @@ def launch_mla_sm100_decode_enqueue_kernel[
         ragged=ragged,
         Engine=scalar_args_buf.Engine,
     ].kernel
-    # Enable PDL (Programmatic Dependent Launch) for split-K mode to chain
-    # the MLA decode kernel with the combine kernel, reducing host synchronization.
-    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    # PDL (Programmatic Dependent Launch) is always on: it chains the MLA decode
+    # kernel with the combine kernel, reducing host synchronization.
+    comptime pdl_level = PDLLevel.OVERLAP_AT_BEGINNING
 
     ctx.enqueue_function[kernel](
         q_tma,
@@ -3034,7 +3036,7 @@ def launch_mla_sm100_decode_native_fp8[
         q_len_fold=q_len_fold,
         Engine=scalar_args_buf.Engine,
     ].kernel
-    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    comptime pdl_level = PDLLevel.OVERLAP_AT_BEGINNING
     ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
@@ -3149,7 +3151,7 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
         q_len_fold=q_len_fold,
         Engine=scalar_args_buf.Engine,
     ].kernel
-    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config_g.decoding_warp_split_k else PDLLevel.OFF
+    comptime pdl_level = PDLLevel.OVERLAP_AT_BEGINNING
     ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
@@ -3259,7 +3261,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         has_per_token_scales=has_per_token_scales,
         Engine=scalar_args_buf.Engine,
     ].kernel
-    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    comptime pdl_level = PDLLevel.OVERLAP_AT_BEGINNING
     ctx.enqueue_function[kernel](
         q_nope_tma,
         q_rope_tma,
@@ -3457,7 +3459,7 @@ def launch_mla_sm100_decode_sparse[
         sparse_row=sparse_row,
         Engine=scalar_args_buf.Engine,
     ].kernel
-    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    comptime pdl_level = PDLLevel.OVERLAP_AT_BEGINNING
     # Sparse kernel needs extra SMEM beyond config.smem_used:
     # - 4 idx_bars barriers (4 * 8 = 32 bytes)
     # - ptr_tmem_addr (4 bytes, UInt32)
@@ -3636,7 +3638,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         sparse_row=sparse_row,
         Engine=scalar_args_buf.Engine,
     ].kernel
-    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    comptime pdl_level = PDLLevel.OVERLAP_AT_BEGINNING
     # Extra SMEM beyond the BF16-rope sparse kernel's budget:
     # - 4 idx_bars barriers (4 * mbar_size bytes)
     # - per-block cvt→QK handoff bars: 9 blocks x num_kv_stages (144 bytes)
@@ -3814,7 +3816,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
     )
 
     comptime kernel = KernelStruct.kernel
-    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    comptime pdl_level = PDLLevel.OVERLAP_AT_BEGINNING
     # Extra SMEM beyond the dense config:
     #   - ptr_tmem_addr (4 bytes, UInt32)
     #   - idx_smem double-buffered (2 * BN_QK * sizeof(Int32) = 512 bytes)
@@ -3992,7 +3994,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         Engine=scalar_args_buf.Engine,
     ]
     comptime kernel = KernelType.kernel
-    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    comptime pdl_level = PDLLevel.OVERLAP_AT_BEGINNING
     # Extra SMEM beyond config.smem_used (unified-gather native FP8, no
     # cvt_blk_bars -- the second KV buffer + its pipeline are already
     # folded into config.smem_used via native_fp8_unified_gather, as is the

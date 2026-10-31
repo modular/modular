@@ -259,7 +259,6 @@ def get_fields_from_pydantic_model(
 
     Returns a list of Field objects compatible with dataclass Field API.
     """
-
     # Try to import PydanticUndefined to detect unset defaults
     try:
         from pydantic import PydanticUndefined

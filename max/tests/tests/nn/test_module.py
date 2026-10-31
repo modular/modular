@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.Module."""
+"""Tests for max.nn.legacy.Module."""
 
 from typing import Generic, TypeVar, get_args, get_origin
 
@@ -28,7 +28,7 @@ from max.graph import (
     Weight,
 )
 from max.graph import Module as GraphModule
-from max.nn import Module
+from max.nn.legacy import Module
 
 _T = TypeVar("_T")
 

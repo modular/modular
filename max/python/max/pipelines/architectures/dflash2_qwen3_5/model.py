@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -39,8 +39,10 @@ from .model_config import (
 
 
 class DFlash2Qwen3_5ArchConfig(Llama3Config):
-    """The draft's Llama 3 config, sizing its own windowed KV leaf and
-    building the draft's module."""
+    """The draft's Llama 3 config.
+
+    It sizes its own windowed KV leaf and builds the draft's module.
+    """
 
     @classmethod
     def construct_kv_params(
@@ -81,8 +83,12 @@ class DFlash2Qwen3_5ArchConfig(Llama3Config):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[DFlash2Qwen3_5, DFlash2Qwen3_5Config]:
-        """Builds the DFlash2 draft from the draft checkpoint ``context``
-        names.
+        """Builds the DFlash2 draft from the checkpoint ``context`` names.
+
+        The draft computes in its checkpoint's own precision and loads strictly:
+        a mis-named tensor would load as nothing and show only as collapsed
+        acceptance.
+
 
         The draft computes in its checkpoint's own precision and loads
         strictly: a mis-named tensor would load as nothing and show only as

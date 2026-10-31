@@ -32,7 +32,7 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import grouped_dynamic_block_scaled_matmul_amd
+from max.nn.legacy.kernels import grouped_dynamic_block_scaled_matmul_amd
 
 _E2M1_VALUES = np.array(
     [0, 0.5, 1, 1.5, 2, 3, 4, 6, -0.0, -0.5, -1, -1.5, -2, -3, -4, -6],

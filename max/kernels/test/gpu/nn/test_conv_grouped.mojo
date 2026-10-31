@@ -49,28 +49,8 @@ def test_grouped_conv2d[
     comptime out_size = N * H_out * W_out * C_out
 
     print(
-        "  ",
-        name,
-        ": N=",
-        N,
-        " ",
-        H,
-        "x",
-        W,
-        "x",
-        C_in,
-        " -> ",
-        C_out,
-        "ch (",
-        R,
-        "x",
-        S,
-        " groups=",
-        num_groups,
-        " pad=",
-        pad,
-        ")",
-        sep="",
+        t"  {name}: N={N} {H}x{W}x{C_in} -> {C_out}ch"
+        t" ({R}x{S} groups={num_groups} pad={pad})"
     )
 
     # Host memory

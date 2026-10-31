@@ -86,6 +86,7 @@ modular_py_library(
     deps = [
         ":model_output",
         ":numerics",
+        ":storage",
         ":test_data",
         requirement("numpy"),
         requirement("pillow"),
@@ -98,7 +99,6 @@ modular_py_library(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
-        "//max/python/max/support",
     ],
 )
 
@@ -164,6 +164,25 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "vision_preprocess_parity",
+    testonly = True,
+    srcs = ["vision_preprocess_parity.py"],
+    imports = [".."],
+    # Also the MiniMax-M3 parity test, which lives with its model.
+    visibility = [
+        "//max/tests:__subpackages__",
+        "//max_private/minimax_m3:__pkg__",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_library(
     name = "mef_precompile",
     testonly = True,
     srcs = ["mef_precompile.py"],
@@ -220,7 +239,7 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         "//max/python/max/driver",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/support",
     ],
 )
@@ -258,7 +277,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -284,7 +303,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -304,6 +323,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         ":numerics",
+        ":storage",
         ":test_data",
         requirement("accelerate"),  # Required to run torch models on GPU.
         requirement("diffusers"),
@@ -312,7 +332,6 @@ modular_py_library(
         requirement("requests"),
         requirement("torch"),
         requirement("transformers"),
-        "//max/python/max/support",
     ],
 )
 
@@ -382,7 +401,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",
@@ -443,7 +462,7 @@ modular_py_library(
     srcs = ["torch_print_hook.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/nn/hooks:base_print_hook",
+        "//max/python/max/nn/legacy/hooks:base_print_hook",
         requirement("torch"),
     ],
 )

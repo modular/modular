@@ -164,21 +164,9 @@ def run_pathological_bscale[
                 denormal_col_nonfinite += 1
 
     print(
-        "  up-proj GEMM pathological b_scale: M=",
-        M,
-        "N=",
-        N,
-        "K=",
-        K,
-        "-> NaN=",
-        num_nan,
-        "Inf=",
-        num_inf,
-        "(denormal-col non-finite=",
-        denormal_col_nonfinite,
-        ", large-col idx=",
-        large_col,
-        ")",
+        t"  up-proj GEMM pathological b_scale: M= {M} N= {N} K= {K} -> NaN="
+        t" {num_nan} Inf= {num_inf} (denormal-col non-finite="
+        t" {denormal_col_nonfinite} , large-col idx= {large_col} )"
     )
     # Hard assertions for the NaN this test guards: a near-zero/denormal weight
     # scale must NOT produce NaN, and the denormal column must be finite (~0).

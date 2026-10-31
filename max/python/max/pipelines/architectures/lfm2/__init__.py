@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""LFM2 architecture: a hybrid model combining full attention with
-short convolutions.
+"""The LFM2 architecture.
+
+A hybrid model combining full attention with short convolutions.
 """
 
 from .arch import lfm2_arch

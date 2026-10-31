@@ -929,6 +929,7 @@ modular_cc_library(
         "//AsyncRT:CompilerSupport",
         "//Support:ADT",
         "//Support:DebugInfoDialect",
+        "//Support:HashUtils",
         "//Support:IPInt",
         "//Support:MDialect",
         "@llvm-project//mlir:LLVMDialect",
@@ -955,6 +956,7 @@ modular_cc_library(
         ":KGENPassesIncGen",
         "//AsyncRT:Runtime",
         "//Support:CommonCLOptions",
+        "//Support:Driver",
     ],
 )
 
@@ -1086,7 +1088,6 @@ modular_cc_library(
         "//Support:ProfilingRanges",
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:ConversionPasses",
         "@llvm-project//mlir:IR",
         "@xxhash",
     ],
@@ -1212,6 +1213,7 @@ modular_cc_library(
         "@llvm-project//llvm:Support",  # For llvm/ADT/Triple.h
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:NVVMToLLVM",
     ],
     # TargetLowering implementations self-register via a static initializer and
     # aren't referenced directly, so the linker would drop them. Force them to
@@ -1422,6 +1424,7 @@ modular_cc_library(
         "//Support:CacheLog",
         "//Support:Context",
         "@llvm-project//mlir:BytecodeWriter",
+        "@llvm-project//mlir:ROCDLTarget",
     ],
     # TargetBackend implementations self-register via a
     # static initializer and aren't referenced directly, so the linker would
@@ -1460,7 +1463,7 @@ modular_cc_library(
         ":MojoParser",
         # DocGen.cpp uses getMojoVersionString() for the JSON version wrapper.
         "//Config",
-        # DocGen.h exposes DiagnosticFormat in the DocGenConfig struct.
+        # DocGen.h exposes DiagnosticFormat in generateMojoDocJSON.
         "//Support:Driver",
     ],
 )
@@ -1537,16 +1540,18 @@ modular_cc_library(
         "//Support:CommonCLOptions",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
+        "//Support:Driver",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
         "@llvm-project//mlir:BytecodeWriter",
-        "@llvm-project//mlir:ConversionPasses",
         "@llvm-project//mlir:IndexDialect",
+        "@llvm-project//mlir:IndexToLLVM",
         "@llvm-project//mlir:LLVMIRTransforms",
         "@llvm-project//mlir:LLVMToLLVMIRTranslation",
         "@llvm-project//mlir:NVVMToLLVMIRTranslation",
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:ROCDLToLLVMIRTranslation",
+        "@llvm-project//mlir:ReconcileUnrealizedCasts",
     ],
 )
 

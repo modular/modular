@@ -49,7 +49,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.ops.rms_norm import _float32_attr
 from max.graph.type import _ChainType
 from max.graph.value import _ChainValue
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 N = 1024  # Allreduce/reduce-scatter column count.
 COLS = 6144  # Hidden size the fused RMSNorm composites are tuned for.

@@ -288,7 +288,7 @@ def sleep(sec: Float64):
         nsecs,
     )
     var req = Pointer(to=tv_spec)
-    var rem = OptionalPointer[_CTimeSpec, MutUntrackedOrigin]()
+    var rem = Optional[Pointer[_CTimeSpec, MutUntrackedOrigin]]()
     _ = external_call["nanosleep", Int32](req, rem)
 
 

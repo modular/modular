@@ -114,8 +114,8 @@ def bench_rms_norm_gemm_pdl[
     comptime MMA_K = 16
 
     comptime gemm_config_off = MatmulConfig[dtype, dtype, dtype, True](
-        cluster_shape=Index(cta_group, 1, 1),
-        mma_shape=Index(mma_m, mma_n, MMA_K),
+        cluster_shape=(Int(cta_group), Int(1), Int(1)),
+        mma_shape=(Int(mma_m), Int(mma_n), Int(MMA_K)),
         cta_group=cta_group,
         num_pipeline_stages=num_pipeline_stages,
         num_accum_pipeline_stages=1,
@@ -124,8 +124,8 @@ def bench_rms_norm_gemm_pdl[
         AB_swapped=swap_ab,
     )
     comptime gemm_config_prefetch = MatmulConfig[dtype, dtype, dtype, True](
-        cluster_shape=Index(cta_group, 1, 1),
-        mma_shape=Index(mma_m, mma_n, MMA_K),
+        cluster_shape=(Int(cta_group), Int(1), Int(1)),
+        mma_shape=(Int(mma_m), Int(mma_n), Int(MMA_K)),
         cta_group=cta_group,
         num_pipeline_stages=num_pipeline_stages,
         num_accum_pipeline_stages=1,
@@ -154,10 +154,9 @@ def bench_rms_norm_gemm_pdl[
 
     var cb_weights = CacheBustingBuffer[dtype](w_elems, simd_size, ctx, True)
     print(
-        "cache-busting windows: weights=",
-        cb_weights.buffer_size // cb_weights.stride,
-        " (1 means the buster COLLAPSED -- raise budget_bytes)",
-        sep="",
+        t"cache-busting windows:"
+        t" weights={cb_weights.buffer_size // cb_weights.stride} (1 means the"
+        t" buster COLLAPSED -- raise budget_bytes)"
     )
     # Fill the WHOLE allocation, not just the first window: an iteration landing
     # on an unwritten window would read garbage, and NaNs there make the
@@ -182,7 +181,7 @@ def bench_rms_norm_gemm_pdl[
     var gamma = TileTensor(gamma_dev, row_major(Idx[num_cols]))
     var c_out = TileTensor(c_dev, row_major(num_rows, Idx[gemm_n]))
     var c_ref = TileTensor(c_ref_dev, row_major(num_rows, Idx[gemm_n]))
-    var norm_shape = Index(num_rows, num_cols)
+    var norm_shape = (num_rows, num_cols)
 
     # `[N, K]` (transpose_b) with BOTH dims static, as the SM100 kernel needs.
     # Built from the rotating cache-bust window rather than the base pointer so
@@ -412,15 +411,8 @@ def main() raises:
 
     with DeviceContext() as ctx:
         print(
-            "Paired RMSNorm -> GEMM, PDL: ",
-            dtype,
-            ", M=",
-            num_rows,
-            " K=",
-            num_cols,
-            " N=",
-            gemm_n,
-            sep="",
+            t"Paired RMSNorm -> GEMM, PDL: {dtype},"
+            t" M={num_rows} K={num_cols} N={gemm_n}"
         )
         var m = Bench(BenchConfig(num_repetitions=num_reps))
         bench_rms_norm_gemm_pdl[

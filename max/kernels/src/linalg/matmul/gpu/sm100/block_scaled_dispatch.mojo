@@ -206,6 +206,9 @@ def heuristic_and_outliers_dispatch[
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
+    compute_fn_needs_vectors: Bool = False,
+    compute_fn_col_period: Int = 0,
+    compute_fn_col_start: Int = 0,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -228,6 +231,15 @@ def heuristic_and_outliers_dispatch[
         SF_VECTOR_SIZE: Number of elements each scale factor covers.
         transpose_b: Whether `b` is stored transposed. Must be `True`.
         pdl_level: Programmatic Dependent Launch scheduling level.
+        compute_fn_needs_vectors: Whether `compute_fn` reads each value
+            with its neighbors in the row, so it must get consecutive
+            columns rather than one element at a time.
+        compute_fn_col_period: When nonzero, `compute_fn` returns its
+            input unchanged at every column whose index modulo this
+            period is below `compute_fn_col_start`, so an unfused pass
+            visits only the remaining columns.
+        compute_fn_col_start: The first column of each period that
+            `compute_fn` may change.
 
     Args:
         c: Output TileTensor accumulating the matmul result.
@@ -248,6 +260,9 @@ def heuristic_and_outliers_dispatch[
         pdl_level=pdl_level,
         has_epilogue_fn=False,
         has_compute_fn=True,
+        compute_fn_needs_vectors=compute_fn_needs_vectors,
+        compute_fn_col_period=compute_fn_col_period,
+        compute_fn_col_start=compute_fn_col_start,
     ](c, a, b, a_scales, b_scales, tensor_sf, no_epilogue_fn, compute_fn, ctx)
 
 
@@ -265,6 +280,9 @@ def _heuristic_and_outliers_dispatch_impl[
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
+    compute_fn_needs_vectors: Bool = False,
+    compute_fn_col_period: Int = 0,
+    compute_fn_col_start: Int = 0,
     groups: Int = 1,
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -387,6 +405,9 @@ def _heuristic_and_outliers_dispatch_impl[
                 pdl_level=pdl_level,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
+                compute_fn_needs_vectors=compute_fn_needs_vectors,
+                compute_fn_col_period=compute_fn_col_period,
+                compute_fn_col_start=compute_fn_col_start,
                 groups=groups,
             ](
                 c,
@@ -447,6 +468,9 @@ def _heuristic_and_outliers_dispatch_impl[
             pdl_level=pdl_level,
             has_epilogue_fn=has_epilogue_fn,
             has_compute_fn=has_compute_fn,
+            compute_fn_needs_vectors=compute_fn_needs_vectors,
+            compute_fn_col_period=compute_fn_col_period,
+            compute_fn_col_start=compute_fn_col_start,
             groups=groups,
         ](
             c,
@@ -487,6 +511,9 @@ def _heuristic_and_outliers_dispatch_impl[
                 pdl_level=pdl_level,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
+                compute_fn_needs_vectors=compute_fn_needs_vectors,
+                compute_fn_col_period=compute_fn_col_period,
+                compute_fn_col_start=compute_fn_col_start,
                 groups=groups,
             ](
                 c,
@@ -516,6 +543,9 @@ def _heuristic_and_outliers_dispatch_impl[
                 pdl_level=pdl_level,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
+                compute_fn_needs_vectors=compute_fn_needs_vectors,
+                compute_fn_col_period=compute_fn_col_period,
+                compute_fn_col_start=compute_fn_col_start,
                 groups=groups,
             ](
                 c,
@@ -646,6 +676,9 @@ def _block_scaled_matmul_with_epilogue[
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
+    compute_fn_needs_vectors: Bool = False,
+    compute_fn_col_period: Int = 0,
+    compute_fn_col_start: Int = 0,
     groups: Int = 1,
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -772,12 +805,19 @@ def _block_scaled_matmul_with_epilogue[
     # elementwise kernel hides those latencies across threads. The small-BN
     # kernel keeps the fused closure: its epilogue is cheap there, and the
     # extra launch would lose.
-    comptime if (
-        has_compute_fn
-        and not config.is_small_bn
-        and config.scaling_kind == UMMAKind.KIND_MXF8F6F4
+    #
+    # A kernel that swaps A and B hands the closure one element at a time, so
+    # a closure that needs consecutive columns runs from the elementwise
+    # kernel at every M.
+    comptime per_element = compute_fn_needs_vectors and config.AB_swapped
+    comptime if has_compute_fn and (
+        per_element
+        or (
+            not config.is_small_bn
+            and config.scaling_kind == UMMAKind.KIND_MXF8F6F4
+        )
     ):
-        if m <= compute_fn_unfused_m_cap:
+        if per_element or m <= compute_fn_unfused_m_cap:
             _block_scaled_matmul_with_epilogue[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
@@ -795,22 +835,54 @@ def _block_scaled_matmul_with_epilogue[
                 ctx,
             )
 
-            def apply_compute_fn[
-                width: Int, alignment: Int = 1
-            ](idx: Coord) {var c, var compute_fn}:
-                c.store[alignment=alignment * size_of[c_type]()](
-                    idx,
-                    compute_fn[c_type, width, alignment=alignment](
-                        idx, c.load[width=width](idx)
-                    ),
-                )
-
             comptime simd_size = simd_width_of[c_type, target=ctx.target]()
-            elementwise[
-                simd_size,
-                target="gpu",
-                _trace_description="elementwise_block_scaled_matmul_compute",
-            ](apply_compute_fn, (m, n), ctx)
+            comptime if compute_fn_col_period > 0:
+                comptime period = compute_fn_col_period
+                comptime start = compute_fn_col_start
+                comptime assert (
+                    0 <= start < period and (period - start) % simd_size == 0
+                ), "the changed columns must be whole SIMD vectors"
+                if n % period != 0:
+                    raise Error("the output width must be whole column periods")
+
+                # Visits only the columns `compute_fn` changes: column
+                # `p * period + start + j` is `(row, p, j)`.
+                def apply_compute_fn_cols[
+                    width: Int, alignment: Int = 1
+                ](idx: Coord) {var c, var compute_fn}:
+                    var at = Coord(
+                        Int64(Int(idx[0])),
+                        Int64(Int(idx[1]) * period + start + Int(idx[2])),
+                    )
+                    c.store[alignment=alignment * size_of[c_type]()](
+                        at,
+                        compute_fn[c_type, width, alignment=alignment](
+                            at, c.load[width=width](at)
+                        ),
+                    )
+
+                elementwise[
+                    simd_size,
+                    target="gpu",
+                    _trace_description="elementwise_block_scaled_matmul_compute",
+                ](apply_compute_fn_cols, (m, n // period, period - start), ctx)
+            else:
+
+                def apply_compute_fn[
+                    width: Int, alignment: Int = 1
+                ](idx: Coord) {var c, var compute_fn}:
+                    c.store[alignment=alignment * size_of[c_type]()](
+                        idx,
+                        compute_fn[c_type, width, alignment=alignment](
+                            idx, c.load[width=width](idx)
+                        ),
+                    )
+
+                elementwise[
+                    simd_size,
+                    target="gpu",
+                    _trace_description="elementwise_block_scaled_matmul_compute",
+                ](apply_compute_fn, (m, n), ctx)
             return
 
     # Store-redirect epilogues and the remaining compute closures stay fused

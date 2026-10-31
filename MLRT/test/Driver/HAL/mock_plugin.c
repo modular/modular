@@ -260,6 +260,10 @@ M_driver_status_t M_driver_device_property(M_driver_device_t device,
   (void)device;
   if (!property_name || !value)
     return M_DRIVER_STATUS_INVALID_ARG;
+  if (strcmp(property_name, M_DRIVER_DEVICE_PROPERTY_NAME) == 0) {
+    strcpy((char *)value, "mock");
+    return M_DRIVER_STATUS_SUCCESS;
+  }
   if (strcmp(property_name, M_DRIVER_DEVICE_PROPERTY_HOST_UNIFIED) == 0) {
     *(int64_t *)value = 0;
     return M_DRIVER_STATUS_SUCCESS;
@@ -374,7 +378,9 @@ M_driver_status_t M_driver_context_memory_info(M_driver_context_t context,
     return M_DRIVER_STATUS_BAD_CONTEXT;
   if (!free || !total)
     return M_DRIVER_STATUS_INVALID_ARG;
-  *free = MOCK_MEMORY_INFO_FREE;
+  const char *unknown = getenv("MOCK_MEMORY_UNKNOWN");
+  *free = (unknown && strcmp(unknown, "1") == 0) ? M_DRIVER_MEMORY_UNKNOWN
+                                                 : MOCK_MEMORY_INFO_FREE;
   *total = MOCK_MEMORY_INFO_TOTAL;
   return M_DRIVER_STATUS_SUCCESS;
 }

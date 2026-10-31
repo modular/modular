@@ -26,6 +26,11 @@ from max.gpu import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
 
@@ -67,73 +72,76 @@ def _expand[
     comptime capacity = items * 128
     var row = block_idx.x
     var lane = thread_idx.x
-    var start = starts[unsafe_offset=row * Int(start_stride)]
-    var stop = stops[unsafe_offset=row * Int(stop_stride)]
-    var limit = ceildiv(max(stop - start, Int32(0)), Int32(block_kv))
-    var values = Array[Int32, items](fill=Int32.MAX)
-    var count = Int32(0)
-    var last = Int32(-1)
-    comptime for item in range(items):
-        var index = item * 128 + lane
-        if index < size:
-            var candidate = input[
-                unsafe_offset=row * Int(input_stride) + index // ratio
-            ] * Int32(ratio) + Int32(index % ratio)
-            if candidate >= 0 and candidate < limit:
-                values[item] = candidate
-                count += 1
-                last = max(last, candidate)
-    count = block.sum[block_size=128](count)
-    last = block.max[block_size=128](last)
-    var shared = unsafe_stack_allocation[
-        capacity, Int32, address_space=.SHARED
-    ]()
-    # Register pairs and warp shuffles avoid a block barrier at every sort step.
-    comptime for level in range(1, log2_floor(capacity) + 1):
-        comptime stage = 1 << level
-        comptime for step in range(level):
-            comptime distance = 1 << (level - step - 1)
-            var partners = Array[Int32, items](fill=0)
-            comptime if distance >= 128:
+    with PDL():
+        var start = starts[unsafe_offset=row * Int(start_stride)]
+        var stop = stops[unsafe_offset=row * Int(stop_stride)]
+        var limit = ceildiv(max(stop - start, Int32(0)), Int32(block_kv))
+        var values = Array[Int32, items](fill=Int32.MAX)
+        var count = Int32(0)
+        var last = Int32(-1)
+        comptime for item in range(items):
+            var index = item * 128 + lane
+            if index < size:
+                var candidate = input[
+                    unsafe_offset=row * Int(input_stride) + index // ratio
+                ] * Int32(ratio) + Int32(index % ratio)
+                if candidate >= 0 and candidate < limit:
+                    values[item] = candidate
+                    count += 1
+                    last = max(last, candidate)
+        count = block.sum[block_size=128](count)
+        last = block.max[block_size=128](last)
+        var shared = unsafe_stack_allocation[
+            capacity, Int32, address_space=.SHARED
+        ]()
+        # Register pairs and warp shuffles avoid a block barrier at every sort step.
+        comptime for level in range(1, log2_floor(capacity) + 1):
+            comptime stage = 1 << level
+            comptime for step in range(level):
+                comptime distance = 1 << (level - step - 1)
+                var partners = Array[Int32, items](fill=0)
+                comptime if distance >= 128:
+                    comptime for item in range(items):
+                        partners[item] = values[item ^ (distance // 128)]
+                elif distance < WARP_SIZE:
+                    comptime for item in range(items):
+                        partners[item] = warp.shuffle_xor(
+                            values[item], UInt32(distance)
+                        )
+                else:
+                    comptime for item in range(items):
+                        shared[unsafe_offset=item * 128 + lane] = values[item]
+                    barrier()
+                    comptime for item in range(items):
+                        partners[item] = shared[
+                            unsafe_offset=(item * 128 + lane) ^ distance
+                        ]
+                    barrier()
                 comptime for item in range(items):
-                    partners[item] = values[item ^ (distance // 128)]
-            elif distance < WARP_SIZE:
-                comptime for item in range(items):
-                    partners[item] = warp.shuffle_xor(
-                        values[item], UInt32(distance)
+                    var index = item * 128 + lane
+                    var take_min = ((index & stage) == 0) == (
+                        (index & distance) == 0
                     )
-            else:
-                comptime for item in range(items):
-                    shared[unsafe_offset=item * 128 + lane] = values[item]
-                barrier()
-                comptime for item in range(items):
-                    partners[item] = shared[
-                        unsafe_offset=(item * 128 + lane) ^ distance
-                    ]
-                barrier()
-            comptime for item in range(items):
-                var index = item * 128 + lane
-                var take_min = ((index & stage) == 0) == (
-                    (index & distance) == 0
+                    values[item] = min(
+                        values[item], partners[item]
+                    ) if take_min else max(values[item], partners[item])
+        var base = start // Int32(block_kv)
+        var pad = base + (last if count > 0 else Int32(0))
+        comptime for item in range(items):
+            var index = item * 128 + lane
+            if index < size:
+                output[unsafe_offset=row * Int(output_stride) + index] = (
+                    values[item] + base if index < Int(count) else pad
                 )
-                values[item] = min(
-                    values[item], partners[item]
-                ) if take_min else max(values[item], partners[item])
-    var base = start // Int32(block_kv)
-    var pad = base + (last if count > 0 else Int32(0))
-    comptime for item in range(items):
-        var index = item * 128 + lane
-        if index < size:
-            output[unsafe_offset=row * Int(output_stride) + index] = (
-                values[item] + base if index < Int(count) else pad
+        if lane == 0:
+            var fill = clamp(
+                stop - (last * Int32(block_kv) + start),
+                Int32(1),
+                Int32(block_kv),
             )
-    if lane == 0:
-        var fill = clamp(
-            stop - (last * Int32(block_kv) + start), Int32(1), Int32(block_kv)
-        )
-        ends[unsafe_offset=row * Int(end_stride)] = (count - 1) * Int32(
-            block_kv
-        ) + fill if count > 0 else Int32(0)
+            ends[unsafe_offset=row * Int(end_stride)] = (count - 1) * Int32(
+                block_kv
+            ) + fill if count > 0 else Int32(0)
 
 
 def indexer_expand_candidates[
@@ -211,6 +219,7 @@ def indexer_expand_candidates[
         Int32(end_stride),
         grid_dim=rows,
         block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -232,19 +241,22 @@ def _remap[
 ):
     var row = block_idx.y
     var index = block_idx.x * 128 + thread_idx.x
-    if index < Int(count):
-        var column = columns[unsafe_offset=row * Int(column_stride) + index]
-        var value = Int32(-1)
-        if column >= 0 and column < width:
-            var base = starts[unsafe_offset=row * Int(start_stride)] // Int32(
-                block_kv
-            )
-            var sparse = blocks[
-                unsafe_offset=row * Int(block_stride)
-                + Int(column // Int32(block_kv))
-            ]
-            value = (sparse - base) * Int32(block_kv) + column % Int32(block_kv)
-        output[unsafe_offset=row * Int(output_stride) + index] = value
+    with PDL():
+        if index < Int(count):
+            var column = columns[unsafe_offset=row * Int(column_stride) + index]
+            var value = Int32(-1)
+            if column >= 0 and column < width:
+                var base = starts[
+                    unsafe_offset=row * Int(start_stride)
+                ] // Int32(block_kv)
+                var sparse = blocks[
+                    unsafe_offset=row * Int(block_stride)
+                    + Int(column // Int32(block_kv))
+                ]
+                value = (sparse - base) * Int32(block_kv) + column % Int32(
+                    block_kv
+                )
+            output[unsafe_offset=row * Int(output_stride) + index] = value
 
 
 def indexer_remap_sparse_columns[
@@ -315,4 +327,5 @@ def indexer_remap_sparse_columns[
         Int32(output_stride),
         grid_dim=(ceildiv(count, 128), rows),
         block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

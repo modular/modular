@@ -35,20 +35,20 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm.allreduce import Allreduce
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.graph_groups import MRoPEPositions, VisionMerge
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import MRoPEPositions, VisionMerge
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
@@ -65,6 +65,8 @@ from .text_rotary import Qwen3VLTextRotaryEmbedding
 
 
 class Qwen3VLMoeTextDecoderLayer(Module):
+    """One Qwen3-VL-MoE decoder layer."""
+
     def __init__(
         self,
         rope: Qwen3VLTextRotaryEmbedding,
@@ -195,8 +197,10 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         layer_idx: int,
         quant_config: QuantConfig | None,
     ) -> MLP | Qwen3VLMoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP the layer at ``layer_idx`` uses.
+
+        A Mixture of Experts layer replaces the plain MLP wherever ``config``
+        marks that layer as sparse.
 
         Args:
             config: Configuration object containing model parameters
@@ -418,8 +422,7 @@ class Qwen3VLMoEDecoder(DistributedLogitsPostprocessMixin, Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s leaves.
 
         Args:
             *input_types: The graph's input types, the leaves of

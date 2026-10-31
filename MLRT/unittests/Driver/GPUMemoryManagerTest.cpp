@@ -465,7 +465,7 @@ TEST_F(GPUMemoryManagerTest, GetMemoryInfoAccuracy) {
   // Get initial memory info
   Device::MemInfo initialInfo = cache.getMemoryInfo();
   EXPECT_GT(initialInfo.total, 0);
-  size_t initialFree = initialInfo.free;
+  size_t initialFree = initialInfo.free.value();
 
   const Device::AllocMode mode = Device::AllocMode::SYNC;
   std::vector<void *> ptrs;
@@ -481,7 +481,7 @@ TEST_F(GPUMemoryManagerTest, GetMemoryInfoAccuracy) {
   Device::MemInfo afterAllocInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterAllocInfo.total,
             initialInfo.total); // Total should remain same
-  EXPECT_LE(afterAllocInfo.free,
+  EXPECT_LE(afterAllocInfo.free.value(),
             initialFree); // Free should decrease or stay same
 
   // Free the blocks
@@ -492,7 +492,8 @@ TEST_F(GPUMemoryManagerTest, GetMemoryInfoAccuracy) {
   // Get memory info after freeing
   Device::MemInfo afterFreeInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterFreeInfo.total, initialInfo.total); // Total should remain same
-  EXPECT_GE(afterFreeInfo.free, afterAllocInfo.free); // Free should increase
+  EXPECT_GE(afterFreeInfo.free.value(),
+            afterAllocInfo.free.value()); // Free should increase
 }
 
 TEST_F(GPUMemoryManagerTest, BufferUnderflowTest) {

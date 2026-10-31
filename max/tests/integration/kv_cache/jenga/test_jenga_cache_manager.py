@@ -31,7 +31,7 @@ import pytest
 from max.driver import Buffer, Device, Usage
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheGroupId,
     KVCacheInputs,
     KVCacheInputsPerDevice,
@@ -42,14 +42,14 @@ from max.nn.kv_cache import (
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVConnectorType,
     SpeculativeMethod,
     spec_decode_cache_slack,
 )
-from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import padded_lut_cols
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.utils import padded_lut_cols
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.config import KVConnectorConfig
@@ -59,6 +59,9 @@ from max.pipelines.kv_cache.paged_kv_cache import (
 )
 from max.pipelines.kv_cache.paged_kv_cache import (
     jenga_cache_manager as jenga_mod,
+)
+from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
+    JengaBlockPool,
 )
 from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
     JengaKVCacheManager,
@@ -72,9 +75,18 @@ SLIDING = "sliding"
 FULL = "full"
 
 
+@pytest.fixture(autouse=True)
+def require_memory_owner_allocations(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raw_allocation(pool: JengaBlockPool, leaf_id: str) -> None:
+        raise AssertionError("device allocation bypassed its memory owner")
+
+    monkeypatch.setattr(JengaBlockPool, "alloc_block", raw_allocation)
+
+
 def make_leaf(
     *,
     n_kv_heads: int,
+    dtype: DType = DType.float32,
     window_size: int | None = None,
     page_size: int = 1,
     speculative_method: SpeculativeMethod | None = None,
@@ -84,7 +96,7 @@ def make_leaf(
 ) -> MHAKVCacheParams:
     device_count = data_parallel_degree if n_devices is None else n_devices
     return MHAKVCacheParams(
-        dtype=DType.float32,
+        dtype=dtype,
         num_layers=1,
         n_kv_heads=n_kv_heads,
         head_dim=1,
@@ -104,10 +116,9 @@ def create_manager(
     *,
     max_seq_len: int = 4,
 ) -> JengaKVCacheManager:
-    tp_degree = params.tensor_parallel_degree
     # A huge block is the least common multiple of the leaf page sizes.
     huge_page_bytes = lcm(
-        *(leaf.bytes_per_page // tp_degree for leaf in params.leaves().values())
+        *(leaf.bytes_per_page for leaf in params.leaves().values())
     )
     return JengaKVCacheManager.create(
         params=params,
@@ -1229,3 +1240,118 @@ def test_a_padded_leaf_binds_its_packed_alias_and_stride(
         strides[child] = device_inputs.page_stride.to_numpy().tolist()
     # 256 B of float32 between pages; -1 is the packed sentinel.
     assert strides == {"packed": [-1], "strided": [64]}
+
+
+@pytest.mark.parametrize("replicas,shards", [(1, 1), (2, 2)])
+def test_retyping_wipes_whole_huge_block_on_every_replica_shard(
+    replicas: int, shards: int
+) -> None:
+    params = MultiKVCacheParams.from_params(
+        {
+            name: make_leaf(
+                n_kv_heads=heads * shards,
+                dtype=DType.bfloat16 if name == FULL else DType.float8_e4m3fn,
+                data_parallel_degree=replicas,
+                n_devices=replicas * shards,
+            )
+            for name, heads in ((FULL, 3), (SLIDING, 1))
+        }
+    )
+    manager = create_manager(params, 3, 1, max_seq_len=1)
+    leaves = list(params.leaves())
+    old_leaf, new_leaf = leaves
+    # Occupy every allocatable huge block so the next leaf must retype one.
+    for replica, pool in enumerate(manager.pools):
+        old = [manager.allocate_block(replica, old_leaf) for _ in range(2)]
+        buffers = (
+            manager.get_device_buffer(replica).to_memory()[old_leaf].buffers
+        )
+        for buf in buffers:
+            # 0x7F7F is finite BF16; its bytes are NaNs as FP8 e4m3fn.
+            buf.memset(0x7F)
+        for block in old:
+            pool.free_block(block)
+        new = manager.allocate_block(replica, new_leaf)
+        huge_bid = new.bid // pool.cache_ratios[new_leaf]
+        for buf in buffers:
+            raw = buf.view(DType.uint8)
+            huge_bytes = raw.num_elements // pool.num_huge_blocks
+            flat = raw.view(DType.uint8, (raw.num_elements,))
+            data = flat.to_numpy()
+            np.testing.assert_array_equal(
+                data[huge_bid * huge_bytes : (huge_bid + 1) * huge_bytes], 0
+            )
+            np.testing.assert_array_equal(data[:huge_bytes], 0x7F)
+            other_bid = 3 - huge_bid
+            np.testing.assert_array_equal(
+                data[other_bid * huge_bytes : (other_bid + 1) * huge_bytes],
+                0x7F,
+            )
+            # A same-type allocation must preserve the first little page.
+            flat[huge_bid * huge_bytes : (huge_bid + 1) * huge_bytes].memset(
+                0x55
+            )
+        manager.allocate_block(replica, new_leaf)
+        for buf in buffers:
+            data = (
+                buf.view(DType.uint8)
+                .to_numpy()
+                .reshape(pool.num_huge_blocks, -1)
+            )
+            np.testing.assert_array_equal(data[huge_bid], 0x55)
+
+
+@pytest.mark.parametrize("kind", ["full", "sliding", "recurrent", "scratch"])
+def test_every_coordinator_initializes_retyped_memory(kind: str) -> None:
+    if kind in ("full", "sliding"):
+        params = MultiKVCacheParams.from_params(
+            {
+                FULL: make_leaf(n_kv_heads=3),
+                SLIDING: make_leaf(n_kv_heads=1, window_size=4),
+            }
+        )
+        manager = create_manager(params, 4, 1, max_seq_len=1)
+        target = next(
+            g
+            for g in manager.groups.values()
+            if (
+                g.group_id.is_sliding_window()
+                if kind == "sliding"
+                else g.group_id.is_full()
+            )
+        )
+    else:
+        manager = create_manager(
+            make_budget_params(caching=True), 4, 1, max_seq_len=1
+        )
+        target = next(
+            g
+            for g in manager.groups.values()
+            if (
+                g.group_id.is_scratch()
+                if kind == "scratch"
+                else g.group_id.is_recurrent()
+            )
+        )
+    pool = manager.pools[0]
+    old_leaf = next(
+        leaf for leaf in pool.cache_ratios if leaf != target.leaf_id
+    )
+    old = [
+        manager.allocate_block(0, old_leaf)
+        for _ in range(
+            pool.num_allocatable_huge_blocks * pool.cache_ratios[old_leaf]
+        )
+    ]
+    for slab in manager._replica_slabs[0]:
+        slab.memset(0x7F)
+    for block in old:
+        pool.free_block(block)
+    ctx = make_ctx(1)
+    target.claim(ctx.request_id)
+    target.grow(ctx.request_id, 1, 0, allocation_owner=manager)
+    for block in target.rows[ctx.request_id][target.leaf_id]:
+        if not block.is_null:
+            huge_bid = block.bid // pool.cache_ratios[target.leaf_id]
+            for slab in manager._replica_slabs[0]:
+                np.testing.assert_array_equal(slab[huge_bid, :].to_numpy(), 0)

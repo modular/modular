@@ -43,6 +43,7 @@ from layout import (
 )
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
+from std.utils.coord import Coord
 from std.logger import Logger
 from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
@@ -52,7 +53,8 @@ from ...gemv import (
     gemm_mma_cpasync,
     gemv_gpu,
     gemv_gpu_dispatch,
-    is_minimax_router_gemm,
+    _amd_small_m_gemv_route,
+    _is_amd_small_m_gemv,
 )
 from ...utils import (
     ElementwiseComputeFn,
@@ -540,10 +542,12 @@ def enqueue_matmul_kernel_naive[
         )
 
 
-def _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
+def _amdgpu_get_mma_shape[
+    dtype: DType, transpose_b: Bool
+]() -> Tuple[Int, Int, Int]:
     comptime if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
         comptime if dtype.is_half_float():
-            return Index(16, 16, 32)
+            return (16, 16, 32)
 
     return get_mma_shape[dtype, DType.float32]()
 
@@ -571,8 +575,8 @@ def _amdgpu_matmul_config_from_block_shape[
     if block_m == 16 and a_type.is_float8() and transpose_b:
         if block_n == 32 and K >= 2 * 256:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(16, 32, 256),
-                warp_tile_shape=Index(16, 32, 256),
+                block_tile_shape=(16, 32, 256),
+                warp_tile_shape=(16, 32, 256),
                 mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_warp_k_partitions=4,
@@ -580,8 +584,8 @@ def _amdgpu_matmul_config_from_block_shape[
             )
         if block_n == 64 and K >= 2 * 1024:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(16, 64, 1024),
-                warp_tile_shape=Index(16, 16, 1024),
+                block_tile_shape=(16, 64, 1024),
+                warp_tile_shape=(16, 16, 1024),
                 mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_warp_k_partitions=1,
@@ -607,11 +611,11 @@ def _amdgpu_matmul_config_from_block_shape[
             if smem_a + smem_b <= 32 * 1024:
                 block_k *= 2
 
-    var block_tile_shape = Index(block_m, block_n, block_k)
+    var block_tile_shape = (block_m, block_n, block_k)
     var warp_tile_shape = block_tile_shape
 
     # Warp partition block_m and block_n.
-    for i in reversed(range(2)):
+    comptime for i in reversed(range(2)):
         if (
             block_tile_shape[i] >= 32
             and block_tile_shape[i] % 32 == 0
@@ -848,7 +852,7 @@ def _matmul_gpu_impl[
     logger.info("---- MATMUL GPU execution started ----")
     logger.info("MxNxK: ", m, "x", n, "x", k, sep="")
     logger.info("Data types: A=", a_type, " B=", b_type, " C=", c_type)
-    logger.info("Device: ", ctx.name())
+    logger.info("Device: ", ctx.device().get_name())
     logger.info(
         "Transpose B: ",
         transpose_b,
@@ -1150,11 +1154,15 @@ def _matmul_gpu_impl[
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        block_tile_shape=Index(
-                            block_m, block_n, _bk_base[a_type, True]()
+                        block_tile_shape=(
+                            block_m,
+                            block_n,
+                            _bk_base[a_type, True](),
                         ),
-                        warp_tile_shape=Index(
-                            block_m // 2, block_n // 2, _bk_base[a_type, True]()
+                        warp_tile_shape=(
+                            block_m // 2,
+                            block_n // 2,
+                            _bk_base[a_type, True](),
                         ),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=num_pipeline_stages,
@@ -1165,11 +1173,13 @@ def _matmul_gpu_impl[
 
                 comptime if (
                     transpose_b
-                    and is_minimax_router_gemm[
+                    and _is_amd_small_m_gemv[
                         c_type, a_type, b_type, static_N, static_K
                     ]()
                 ):
-                    if m <= 16:
+                    if _amd_small_m_gemv_route[
+                        c_type, a_type, b_type, static_N, static_K
+                    ](m)[0] and (m != 1 or not has_compute_fn):
                         comptime if has_epilogue_fn:
                             return gemv_gpu_dispatch[
                                 transpose_b=True,
@@ -1575,10 +1585,8 @@ def _matmul_gpu_impl[
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        block_tile_shape=Index(block_m, block_n, block_k),
-                        warp_tile_shape=Index(
-                            block_m // 2, block_n // 2, block_k
-                        ),
+                        block_tile_shape=(block_m, block_n, block_k),
+                        warp_tile_shape=(block_m // 2, block_n // 2, block_k),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=1,
                         num_k_partitions=num_k_partitions,
@@ -1604,8 +1612,8 @@ def _matmul_gpu_impl[
                             comptime config = MatmulConfig[
                                 a_type, b_type, c_type, transpose_b
                             ](
-                                block_tile_shape=Index(_bm, _bn, _bk),
-                                warp_tile_shape=Index(_bm // 2, _bn // 2, _bk),
+                                block_tile_shape=(_bm, _bn, _bk),
+                                warp_tile_shape=(_bm // 2, _bn // 2, _bk),
                                 mma_shape=_amdgpu_get_mma_shape[
                                     a_type, transpose_b
                                 ](),
@@ -1651,8 +1659,8 @@ def _matmul_gpu_impl[
                         comptime config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(16, 16, 64),
-                            warp_tile_shape=Index(16, 16, 64),
+                            block_tile_shape=(16, 16, 64),
+                            warp_tile_shape=(16, 16, 64),
                             mma_shape=_amdgpu_get_mma_shape[
                                 a_type, transpose_b
                             ](),
@@ -2272,14 +2280,14 @@ def _multistage_gemm_amd[
     comptime if a_type.is_float8():
         # FP8 dispatch: ping-pong for large shapes, standard for small.
         comptime pingpong_config = KernelConfig(
-            block_shape=Index(256, 256, 128),
-            warp_shape=Index(128, 64, 128),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(256, 256, 128),
+            warp_shape=(128, 64, 128),
+            mma_shape=(16, 16, 128),
         )
         comptime skinny_config = KernelConfig(
-            block_shape=Index(128, 256, 128),
-            warp_shape=Index(64, 64, 128),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(128, 256, 128),
+            warp_shape=(64, 64, 128),
+            mma_shape=(16, 16, 128),
         )
         comptime std_config = MatmulConfig[a_type, b_type, c_type, True](
             block_tile_shape=config.block_tile_shape,

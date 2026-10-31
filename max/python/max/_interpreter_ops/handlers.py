@@ -64,7 +64,7 @@ from max.driver import (
     float32_to_bfloat16_as_uint16,
 )
 from max.dtype import DType
-from max.experimental import custom
+from max.functional import custom_op as custom
 from max.graph.ops.rms_norm import _float32_attr_value
 
 
@@ -1271,9 +1271,11 @@ def _handle_reduce_axis(
 def _reduction_axis(
     op: _core.Operation, in_shape: Sequence[int], out_shape: Sequence[Any]
 ) -> int | None:
-    """Returns ``op``'s ``axis``, or for an op without one, the dimension that
-    becomes 1 in the result, or ``None`` when none does: the op is then the
-    identity."""
+    """Returns ``op``'s ``axis``, or the dimension reduced to 1.
+
+    For an op without an ``axis``, the result is the dimension that becomes 1
+    in the output, or ``None`` when none does: the op is then the identity.
+    """
     if hasattr(op, "axis"):
         return cast(_HasAxis, op).axis
     for axis, (in_dim, out_dim) in enumerate(
@@ -1752,8 +1754,7 @@ def _handle_gather_nd(
 def _handle_scatter_nd_family(
     op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Dispatches an eager scatter-nd op via scatter_nd_gc's single fused
-    model.
+    """Dispatches an eager scatter-nd op through scatter_nd_gc's fused model.
 
     Args:
         op: The scatter-nd / scatter-nd-reduce operation being handled.
@@ -2417,8 +2418,8 @@ def _handle_resize_bicubic(
     """Handle mo.resize.bicubic.
 
     Runs on the input's device like nearest (single-device MO op with a
-    host ``size`` operand); the kernel is rank-4 only. Bicubic has no
-    variant attrs, so the cache key carries the empty variant.
+    host ``size`` operand); the kernel is rank-4 only. The cache key carries
+    ``antialias`` as its variant.
     """
     input_buffer, size_buffer = inputs
     assert isinstance(input_buffer, Buffer)
@@ -2430,7 +2431,7 @@ def _handle_resize_bicubic(
         input_buffer.device,
         input_buffer.dtype,
         rank,
-        resize_gc._NO_VARIANT,
+        (int(op.antialias),),
     )
     return model(input_buffer, size_buffer)
 
@@ -2534,7 +2535,21 @@ def _handle_distributed_allgather(
         input_idx = group_start + local_input_idx
         result_type: mo.TensorType = result.type  # type: ignore[assignment]
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
-        output_buffers.append(bufs[input_idx].to(device))
+        source = bufs[input_idx]
+        if op.slice_rows:
+            rows = source.shape[0]
+            if rows % num_inputs != 0:
+                raise ValueError(
+                    "allgather_rows_slice requires the row count to be a "
+                    "multiple of the device count"
+                )
+            rows_per_device = rows // num_inputs
+            start = device_idx * rows_per_device
+            indices = (slice(start, start + rows_per_device),) + (
+                slice(None),
+            ) * (len(source.shape) - 1)
+            source = source[indices]
+        output_buffers.append(source.to(device))
 
     output_buffers.append(None)
     return output_buffers
@@ -2820,8 +2835,9 @@ def _resolve_spec(op: mo.CustomOp) -> custom.CustomOp | None:
 
 
 def _check_realized_shape(out: Buffer, result: _core.Value[Any]) -> None:
-    """Raises ``RuntimeError`` when *out*'s realized rank, dtype, device, or
-    a statically-known dim disagrees with *result*'s staged type.
+    """Raises when *out* disagrees with *result*'s staged type.
+
+    Checks realized rank, dtype, device, and any statically-known dim.
 
     A binding compiled from a ``CustomOp`` (:mod:`custom_gc`) is
     rank-polymorphic: only rank, dtype, and device key the compiled model,

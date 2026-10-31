@@ -17,24 +17,22 @@ from __future__ import annotations
 
 import functools
 
+from max import functional as F
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    KVCacheParams,
-    MultiKVCacheParams,
-)
-from max.nn.rotary_embedding import Llama3RopeScalingParams
-from max.nn.transformer import ReturnLogits
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mlp import MLP
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh
 
 from .layers.attention import Gemma3Attention
 from .layers.rms_norm import Gemma3RMSNorm
@@ -179,6 +177,7 @@ class Gemma3TextModel(
         return F.cast(self.lm_head(h), DType.float32)
 
     def prepare_freq_cis(self, mesh: DeviceMesh) -> None:
+        """Casts both towers' RoPE tables to the model dtype on ``mesh``."""
         self.rope_global.freqs_cis = self.rope_global.freqs_cis.cast(
             self.dtype
         ).to(mesh)
@@ -194,6 +193,7 @@ class Gemma3TextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         tokens = tokens.to(self.mesh)
         input_row_offsets = input_row_offsets.to(self.mesh)
         h = self.embed_tokens(tokens)
@@ -251,40 +251,35 @@ class Gemma3TextModel(
         )
 
 
-class Gemma3(Module[..., ModuleV3Outputs]):
-    """The Gemma3 model (ModuleV3 wrapper).
+class Gemma3(Module[[DecoderInputs], DecoderOutputs]):
+    """The Gemma3 decoder, registered for the ``DECODER`` role.
 
-    Top-level wrapper that unflattens the variadic KV cache arguments
-    and delegates to :class:`Gemma3TextModel`.
+    Unflattens the hybrid KV inputs and delegates to
+    :class:`Gemma3TextModel`.
     """
 
-    def __init__(
-        self,
-        config: Gemma3Config,
-        kv_params: KVCacheParamInterface,
-    ) -> None:
+    def __init__(self, config: Gemma3Config) -> None:
         super().__init__()
         self.language_model = Gemma3TextModel(config)
         self.config = config
-        self.kv_params = kv_params
+        self.kv_params = config.kv_params
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *variadic_args,
-    ) -> ModuleV3Outputs:
-        kv_inputs = iter(x._graph_value for x in variadic_args)
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Unflattens the hybrid KV leaves, then runs the text model."""
+        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
         kv_cache_local, kv_cache_global = (
             self.kv_params.unflatten_basic_kv_tree(kv_inputs)
         )
         sliding_kv = PagedCacheValues.from_upstream(
-            kv_cache_local, tokens.mapping
+            kv_cache_local, inputs.tokens.mapping
         )
         global_kv = PagedCacheValues.from_upstream(
-            kv_cache_global, tokens.mapping
+            kv_cache_global, inputs.tokens.mapping
         )
         return self.language_model(
-            tokens, sliding_kv, global_kv, return_n_logits, input_row_offsets
+            inputs.tokens,
+            sliding_kv,
+            global_kv,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
         )

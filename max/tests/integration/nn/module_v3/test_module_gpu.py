@@ -10,19 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Accelerator-only tests for max.nn.Module (device placement and `to`)."""
+"""Accelerator-only tests for max.nn.legacy.Module (device placement and `to`)."""
 
 from __future__ import annotations
 
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental.nn.module import (
+from max.nn.module import (
     Module,
     PinnedDeviceTensor,
     module_dataclass,
 )
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 
 @module_dataclass

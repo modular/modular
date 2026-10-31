@@ -23,8 +23,8 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -49,6 +49,8 @@ logger = logging.getLogger("max.pipelines")
 class DeepseekV2Model(
     LogProbabilitiesMixin, ModuleV3PipelineModelWithKVCache[TextContext]
 ):
+    """DeepSeek-V2 model for the modulev3 pipeline."""
+
     model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
     batch_processor_cls: ClassVar[type[DeepseekV2ModuleV3BatchProcessor]] = (
         DeepseekV2ModuleV3BatchProcessor
@@ -85,6 +87,7 @@ class DeepseekV2Model(
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, DeepseekV2Inputs)
 
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs
@@ -106,6 +109,7 @@ class DeepseekV2Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache parameters this model was traced with."""
         return DeepseekV2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

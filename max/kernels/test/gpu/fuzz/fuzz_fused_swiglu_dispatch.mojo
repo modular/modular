@@ -388,14 +388,8 @@ def run_one_case(
                 s_mismatch += 1
         if o_mismatch != 0 or s_mismatch != 0:
             print(
-                "FUZZ_NUMERIC_FAIL kind=fusion_equiv o_mismatch=",
-                o_mismatch,
-                "of",
-                M * H,
-                "s_mismatch=",
-                s_mismatch,
-                "of",
-                s_size,
+                t"FUZZ_NUMERIC_FAIL kind=fusion_equiv o_mismatch="
+                t" {o_mismatch} of {M * H} s_mismatch= {s_mismatch} of {s_size}"
             )
             raise Error("fused dispatch disagrees with unfused reference chain")
 
@@ -426,12 +420,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "num_active_experts=",
-                specs[i].num_active_experts,
-                "tok_seed=",
-                specs[i].tok_seed,
+                t"FUZZ_SPEC idx= {i} num_active_experts="
+                t" {specs[i].num_active_experts} tok_seed= {specs[i].tok_seed}"
             )
         return
 
@@ -439,16 +429,8 @@ def main() raises:
         var nae = flag_int(args, "--num_active_experts", 3)
         var ts = flag_int(args, "--tok_seed", 1)
         print(
-            "FUZZ_SINGLE num_active_experts=",
-            nae,
-            "tok_seed=",
-            ts,
-            "num_experts=",
-            num_experts,
-            "N=",
-            N,
-            "K=",
-            K,
+            t"FUZZ_SINGLE num_active_experts= {nae} tok_seed= {ts} num_experts="
+            t" {num_experts} N= {N} K= {K}"
         )
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(nae, ts), check)
@@ -456,17 +438,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_fused_swiglu_dispatch seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "num_experts=",
-        num_experts,
-        "N=",
-        N,
-        "K=",
-        K,
-        "===",
+        t"=== fuzz_fused_swiglu_dispatch seed= {the_seed} budget="
+        t" {the_budget} num_experts= {num_experts} N= {N} K= {K} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

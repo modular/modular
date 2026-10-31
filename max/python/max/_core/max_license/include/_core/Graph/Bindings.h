@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <memory>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -79,6 +80,14 @@ void bindDLPackModule(nanobind::module_);
 // `--mogg-import-packages` pass. Replaces the older `MojoLibraryAnalysis`
 // side-table.
 //===----------------------------------------------------------------------===//
+
+/// A custom op package failed to load or check, or a kernel doesn't match its
+/// call. Raised in Python as `max.graph.KernelRegistrationError`, a
+/// `ValueError`.
+class KernelRegistrationError : public std::runtime_error {
+public:
+  using std::runtime_error::runtime_error;
+};
 
 class Analysis : std::enable_shared_from_this<Analysis> {
 public:

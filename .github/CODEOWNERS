@@ -23,6 +23,7 @@
 /bazel/public-patches/mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0002-Increase-request-parallelism.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0003-Accept-any-200-from-the-health-endpoint.patch @modular/sdlc
+/bazel/public-patches/mistral-evals-0004-Make-request-parallelism-configurable.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-glibc-rseq.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-local-dynamic.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-numa.patch @modular/sdlc
@@ -44,6 +45,7 @@
 /bazel/public-patches/rules_pycross_versions.patch @modular/sdlc
 /bazel/public-patches/rules_python_revert.patch @modular/sdlc
 /bazel/public-patches/rules_python_wheel.patch @modular/sdlc
+/bazel/public-patches/rules_rust_pyo3_no_rustfmt_aspect.patch @modular/sdlc
 /bazel/public-patches/tomlplusplus-visibility.patch @modular/sdlc
 /bazel/public-patches/torch-cuda-deps.patch @modular/sdlc
 /bazel/public-patches/with_cfg_visibility.patch @modular/sdlc
@@ -59,6 +61,7 @@
 /bazel/public-patches/tracy-port-logging.patch @modular/max-sdk
 /bazel/public-patches/tracy-rocm-no-default-counters.patch @modular/max-sdk
 /bazel/public-patches/tracy-tls-fix.patch @modular/max-sdk
+/bazel/public-patches/transformers-local-source-symlinks.patch @modular/max-serve
 /bazel/public-patches/xgrammar.patch @modular/max-serve
 /bazel/public-patches/llvm-mlir-timing-recycled-key.patch @modular/mojo-compiler
 /AsyncRT/ @modular/runtime
@@ -128,6 +131,7 @@
 /max/mojo/max/gpu/host @modular/stdlib @modular/kernels @modular/driver @copilot-pull-request-reviewer
 /max/mojo/max/runtime @modular/stdlib @modular/mojo-compiler @copilot-pull-request-reviewer
 /max/mojo/max/_plugin/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
+/max/mojo/max/_driver/ @modular/driver
 /max/mojo/test/atomic/ @modular/stdlib @copilot-pull-request-reviewer
 /max/mojo/test/algorithm/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
 /max/mojo/test/asyncrt/ @modular/stdlib @modular/kernels @modular/runtime @copilot-pull-request-reviewer
@@ -169,6 +173,8 @@
 /max/python/max/engine/ @modular/driver
 /max/python/max/_entrypoints/ @modular/max-sdk
 /max/python/max/experimental/ @modular/max-sdk
+/max/python/max/functional/ @modular/max-sdk
+/max/python/max/tensor/ @modular/max-sdk
 /max/python/max/experimental/cascade/ @modular/max-serve @modular/max-sdk
 /max/python/max/graph/ @modular/max-sdk
 /max/python/max/mlir/ @modular/max-sdk
@@ -229,6 +235,7 @@
 /max/tests/tests/test_interpreter.py @modular/max-sdk
 /max/tests/tests/test_interpreter_ops.py @modular/max-sdk
 /max/tests/tests/test_interpreter_ops_gpu.py @modular/max-sdk
+/max/tests/tests/test_nn_legacy_deprecation.py @modular/max-sdk
 /max/tests/tests/test_passes.py @modular/max-sdk
 /max/tests/tests/test_session_read.py @modular/max-sdk
 /max/tests/tests/test_support.py @modular/max-sdk

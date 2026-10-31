@@ -42,6 +42,16 @@ Graph construction
    KernelLibrary
    Module
 
+Exceptions
+----------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   KernelRegistrationError
+
 Custom extensions
 -----------------
 

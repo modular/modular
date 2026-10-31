@@ -181,7 +181,7 @@ CallEmitter::CallEmitter(RValue calleeVal, const ExprNode *callExpr,
     auto fnLiteralGenType =
         sugarCast<FnLiteralTypeGeneratorType>(callee.getRValueType());
     assert(fnLiteralGenType.getInputParamTypes().empty());
-    callee = fnLiteralGenType.getSymbolConstantAttr();
+    callee = fnLiteralGenType.getFuncSymbolAttr();
     calleeSig = cast<FnTypeGeneratorType>(callee.getType());
   }
   assert(calleeSig);
@@ -1240,7 +1240,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
                                          const CallOperands &callOperands) {
   // Check for a known callee.
-  auto symbol = sugarDynCast<SymbolConstantAttr>(call.getCallee());
+  auto symbol = FuncSymbolGenerator::dynCast(call.getCallee());
   if (!symbol)
     return;
 
@@ -1640,7 +1640,7 @@ void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
   default:
     // If the callee is a direct call, dig out the source name.
     if (PValue pv = callee.getIfPValue()) {
-      if (auto symbol = dyn_cast<SymbolConstantAttr>(pv.get())) {
+      if (auto symbol = FuncSymbolGenerator::dynCast(pv.get())) {
         // Figure out what is getting called and include it.
         if (DefASTDecl *calleeDecl =
                 getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol())) {
@@ -1748,7 +1748,7 @@ static bool shouldEmitParameterCall(RValue callee,
 
   // If this is an @always_inline("builtin") function, we must emit its body
   // inline.
-  if (auto calleeSymbolCst = sugarDynCast<SymbolConstantAttr>(
+  if (auto calleeSymbolCst = FuncSymbolGenerator::dynCast(
           ParamOperatorAttr::stripRebind(callee.getIfPValue()))) {
     if (DefASTDecl *calleeDecl = shared.getDeclResolver().getDeclForFuncSymbol(
             calleeSymbolCst.getSymbol())) {

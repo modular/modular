@@ -70,15 +70,13 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     packed_filter_shape[spec.static_info.rank + 2] = micro_kernel_f_size
 
     # Input and output shape, sizes
-    var input_shape = extend_shape(spec.input_dims, spec.n, spec.c)
-    var input_alloc_size = align_up(input_shape.flattened_length(), input_align)
+    var input_shape = extend_shape(Coord(spec.input_dims), spec.n, spec.c)
+    var input_alloc_size = align_up(input_shape.product(), input_align)
     var filter_alloc_size = align_up(
         packed_filter_shape.flattened_length(), filter_align
     )
-    var output_shape = extend_shape(output_dims, spec.n, spec.f)
-    var output_alloc_size = align_up(
-        output_shape.flattened_length(), output_align
-    )
+    var output_shape = extend_shape(Coord(output_dims), spec.n, spec.f)
+    var output_alloc_size = align_up(output_shape.product(), output_align)
 
     # Set the total buffer allocation to be 4x L3 cache.
     comptime MB = 1024 * 1024
@@ -157,7 +155,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
                 input_ptr.unsafe_offset(
                     (counter % num_copies) * input_alloc_size
                 ),
-                row_major(Coord(input_shape)),
+                row_major(input_shape),
             )
             var filter = TileTensor(
                 filter_ptr.unsafe_offset(
@@ -169,7 +167,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
                 output_ptr.unsafe_offset(
                     (counter % num_copies) * output_alloc_size
                 ),
-                row_major(Coord(output_shape)),
+                row_major(output_shape),
             )
 
             try:

@@ -1,6 +1,12 @@
 load("@rules_multirun//:defs.bzl", "multirun")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//bazel:api.bzl", "install_docs", "modular_py_binary", "pkg_filegroup", "pkg_files", "strip_prefix")
+load(
+    "//bazel:api.bzl",
+    "install_docs",
+    "pkg_filegroup",
+    "pkg_files",
+    "strip_prefix",
+)
 
 # gazelle:default_visibility //visibility:private
 
@@ -22,7 +28,8 @@ package(default_visibility = ["//visibility:private"])
 #   docsite_releases_pack            -> version-controlled releases/** (v*.md, index.md)
 #
 # releases/ is intentionally omitted from :docsite; it ships only via releases.tar.
-# nightly.md is generated at build time (see write-nightly-release.py); do not commit it.
+# nightly.md is generated at build time (see scripts/write-nightly-release.py);
+# do not commit it.
 #
 # Stable CI labels (aliases): :docs, :releases
 #
@@ -71,20 +78,20 @@ genrule(
   mkdir -p docsite
   tar -xf $(location :docsite) -C docsite
   chmod -R +w docsite
-  $(location :post-process-docs) docsite
+  $(location //max/docs/site/scripts:post-process-docs) docsite
   ( cd docsite && tar -cf ../$@ . )
   """,
     tags = ["manual"],
-    tools = [":post-process-docs"],
+    tools = ["//max/docs/site/scripts:post-process-docs"],
 )
 
 # releases.tar = static pages under releases/ (stripped prefix) plus generated nightly.md.
 genrule(
     name = "docsite_releases_nightly_gen",
     outs = ["nightly.md"],
-    cmd = "$(location :write-nightly-release) $@",
+    cmd = "$(location //max/docs/site/scripts:write-nightly-release) $@",
     tags = ["manual"],
-    tools = [":write-nightly-release"],
+    tools = ["//max/docs/site/scripts:write-nightly-release"],
 )
 
 pkg_files(
@@ -138,6 +145,7 @@ pkg_files(
             "*.py",
             "code/**",
             "releases/**",
+            "scripts/**",
         ],
     ),
     strip_prefix = strip_prefix.from_pkg(""),
@@ -205,49 +213,11 @@ pkg_filegroup(
     tags = ["manual"],
 )
 
-modular_py_binary(
-    name = "generate-models-table",
-    srcs = ["generate-models-table.py"],
-    visibility = [
-        "//:__pkg__",
-        "//bazel/lint:__pkg__",
-    ],
-)
-
-modular_py_binary(
-    name = "generate-metrics-table",
-    srcs = ["generate-metrics-table.py"],
-    visibility = [
-        "//:__pkg__",
-        "//bazel/lint:__pkg__",
-    ],
-    deps = ["//max/python/max/serve/telemetry"],
-)
-
-modular_py_binary(
-    name = "generate-arch-docs",
-    srcs = ["generate-arch-docs.py"],
-    visibility = [
-        "//:__pkg__",
-        "//bazel/lint:__pkg__",
-    ],
-)
-
-modular_py_binary(
-    name = "post-process-docs",
-    srcs = [
-        ":post-process-docs.py",
-    ],
-    tags = ["manual"],
-)
-
-modular_py_binary(
-    name = "write-nightly-release",
-    srcs = [
-        ":write-nightly-release.py",
-    ],
-    data = ["nightly-changelog.md"],
-    tags = ["manual"],
+# scripts/write-nightly-release.py reads this file from the site root.
+filegroup(
+    name = "nightly-changelog",
+    srcs = ["nightly-changelog.md"],
+    visibility = ["//max/docs/site/scripts:__pkg__"],
 )
 
 alias(

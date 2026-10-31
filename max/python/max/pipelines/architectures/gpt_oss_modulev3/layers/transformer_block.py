@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 from .attention import GptOssAttention
 from .moe import GptOssMoE
@@ -54,6 +54,7 @@ class GptOssTransformerBlock(Module[..., Tensor]):
         input_row_offsets: Tensor,
         **kwargs,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         residual = x
         norm_xs = self.input_layernorm(x)
         attn_out = self.self_attn(

@@ -18,14 +18,14 @@ from std.testing import *
 
 def test_convert_asm() raises:
     def my_cast[
-        frm: DType, to: DType
-    ](output: MutPointer[Scalar[to], MutAnyOrigin], x: Scalar[frm]):
+        frm: DType, to: DType, output_origin: MutOrigin
+    ](output: MutPointer[Scalar[to], output_origin], x: Scalar[frm]):
         output[] = x.cast[to]()
 
     assert_true(
         "cvt.rn.f16.f32"
         in _compile_code[
-            my_cast[.float32, .float16],
+            my_cast[.float32, .float16, MutUntrackedOrigin],
             emission_kind="asm",
             target=get_gpu_target["sm_80"](),
         ]()
@@ -34,7 +34,7 @@ def test_convert_asm() raises:
     assert_true(
         "v_cvt_f16_f32_e32"
         in _compile_code[
-            my_cast[.float32, .float16],
+            my_cast[.float32, .float16, MutUntrackedOrigin],
             emission_kind="asm",
             target=get_gpu_target["mi355x"](),
         ]()
@@ -43,7 +43,7 @@ def test_convert_asm() raises:
     assert_true(
         "cvt.f32.f16"
         in _compile_code[
-            my_cast[.float16, .float32],
+            my_cast[.float16, .float32, MutUntrackedOrigin],
             emission_kind="asm",
             target=get_gpu_target["sm_80"](),
         ]()
@@ -52,7 +52,7 @@ def test_convert_asm() raises:
     assert_true(
         "v_cvt_f32_f16_e32"
         in _compile_code[
-            my_cast[.float16, .float32],
+            my_cast[.float16, .float32, MutUntrackedOrigin],
             emission_kind="asm",
             target=get_gpu_target["mi355x"](),
         ]()
@@ -60,8 +60,8 @@ def test_convert_asm() raises:
 
 
 def convert_kernel[
-    src_type: DType, dst_type: DType, size: Int
-](dst_ptr: MutPointer[Scalar[dst_type], MutAnyOrigin]):
+    src_type: DType, dst_type: DType, size: Int, dst_origin: MutOrigin
+](dst_ptr: MutPointer[Scalar[dst_type], dst_origin]):
     comptime for i in range(0, size, 2):
         var src_vec = SIMD[src_type, 2](
             Scalar[src_type](i), Scalar[src_type](i + 1)
@@ -81,7 +81,9 @@ def test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     var device_buf = ctx.enqueue_create_buffer[dst_type](size)
     device_buf.enqueue_fill(0)
 
-    comptime kernel = convert_kernel[src_type, dst_type, size]
+    comptime kernel = convert_kernel[
+        src_type, dst_type, size, origin_of(device_buf)
+    ]
     ctx.enqueue_function[kernel](device_buf, grid_dim=(1), block_dim=(1))
     with device_buf.map_to_host() as host_buf:
         for i in range(size):

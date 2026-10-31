@@ -56,10 +56,10 @@ comptime _NUM_ELEMENTS = _ROWS * _COLS
 
 comptime _Layout = type_of(row_major[_ROWS, _COLS]())
 
-comptime _HookTile = TileTensor[
+comptime _HookTile[origin: MutOrigin] = TileTensor[
     .float32,
     _Layout,
-    MutAnyOrigin,
+    origin,
     Engine=CurrentTensorEngine[AddressSpace.GENERIC],
 ]
 """A tile whose engine comes from the hook rather than a literal engine name.
@@ -70,9 +70,9 @@ exists to keep consistent.
 """
 
 
-def fill_through_hook_typed_tile_kernel(
-    data: MutPointer[Float32, MutAnyOrigin]
-):
+def fill_through_hook_typed_tile_kernel[
+    data_origin: MutOrigin
+](data: MutPointer[Float32, data_origin]):
     """Fills each element with its linear index through a hook-typed tile.
 
     The `comptime assert` is the real payload: it is evaluated during device
@@ -86,7 +86,9 @@ def fill_through_hook_typed_tile_kernel(
 
     if global_idx.x != 0:
         return
-    var tile = _HookTile(ptr=data, layout=row_major[_ROWS, _COLS]())
+    var tile = _HookTile[data_origin](
+        ptr=data, layout=row_major[_ROWS, _COLS]()
+    )
     for i in range(_NUM_ELEMENTS):
         tile.raw_store[width=1](i, Float32(i))
 
@@ -98,9 +100,9 @@ def test_hook_typed_tile_round_trips_on_device(ctx: DeviceContext) raises:
     var buf = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
 
-    ctx.enqueue_function[fill_through_hook_typed_tile_kernel](
-        buf, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[
+        fill_through_hook_typed_tile_kernel[data_origin=origin_of(buf)]
+    ](buf, grid_dim=1, block_dim=1)
 
     with buf.map_to_host() as host:
         for i in range(_NUM_ELEMENTS):

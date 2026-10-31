@@ -25,7 +25,7 @@ from std.math import isnan
 from std.random import rand
 
 from max.gpu.host import DeviceContext
-from layout import TileTensor, row_major
+from layout import TileTensor, row_major, Coord
 from linalg.bmm import (
     batched_matmul_dynamic_scaled_fp8,
     batched_matmul_dynamic_scaled_fp8_naive,
@@ -56,22 +56,9 @@ def test_batched_matmul_dynamic_scaled_fp8_naive_granularity_64[
     var b_scales_size = batch_size * (N // n_scale) * (K // BLOCK_SCALE_K)
 
     print(
-        "== test_batched_matmul_dynamic_scaled_fp8_naive_granularity_64",
-        "B=",
-        batch_size,
-        "M=",
-        M,
-        "N=",
-        N,
-        "K=",
-        K,
-        "scale=(",
-        m_scale,
-        ",",
-        n_scale,
-        ",",
-        k_scale,
-        ")",
+        t"== test_batched_matmul_dynamic_scaled_fp8_naive_granularity_64 B="
+        t" {batch_size} M= {M} N= {N} K= {K} scale=( {m_scale} , {n_scale} ,"
+        t" {k_scale} )"
     )
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
@@ -128,7 +115,7 @@ def test_batched_matmul_dynamic_scaled_fp8_naive_granularity_64[
     # Call the naive per-batch fallback directly: the public AMD wrapper now
     # routes these shapes to the tiled kernel, which has its own test.
     _ = batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk=Index(1, n_scale, k_scale),
+        scales_granularity_mnk=(1, n_scale, k_scale),
         transpose_b=True,
     ](c_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx)
 
@@ -179,7 +166,7 @@ def test_batched_matmul_dynamic_scaled_fp8_naive_granularity_64[
         if isnan(got_f32) or abs_diff > atol + rtol * abs_ref:
             ndiff += 1
             if ndiff <= 5:
-                print("  diff @", i, "got=", got, "ref=", ref_val)
+                print(t"  diff @ {i} got= {got} ref= {ref_val}")
     if ndiff > 0:
         raise Error(
             "granularity-64 batched matmul diverged from references at "

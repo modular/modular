@@ -42,8 +42,8 @@ from dflash2_pairing_harness import Geometry, fused_graph, state_regions
 from max.driver import CPU, Accelerator, Buffer, CompletionFlag
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.comm.allreduce import Signals
-from max.nn.kv_cache import PACKED_PAGE_STRIDE
+from max.nn.legacy.comm.allreduce import Signals
+from max.nn.legacy.kv_cache import PACKED_PAGE_STRIDE
 from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
 
 CRASHING_LENGTHS = (121, 200)

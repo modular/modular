@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Per-token table describing a ragged batch for DeepSeek-V4.1-Flash."""
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from max.graph import DeviceRef, Dim, DimLike, TensorValue, ops
 from ...deepseekV4.layers.cache import scalar
 from ...deepseekV4.layers.ragged import RaggedRows, arange_to, segment_ids
 
-__all__ = ["ReplicaTokens", "V41RaggedRows"]
+__all__ = ["ReplayRows", "ReplicaTokens", "V41RaggedRows"]
 
 
 @dataclass
@@ -134,4 +133,57 @@ class ReplicaTokens:
                 )
                 for i in range(num_devices)
             ],
+        )
+
+
+@dataclass(frozen=True)
+class ReplayRows:
+    """Describes a gathered suffix at the full graph's absolute positions."""
+
+    indices: TensorValue
+    rows: V41RaggedRows
+    swa_valid_from: TensorValue
+    longest: TensorValue
+    """Host uint32 longest retained row count per replica.
+
+    ``[1]`` for a localized replica; ``[replicas]`` before localization.
+    """
+
+    @classmethod
+    def from_inputs(
+        cls,
+        kept_indices: TensorValue,
+        kept_offsets: TensorValue,
+        kept_skip: TensorValue,
+        cache_lengths: TensorValue,
+        window: int,
+        longest: TensorValue,
+    ) -> ReplayRows:
+        """Builds the query rows from the replay inputs and the cache lengths.
+
+        The start and SWA floor derive from ``cache_lengths``, the tensor the
+        full graph positions its rows with, so a replayed row sits where the
+        full graph puts it even when the host cannot know that position (an
+        in-flight verification row). A skipped row's floor is its own start.
+
+        Args:
+            kept_indices: ``[k]`` retained rows of the merged token space.
+            kept_offsets: ``[b + 1]`` ragged offsets of the retained rows.
+            kept_skip: ``[b]`` rows each request drops from its front.
+            cache_lengths: ``[b]`` per-request cache lengths of this replica.
+            window: The sliding window size.
+            longest: Host longest retained row count; see :attr:`longest`.
+        """
+        b = kept_offsets.shape[0] - 1
+        lengths = ops.rebind(ops.cast(cache_lengths, DType.int32), [b])
+        skip = ops.rebind(ops.cast(kept_skip, DType.int32), [b])
+        start = lengths + skip
+        floor = ops.where(skip > 0, start, ops.max(lengths - window, 0))
+        return cls(
+            kept_indices,
+            V41RaggedRows.from_offsets(
+                kept_offsets, kept_indices.shape[0], start
+            ),
+            floor,
+            longest,
         )

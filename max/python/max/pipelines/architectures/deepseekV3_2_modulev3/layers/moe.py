@@ -27,7 +27,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from max.dtype import DType
-from max.experimental.nn.common_layers.quant_moe import (
+from max.nn.common_layers.quant_moe import (
     ExpertParallelMoE,
     QuantizedMoE,
     TensorParallelMoE,

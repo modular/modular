@@ -40,14 +40,17 @@ def resolve_kv_hash_seed(
     seed_hex: str | None,
 ) -> bytes | None:
     """Resolve the operator-supplied kv_cache_hash_seed.
+
     Args:
         algo: The selected hash algorithm.
         seed_hex: Optional 64-character hex string (32 bytes after decode).
+
     Returns:
         - ``None`` if no seed is configured. ``ahash64`` never
           auto-generates one; ``sha256`` does (random,
           cached for the process lifetime).
         - 32 raw bytes when ``seed_hex`` is set, for any algo.
+
     Raises:
         ValueError: If ``seed_hex`` is not a valid 64-character hex
             string decoding to exactly 32 bytes.

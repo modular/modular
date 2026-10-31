@@ -85,24 +85,6 @@ kgen.generator @brokenVLenAssert() {
 
 // -----
 
-// COM: Unused `kgen.param.declare` should not be ignored.
-
-// expected-note @below {{function instantiation failed}}
-kgen.generator @fail_if_zero<value>() -> index {
-  %0 = index.constant 0
-  // expected-note @below {{constraint failed: must not be zero!}}
-  kgen.param.assert <ne(value, 0)>, "must not be zero!"
-  hlcf.return %0 : index
-}
-
-// expected-error @below {{function instantiation failed}}
-kgen.generator @unused_param_declare() {
-  kgen.param.declare unused = <apply(:() -> index bind_params(:<index>() -> index @fail_if_zero, 0))>
-  hlcf.return
-}
-
-// -----
-
 // expected-error @below {{function instantiation failed}}
 kgen.generator @invalid_rebind(%arg0: !kgen.scalar<si32>) {
   kgen.param.declare dt: dtype = <ui32>
@@ -216,7 +198,7 @@ kgen.generator @will_pass<a, b>() -> (index, index) {
   hlcf.return %0, %1 : index, index
 }
 
-!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)>
+!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) -> !kgen.none)>
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @main() {
@@ -572,4 +554,20 @@ kgen.generator export @nary_identical_unknown_with_target() -> !kgen.scalar<bool
   %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
   hlcf.return %0 : !kgen.scalar<bool>
 }
+}
+
+// -----
+
+// Test that a constant shift-right amount outside the operand's bit width gets
+// a clear diagnostic from validateForElaborator instead of the generic
+// "could not simplify operator" note.
+//
+// `shl` with matching types folds to zero before reaching validateForElaborator,
+// so it cannot produce this diagnostic and is not tested here.
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @shift_out_of_range_shr() {
+  // expected-note @below {{shift amount 9 is outside the valid range 0..7 for scalar<ui8>}}
+  %0 = kgen.param.constant: !kgen.scalar<ui8> = <shr(1, 9)>
+  hlcf.return
 }

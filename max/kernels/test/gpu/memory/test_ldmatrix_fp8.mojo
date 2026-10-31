@@ -31,10 +31,13 @@ from std.utils.numerics import get_accum_type
 
 def test_ldmatrix_fp8[
     input_type: DType,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
 ](
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
-    b_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: ImmPointer[Scalar[input_type], a_origin],
+    b_ptr: ImmPointer[Scalar[input_type], b_origin],
 ):
     comptime accum_type = get_accum_type[input_type]()
     comptime mma_shape = get_mma_shape[input_type, accum_type]()
@@ -123,7 +126,12 @@ def check_ldmatrix_fp8[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    comptime kernel_func = test_ldmatrix_fp8[input_type]
+    comptime kernel_func = test_ldmatrix_fp8[
+        input_type,
+        origin_of(c_device),
+        ImmOrigin(origin_of(a_device)),
+        ImmOrigin(origin_of(b_device)),
+    ]
     ctx.enqueue_function[kernel_func](
         c_device,
         a_device,

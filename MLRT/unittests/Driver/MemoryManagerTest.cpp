@@ -172,6 +172,26 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
     EXPECT_EQ(cache->allocationAlignment(), 64);
     EXPECT_EQ(cache->getMemoryInfo().total, 0);
   }
+
+  // Test a device built without a memory manager, despite free memory
+  {
+    Device::MemInfo memInfo;
+    memInfo.free = 1024 * 1024;
+    memInfo.total = 2 * 1024 * 1024;
+
+    CpuDeviceRef device =
+        CpuDeviceRef::create(memInfo, /*useMemoryManager=*/false);
+    EXPECT_FALSE(device->memoryManager().isEnabled());
+  }
+
+  // Test unknown free memory, which sizes the cache against total memory
+  {
+    Device::MemInfo memInfo;
+    memInfo.total = 2 * 1024 * 1024;
+
+    CpuDeviceRef device = CpuDeviceRef::create(memInfo);
+    EXPECT_TRUE(device->memoryManager().isEnabled());
+  }
 }
 
 TEST_F(MemoryManagerTest, AlignmentHandling) {
@@ -2007,7 +2027,7 @@ TEST_F(MemoryManagerTest, GetMemoryInfoAccuracy) {
   // Get initial memory info
   Device::MemInfo initialInfo = cache.getMemoryInfo();
   EXPECT_GT(initialInfo.total, 0);
-  size_t initialFree = initialInfo.free;
+  size_t initialFree = initialInfo.free.value();
 
   const Device::AllocMode mode = Device::AllocMode::SYNC;
   std::vector<void *> ptrs;
@@ -2023,7 +2043,7 @@ TEST_F(MemoryManagerTest, GetMemoryInfoAccuracy) {
   Device::MemInfo afterAllocInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterAllocInfo.total,
             initialInfo.total); // Total should remain same
-  EXPECT_LE(afterAllocInfo.free,
+  EXPECT_LE(afterAllocInfo.free.value(),
             initialFree); // Free should decrease or stay same
 
   // Free the blocks
@@ -2034,7 +2054,8 @@ TEST_F(MemoryManagerTest, GetMemoryInfoAccuracy) {
   // Get memory info after freeing
   Device::MemInfo afterFreeInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterFreeInfo.total, initialInfo.total); // Total should remain same
-  EXPECT_GE(afterFreeInfo.free, afterAllocInfo.free); // Free should increase
+  EXPECT_GE(afterFreeInfo.free.value(),
+            afterAllocInfo.free.value()); // Free should increase
 }
 
 } // namespace

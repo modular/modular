@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Graph 2: VAE image encoder component for Flux2Executor."""
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.weights import Weights, load_weights
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,
@@ -91,6 +90,7 @@ class PreprocessAndEncode(Module):
         )
 
     def __call__(self, image: TensorValue) -> TensorValue:
+        """Resizes the image and encodes it."""
         with Graph.current.profile_scope(
             "flux2_encode_image", color=ProfileScopeColor.ORANGE
         ):
@@ -140,6 +140,7 @@ class PreprocessAndEncode(Module):
         return latents
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         return (
             TensorType(
                 DType.uint8,

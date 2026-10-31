@@ -78,9 +78,13 @@ struct SM100AttentionSMem[
     qkv_dtype: DType,
     rope_dtype_: Optional[DType],
     scale_dtype_: Optional[DType],
+    cross_p: Bool,
     //,
     config: FA4Config[
-        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
+        qkv_dtype,
+        rope_dtype_=rope_dtype_,
+        scale_dtype_=scale_dtype_,
+        cross_p=cross_p,
     ],
     *,
     use_order_barriers: Bool = EnableForcedOrdering,
@@ -97,13 +101,16 @@ struct SM100AttentionSMem[
         rope_dtype_: Element type of Q and K rope (unset when there is no rope).
         scale_dtype_: Element type of the per-token scale used for Q and K
             (unset when there is no per-token scaling).
+        cross_p: Cross-stage P for this instantiation
+            (`FA4Config.cross_p`).
         config: FA4 configuration (tile sizes, depths, staging counts, etc.).
         use_order_barriers: Whether forced-ordering barriers are allocated.
     """
 
     # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. Fall back to
-    # `qkv_dtype` when unset so the type is always well-formed; presence is
-    # signalled by `rope_dt_size`/`_scale_dt_size` being 0.
+    # `qkv_dtype` when unset so the type is always well-formed; scale presence
+    # is signalled by `_scale_dt_size` being 0, and an unset rope dtype stores
+    # any rope region at `qkv_dtype` (see `FA4Config.rope_dtype_size`).
     comptime rope_dtype = Self.rope_dtype_.or_else(Self.qkv_dtype)
     comptime scale_dtype = Self.scale_dtype_.or_else(Self.qkv_dtype)
 
@@ -112,9 +119,7 @@ struct SM100AttentionSMem[
 
     comptime _qkv_dt_size: Int = size_of[Self.qkv_dtype]()
 
-    comptime rope_dt_size: Int = (
-        size_of[Self.rope_dtype_.value()]() if Self.rope_dtype_ else 0
-    )
+    comptime rope_dt_size: Int = Self.config.rope_dtype_size
     comptime q_byte_offset: Int = 0
     # Q_nope SMEM region: width is the non-rope Q/K depth (`padded_nope_depth`),
     # which differs from the V/output depth when v_head_dim != qk_nope.
@@ -322,7 +327,6 @@ struct SM100AttentionSMem[
     def __init__(out self):
         """Obtain the base pointer from the kernel's dynamic shared memory."""
 
-        comptime assert Self.rope_dtype_ or Self.rope_depth == 0
         self.base = external_memory[
             UInt8,
             address_space=.SHARED,

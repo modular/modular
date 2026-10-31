@@ -21,7 +21,7 @@ import pytest
 import yaml
 from max.config import ConfigFileModel, MAXBaseModel
 from max.dtype import DType
-from max.nn.kv_cache import KVConnectorType
+from max.nn.legacy.kv_cache import KVConnectorType
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,

@@ -26,18 +26,13 @@ from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 
-def copy_via_shared(
-    src: ImmPointer[Float32, ImmutAnyOrigin],
-    dst: MutPointer[Float32, MutAnyOrigin],
-):
+def copy_via_shared[
+    src_origin: ImmOrigin, dst_origin: MutOrigin
+](src: ImmPointer[Float32, src_origin], dst: MutPointer[Float32, dst_origin],):
     var thread_id = thread_idx.x
-    var mem_buff: MutPointer[
-        Float32, MutAnyOrigin, address_space=.SHARED
-    ] = unsafe_stack_allocation[
-        16, Float32, address_space=.SHARED
-    ]().as_unsafe_any_origin()
+    var mem_buff = unsafe_stack_allocation[16, Float32, address_space=.SHARED]()
     var src_global: ImmPointer[
-        Float32, ImmutAnyOrigin, address_space=.GLOBAL
+        Float32, src_origin, address_space=.GLOBAL
     ] = src.unsafe_address_space_cast[.GLOBAL]()
 
     async_copy[4](
@@ -65,7 +60,11 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_data_device, in_data)
     ctx.enqueue_copy(out_data_device, out_data)
 
-    ctx.enqueue_function[copy_via_shared](
+    ctx.enqueue_function[
+        copy_via_shared[
+            ImmOrigin(origin_of(in_data_device)), origin_of(out_data_device)
+        ]
+    ](
         in_data_device,
         out_data_device,
         grid_dim=(1,),
@@ -85,9 +84,11 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
     out_data.unsafe_free()
 
 
-def copy_with_src_size(
-    src: ImmPointer[Float32, ImmutAnyOrigin],
-    dst: MutPointer[Float32, MutAnyOrigin],
+def copy_with_src_size[
+    src_origin: ImmOrigin, dst_origin: MutOrigin
+](
+    src: ImmPointer[Float32, src_origin],
+    dst: MutPointer[Float32, dst_origin],
     src_size_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -119,10 +120,10 @@ def copy_with_src_size(
 
 
 def copy_with_non_zero_fill[
-    smem_size: Int
+    smem_size: Int, src_origin: ImmOrigin, dst_origin: MutOrigin
 ](
-    src: ImmPointer[BFloat16, ImmutAnyOrigin],
-    dst: MutPointer[BFloat16, MutAnyOrigin],
+    src: ImmPointer[BFloat16, src_origin],
+    dst: MutPointer[BFloat16, dst_origin],
 ):
     var smem = unsafe_stack_allocation[
         smem_size, DType.bfloat16, address_space=.SHARED
@@ -166,7 +167,9 @@ def test_copy_with_src_size(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(a_device, a_host)
 
-    comptime kernel = copy_with_src_size
+    comptime kernel = copy_with_src_size[
+        ImmOrigin(origin_of(a_device)), origin_of(b_device)
+    ]
     comptime src_size = 3 * size_of[DType.float32]()
 
     ctx.enqueue_function[kernel](
@@ -214,7 +217,9 @@ def test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(a_device, a_host)
 
-    comptime kernel = copy_with_non_zero_fill[2 * size]
+    comptime kernel = copy_with_non_zero_fill[
+        2 * size, ImmOrigin(origin_of(a_device)), origin_of(b_device)
+    ]
 
     comptime src_size = 3 * size_of[DType.bfloat16]()
 

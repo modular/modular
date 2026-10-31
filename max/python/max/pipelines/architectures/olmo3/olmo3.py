@@ -17,26 +17,22 @@ from __future__ import annotations
 
 import functools
 
+from max import functional as F
+from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import (
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
     YarnRotaryEmbedding,
     YarnScalingParams,
 )
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    KVCacheParams,
-    MultiKVCacheParams,
-)
+from max.nn.embedding import Embedding
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.linear import Linear
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.olmo2_modulev3.layers.rms_norm import (
     Olmo2RMSNorm,
 )
@@ -44,6 +40,8 @@ from max.pipelines.architectures.olmo3.layers.transformer import (
     Olmo3TransformerBlock,
 )
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.tensor import Tensor
 
 from .layers.attention import Olmo3Attention
 from .model_config import Olmo3Config
@@ -201,6 +199,7 @@ class Olmo3TextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         h = self.embed_tokens(tokens)
         kv_by_type = {
             "sliding_attention": sliding_kv,
@@ -234,37 +233,36 @@ class Olmo3TextModel(
         return ModuleV3Outputs(next_token_logits=last_logits)
 
 
-class Olmo3(Module[[Tensor, Tensor, Tensor], ModuleV3Outputs]):
-    """The Olmo3 model."""
+class Olmo3(Module[[DecoderInputs], DecoderOutputs]):
+    """The Olmo3 decoder, registered for the ``DECODER`` role.
 
-    def __init__(
-        self,
-        config: Olmo3Config,
-        kv_params: KVCacheParamInterface,
-    ) -> None:
+    Unflattens the hybrid KV inputs and delegates to
+    :class:`Olmo3TextModel`.
+    """
+
+    def __init__(self, config: Olmo3Config) -> None:
         super().__init__()
         self.language_model = Olmo3TextModel(config)
         self.config = config
-        self.kv_params = kv_params
+        self.kv_params = config.kv_params
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *variadic_args: Tensor,
-    ) -> ModuleV3Outputs:
-        kv_inputs = iter(x._graph_value for x in variadic_args)
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Unflattens the hybrid KV leaves, then runs the text model."""
+        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
         assert isinstance(self.kv_params, MultiKVCacheParams)
         sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(
             kv_inputs
         )
         sliding_kv = PagedCacheValues.from_upstream(
-            sliding_inputs, tokens.mapping
+            sliding_inputs, inputs.tokens.mapping
         )
         global_kv = PagedCacheValues.from_upstream(
-            global_inputs, tokens.mapping
+            global_inputs, inputs.tokens.mapping
         )
         return self.language_model(
-            tokens, sliding_kv, global_kv, return_n_logits, input_row_offsets
+            inputs.tokens,
+            sliding_kv,
+            global_kv,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
         )

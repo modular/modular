@@ -5,6 +5,8 @@ package(default_visibility = ["//max:consumers"])
 
 # TODO(GEX-3342): Metal GPU execution not supported for state_space kernels
 _EXTRA_CONSTRAINTS = {
+    # The sm100 SSD kernels (tcgen05, TMA) run on B200 only.
+    "test_mamba2_ssd_sm100.mojo": ["//:b200_gpu"],
     "test_causal_conv1d.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -22,10 +24,6 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_selective_scan.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    "test_varlen_selective_scan.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
@@ -53,6 +51,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_mamba2_pdl_chain.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    # PDL (griddepcontrol) + llvm.nvvm.nanosleep: NVIDIA SM90+ only.
+    "test_gated_delta_pdl.mojo": ["//:nvidia_gpu"],
 }
 
 _EXTRA_DEPS = {

@@ -16,16 +16,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn import Module
+from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import (
     SequentialDriver,
     tensor_compat_verify,
 )
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
+from max.tensor import Tensor
 
 from ..deepseekV3_2_modulev3.deepseekV3_2 import DeepseekV3_2
 from ..deepseekV3_2_modulev3.nextn import DeepseekV3_2NextN
@@ -90,6 +90,7 @@ class UnifiedMTPGlm5_2(Module[..., tuple[Tensor, ...]]):
         return self.driver().input_types(self.kv_params)
 
     def forward(self, *inputs: Tensor) -> tuple[Tensor, ...]:
+        """Runs the graph through its block driver."""
         driver = self.driver()
         named = driver.decode_inputs(inputs, self.kv_params)
         return driver(

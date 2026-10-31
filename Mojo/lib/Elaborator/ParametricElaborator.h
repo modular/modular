@@ -124,7 +124,7 @@ public:
   /// elaborate the generator or interface and return the first concrete
   /// implementation. Return none if the specialization is not ready yet.
   ErrorTreeOr<FuncOp> getConcreteFunction(PImplNode *parent, Location loc,
-                                          SymbolConstantAttr symbol);
+                                          FuncSymbolGenerator symbol);
 
   /// Look up the callee symbol (for a struct generator). If elaboration is
   /// already in-progress or done, return the concrete symbol reference.
@@ -149,7 +149,7 @@ public:
   /// current thread. Populates the value from the global cache if necessary.
   TypedAttr lookupCachedInterpretation(Operation *op,
                                        ParameterExprArrayAttr operands,
-                                       SymbolConstantAttr symbol) {
+                                       FuncSymbolGenerator symbol) {
     TypedAttr &tlValue = (*tlInterp)[{op, operands, symbol}];
     if (!tlValue) {
       tlValue = interpCache.read([op, operands, symbol](auto &map) {
@@ -163,7 +163,7 @@ public:
   std::pair<TypedAttr, bool>
   writeGlobalCachedInterpretation(Operation *op,
                                   ParameterExprArrayAttr operands,
-                                  SymbolConstantAttr symbol, TypedAttr value) {
+                                  FuncSymbolGenerator symbol, TypedAttr value) {
     TypedAttr result = value;
     (*tlInterp)[{op, operands, symbol}] = value;
 
@@ -236,11 +236,7 @@ private:
 
   /// Process a `kgen.param.apply` operation by concretizing its operands and
   /// callee and then invoking the interpreter.
-  ElaborationState
-  processParamApplyOp(PImplNode *inode,
-                      ParamApplyOp op); //,
-                                        // SymbolConstantAttr calleeSymbol);//,
-                                        // FuncOp func, GeneratorOp gen);
+  ElaborationState processParamApplyOp(PImplNode *inode, ParamApplyOp op);
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.
@@ -250,7 +246,7 @@ private:
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
   ElaborationState processGeneratorUser(GeneratorUserOpInterface user,
-                                        SymbolConstantAttr calleeSymbol,
+                                        FuncSymbolGenerator calleeSymbol,
                                         PImplNode *parent);
 
   /// Process a comptime.if op by evaluating the condition and elaborating and
@@ -336,7 +332,7 @@ private:
   /// `inputParamKey` is not populated, then the callee is a direct function
   /// reference.
   std::pair<ElaborationState, PImplNode *> instantiateGeneratorReference(
-      PImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+      PImplNode *parent, Operation *user, FuncSymbolGenerator calleeSymbol,
       ParameterExprArrayAttr &inputParamKey, GeneratorOpInterface &gen,
       function_ref<bool(PParamNode *)> shouldWait = [](PParamNode *) {
         return true;
@@ -373,9 +369,9 @@ private:
   mlir::ThreadLocalCache<DenseMap<StringAttr, InstantiatedOpInterface>> tlInsts;
 
   /// This is used to cache interpreter invocations across the elaborator.
-  using InterpreterMapTy = DenseMap<
-      std::tuple<Operation *, ParameterExprArrayAttr, SymbolConstantAttr>,
-      TypedAttr>;
+  using InterpreterMapTy =
+      DenseMap<std::tuple<Operation *, ParameterExprArrayAttr, TypedAttr>,
+               TypedAttr>;
   Shared<InterpreterMapTy> interpCache;
   mlir::ThreadLocalCache<InterpreterMapTy> tlInterp;
 

@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The MiMo-V2 DFlash drafter on ModuleV3: a non-causal block over windowed
-target context.
+"""The MiMo-V2 DFlash drafter on ModuleV3.
+
+A non-causal block over windowed target context.
 
 The block is ``[anchor, mask x (block_size - 1)]``. Each block query attends
 to the context keys its window reaches and to every block key, with a learned
@@ -30,30 +31,31 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental.nn import (
+from max.graph import DeviceRef, TensorValue, ops
+from max.graph.weights import WeightData
+from max.nn import (
+    Linear,
     Module,
     ModuleList,
     RMSNorm,
 )
-from max.experimental.nn.common_layers.linear import (
+from max.nn.common_layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import NamedMapping
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorValue, ops
-from max.graph.weights import WeightData
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.mlp import MLP
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import NamedMapping
 
 from ..dflash_mimo_v2 import DFlashMiMoV2Config
 from .context_writer import DFlashContextWriter, _heads_per_shard
@@ -66,44 +68,53 @@ __all__ = [
 
 
 class DFlashMiMoV2Attention(Module[..., Tensor]):
-    """A drafter layer's attention: its K/V projection, shared by context and
-    block rows, plus the block's queries.
+    """A drafter layer's attention.
+
+    It holds a K/V projection shared by context and block rows, plus the block's
+    queries.
 
     The K/V a block query attends to must be computed the same way whether it
     came from a target tap or from the block itself, so both paths go through
     :meth:`store_kv`. The K/V and Q projections are column-parallel over the
     heads, so each device stores its heads' K/V; ``o_proj`` reduces the
-    shards' partial sums.
+    shards' partial sums. Under data parallelism every one-device replica
+    holds the full drafter instead: all heads local, plain projections, and
+    each replica attends its own rows with nothing to reduce.
     """
 
     def __init__(self, config: DFlashMiMoV2Config, layer_idx: int) -> None:
         self.config = config
         self.layer_idx = layer_idx
+        self.data_parallel = config.data_parallel_degree > 1
         self.num_heads = config.num_attention_heads
+        shards = 1 if self.data_parallel else len(config.devices)
         self.local_heads = _heads_per_shard(
-            config.num_attention_heads, len(config.devices), "query"
+            config.num_attention_heads, shards, "query"
         )
         self.num_key_value_heads = config.num_key_value_heads
         self.local_key_value_heads = _heads_per_shard(
-            config.num_key_value_heads, len(config.devices), "KV"
+            config.num_key_value_heads, shards, "KV"
         )
         head_dim = config.head_dim
         q_dim = self.num_heads * head_dim
         kv_dim = self.num_key_value_heads * head_dim
-        self.q_proj = ColumnParallelLinear(
-            config.hidden_size, q_dim, bias=False
+        proj_cls = Linear if self.data_parallel else ColumnParallelLinear
+        self.q_proj = proj_cls(config.hidden_size, q_dim, bias=False)
+        self.k_proj = proj_cls(config.hidden_size, kv_dim, bias=False)
+        self.v_proj = proj_cls(config.hidden_size, kv_dim, bias=False)
+        self.o_proj = (
+            Linear(q_dim, config.hidden_size, bias=False)
+            if self.data_parallel
+            else RowParallelLinear(q_dim, config.hidden_size, bias=False)
         )
-        self.k_proj = ColumnParallelLinear(
-            config.hidden_size, kv_dim, bias=False
-        )
-        self.v_proj = ColumnParallelLinear(
-            config.hidden_size, kv_dim, bias=False
-        )
-        self.o_proj = RowParallelLinear(q_dim, config.hidden_size, bias=False)
         self.q_norm = RMSNorm(head_dim, eps=config.rms_norm_eps)
         self.k_norm = RMSNorm(head_dim, eps=config.rms_norm_eps)
         sinks = Tensor.zeros([self.num_heads], dtype=config.dtype)
-        self.attention_sink_bias = sinks.to(NamedMapping(sinks.mesh, (TP,)))
+        self.attention_sink_bias = (
+            sinks.to(sinks.mesh)
+            if self.data_parallel
+            else sinks.to(NamedMapping(sinks.mesh, (TP,)))
+        )
 
     def store_kv(
         self,
@@ -121,14 +132,19 @@ class DFlashMiMoV2Attention(Module[..., Tensor]):
 
         Args:
             x: ``[rows, hidden]`` inputs, ragged by ``input_row_offsets``,
-                replicated.
+                replicated over tensor parallelism or sharded per replica
+                under data parallelism.
             kv_collections: The drafter cache, one per device, whose lengths
                 place the rows.
-            freqs_cis: The ``[positions, rotary_dim]`` RoPE table,
-                replicated.
-            input_row_offsets: Ragged offsets of ``x``, replicated.
+            freqs_cis: The ``[positions, rotary_dim]`` RoPE table, replicated
+                on the mesh at every device count: each replica indexes its
+                own rows' positions out of the whole table.
+            input_row_offsets: Ragged offsets of ``x``, replicated over
+                tensor parallelism or sharded per replica under data
+                parallelism.
             q: ``[rows, heads, head_dim]`` queries to rope, sharded over the
-                heads, if any.
+                heads under tensor parallelism and full per replica under
+                data parallelism, if any.
 
         Returns:
             ``q``, or the K rows without it, roped at the rows' positions;
@@ -179,14 +195,19 @@ class DFlashMiMoV2Attention(Module[..., Tensor]):
         """Runs the block's attention on each device's heads.
 
         Args:
-            x: The replicated ``[rows, hidden]`` input.
+            x: The ``[rows, hidden]`` input, replicated over tensor
+                parallelism or sharded per replica under data parallelism.
             kv_collections: The drafter cache, one per device, whose lengths
                 are the anchors' positions.
-            freqs_cis: The RoPE table, replicated.
-            input_row_offsets: Ragged offsets of ``x``, replicated.
+            freqs_cis: The RoPE table, replicated on the mesh at every
+                device count.
+            input_row_offsets: Ragged offsets of ``x``, replicated over
+                tensor parallelism or sharded per replica under data
+                parallelism.
 
         Returns:
-            This layer's partial ``o_proj`` output, one shard per device.
+            This layer's ``o_proj`` output: partial per device under tensor
+            parallelism, complete per replica under data parallelism.
         """
         head_dim = self.config.head_dim
         q = self.q_norm(self.q_proj(x).reshape([-1, self.num_heads, head_dim]))
@@ -196,10 +217,12 @@ class DFlashMiMoV2Attention(Module[..., Tensor]):
         layer_idx = ops.constant(
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
-        rows = x.shape[0]
         attns: list[TensorValue] = []
         with ensure_context():
             for d in range(x.mesh.num_devices):
+                # This device's own rows: all of them under tensor
+                # parallelism, its replica's under data parallelism.
+                rows = x.local_shards[d].shape[0]
                 offsets_d = TensorValue(input_row_offsets.local_shards[d])
                 attn = flash_attention_ragged(
                     self.config.kv_params,
@@ -217,7 +240,7 @@ class DFlashMiMoV2Attention(Module[..., Tensor]):
                 attns.append(
                     ops.reshape(attn, [rows, self.local_heads * head_dim])
                 )
-        if x.mesh.num_devices == 1:
+        if x.mesh.num_devices == 1 or self.data_parallel:
             heads = Tensor.from_shard_values(attns, x.mapping)
         else:
             heads = Tensor.from_shard_values(
@@ -297,7 +320,22 @@ class DFlashMiMoV2(DFlashContextWriter):
                 graph as a constant, so an exported graph carries it rather
                 than naming a weight the engine must supply. ``None``
                 declares the ``mask_embedding`` weight instead.
+
+        Raises:
+            NotImplementedError: If ``data_parallel_degree`` is neither 1
+                nor the device count: data parallelism serves one-device
+                replicas only, each holding the full drafter.
         """
+        if (
+            config.data_parallel_degree > 1
+            and config.data_parallel_degree != len(config.devices)
+        ):
+            raise NotImplementedError(
+                f"DFlash MiMo-V2 data_parallel_degree "
+                f"({config.data_parallel_degree}) must equal the device "
+                f"count ({len(config.devices)}); dp x tp meshes are not "
+                "supported yet."
+            )
         super().__init__(config)
         self.layers = ModuleList(
             [
@@ -328,8 +366,11 @@ class DFlashMiMoV2(DFlashContextWriter):
 
         Args:
             taps: The target's residual stream after each
-                ``target_layer_ids`` layer, in that order, replicated.
-            input_row_offsets: Ragged offsets of the rows, replicated.
+                ``target_layer_ids`` layer, in that order, replicated over
+                tensor parallelism or sharded per replica under data
+                parallelism.
+            input_row_offsets: Ragged offsets of the rows, placed like the
+                taps.
             kv_collections: The drafter cache, one per device, whose lengths
                 are the rows' first positions.
         """
@@ -345,13 +386,14 @@ class DFlashMiMoV2(DFlashContextWriter):
 
         Args:
             anchor_embeds: The ``[batch, hidden]`` target embeddings of each
-                request's anchor token, replicated.
+                request's anchor token, replicated over tensor parallelism
+                or sharded per replica under data parallelism.
         """
         config = self.config
         hidden = config.hidden_size
-        rows = anchor_embeds.shape[0]
         outs = []
         for d in range(anchor_embeds.mesh.num_devices):
+            rows = anchor_embeds.local_shards[d].shape[0]
             anchor = TensorValue(anchor_embeds.local_shards[d])
             if self._mask_values is None:
                 mask = ops.cast(
@@ -387,15 +429,18 @@ class DFlashMiMoV2(DFlashContextWriter):
         """Runs the block, whose K/V lands at the caches' lengths.
 
         Args:
-            block_embeds: :meth:`block_embeddings`'s rows, replicated.
+            block_embeds: :meth:`block_embeddings`'s rows, replicated over
+                tensor parallelism or sharded per replica under data
+                parallelism.
             kv_collections: Per device, the drafter cache, whose lengths are
                 the anchors' positions and whose dispatch metadata is sized
                 for the block.
-            input_row_offsets: The block's ragged offsets, replicated.
+            input_row_offsets: The block's ragged offsets, placed like the
+                block rows.
 
         Returns:
             The final-normed ``[batch * block_size, hidden]`` hidden states,
-            replicated.
+            placed like ``block_embeds``.
         """
         h = block_embeds
         freqs_cis = self._freqs_cis(h)

@@ -25,14 +25,14 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAAttnKey,
     packed_page_stride,
 )
-from max.nn.kv_cache.utils import MultiAttnKey
+from max.nn.legacy.kv_cache.utils import MultiAttnKey
 from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 from test_common.mocks.pipeline_model import MockModelInputs
 

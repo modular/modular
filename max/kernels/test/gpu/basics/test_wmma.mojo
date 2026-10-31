@@ -31,15 +31,16 @@ from std.utils.numerics import isnan
 
 
 # TF32 Tensor core Matmul with shape m16n8k8
-def mma_kernel_fp32_tf32(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[Float32, ImmutAnyOrigin],
-    b_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+def mma_kernel_fp32_tf32[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: MutPointer[Float32, a_origin],
+    b_ptr: MutPointer[Float32, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -71,15 +72,16 @@ def mma_kernel_fp32_tf32(
 
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k8
-def mma_kernel_fp32_bf16(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
-    b_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+def mma_kernel_fp32_bf16[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: MutPointer[BFloat16, a_origin],
+    b_ptr: MutPointer[BFloat16, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -111,15 +113,16 @@ def mma_kernel_fp32_bf16(
 
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k16
-def mma_kernel_fp32_bf16_2(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
-    b_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+def mma_kernel_fp32_bf16_2[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: MutPointer[BFloat16, a_origin],
+    b_ptr: MutPointer[BFloat16, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -151,15 +154,16 @@ def mma_kernel_fp32_bf16_2(
 
 
 # FP32-FP16 (mixed precision) Tensor core Matmul with shape m16n8k8
-def mma_kernel_fp32_fp16(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[Float16, ImmutAnyOrigin],
-    b_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+def mma_kernel_fp32_fp16[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -191,15 +195,16 @@ def mma_kernel_fp32_fp16(
 
 
 # FP16 Tensor core Matmul with shape m16n8k8
-def mma_kernel_fp16_fp16(
-    c_ptr: MutPointer[Float16, MutAnyOrigin],
-    a_ptr: ImmPointer[Float16, ImmutAnyOrigin],
-    b_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+def mma_kernel_fp16_fp16[
+    c_origin: MutOrigin, a_origin: MutOrigin, b_origin: MutOrigin
+](
+    c_ptr: MutPointer[Float16, c_origin],
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
     comptime mma_m = 16
@@ -278,13 +283,21 @@ def run_mma_fp32_tf32(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp32_tf32[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
     @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp32_tf32
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),
@@ -447,13 +460,21 @@ def run_mma_fp32_bf16(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp32_bf16[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
     @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp32_bf16
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),
@@ -612,13 +633,21 @@ def run_mma_fp32_bf16_2(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp32_bf16_2[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
     @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp32_bf16_2
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),
@@ -777,13 +806,21 @@ def run_mma_fp32_fp16(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp32_fp16[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
     @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp32_fp16
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),
@@ -942,13 +979,21 @@ def run_mma_fp16_fp16(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
+    var c_dev_ptr = c_device.unsafe_ptr()
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    comptime mma_kernel = mma_kernel_fp16_fp16[
+        type_of(c_dev_ptr).origin,
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+    ]
+
     @inline(.always)
     def run_func_mma(ctx: DeviceContext) raises {imm}:
-        comptime kernel = mma_kernel_fp16_fp16
-        ctx.enqueue_function[kernel](
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[mma_kernel](
+            c_dev_ptr,
+            a_dev_ptr,
+            b_dev_ptr,
             Int32(M),
             Int32(N),
             Int32(K),

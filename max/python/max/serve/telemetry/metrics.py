@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Metric instruments and the clients that record them."""
+
 from __future__ import annotations
 
 import abc
@@ -61,9 +63,32 @@ NumberType = float | int
 OtelAttributes = Mapping[str, str] | None
 # The ``turn`` label on the per-request token and prefix coverage histograms.
 ConversationTurn = Literal["first", "later"]
-# The ``phase`` label on ``maxserve.request.client_disconnect_cancellations``:
+# The ``phase`` label on ``max.request.client_disconnect_cancellations``:
 # whether the status code was still unsent when the client hung up.
 _DisconnectPhase = Literal["before_response", "during_response"]
+# The ``kind`` label on ``max.structured_output.requests``.
+_StructuredOutputKind = Literal["json_object", "json_schema"]
+# The ``reason`` label on ``max.cache.connector_lookup_admission_stops``.
+LookupAdmissionStop = Literal["budget", "max_pending", "held"]
+
+# Exclusive upper bounds, in tokens, of the ``prompt_length`` label on
+# ``max.time_to_first_token_by_prompt_length``. Coarse on purpose: the
+# label multiplies the histogram's series.
+_PROMPT_LENGTH_BUCKETS: tuple[tuple[int, str], ...] = (
+    (8 * 1024, "0-8k"),
+    (32 * 1024, "8k-32k"),
+    (64 * 1024, "32k-64k"),
+    (128 * 1024, "64k-128k"),
+    (256 * 1024, "128k-256k"),
+)
+
+
+def _prompt_length_bucket(prompt_tokens: int) -> str:
+    for upper, label in _PROMPT_LENGTH_BUCKETS:
+        if prompt_tokens < upper:
+            return label
+    return "256k-plus"
+
 
 # API_PROXIES the "types" of measurements we make from a meter
 # SDK instruments are the "types" that actually do recording
@@ -101,30 +126,30 @@ def _create_counter(name: str, description: str) -> SupportedInstruments:
 # We need to use the fact that these are actually _Proxy{Type} objects  rather
 # than {Type} objects
 SERVE_METRICS: dict[str, SupportedInstruments] = {
-    "maxserve.request_count": _meter.create_counter(
-        "maxserve.request_count",
+    "max.request_count": _meter.create_counter(
+        "max.request_count",
         description=(
             "Total API requests since server start. Liveness and "
             "observability endpoints (/health, /version, /ping and /metrics) "
             "are excluded."
         ),
     ),  # type: ignore
-    "maxserve.request.client_disconnect_cancellations": _meter.create_counter(
-        "maxserve.request.client_disconnect_cancellations",
+    "max.request.client_disconnect_cancellations": _meter.create_counter(
+        "max.request.client_disconnect_cancellations",
         description=(
             "Requests whose client disconnected before the server finished "
             "responding, split by `phase`. `before_response` covers the chat "
             "and text completion routes, which watch for a disconnect while "
-            "a request waits for its result; `maxserve_request_count_total` "
+            "a request waits for its result; `max_request_count_total` "
             "also records these as code 499. `during_response` is a "
             "disconnect after a streamed response started and before its "
-            "last chunk, which `maxserve_request_count_total` records under "
+            "last chunk, which `max_request_count_total` records under "
             "the response's status code, so it is visible only here. Both "
             "phases are exported at zero from startup."
         ),
     ),  # type: ignore
-    "maxserve.request_time": _meter.create_histogram(
-        "maxserve.request_time",
+    "max.request_time": _meter.create_histogram(
+        "max.request_time",
         unit="ms",
         description=(
             "Total time spent handling a request, measured from the HTTP "
@@ -133,162 +158,177 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "generation."
         ),
     ),  # type: ignore
-    "maxserve.input_processing_time": _meter.create_histogram(
-        "maxserve.input_processing_time",
+    "max.input_processing_time": _meter.create_histogram(
+        "max.input_processing_time",
         unit="ms",
         description="Input processing time (IPT).",
     ),  # type: ignore
-    "maxserve.output_processing_time": _meter.create_histogram(
-        "maxserve.output_processing_time",
+    "max.output_processing_time": _meter.create_histogram(
+        "max.output_processing_time",
         unit="ms",
         description="Output generation time (OGT).",
     ),  # type: ignore
-    "maxserve.time_to_first_token": _meter.create_histogram(
-        "maxserve.time_to_first_token",
+    "max.time_to_first_token": _meter.create_histogram(
+        "max.time_to_first_token",
         unit="ms",
         description=(
             "Time to first token (TTFT). Measured from when the server received the request, so it includes request parsing, validation, media resolution, tokenization, queueing, and prefill."
         ),
     ),  # type: ignore
-    "maxserve.num_input_tokens": _meter.create_counter(
-        "maxserve.num_input_tokens",
+    "max.time_to_first_token_by_prompt_length": _meter.create_histogram(
+        "max.time_to_first_token_by_prompt_length",
+        unit="ms",
+        description=(
+            "Time to first token as `max_time_to_first_token_milliseconds` measures it, split by a `prompt_length` label that buckets the request's prompt tokens in units of 1024: `0-8k`, `8k-32k`, `32k-64k`, `64k-128k`, `128k-256k` or `256k-plus`. Compares TTFT across deployments at matched prompt length."
+        ),
+    ),  # type: ignore
+    "max.num_input_tokens": _meter.create_counter(
+        "max.num_input_tokens",
         description="Cumulative input tokens processed.",
     ),  # type: ignore
-    "maxserve.num_output_tokens": _meter.create_counter(
-        "maxserve.num_output_tokens",
+    "max.num_output_tokens": _meter.create_counter(
+        "max.num_output_tokens",
         description="Cumulative output tokens generated.",
     ),  # type: ignore
-    "maxserve.num_requests_queued": _meter.create_gauge(
-        "maxserve.num_requests_queued",
+    "max.num_requests_queued": _meter.create_gauge(
+        "max.num_requests_queued",
         description=(
             "Current depth of the scheduler's CE/prefill queue, sampled once per scheduler iteration."
         ),
     ),  # type: ignore
-    "maxserve.num_requests_running": _meter.create_up_down_counter(
-        "maxserve.num_requests_running",
+    "max.num_requests_running": _meter.create_up_down_counter(
+        "max.num_requests_running",
         description="Requests currently being processed.",
     ),  # type: ignore
-    "maxserve.num_requests_awaiting_admission": _meter.create_up_down_counter(
-        "maxserve.num_requests_awaiting_admission",
+    "max.num_requests_awaiting_admission": _meter.create_up_down_counter(
+        "max.num_requests_awaiting_admission",
         description=(
             "Requests received by the API server but not yet handed off to the model worker. A persistently high value indicates a backlog in the API server rather than the scheduler."
         ),
     ),  # type: ignore
-    "maxserve.requests_awaiting_admission": _meter.create_histogram(
-        "maxserve.requests_awaiting_admission",
+    "max.requests_awaiting_admission": _meter.create_histogram(
+        "max.requests_awaiting_admission",
         description=(
             "Distribution of the ingress backlog (requests accepted by the API server but not yet handed off to the model worker), sampled periodically. Captures the p50/p99 tail over time."
         ),
     ),  # type: ignore
-    "maxserve.num_responses_buffered": _meter.create_gauge(
-        "maxserve.num_responses_buffered",
+    "max.num_responses_buffered": _meter.create_gauge(
+        "max.num_responses_buffered",
         description=(
             "Model-worker responses received by the API server but not yet consumed by the streaming layer (sum of per-request output-queue depths), sampled periodically."
         ),
     ),  # type: ignore
-    "maxserve.responses_buffered": _meter.create_histogram(
-        "maxserve.responses_buffered",
+    "max.responses_buffered": _meter.create_histogram(
+        "max.responses_buffered",
         description=(
             "Distribution of the egress backlog, sampled periodically. Captures the p50/p99 tail that a scrape-interval gauge sample would miss."
         ),
     ),  # type: ignore
-    "maxserve.response_queue_time": _meter.create_histogram(
-        "maxserve.response_queue_time",
+    "max.response_queue_time": _meter.create_histogram(
+        "max.response_queue_time",
         unit="ms",
         description=(
             "Time a model-worker response waits in the per-request output queue before the streaming layer consumes it."
         ),
     ),  # type: ignore
-    "maxserve.model_load_time": _meter.create_histogram(
-        "maxserve.model_load_time",
+    "max.model_load_time": _meter.create_histogram(
+        "max.model_load_time",
         unit="ms",
         description=(
             "Model-worker startup duration. Also split by `component` tag (`build`, `compile`, `init`, `graph_capture`, `pinned_memory`, `spawn`, `total`)."
         ),
     ),  # type: ignore
-    "maxserve.itl": _meter.create_histogram(
-        "maxserve.itl", unit="ms", description="Inter-token latency."
+    "max.itl": _meter.create_histogram(
+        "max.itl", unit="ms", description="Inter-token latency."
     ),  # type: ignore
-    "maxserve.time_per_output_token": _meter.create_histogram(
-        "maxserve.time_per_output_token",
+    "max.time_per_output_token": _meter.create_histogram(
+        "max.time_per_output_token",
         unit="ms",
         description=(
             "Mean decode-phase latency per generated token (TPOT). Emitted once per request as decode_time / (num_generated_tokens - 1). Excludes the first token and prefill/TTFT."
         ),
     ),  # type: ignore
-    "maxserve.pipeline_load": _meter.create_counter(
-        "maxserve.pipeline_load",
+    "max.pipeline_load": _meter.create_counter(
+        "max.pipeline_load",
         description="Pipelines loaded for each model.",
     ),  # type: ignore
-    "maxserve.batch_size": _meter.create_histogram(
-        "maxserve.batch_size",
+    "max.batch.size": _meter.create_histogram(
+        "max.batch.size",
         description=(
             "Distribution of batch sizes (number of requests), labeled by `batch_type` (CE prefill or TG decode)."
         ),
     ),  # type: ignore
-    "maxserve.batch_execution_time": _meter.create_histogram(
-        "maxserve.batch_execution_time",
+    "max.batch.execution_time": _meter.create_histogram(
+        "max.batch.execution_time",
         unit="ms",
-        description="Distribution of batch execution time.",
+        description="Host executor service time per completed batch.",
     ),  # type: ignore
-    "maxserve.di.decode_admission_queue_wait_time": _meter.create_histogram(
-        "maxserve.di.decode_admission_queue_wait_time",
+    "max.scheduler.batch_step_time": _meter.create_histogram(
+        "max.scheduler.batch_step_time",
+        unit="ms",
+        description=(
+            "Whole scheduler step including execution, request advancement, "
+            "release and response publication; excludes batch construction."
+        ),
+    ),  # type: ignore
+    "max.di.decode_admission_queue_wait_time": _meter.create_histogram(
+        "max.di.decode_admission_queue_wait_time",
         unit="ms",
         description=(
             "Time a request spends in the decode node's admission queue before dispatch to prefill."
         ),
     ),  # type: ignore
-    "maxserve.di.decode_send_time": _meter.create_histogram(
-        "maxserve.di.decode_send_time",
+    "max.di.decode_send_time": _meter.create_histogram(
+        "max.di.decode_send_time",
         unit="ms",
         description=(
             "Time to build and send a prefill request on the decode side (struct construction, serialization, ZMQ enqueue)."
         ),
     ),  # type: ignore
-    "maxserve.di.dispatch_rtt": _meter.create_histogram(
-        "maxserve.di.dispatch_rtt",
+    "max.di.dispatch_rtt": _meter.create_histogram(
+        "max.di.dispatch_rtt",
         unit="ms",
         description=(
             "Decode-clock round trip from sending a prefill request to receiving the prefill node's acknowledgment."
         ),
     ),  # type: ignore
-    "maxserve.di.prefill_span": _meter.create_histogram(
-        "maxserve.di.prefill_span",
+    "max.di.prefill_span": _meter.create_histogram(
+        "max.di.prefill_span",
         unit="ms",
         description=(
             'Decode-clock time between the prefill node\'s "arrived" and "ce_done" acknowledgments for a request. Covers prefill queue wait plus CE execution plus the return hop.'
         ),
     ),  # type: ignore
-    "maxserve.di.reply_rtt": _meter.create_histogram(
-        "maxserve.di.reply_rtt",
+    "max.di.reply_rtt": _meter.create_histogram(
+        "max.di.reply_rtt",
         unit="ms",
         description=(
             'Decode-clock time from the prefill node\'s "ce_done" acknowledgment to the actual prefill response arriving. Covers KV-transfer initiation, reply serialization, and network transit.'
         ),
     ),  # type: ignore
-    "maxserve.di.prefill_queue_wait_time": _meter.create_histogram(
-        "maxserve.di.prefill_queue_wait_time",
+    "max.di.prefill_queue_wait_time": _meter.create_histogram(
+        "max.di.prefill_queue_wait_time",
         unit="ms",
         description=(
             "Prefill-local time a request spends enqueued before its first CE batch executes."
         ),
     ),  # type: ignore
-    "maxserve.ce_pool_wait_time": _meter.create_histogram(
-        "maxserve.ce_pool_wait_time",
+    "max.ce_pool_wait_time": _meter.create_histogram(
+        "max.ce_pool_wait_time",
         unit="ms",
         description=(
             "Time a CE request spends in the data-parallel balancer's unbound pool, from arrival until it is bound to a replica."
         ),
     ),  # type: ignore
-    "maxserve.di.decode_postprocess_time": _meter.create_histogram(
-        "maxserve.di.decode_postprocess_time",
+    "max.di.decode_postprocess_time": _meter.create_histogram(
+        "max.di.decode_postprocess_time",
         unit="ms",
         description=(
             "Decode-local time from receiving a prefill response to handing the result off to the response queue."
         ),
     ),  # type: ignore
-    "maxserve.di.early_sync_time": _meter.create_histogram(
-        "maxserve.di.early_sync_time",
+    "max.di.early_sync_time": _meter.create_histogram(
+        "max.di.early_sync_time",
         unit="ms",
         description=(
             "Duration of the early-sync guard's blocking commit of the "
@@ -296,30 +336,30 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "(see '_should_early_sync_prev_batch')."
         ),
     ),  # type: ignore
-    "maxserve.di.api_pre_tokenize": _meter.create_histogram(
-        "maxserve.di.api_pre_tokenize",
+    "max.di.api_pre_tokenize": _meter.create_histogram(
+        "max.di.api_pre_tokenize",
         unit="ms",
         description=(
             "API-local time from HTTP accept to tokenize start (parse / route)."
         ),
     ),  # type: ignore
-    "maxserve.di.api_submit": _meter.create_histogram(
-        "maxserve.di.api_submit",
+    "max.di.api_submit": _meter.create_histogram(
+        "max.di.api_submit",
         unit="ms",
         description=(
             "API-local time from tokenize done to model-worker ZMQ put."
         ),
     ),  # type: ignore
-    "maxserve.di.mw_queue_wait": _meter.create_histogram(
-        "maxserve.di.mw_queue_wait",
+    "max.di.mw_queue_wait": _meter.create_histogram(
+        "max.di.mw_queue_wait",
         unit="ms",
         description=(
             "Decode-worker time from first ZMQ pull of a request to "
             "admission-queue enqueue (drain gap)."
         ),
     ),  # type: ignore
-    "maxserve.di.ce_preempted_tg_iteration_count": _meter.create_counter(
-        "maxserve.di.ce_preempted_tg_iteration_count",
+    "max.di.ce_preempted_tg_iteration_count": _meter.create_counter(
+        "max.di.ce_preempted_tg_iteration_count",
         description=(
             "Counter: incremented once per scheduling iteration in which a "
             "CE batch was admitted while TG requests were pending, so those "
@@ -327,17 +367,17 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "preemption pattern occurs."
         ),
     ),  # type: ignore
-    "maxserve.di.ce_preempted_tg_pending_count": _meter.create_histogram(
-        "maxserve.di.ce_preempted_tg_pending_count",
+    "max.di.ce_preempted_tg_pending_count": _meter.create_histogram(
+        "max.di.ce_preempted_tg_pending_count",
         description=(
             "Histogram: the number of TG requests pending at the moment of "
             "one such preemption (paired with "
-            "'maxserve.di.ce_preempted_tg_iteration_count', which counts how "
+            "'max.di.ce_preempted_tg_iteration_count', which counts how "
             "often it happens; this measures how large each occurrence is)."
         ),
     ),  # type: ignore
-    "maxserve.di.handoff_to_first_token_time": _meter.create_histogram(
-        "maxserve.di.handoff_to_first_token_time",
+    "max.di.handoff_to_first_token_time": _meter.create_histogram(
+        "max.di.handoff_to_first_token_time",
         unit="ms",
         description=(
             "Wall-clock time from a prefill-to-decode handoff landing (its "
@@ -348,332 +388,416 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "with the 'PrefillResponse', so it has no equivalent wait."
         ),
     ),  # type: ignore
-    "maxserve.cache.num_used_blocks": _meter.create_gauge(
-        "maxserve.cache.num_used_blocks",
+    "max.cache.num_used_blocks": _meter.create_gauge(
+        "max.cache.num_used_blocks",
         unit="blocks",
         description="Number of KV cache blocks currently in use.",
     ),  # type: ignore
-    "maxserve.cache.num_total_blocks": _meter.create_gauge(
-        "maxserve.cache.num_total_blocks",
+    "max.cache.num_total_blocks": _meter.create_gauge(
+        "max.cache.num_total_blocks",
         unit="blocks",
         description="Total number of KV cache blocks.",
     ),  # type: ignore
-    "maxserve.cache.jenga_small_blocks": _meter.create_gauge(
-        "maxserve.cache.jenga_small_blocks",
+    "max.cache.jenga_small_blocks": _meter.create_gauge(
+        "max.cache.jenga_small_blocks",
         unit="blocks",
         description=(
             "A Jenga KV leaf's small blocks on one replica, by `state`: `used` by a request, `evictable` (unreferenced but still in the prefix cache), or `empty` to allocate without evicting. The leaf's remaining small blocks are bytes other leaves hold. Sampled at the scheduler's log interval."
         ),
     ),  # type: ignore
-    "maxserve.cache.jenga_huge_blocks": _meter.create_gauge(
-        "maxserve.cache.jenga_huge_blocks",
+    "max.cache.jenga_huge_blocks": _meter.create_gauge(
+        "max.cache.jenga_huge_blocks",
         unit="blocks",
         description=(
             "Jenga huge blocks on one replica, by `leaf` and `state`: `used` (a request holds small blocks in it) or `evictable` (no request holds it, but it is still typed to the leaf), plus `leaf=none, state=empty` for those no leaf has claimed. Sums to the replica's allocatable huge blocks. Sampled at the scheduler's log interval."
         ),
     ),  # type: ignore
-    "maxserve.cache.request_prefix_coverage": _meter.create_histogram(
-        "maxserve.cache.request_prefix_coverage",
+    "max.cache.request_prefix_coverage": _meter.create_histogram(
+        "max.cache.request_prefix_coverage",
         unit="percent",
         description=(
-            "Per-request prefix cache coverage (cached prefix tokens / prompt tokens). For the token-weighted cache hit rate, derive it from `maxserve_cache_hits_tokens_total` and `maxserve_cache_misses_tokens_total`."
+            "Per-request prefix cache coverage (cached prefix tokens / prompt tokens). For the token-weighted cache hit rate, derive it from `max_cache_hits_tokens_total` and `max_cache_misses_tokens_total`."
         ),
     ),  # type: ignore
-    "maxserve.cache.preemption_count": _meter.create_counter(
-        "maxserve.cache.preemption_count",
+    "max.cache.preemption_count": _meter.create_counter(
+        "max.cache.preemption_count",
         description="Total number of preemptions.",
     ),  # type: ignore
-    "maxserve.cache.hits": _meter.create_counter(
-        "maxserve.cache.hits",
+    "max.cache.connector_cordon_wait_time": _meter.create_histogram(
+        "max.cache.connector_cordon_wait_time",
+        unit="ms",
+        description=(
+            "Time a prompt is held out of the batch on its KV connector, from the first time it is cordoned on a deferred connector lookup or an onload to its admission to a batch. Recorded once for each admitted prompt that was cordoned."
+        ),
+    ),  # type: ignore
+    "max.cache.connector_cordon_passes": _meter.create_histogram(
+        "max.cache.connector_cordon_passes",
+        unit="passes",
+        description=(
+            "Scheduler passes from a prompt's first cordon on a deferred connector lookup or an onload to its admission to a batch, recorded with `max_cache_connector_cordon_wait_time_milliseconds`. A prompt admitted in the pass that cordoned it records 0."
+        ),
+    ),  # type: ignore
+    "max.cache.connector_lookup_admission_stops": _create_counter(
+        "max.cache.connector_lookup_admission_stops",
+        description="Prompt admission passes that stopped on a deferred connector lookup, counted per data-parallel replica, split by `reason`: `budget` when the pass had spent its share of lookup tokens, `max_pending` when the replica already had its bound of unanswered lookups out, and `held` when the next prompt arrived behind one still out on its lookup. The prompt waits at the head of its queue for a later pass.",
+    ),
+    "max.cache.hits": _meter.create_counter(
+        "max.cache.hits",
         unit="tokens",
         description=(
             "Cumulative KV cache hit tokens (prompt tokens served from the prefix cache). Tagged with a `tier` label (`g0` for the on-device prefix cache, `external` for the KV connector). The per-tier series sum to the untagged total."
         ),
     ),  # type: ignore
-    "maxserve.cache.misses": _meter.create_counter(
-        "maxserve.cache.misses",
+    "max.cache.misses": _meter.create_counter(
+        "max.cache.misses",
         unit="tokens",
         description=(
             "Cumulative KV cache miss tokens (prompt tokens actually prefilled by the model)."
         ),
     ),  # type: ignore
-    "maxserve.input_tokens_per_request": _meter.create_histogram(
-        "maxserve.input_tokens_per_request",
+    "max.input_tokens_per_request": _meter.create_histogram(
+        "max.input_tokens_per_request",
         unit="tokens",
         description=(
             "Distribution of input tokens per request. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none."
         ),
     ),  # type: ignore
-    "maxserve.prefix_coverage_per_request": _meter.create_histogram(
-        "maxserve.prefix_coverage_per_request",
+    "max.prefix_coverage_per_request": _meter.create_histogram(
+        "max.prefix_coverage_per_request",
         unit="percent",
         description=(
-            "Per-request prefix cache coverage (cached prefix tokens / prompt tokens) for chat requests, recorded when the request ends. Carries a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. `maxserve_cache_request_prefix_coverage_percent` records the same ratio for every request from the scheduler, without the label."
+            "Per-request prefix cache coverage (cached prefix tokens / prompt tokens) for chat requests, recorded when the request ends. Carries a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. `max_cache_request_prefix_coverage_percent` records the same ratio for every request from the scheduler, without the label."
         ),
     ),  # type: ignore
-    "maxserve.output_tokens_per_request": _meter.create_histogram(
-        "maxserve.output_tokens_per_request",
+    "max.output_tokens_per_request": _meter.create_histogram(
+        "max.output_tokens_per_request",
         unit="tokens",
         description=(
             "Distribution of output tokens per request. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none."
         ),
     ),  # type: ignore
-    "maxserve.dkv.nixl_read_latency": _meter.create_histogram(
-        "maxserve.dkv.nixl_read_latency",
+    "max.dkv.nixl_read_latency": _meter.create_histogram(
+        "max.dkv.nixl_read_latency",
         unit="ms",
         description="NIXL READ transfer latency.",
     ),  # type: ignore
-    "maxserve.dkv.nixl_read_latency_max": _meter.create_histogram(
-        "maxserve.dkv.nixl_read_latency_max",
+    "max.dkv.nixl_read_latency_max": _meter.create_histogram(
+        "max.dkv.nixl_read_latency_max",
         unit="ms",
         description="Slowest single NIXL READ transfer in a batch's window.",
     ),  # type: ignore
-    "maxserve.dkv.nixl_write_latency": _meter.create_histogram(
-        "maxserve.dkv.nixl_write_latency",
+    "max.dkv.nixl_write_latency": _meter.create_histogram(
+        "max.dkv.nixl_write_latency",
         unit="ms",
         description="NIXL WRITE transfer latency.",
     ),  # type: ignore
-    "maxserve.dkv.rpc_acquire_latency": _meter.create_histogram(
-        "maxserve.dkv.rpc_acquire_latency",
+    "max.dkv.rpc_acquire_latency": _meter.create_histogram(
+        "max.dkv.rpc_acquire_latency",
         unit="ms",
         description="dKV acquire_blocks RPC latency.",
     ),  # type: ignore
-    "maxserve.dkv.rpc_read_latency": _meter.create_histogram(
-        "maxserve.dkv.rpc_read_latency",
+    "max.dkv.rpc_read_latency": _meter.create_histogram(
+        "max.dkv.rpc_read_latency",
         unit="ms",
         description="dKV read_blocks RPC latency.",
     ),  # type: ignore
-    "maxserve.dkv.read_blocks": _meter.create_counter(
-        "maxserve.dkv.read_blocks",
-        unit="blocks",
-        description="Cache blocks LANDED in device memory from the dKV tier, over both the remote NIXL path and same-host device copies. Only confirmed-complete transfers count, so this is delivered reuse and not an upper bound on it: blocks dKV holds but cannot serve as a contiguous prefix are dropped before a transfer is ever built, and never reach this counter. For any load that lands it is proportional to maxserve.cache.hits{tier=external}; a persistent shortfall means transfers are failing.",
+    "max.dkv.hinted_lookup_latency": _meter.create_histogram(
+        "max.dkv.hinted_lookup_latency",
+        unit="ms",
+        description="Mean wall time of a hinted dKV lookup round in a batch's window, from routing to the assembled plan, for rounds in which some entry routed to an attached peer. What MODULAR_DKV_OVERLAP_PEER_LOOKUPS shortens.",
     ),  # type: ignore
-    "maxserve.dkv.connected_clients": _meter.create_gauge(
-        "maxserve.dkv.connected_clients",
+    "max.dkv.read_blocks": _meter.create_counter(
+        "max.dkv.read_blocks",
+        unit="blocks",
+        description="Cache blocks LANDED in device memory from the dKV tier, over both the remote NIXL path and same-host device copies. Only confirmed-complete transfers count, so this is delivered reuse and not an upper bound on it: blocks dKV holds but cannot serve as a contiguous prefix are dropped before a transfer is ever built, and never reach this counter. For any load that lands it is proportional to max.cache.hits{tier=external}; a persistent shortfall means transfers are failing.",
+    ),  # type: ignore
+    "max.dkv.connected_clients": _meter.create_gauge(
+        "max.dkv.connected_clients",
         unit="clients",
         description="Number of dKV connector clients currently connected to the external KV tier.",
     ),  # type: ignore
-    "maxserve.dkv.total_clients": _meter.create_gauge(
-        "maxserve.dkv.total_clients",
+    "max.dkv.total_clients": _meter.create_gauge(
+        "max.dkv.total_clients",
         unit="clients",
         description="Total number of dKV connector clients, one per data-parallel replica.",
     ),  # type: ignore
-    "maxserve.dkv.reconnect_attempts": _meter.create_gauge(
-        "maxserve.dkv.reconnect_attempts",
+    "max.dkv.reconnect_attempts": _meter.create_gauge(
+        "max.dkv.reconnect_attempts",
         unit="attempts",
         description="Cumulative dKV reconnect attempts across all clients, reported as a gauge of the current lifetime total.",
     ),  # type: ignore
     # The dKV settle worker and the owner release halt. Mach exports the halt
     # under the same name as dkv.connector.owner_releases_halted.
-    "maxserve.dkv.settle_queue_depth": _meter.create_gauge(
-        "maxserve.dkv.settle_queue_depth",
+    "max.dkv.settle_queue_depth": _meter.create_gauge(
+        "max.dkv.settle_queue_depth",
         unit="jobs",
         description="dKV settle jobs queued and not yet finished, summed over every connector client. A level.",
     ),  # type: ignore
-    "maxserve.dkv.settle_queue_oldest_age_ms": _meter.create_gauge(
-        "maxserve.dkv.settle_queue_oldest_age_ms",
+    "max.dkv.settle_queue_oldest_age_ms": _meter.create_gauge(
+        "max.dkv.settle_queue_oldest_age_ms",
         unit="ms",
-        description="How long the oldest unfinished dKV settle job has waited, the max over every connector client, zero when none is queued. A head stuck on an RPC or a reconnect ages at wall-clock rate while maxserve.dkv.settle_jobs_finished stays flat, and a worker that is only behind under load ages more slowly while that count keeps rising.",
+        description="How long the oldest unfinished dKV settle job has waited, the max over every connector client, zero when none is queued. A head stuck on an RPC or a reconnect ages at wall-clock rate while max.dkv.settle_jobs_finished stays flat, and a worker that is only behind under load ages more slowly while that count keeps rising.",
     ),  # type: ignore
-    "maxserve.dkv.owner_releases_halted": _meter.create_gauge(
-        "maxserve.dkv.owner_releases_halted",
+    "max.dkv.owner_releases_halted": _meter.create_gauge(
+        "max.dkv.owner_releases_halted",
         description="1 while any dKV connector client's owner release halt is up, else 0. While it is up the owner's failing cleanups wait on the orphan queue and its drain backs off.",
     ),  # type: ignore
-    "maxserve.dkv.settle_jobs_finished": _create_counter(
-        "maxserve.dkv.settle_jobs_finished",
+    "max.dkv.settle_jobs_finished": _create_counter(
+        "max.dkv.settle_jobs_finished",
         description="dKV settle jobs the connector workers finished or dropped for a gone dKV incarnation.",
     ),
     # Cross-node pull. Counters, not gauges: take_metrics clears these every
     # batch, so each publish carries that window's delta. Mach exports the same
     # set under dkv.connector.peer_attach_count, peer_drop_count,
-    # peer_load_count, peer_transfer_failure_count, peer_metadata_refresh_count
-    # and hint_rejected_count, splitting success from failure by an outcome tag
-    # rather than by metric name.
-    "maxserve.dkv.peer_attaches": _meter.create_counter(
-        "maxserve.dkv.peer_attaches",
+    # peer_load_count, peer_transfer_failure_count, peer_metadata_refresh_count,
+    # hint_rejected_count and hint_unused_count, splitting success from failure
+    # by an outcome tag rather than by metric name. Mach tags its two hint
+    # counters by `reason`, as the _by_reason pair below splits them.
+    "max.dkv.peer_attaches": _meter.create_counter(
+        "max.dkv.peer_attaches",
         unit="attaches",
-        description="Remote dKV peers attached from a cache hint. An attach is cached per peer, so a stable peer set leaves this at zero while cross-node pulls keep succeeding; maxserve.dkv.peer_loads is the steady-state signal.",
+        description="Remote dKV peers attached from a cache hint. An attach is cached per peer, so a stable peer set leaves this at zero while cross-node pulls keep succeeding; max.dkv.peer_loads is the steady-state signal.",
     ),  # type: ignore
-    "maxserve.dkv.peer_attach_failures": _meter.create_counter(
-        "maxserve.dkv.peer_attach_failures",
+    "max.dkv.peer_attach_failures": _meter.create_counter(
+        "max.dkv.peer_attach_failures",
         unit="attaches",
         description="Peer attaches that failed at dial, probe, handshake, or the attach timeout.",
     ),  # type: ignore
-    "maxserve.dkv.peers_dropped": _meter.create_counter(
-        "maxserve.dkv.peers_dropped",
+    "max.dkv.peers_dropped": _meter.create_counter(
+        "max.dkv.peers_dropped",
         unit="peers",
-        description="Remote dKV peers dropped, whether replaced after a peer restart, evicted over the peer table's cap, or torn down by the caller. Read against maxserve.dkv.peer_attaches to tell a churning peer table from a stable one.",
+        description="Remote dKV peers dropped, whether replaced after a peer restart, evicted over the peer table's cap, or torn down by the caller. Read against max.dkv.peer_attaches to tell a churning peer table from a stable one.",
     ),  # type: ignore
-    "maxserve.dkv.peer_loads": _meter.create_counter(
-        "maxserve.dkv.peer_loads",
+    "max.dkv.peer_loads": _meter.create_counter(
+        "max.dkv.peer_loads",
         unit="loads",
         description="Loads served from the dKV peer a cache hint named. Counted per batch on the fused load path and per hinted lookup on the two-phase path, so it is not a request count.",
     ),  # type: ignore
-    "maxserve.dkv.peer_load_failures": _meter.create_counter(
-        "maxserve.dkv.peer_load_failures",
+    "max.dkv.peer_load_failures": _meter.create_counter(
+        "max.dkv.peer_load_failures",
         unit="loads",
         description="Hinted peer loads that fell through to the next source or to the co-located dKV. Memo-capped rather than per-request: a failed source suppresses further attempts against the same instance and epoch for a fixed window, so one dead peer charges roughly one failure per window however many requests it affects.",
     ),  # type: ignore
-    "maxserve.dkv.peer_transfer_failures": _meter.create_counter(
-        "maxserve.dkv.peer_transfer_failures",
+    "max.dkv.peer_transfer_failures": _meter.create_counter(
+        "max.dkv.peer_transfer_failures",
         unit="transfers",
-        description="Hint-routed peer leases whose NIXL read failed to build or post, counted once per peer a round leased from. The failure is the peer's alone: the connector stays healthy, and the peer is skipped for the failure memo window, so later rounds lease from the co-located dKV, and marked stale so its metadata is reloaded. The usual cause is a peer that registered memory after the connector loaded its metadata.",
+        description="Hint-routed peer leases whose NIXL read failed to build, post or complete, counted once per peer a round leased from. The failure is the peer's alone: the connector stays healthy, and the peer is skipped for the failure memo window, so later rounds lease from the co-located dKV, and marked stale so its metadata is reloaded. The usual cause of a failed post is a peer that registered memory after the connector loaded its metadata.",
     ),  # type: ignore
-    "maxserve.dkv.peer_metadata_refreshes": _meter.create_counter(
-        "maxserve.dkv.peer_metadata_refreshes",
+    "max.dkv.peer_metadata_refreshes": _meter.create_counter(
+        "max.dkv.peer_metadata_refreshes",
         unit="refreshes",
         description="Stale dKV peers whose NIXL metadata the connector reloaded in place, after which the peer is routed to again.",
     ),  # type: ignore
-    "maxserve.dkv.peer_metadata_refresh_failures": _meter.create_counter(
-        "maxserve.dkv.peer_metadata_refresh_failures",
+    "max.dkv.peer_metadata_refresh_failures": _meter.create_counter(
+        "max.dkv.peer_metadata_refresh_failures",
         unit="refreshes",
-        description="In-place peer metadata reloads that NIXL refused. Each strands its peer: the connector never routes to or dials it again for the life of the process. Each also counts in maxserve.dkv.peer_attach_failures.",
+        description="In-place peer metadata reloads that NIXL refused. Each strands its peer: the connector never routes to or dials it again for the life of the process. Each also counts in max.dkv.peer_attach_failures.",
     ),  # type: ignore
-    "maxserve.dkv.hints_rejected": _meter.create_counter(
-        "maxserve.dkv.hints_rejected",
+    "max.dkv.hints_rejected": _meter.create_counter(
+        "max.dkv.hints_rejected",
         unit="hints",
-        description="Cache hints that arrived but were unusable: bytes that did not parse, an unknown version, a chain that does not describe the request, no entry for the requested group, or a source instance record that failed validation. Counted per entry on the two-phase load path and per call on the fused one.",
+        description="Cache hints that arrived but were unusable: bytes that did not parse, an unknown version, a chain that disagrees with the request on a block both name, no entry for the requested group, or a source instance record that failed validation. Counted per entry on the two-phase load path and per call on the fused one.",
     ),  # type: ignore
-    # Fail-opens: loads the connector answered as misses without a transfer.
+    "max.dkv.hints_unused": _meter.create_counter(
+        "max.dkv.hints_unused",
+        unit="hints",
+        description="Cache hints that agree with the request but cannot serve it, such as one whose chain ends before the lookup starts. Normal traffic, counted like max.dkv.hints_rejected and never in it.",
+    ),  # type: ignore
+    # Fail-opens: loads the connector answered as misses without a transfer,
+    # and the lookups hinted peers still served through the same outage.
     # Counters, since take_metrics clears them every batch like the peer set.
-    "maxserve.dkv.prepare_load_degraded": _create_counter(
-        "maxserve.dkv.prepare_load_degraded",
-        description="dKV lookups that found the connector degraded and planned nothing, so the request was served as a cache miss. Read with maxserve.dkv.load_with_plan_degraded and maxserve.dkv.load_with_plan_expired, which count an outage that starts after the lookup.",
+    "max.dkv.prepare_load_degraded": _create_counter(
+        "max.dkv.prepare_load_degraded",
+        description="dKV lookups that found the co-located dKV down and left blocks to it, so those blocks were served as cache misses. Blocks a hinted peer served load as usual. Read with max.dkv.load_with_plan_degraded and max.dkv.load_with_plan_expired, which count an outage that starts after the lookup.",
     ),
-    "maxserve.dkv.load_with_plan_degraded": _create_counter(
-        "maxserve.dkv.load_with_plan_degraded",
-        description="dKV loads whose connector degraded between the lookup and the post, so the leased blocks were released and the request was served as a cache miss.",
+    "max.dkv.load_with_plan_degraded": _create_counter(
+        "max.dkv.load_with_plan_degraded",
+        description="dKV loads whose co-located dKV went down between the lookup and the post, so the blocks leased from it were released and served as cache misses. Blocks leased from a hinted peer still load.",
     ),
-    "maxserve.dkv.load_with_plan_expired": _create_counter(
-        "maxserve.dkv.load_with_plan_expired",
+    "max.dkv.load_with_plan_expired": _create_counter(
+        "max.dkv.load_with_plan_expired",
         description="dKV read leases that aged past their deadline before the load posted them, released as a miss rather than read. Counted per lease, so one load spanning several dKV instances can count more than one.",
     ),
+    "max.dkv.peer_rounds_while_degraded": _create_counter(
+        "max.dkv.peer_rounds_while_degraded",
+        description="dKV lookups that found the co-located dKV down and still leased a loadable run from a peer the request's cache hint named. Read with max.dkv.prepare_load_degraded, which counts the lookups that left blocks to the co-located dKV, to see how much of a dKV restart the peers covered.",
+    ),
+    # The overlapped hinted lookup (CLIN-2163). Counters, since take_metrics
+    # clears them every batch like the fail-opens above.
+    "max.dkv.own_runs_short_of_hint": _create_counter(
+        "max.dkv.own_runs_short_of_hint",
+        description="Hinted dKV entries whose co-located run ended before the run the cache hint credited the co-located dKV with, counted only while the connector is healthy. Each asks its peer from where the co-located run ends, so a rising rate means hints overstate what the co-located dKV holds, usually through eviction since the hint was built.",
+    ),
+    "max.dkv.split_loads": _create_counter(
+        "max.dkv.split_loads",
+        description="dKV entries whose tail posted from a hinted peer behind a head posted from the co-located dKV, counted once the tail's transfer is posted.",
+    ),
+    "max.dkv.overlapped_peer_lookups": _create_counter(
+        "max.dkv.overlapped_peer_lookups",
+        description="dKV peer lookups begun alongside the co-located lookup rather than after it, at most one per round, under MODULAR_DKV_OVERLAP_PEER_LOOKUPS. Zero with the option off; read against max.dkv.hinted_lookups for how often it fires.",
+    ),
+    "max.dkv.hinted_lookups": _create_counter(
+        "max.dkv.hinted_lookups",
+        description="dKV lookup rounds in which some entry routed to an attached peer. The rounds max.dkv.hinted_lookup_latency times.",
+    ),
+    # The dKV orphan queue, where failed reader-pin releases and Filling aborts
+    # wait to be sent again. Counters for the outcomes, since take_metrics
+    # clears them every batch, and a gauge for the depth, a level.
+    "max.dkv.orphan_cleanups_reissued": _create_counter(
+        "max.dkv.orphan_cleanups_reissued",
+        description="Deferred dKV releases and aborts that a drain sent again and dKV took.",
+    ),
+    "max.dkv.orphan_cleanups_abandoned": _create_counter(
+        "max.dkv.orphan_cleanups_abandoned",
+        description="Deferred dKV releases and aborts left to dKV's own sweep because the instance that held them was gone.",
+    ),
+    "max.dkv.orphan_cleanups_dropped": _create_counter(
+        "max.dkv.orphan_cleanups_dropped",
+        description="Deferred dKV releases and aborts dropped to keep the queue under its cap. Should be zero.",
+    ),
+    "max.dkv.orphan_cleanups_refused": _create_counter(
+        "max.dkv.orphan_cleanups_refused",
+        description="Deferred dKV releases and aborts that dKV refused, dropped rather than sent again.",
+    ),
+    "max.dkv.orphan_cleanups_expired": _create_counter(
+        "max.dkv.orphan_cleanups_expired",
+        description="Deferred dKV releases and aborts dropped once dKV's own sweep had freed what they named.",
+    ),
+    "max.dkv.orphan_queue_depth": _meter.create_gauge(
+        "max.dkv.orphan_queue_depth",
+        unit="cleanups",
+        description="Deferred dKV releases and aborts queued or being reissued now, summed over every connector client. A level.",
+    ),  # type: ignore
     # Per-call dKV client counters. Counters, not histograms, so a dashboard
     # derives the per-call mean as time over calls; the rpc_*_latency
     # histograms above record one per-batch mean each.
-    "maxserve.dkv.hints_rejected_by_reason": _meter.create_counter(
-        "maxserve.dkv.hints_rejected_by_reason",
-        description="maxserve.dkv.hints_rejected split by `reason`: unparseable bytes, no entry for the group, a chain that does not contain the request, or an instance record that failed validation.",
+    "max.dkv.hints_rejected_by_reason": _meter.create_counter(
+        "max.dkv.hints_rejected_by_reason",
+        description="max.dkv.hints_rejected split by `reason`: unparseable bytes, no entry for the group, a chain that disagrees with the request on a block both name, or an instance record that failed validation.",
     ),  # type: ignore
-    "maxserve.dkv.rpc_calls": _meter.create_counter(
-        "maxserve.dkv.rpc_calls",
+    "max.dkv.hints_unused_by_reason": _create_counter(
+        "max.dkv.hints_unused_by_reason",
+        description="max.dkv.hints_unused split by `reason`: a lookup that starts past the hinted chain's end, skips a hinted block, starts before a sliding window's hinted window, or shares no block with it.",
+    ),
+    "max.dkv.rpc_calls": _meter.create_counter(
+        "max.dkv.rpc_calls",
         description="dKV RPCs the connector clients issued, split by `op`, including calls to peer dKV instances, transfer settles and touches.",
     ),  # type: ignore
-    "maxserve.dkv.rpc_time_ms": _meter.create_counter(
-        "maxserve.dkv.rpc_time_ms",
-        description="Cumulative wall milliseconds of dKV RPCs, split by `op`, including calls to peer dKV instances and the wait for the client's socket. Divide by maxserve.dkv.rpc_calls for the per-call mean.",
+    "max.dkv.rpc_time_ms": _meter.create_counter(
+        "max.dkv.rpc_time_ms",
+        description="Cumulative wall milliseconds of dKV RPCs, split by `op`, including calls to peer dKV instances and the wait for the client's socket. Divide by max.dkv.rpc_calls for the per-call mean.",
     ),  # type: ignore
-    "maxserve.dkv.rpc_socket_wait_ms": _meter.create_counter(
-        "maxserve.dkv.rpc_socket_wait_ms",
+    "max.dkv.rpc_socket_wait_ms": _meter.create_counter(
+        "max.dkv.rpc_socket_wait_ms",
         description="Cumulative milliseconds dKV RPCs queued for their client's single REQ socket behind another call in flight, split by `op`, including calls to peer dKV instances.",
     ),  # type: ignore
-    "maxserve.dkv.lock_waits": _meter.create_counter(
-        "maxserve.dkv.lock_waits",
+    "max.dkv.lock_waits": _meter.create_counter(
+        "max.dkv.lock_waits",
         description="Times a dKV connector entry point took the connector lock, split by `entry`.",
     ),  # type: ignore
-    "maxserve.dkv.lock_wait_ms": _meter.create_counter(
-        "maxserve.dkv.lock_wait_ms",
+    "max.dkv.lock_wait_ms": _meter.create_counter(
+        "max.dkv.lock_wait_ms",
         description="Cumulative milliseconds dKV connector entry points waited for the connector lock, split by `entry`.",
     ),  # type: ignore
-    "maxserve.dkv.touches_deduplicated": _create_counter(
-        "maxserve.dkv.touches_deduplicated",
+    "max.dkv.touches_deduplicated": _create_counter(
+        "max.dkv.touches_deduplicated",
         description="Recency touches the dKV client dropped because a touch it sent within the last second already covered their keys. Each one is a touch RPC the dKV server did not have to serve.",
     ),
-    "maxserve.dkv.blocked_calls": _create_counter(
-        "maxserve.dkv.blocked_calls",
-        description="Calls into each dKV connector entry point, split by `entry`. Divide maxserve.dkv.blocked_ms by this for the time the scheduler thread spent per call.",
+    "max.dkv.blocked_calls": _create_counter(
+        "max.dkv.blocked_calls",
+        description="Calls into each dKV connector entry point, split by `entry`. Divide max.dkv.blocked_ms by this for the time the scheduler thread spent per call.",
     ),
-    "maxserve.dkv.blocked_ms": _create_counter(
-        "maxserve.dkv.blocked_ms",
+    "max.dkv.blocked_ms": _create_counter(
+        "max.dkv.blocked_ms",
         description="Cumulative milliseconds the scheduler thread spent inside each dKV connector entry point, lock wait and any RPC included, split by `entry`.",
     ),
-    "maxserve.spec_decode.acceptance_rate_per_position": _meter.create_histogram(
-        "maxserve.spec_decode.acceptance_rate_per_position",
+    "max.spec_decode.acceptance_rate_per_position": _meter.create_histogram(
+        "max.spec_decode.acceptance_rate_per_position",
         unit="percent",
         description="Draft-token acceptance rate per position (0-100%).",
     ),  # type: ignore
-    "maxserve.batch_input_tokens": _meter.create_histogram(
-        "maxserve.batch_input_tokens",
+    "max.batch.input_tokens": _meter.create_histogram(
+        "max.batch.input_tokens",
         unit="tokens",
         description="Distribution of input tokens per scheduler batch.",
     ),  # type: ignore
-    "maxserve.batch_context_tokens": _meter.create_histogram(
-        "maxserve.batch_context_tokens",
+    "max.batch.context_tokens": _meter.create_histogram(
+        "max.batch.context_tokens",
         unit="tokens",
         description="Distribution of accumulated context tokens per scheduler batch.",
     ),  # type: ignore
-    "maxserve.batch_creation_time": _meter.create_histogram(
-        "maxserve.batch_creation_time",
+    "max.batch.creation_time": _meter.create_histogram(
+        "max.batch.creation_time",
         unit="ms",
         description="Distribution of scheduler batch creation time.",
     ),  # type: ignore
-    "maxserve.batch_prompt_throughput": _meter.create_histogram(
-        "maxserve.batch_prompt_throughput",
+    "max.batch.prompt_throughput": _meter.create_histogram(
+        "max.batch.prompt_throughput",
         unit="tokens/s",
         description="Per-batch prompt-side throughput per second.",
     ),  # type: ignore
-    "maxserve.batch_generation_throughput": _meter.create_histogram(
-        "maxserve.batch_generation_throughput",
+    "max.batch.generation_throughput": _meter.create_histogram(
+        "max.batch.generation_throughput",
         unit="tokens/s",
         description="Per-batch generation-side throughput per second.",
     ),  # type: ignore
-    "maxserve.dp_active_token_occupancy": _meter.create_histogram(
-        "maxserve.dp_active_token_occupancy",
+    "max.dp_active_token_occupancy": _meter.create_histogram(
+        "max.dp_active_token_occupancy",
         unit="%",
         description=(
             "Per-batch data-parallel balance, measured as the mean/max of per-rank active-token load as a percentage. 100% means perfectly balanced ranks."
         ),
     ),  # type: ignore
-    "maxserve.dp_context_token_occupancy": _meter.create_histogram(
-        "maxserve.dp_context_token_occupancy",
+    "max.dp_context_token_occupancy": _meter.create_histogram(
+        "max.dp_context_token_occupancy",
         unit="%",
         description=(
             "Per-batch data-parallel balance, measured as the mean/max of per-rank context-token (KV/attention) load as a percentage. 100% means perfectly balanced ranks."
         ),
     ),  # type: ignore
-    "maxserve.dp_active_tokens": _meter.create_counter(
-        "maxserve.dp_active_tokens",
+    "max.dp_active_tokens": _meter.create_counter(
+        "max.dp_active_tokens",
         unit="tokens",
         description=(
-            "Cumulative active tokens scheduled across all data-parallel replicas, excluding padding. Divide by `maxserve_dp_step_capacity_tokens_total` over the same window for token-weighted DP occupancy."
+            "Cumulative active tokens scheduled across all data-parallel replicas, excluding padding. Divide by `max_dp_step_capacity_tokens_total` over the same window for token-weighted DP occupancy."
         ),
     ),  # type: ignore
-    "maxserve.dp_step_capacity_tokens": _meter.create_counter(
-        "maxserve.dp_step_capacity_tokens",
+    "max.dp_step_capacity_tokens": _meter.create_counter(
+        "max.dp_step_capacity_tokens",
         unit="tokens",
         description=(
             "Cumulative synchronized step capacity. For each batch, this is the data-parallel degree times the heaviest rank's active tokens."
         ),
     ),  # type: ignore
-    "maxserve.batch_terminated_reqs": _meter.create_histogram(
-        "maxserve.batch_terminated_reqs",
+    "max.batch.terminated_reqs": _meter.create_histogram(
+        "max.batch.terminated_reqs",
         unit="reqs",
         description="Distribution of requests terminated per scheduler batch.",
     ),  # type: ignore
-    "maxserve.batch_pending_reqs": _meter.create_histogram(
-        "maxserve.batch_pending_reqs",
+    "max.batch.pending_reqs": _meter.create_histogram(
+        "max.batch.pending_reqs",
         unit="reqs",
         description="Distribution of requests pending in the queue, sampled once per scheduler batch.",
     ),  # type: ignore
-    "maxserve.cache.used_kv_pct": _meter.create_histogram(
-        "maxserve.cache.used_kv_pct",
+    "max.cache.used_kv_pct": _meter.create_histogram(
+        "max.cache.used_kv_pct",
         unit="percent",
         description="Percentage of device KV cache blocks in use (0-100%), sampled once per scheduler batch.",
     ),  # type: ignore
-    "maxserve.cache.used_host_kv_pct": _meter.create_histogram(
-        "maxserve.cache.used_host_kv_pct",
+    "max.cache.used_host_kv_pct": _meter.create_histogram(
+        "max.cache.used_host_kv_pct",
         unit="percent",
         description="Percentage of the KV connector's host tier bytes in use (0-100%), sampled once per scheduler batch when a connector with a host tier is configured.",
     ),  # type: ignore
-    "maxserve.cache.device_blocks_served": _meter.create_counter(
-        "maxserve.cache.device_blocks_served",
+    "max.cache.device_blocks_served": _meter.create_counter(
+        "max.cache.device_blocks_served",
         unit="blocks",
         description=(
             "Cumulative KV blocks served directly from the local device prefix cache."
         ),
     ),  # type: ignore
-    "maxserve.cache.h2d_bytes_copied": _meter.create_counter(
-        "maxserve.cache.h2d_bytes_copied",
+    "max.cache.h2d_bytes_copied": _meter.create_counter(
+        "max.cache.h2d_bytes_copied",
         unit="bytes",
         description=(
             "Cumulative KV bytes copied from the connector's host tier to "
@@ -681,30 +805,30 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "consumes."
         ),
     ),  # type: ignore
-    "maxserve.cache.cross_replica_blocks_copied": _meter.create_counter(
-        "maxserve.cache.cross_replica_blocks_copied",
+    "max.cache.cross_replica_blocks_copied": _meter.create_counter(
+        "max.cache.cross_replica_blocks_copied",
         unit="blocks",
         description=(
             "Cumulative KV blocks copied device-to-device across data-parallel replicas to reuse a prefix-cache hit on another replica."
         ),
     ),  # type: ignore
-    "maxserve.cache.cross_replica_bytes_copied": _meter.create_counter(
-        "maxserve.cache.cross_replica_bytes_copied",
+    "max.cache.cross_replica_bytes_copied": _meter.create_counter(
+        "max.cache.cross_replica_bytes_copied",
         unit="bytes",
         description=(
             "Cumulative bytes moved by device-to-device KV copies across data-parallel replicas."
         ),
     ),  # type: ignore
-    "maxserve.cache.d2h_bytes_copied": _meter.create_counter(
-        "maxserve.cache.d2h_bytes_copied",
+    "max.cache.d2h_bytes_copied": _meter.create_counter(
+        "max.cache.d2h_bytes_copied",
         unit="bytes",
         description=(
             "Cumulative KV bytes copied from device to the connector's host "
             "tier."
         ),
     ),  # type: ignore
-    "maxserve.cache.connector_loads_refused": _meter.create_counter(
-        "maxserve.cache.connector_loads_refused",
+    "max.cache.connector_loads_refused": _meter.create_counter(
+        "max.cache.connector_loads_refused",
         unit="loads",
         description=(
             "Cumulative loads the KV connector refused, from its host and "
@@ -714,8 +838,8 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "deliver."
         ),
     ),  # type: ignore
-    "maxserve.cache.connector_load_failures": _meter.create_counter(
-        "maxserve.cache.connector_load_failures",
+    "max.cache.connector_load_failures": _meter.create_counter(
+        "max.cache.connector_load_failures",
         unit="loads",
         description=(
             "Cumulative KV connector loads whose copy failed. Each is served "
@@ -723,8 +847,8 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "any of these is a transport fault rather than a cache miss."
         ),
     ),  # type: ignore
-    "maxserve.cache.connector_offload_blocks_dropped": _meter.create_counter(
-        "maxserve.cache.connector_offload_blocks_dropped",
+    "max.cache.connector_offload_blocks_dropped": _meter.create_counter(
+        "max.cache.connector_offload_blocks_dropped",
         unit="blocks",
         description=(
             "Cumulative offloaded KV blocks the connector's host pool had no "
@@ -732,188 +856,188 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "drops offloads before its hit rate falls."
         ),
     ),  # type: ignore
-    "maxserve.cache.disk_bytes_read": _meter.create_counter(
-        "maxserve.cache.disk_bytes_read",
+    "max.cache.disk_bytes_read": _meter.create_counter(
+        "max.cache.disk_bytes_read",
         unit="bytes",
         description="Cumulative KV bytes read from the disk cache tier.",
     ),  # type: ignore
-    "maxserve.cache.disk_bytes_written": _meter.create_counter(
-        "maxserve.cache.disk_bytes_written",
+    "max.cache.disk_bytes_written": _meter.create_counter(
+        "max.cache.disk_bytes_written",
         unit="bytes",
         description="Cumulative KV bytes written to the disk cache tier.",
     ),  # type: ignore
-    "maxserve.spec_decode.avg_acceptance_length": _meter.create_histogram(
-        "maxserve.spec_decode.avg_acceptance_length",
+    "max.spec_decode.avg_acceptance_length": _meter.create_histogram(
+        "max.spec_decode.avg_acceptance_length",
         unit="tokens",
         description="Mean draft-token acceptance length per speculative decoding batch.",
     ),  # type: ignore
-    "maxserve.dkv.nixl_read_gib_per_s": _meter.create_histogram(
-        "maxserve.dkv.nixl_read_gib_per_s",
+    "max.dkv.nixl_read_gib_per_s": _meter.create_histogram(
+        "max.dkv.nixl_read_gib_per_s",
         unit="GiB/s",
         description="NIXL READ throughput.",
     ),  # type: ignore
-    "maxserve.dkv.nixl_write_gib_per_s": _meter.create_histogram(
-        "maxserve.dkv.nixl_write_gib_per_s",
+    "max.dkv.nixl_write_gib_per_s": _meter.create_histogram(
+        "max.dkv.nixl_write_gib_per_s",
         unit="GiB/s",
         description="NIXL WRITE throughput.",
     ),  # type: ignore
-    "maxserve.cache.used_disk_kv_pct": _meter.create_histogram(
-        "maxserve.cache.used_disk_kv_pct",
+    "max.cache.used_disk_kv_pct": _meter.create_histogram(
+        "max.cache.used_disk_kv_pct",
         unit="percent",
         description="Percentage of the KV connector's disk tier bytes in use (0-100%), sampled once per scheduler batch when the connector has a disk tier.",
     ),  # type: ignore
-    "maxserve.vision.images_encoded": _meter.create_counter(
-        "maxserve.vision.images_encoded",
+    "max.vision.images_encoded": _meter.create_counter(
+        "max.vision.images_encoded",
         unit="images",
         description="Cumulative images run through the vision encoder (cache misses).",
     ),  # type: ignore
-    "maxserve.vision.images_cached": _meter.create_counter(
-        "maxserve.vision.images_cached",
+    "max.vision.images_cached": _meter.create_counter(
+        "max.vision.images_cached",
         unit="images",
         description="Cumulative images served from the vision encoder cache (cache hits).",
     ),  # type: ignore
-    "maxserve.vision.patches_encoded": _meter.create_counter(
-        "maxserve.vision.patches_encoded",
+    "max.vision.patches_encoded": _meter.create_counter(
+        "max.vision.patches_encoded",
         unit="patches",
         description="Cumulative image patches fed to the vision encoder.",
     ),  # type: ignore
-    "maxserve.vision.tokens_encoded": _meter.create_counter(
-        "maxserve.vision.tokens_encoded",
+    "max.vision.tokens_encoded": _meter.create_counter(
+        "max.vision.tokens_encoded",
         unit="tokens",
         description="Cumulative merged vision tokens produced by the vision encoder.",
     ),  # type: ignore
-    "maxserve.vision.cache_hit_rate": _meter.create_histogram(
-        "maxserve.vision.cache_hit_rate",
+    "max.vision.cache_hit_rate": _meter.create_histogram(
+        "max.vision.cache_hit_rate",
         unit="percent",
         description="Per-batch vision encoder cache hit rate (0-100%).",
     ),  # type: ignore
-    "maxserve.vision.preprocess_cache_hits": _meter.create_counter(
-        "maxserve.vision.preprocess_cache_hits",
+    "max.vision.preprocess_cache_hits": _meter.create_counter(
+        "max.vision.preprocess_cache_hits",
         unit="images",
         description="Cumulative images found already preprocessed, whose decode and preprocessing are both skipped.",
     ),  # type: ignore
-    "maxserve.vision.preprocess_cache_misses": _meter.create_counter(
-        "maxserve.vision.preprocess_cache_misses",
+    "max.vision.preprocess_cache_misses": _meter.create_counter(
+        "max.vision.preprocess_cache_misses",
         unit="images",
         description="Cumulative images not already preprocessed, which the API server must decode and preprocess.",
     ),  # type: ignore
-    "maxserve.vision.image_admission_decode_time": _meter.create_histogram(
-        "maxserve.vision.image_admission_decode_time",
+    "max.vision.image_admission_decode_time": _meter.create_histogram(
+        "max.vision.image_admission_decode_time",
         unit="ms",
         description="Per-request wall-clock time of the admission image work: deciding which images are already preprocessed, then decoding and validating the rest.",
     ),  # type: ignore
-    "maxserve.video.clips_encoded": _meter.create_counter(
-        "maxserve.video.clips_encoded",
+    "max.video.clips_encoded": _meter.create_counter(
+        "max.video.clips_encoded",
         unit="clips",
         description="Cumulative video clips run through the video encoder (cache misses).",
     ),  # type: ignore
-    "maxserve.video.tokens_encoded": _meter.create_counter(
-        "maxserve.video.tokens_encoded",
+    "max.video.tokens_encoded": _meter.create_counter(
+        "max.video.tokens_encoded",
         unit="tokens",
         description="Cumulative merged video tokens produced by the video encoder.",
     ),  # type: ignore
-    "maxserve.video.encoding_time_milliseconds": _meter.create_histogram(
-        "maxserve.video.encoding_time_milliseconds",
+    "max.video.encoding_time_milliseconds": _meter.create_histogram(
+        "max.video.encoding_time_milliseconds",
         unit="ms",
         description="Per-batch video encoder wall-clock time.",
     ),  # type: ignore
-    "maxserve.video.frames_per_clip": _meter.create_histogram(
-        "maxserve.video.frames_per_clip",
+    "max.video.frames_per_clip": _meter.create_histogram(
+        "max.video.frames_per_clip",
         unit="frames",
         description="Sampled frame count per newly encoded video clip.",
     ),  # type: ignore
-    "maxserve.media.items": _meter.create_counter(
-        "maxserve.media.items",
+    "max.media.items": _meter.create_counter(
+        "max.media.items",
         description=(
-            "Cumulative media items the API server resolved into bytes, split by `media_kind` (`image`, `video`) and `source` (`inline` for a data URI, `url` for http(s), `file` for a local path). A rejected item is counted by `maxserve_media_rejections_total` instead."
+            "Cumulative media items the API server resolved into bytes, split by `media_kind` (`image`, `video`) and `source` (`inline` for a data URI, `url` for http(s), `file` for a local path). A rejected item is counted by `max_media_rejections_total` instead."
         ),
     ),  # type: ignore
-    "maxserve.media.resolve_time": _meter.create_histogram(
-        "maxserve.media.resolve_time",
+    "max.media.resolve_time": _meter.create_histogram(
+        "max.media.resolve_time",
         unit="ms",
         description=(
             "Per-item time to turn one media reference into bytes: the http(s) download, the base64 decode of a data URI, or the local file read. Excludes the image decode. Split by `source` (`inline`, `url`, `file`). Items on one request are resolved concurrently, so these windows overlap and their sum isn't the request's elapsed resolve time."
         ),
     ),  # type: ignore
-    "maxserve.media.item_size": _meter.create_histogram(
-        "maxserve.media.item_size",
+    "max.media.item_size": _meter.create_histogram(
+        "max.media.item_size",
         unit="bytes",
         description=(
             "Encoded size of one resolved media item as it arrived on the wire or in the request body. Not the decoded pixel buffer. Split by `media_kind`."
         ),
     ),  # type: ignore
-    "maxserve.media.image_size": _meter.create_histogram(
-        "maxserve.media.image_size",
+    "max.media.image_size": _meter.create_histogram(
+        "max.media.image_size",
         unit="pixels",
         description=(
             "Pixel count (`width * height`) of one image as it arrived, read from the header before any resize, split by `format`."
         ),
     ),  # type: ignore
-    "maxserve.media.image_decodes": _meter.create_counter(
-        "maxserve.media.image_decodes",
+    "max.media.image_decodes": _meter.create_counter(
+        "max.media.image_decodes",
         description=(
             "Cumulative images whose pixels the API server actually decoded, split by `format`. An image the preprocess cache let the server skip is sized but not counted here."
         ),
     ),  # type: ignore
     # Milliseconds are in the name rather than in a declared unit: with
     # unit="ms" the exporter publishes
-    # "maxserve_media_image_decode_ms_milliseconds_total", which Datadog
+    # "max_media_image_decode_ms_milliseconds_total", which Datadog
     # spells "..._milliseconds.count" -- indistinguishable from the ".count"
-    # it appends to "maxserve.media.image_decodes" beside it, while carrying
+    # it appends to "max.media.image_decodes" beside it, while carrying
     # milliseconds instead of a count.
-    "maxserve.media.image_decode_ms": _meter.create_counter(
-        "maxserve.media.image_decode_ms",
+    "max.media.image_decode_ms": _meter.create_counter(
+        "max.media.image_decode_ms",
         description=(
             "Cumulative milliseconds of per-image codec decode, split by `format`. Excludes the per-architecture processor (resize, patchify, normalize), whose cost follows the pixel count rather than the container."
         ),
     ),  # type: ignore
-    "maxserve.media.rejections": _meter.create_counter(
-        "maxserve.media.rejections",
+    "max.media.rejections": _meter.create_counter(
+        "max.media.rejections",
         description=(
             "Cumulative media items the API server refused, split by `reason`. Every value is an HTTP 400 to the client, so this counts client-visible failures rather than server faults."
         ),
     ),  # type: ignore
-    "maxserve.media.items_per_request": _meter.create_histogram(
-        "maxserve.media.items_per_request",
+    "max.media.items_per_request": _meter.create_histogram(
+        "max.media.items_per_request",
         unit="items",
         description=(
             "Media items of one `media_kind` carried by a single request, counted before any media is downloaded and before the per-request count caps, so a request refused for carrying too many items is still sampled. Requests carrying none of that kind aren't sampled, so the distribution starts at one."
         ),
     ),  # type: ignore
-    "maxserve.media.preprocess_cache_evictions": _meter.create_counter(
-        "maxserve.media.preprocess_cache_evictions",
+    "max.media.preprocess_cache_evictions": _meter.create_counter(
+        "max.media.preprocess_cache_evictions",
         description=(
             "Cumulative preprocessed-media entries the tokenizer dropped to stay inside its byte budget, split by `media_kind`. Budget pressure only, so an idle-timeout reclaim isn't counted."
         ),
     ),  # type: ignore
-    "maxserve.media.preprocess_cache_size": _meter.create_gauge(
-        "maxserve.media.preprocess_cache_size",
+    "max.media.preprocess_cache_size": _meter.create_gauge(
+        "max.media.preprocess_cache_size",
         unit="bytes",
         description=(
             "Host bytes the tokenizer's preprocessed-media cache retains, split by `media_kind`. Sampled after tokenization, once per media request rather than on a timer."
         ),
     ),  # type: ignore
-    "maxserve.media.preprocess_cache_capacity": _meter.create_gauge(
-        "maxserve.media.preprocess_cache_capacity",
+    "max.media.preprocess_cache_capacity": _meter.create_gauge(
+        "max.media.preprocess_cache_capacity",
         unit="bytes",
         description=(
-            "The byte budget `maxserve_media_preprocess_cache_size_bytes` is evicted down to, split by `media_kind`. Zero means caching is disabled for that kind."
+            "The byte budget `max_media_preprocess_cache_size_bytes` is evicted down to, split by `media_kind`. Zero means caching is disabled for that kind."
         ),
     ),  # type: ignore
-    "maxserve.tool_call.conformance_errors": _meter.create_counter(
-        "maxserve.tool_call.conformance_errors",
+    "max.tool_call.conformance_errors": _meter.create_counter(
+        "max.tool_call.conformance_errors",
         description=(
             "Generated tool calls that failed the observability-only schema-conformance check, split by `outcome` label (`invalid_json`, `unknown_tool`, `schema_mismatch`)."
         ),
     ),  # type: ignore
-    "maxserve.structured_output.grammar_rejections": _meter.create_counter(
-        "maxserve.structured_output.grammar_rejections",
+    "max.structured_output.grammar_rejections": _meter.create_counter(
+        "max.structured_output.grammar_rejections",
         description=(
             "Structured-output requests rejected at admission (HTTP 400) because the grammar backend couldn't compile the schema, split by `kind` label (`tool_grammar`, `json_schema`)."
         ),
     ),  # type: ignore
-    "maxserve.structured_output.grammar_build_time": _meter.create_histogram(
-        "maxserve.structured_output.grammar_build_time",
+    "max.structured_output.grammar_build_time": _meter.create_histogram(
+        "max.structured_output.grammar_build_time",
         unit="ms",
         description=(
             "Wall-clock time of an off-thread grammar-matcher build in "
@@ -924,59 +1048,60 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "chunked-CE continuation."
         ),
     ),  # type: ignore
-    "maxserve.response_format.conformance_errors": _meter.create_counter(
-        "maxserve.response_format.conformance_errors",
+    "max.response_format.conformance_errors": _meter.create_counter(
+        "max.response_format.conformance_errors",
         description=(
             "`response_format` (`json_schema`/`json_object`) responses whose final content failed the observability-only schema-conformance check, split by `outcome` label (`invalid_json`, `schema_mismatch`)."
         ),
     ),  # type: ignore
-    "maxserve.tool_call.responses": _meter.create_counter(
-        "maxserve.tool_call.responses",
+    "max.tool_call.responses": _meter.create_counter(
+        "max.tool_call.responses",
         description=(
             "Count of chat-completion requests whose response contained at "
             "least one tool call, counted once per request however many "
-            "calls it emitted. Against 'maxserve.tool_call.requests' this "
+            "calls it emitted. Against 'max.tool_call.requests' this "
             "gives the share of declared tool inventories the model actually "
             "draws on; tools declared but never called cost prompt tokens on "
             "every request. Not a denominator for "
-            "'maxserve.tool_call.conformance_errors', which counts "
+            "'max.tool_call.conformance_errors', which counts "
             "individual generated calls rather than requests."
         ),
     ),  # type: ignore
-    "maxserve.tool_call.tools_per_request": _meter.create_histogram(
-        "maxserve.tool_call.tools_per_request",
+    "max.tool_call.tools_per_request": _meter.create_histogram(
+        "max.tool_call.tools_per_request",
         unit="tools",
         description=(
             "Distribution of tools declared per chat-completion request. "
             "Declared tools are rendered into the prompt, so inventory size "
             "explains a client's prompt length and grammar compile cost. "
-            "Shares its population with 'maxserve.tool_call.requests'."
+            "Shares its population with 'max.tool_call.requests'."
         ),
     ),  # type: ignore
-    "maxserve.tool_call.requests": _meter.create_counter(
-        "maxserve.tool_call.requests",
+    "max.tool_call.requests": _meter.create_counter(
+        "max.tool_call.requests",
         description=(
             "Count of chat-completion requests that supplied a non-empty "
             "'tools' array, split by the 'choice' tag (auto, required, "
-            "named). Pairs with 'maxserve.tool_call.responses' to show how "
+            "named). Pairs with 'max.tool_call.responses' to show how "
             "often a declared inventory is actually used. A "
             "tool_choice='none' request is not counted: it cannot produce a "
             "tool call."
         ),
     ),  # type: ignore
-    "maxserve.structured_output.requests": _meter.create_counter(
-        "maxserve.structured_output.requests",
+    "max.structured_output.requests": _meter.create_counter(
+        "max.structured_output.requests",
         description=(
             "Count of chat-completion requests that carried a "
             "response_format, split by the 'kind' tag (json_object, "
             "json_schema); a 'text' format is the unconstrained default and "
             "is not counted. Counted before the schema is compiled, so a "
             "request later rejected by "
-            "'maxserve.structured_output.grammar_rejections' still counts."
+            "'max.structured_output.grammar_rejections' still counts. "
+            "Both kinds are exported at zero from startup."
         ),
     ),  # type: ignore
-    "maxserve.tokenizer.chat_encoder_requests": _meter.create_counter(
-        "maxserve.tokenizer.chat_encoder_requests",
+    "max.tokenizer.chat_encoder_requests": _meter.create_counter(
+        "max.tokenizer.chat_encoder_requests",
         description=(
             "Count of chat requests a --tokenizer-impl encoder was asked to "
             "encode, split by the 'outcome' tag: 'custom' when it served the "
@@ -988,7 +1113,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
 
 
 class UnknownMetric(Exception):
-    pass
+    """Raised for a metric name that has no instrument."""
 
 
 # Suffix identifying the exponential-histogram shadow of a histogram metric.
@@ -1082,7 +1207,7 @@ def _commit_measurement(
 
 @dataclass
 class MaxMeasurement:
-    """Shim around the recording of a metric observation
+    """Shim around the recording of a metric observation.
 
     Simplifies decoupling the observation of a metric from its recording.
     """
@@ -1093,6 +1218,7 @@ class MaxMeasurement:
     time_unix_nano: int = field(default_factory=time.time_ns)
 
     def commit(self) -> None:
+        """Commits the measurement to OTLP."""
         _commit_measurement(
             self.instrument_name,
             self.value,
@@ -1115,8 +1241,12 @@ TelemetryFn = Callable[[MaxMeasurement], None]
 
 
 class MetricClient(abc.ABC):
+    """Base class for the clients that commit measurements."""
+
     @abc.abstractmethod
-    def send_measurement(self, metric: MaxMeasurement) -> None: ...
+    def send_measurement(self, metric: MaxMeasurement) -> None:
+        """Commits the measurement."""
+        ...
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -1159,31 +1289,38 @@ async def _trivially_picklable_xprocess_factory(
 
 
 class NoopClient(MetricClient):
+    """Metric client that drops measurements."""
+
     def send_measurement(self, m: MaxMeasurement) -> None:
-        pass
+        """Drops the measurement."""
 
     def cross_process_factory(
         self,
         settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        """Returns the factory that rebuilds this client in another process."""
         return functools.partial(_trivially_picklable_xprocess_factory, self)
 
 
 class SyncClient(MetricClient):
+    """Metric client that commits each measurement inline."""
+
     def send_measurement(self, m: MaxMeasurement) -> None:
+        """Commits the measurement inline."""
         m.commit()
 
     def cross_process_factory(
         self,
         settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        """Returns the factory that rebuilds this client in another process."""
         return functools.partial(_trivially_picklable_xprocess_factory, self)
 
 
 class _AsyncMetrics:
-    """Centralizes metrics to encapsulate the OTEL dependency and avoid breaking schema changes
+    """Centralizes metrics to hide the OTEL dependency and its schema changes.
 
-    Produce metric measurements to be consumed elsewhere
+    Produces metric measurements to be consumed elsewhere.
     """
 
     def __init__(self) -> None:
@@ -1220,7 +1357,7 @@ class _AsyncMetrics:
         for phase in get_args(_DisconnectPhase):
             self.client.send_measurement(
                 MaxMeasurement(
-                    "maxserve.request.client_disconnect_cancellations",
+                    "max.request.client_disconnect_cancellations",
                     0,
                     {**self.extra_attributes, "phase": phase},
                 ),
@@ -1229,7 +1366,7 @@ class _AsyncMetrics:
     def client_disconnect_cancellation(self, phase: _DisconnectPhase) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.request.client_disconnect_cancellations",
+                "max.request.client_disconnect_cancellations",
                 1,
                 {**self.extra_attributes, "phase": phase},
             ),
@@ -1238,7 +1375,7 @@ class _AsyncMetrics:
     def request_count(self, responseCode: int, urlPath: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.request_count",
+                "max.request_count",
                 1,
                 {
                     **self.extra_attributes,
@@ -1251,7 +1388,7 @@ class _AsyncMetrics:
     def request_time(self, value: float, urlPath: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.request_time",
+                "max.request_time",
                 value,
                 {**self.extra_attributes, "path": urlPath},
             ),
@@ -1260,42 +1397,54 @@ class _AsyncMetrics:
     def input_time(self, value: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.input_processing_time", value, self.extra_attributes
+                "max.input_processing_time", value, self.extra_attributes
             ),
         )
 
     def output_time(self, value: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.output_processing_time", value, self.extra_attributes
+                "max.output_processing_time", value, self.extra_attributes
             ),
         )
 
     def ttft(self, value: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.time_to_first_token", value, self.extra_attributes
+                "max.time_to_first_token", value, self.extra_attributes
+            ),
+        )
+
+    def ttft_by_prompt_length(self, value: float, prompt_tokens: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.time_to_first_token_by_prompt_length",
+                value,
+                {
+                    **self.extra_attributes,
+                    "prompt_length": _prompt_length_bucket(prompt_tokens),
+                },
             ),
         )
 
     def input_tokens(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.num_input_tokens", value, self.extra_attributes
+                "max.num_input_tokens", value, self.extra_attributes
             ),
         )
 
     def output_tokens(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.num_output_tokens", value, self.extra_attributes
+                "max.num_output_tokens", value, self.extra_attributes
             ),
         )
 
     def reqs_queued(self, value: int) -> None:
         """Publish the current depth of the scheduler's CE / prefill queue.
 
-        ``maxserve.num_requests_queued`` is a synchronous gauge: every call
+        ``max.num_requests_queued`` is a synchronous gauge: every call
         replaces the previously reported value rather than accumulating.
         Schedulers should call this once per iteration with
         ``len(all_ce_reqs)`` (or the equivalent for their queue layout) at
@@ -1303,21 +1452,21 @@ class _AsyncMetrics:
         """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.num_requests_queued", value, self.extra_attributes
+                "max.num_requests_queued", value, self.extra_attributes
             ),
         )
 
     def reqs_running(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.num_requests_running", value, self.extra_attributes
+                "max.num_requests_running", value, self.extra_attributes
             ),
         )
 
     def reqs_awaiting_admission(self, value: int) -> None:
         """Adjust the count of API-side requests not yet handed to the worker.
 
-        ``maxserve.num_requests_awaiting_admission`` is an up/down counter:
+        ``max.num_requests_awaiting_admission`` is an up/down counter:
         call with ``1`` when a request is accepted by the API server (before
         tokenization) and ``-1`` just before it is enqueued to the model
         worker. A persistently high value means requests are backing up in the
@@ -1325,7 +1474,7 @@ class _AsyncMetrics:
         """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.num_requests_awaiting_admission",
+                "max.num_requests_awaiting_admission",
                 value,
                 self.extra_attributes,
             ),
@@ -1336,12 +1485,12 @@ class _AsyncMetrics:
 
         Companion to :meth:`reqs_awaiting_admission` (the live up/down
         counter): a periodic sample of the same running count is fed into the
-        ``maxserve.requests_awaiting_admission`` histogram so p50/p99 ingress
+        ``max.requests_awaiting_admission`` histogram so p50/p99 ingress
         backlog over time can be recovered.
         """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.requests_awaiting_admission",
+                "max.requests_awaiting_admission",
                 value,
                 self.extra_attributes,
             ),
@@ -1350,14 +1499,14 @@ class _AsyncMetrics:
     def responses_buffered(self, value: int) -> None:
         """Publish the current egress backlog (sum of output-queue depths).
 
-        ``maxserve.num_responses_buffered`` is a synchronous gauge: every call
+        ``max.num_responses_buffered`` is a synchronous gauge: every call
         replaces the previously reported value. The API server should sample
         it periodically with the total number of model-worker responses
         received but not yet consumed by the streaming layer.
         """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.num_responses_buffered",
+                "max.num_responses_buffered",
                 value,
                 self.extra_attributes,
             ),
@@ -1367,13 +1516,13 @@ class _AsyncMetrics:
         """Record a sample of the egress backlog for distribution analysis.
 
         Companion to :meth:`responses_buffered` (the live gauge): the same
-        periodic sample is also fed into the ``maxserve.responses_buffered``
+        periodic sample is also fed into the ``max.responses_buffered``
         histogram so p50/p99 backlog over time can be recovered, which a
         scrape-interval gauge sample alone cannot provide.
         """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.responses_buffered", value, self.extra_attributes
+                "max.responses_buffered", value, self.extra_attributes
             ),
         )
 
@@ -1381,7 +1530,7 @@ class _AsyncMetrics:
         """Record how long a response waited in the API output queue (ms)."""
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.response_queue_time", ms, self.extra_attributes
+                "max.response_queue_time", ms, self.extra_attributes
             ),
         )
 
@@ -1400,25 +1549,25 @@ class _AsyncMetrics:
         if component is not None:
             attributes = {**attributes, "component": component}
         self.client.send_measurement(
-            MaxMeasurement("maxserve.model_load_time", ms, attributes),
+            MaxMeasurement("max.model_load_time", ms, attributes),
         )
 
     def itl(self, ms: float) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.itl", ms, self.extra_attributes),
+            MaxMeasurement("max.itl", ms, self.extra_attributes),
         )
 
     def time_per_output_token(self, ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.time_per_output_token", ms, self.extra_attributes
+                "max.time_per_output_token", ms, self.extra_attributes
             ),
         )
 
     def pipeline_load(self, name: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.pipeline_load",
+                "max.pipeline_load",
                 1,
                 {**self.extra_attributes, "model": name},
             ),
@@ -1427,8 +1576,17 @@ class _AsyncMetrics:
     def batch_size(self, size: int, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.batch_size",
+                "max.batch.size",
                 size,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def scheduler_batch_step_time(self, value: float, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.scheduler.batch_step_time",
+                value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
         )
@@ -1438,7 +1596,7 @@ class _AsyncMetrics:
     ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.batch_execution_time",
+                "max.batch.execution_time",
                 execution_time,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -1448,29 +1606,27 @@ class _AsyncMetrics:
         """API-local time from HTTP accept to tokenize start."""
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.di.api_pre_tokenize", ms, self.extra_attributes
+                "max.di.api_pre_tokenize", ms, self.extra_attributes
             ),
         )
 
     def di_api_submit(self, ms: float) -> None:
         """API-local time from tokenize done to model-worker ZMQ put."""
         self.client.send_measurement(
-            MaxMeasurement("maxserve.di.api_submit", ms, self.extra_attributes),
+            MaxMeasurement("max.di.api_submit", ms, self.extra_attributes),
         )
 
     def di_mw_queue_wait(self, ms: float) -> None:
         """Decode-worker time from first ZMQ pull to admission enqueue."""
         self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.di.mw_queue_wait", ms, self.extra_attributes
-            ),
+            MaxMeasurement("max.di.mw_queue_wait", ms, self.extra_attributes),
         )
 
     def di_decode_admission_queue_wait_time(self, ms: float) -> None:
         """Decode-local wait in decode's own admission queue before dispatch."""
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.di.decode_admission_queue_wait_time",
+                "max.di.decode_admission_queue_wait_time",
                 ms,
                 self.extra_attributes,
             ),
@@ -1480,37 +1636,33 @@ class _AsyncMetrics:
         """Decode-side PrefillRequest build+serialize+send duration."""
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.di.decode_send_time", ms, self.extra_attributes
+                "max.di.decode_send_time", ms, self.extra_attributes
             ),
         )
 
     def di_dispatch_rtt(self, ms: float) -> None:
         """Decode-clock round trip to prefill's 'arrived' ack ping."""
         self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.di.dispatch_rtt", ms, self.extra_attributes
-            ),
+            MaxMeasurement("max.di.dispatch_rtt", ms, self.extra_attributes),
         )
 
     def di_prefill_span(self, ms: float) -> None:
         """Decode-clock span between prefill's 'arrived' and 'ce_done' pings."""
         self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.di.prefill_span", ms, self.extra_attributes
-            ),
+            MaxMeasurement("max.di.prefill_span", ms, self.extra_attributes),
         )
 
     def di_reply_rtt(self, ms: float) -> None:
         """Decode-clock span from the 'ce_done' ping to the real reply."""
         self.client.send_measurement(
-            MaxMeasurement("maxserve.di.reply_rtt", ms, self.extra_attributes),
+            MaxMeasurement("max.di.reply_rtt", ms, self.extra_attributes),
         )
 
     def di_prefill_queue_wait_time(self, ms: float) -> None:
         """Prefill-local queue wait before a request's first CE batch."""
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.di.prefill_queue_wait_time",
+                "max.di.prefill_queue_wait_time",
                 ms,
                 self.extra_attributes,
             ),
@@ -1519,64 +1671,68 @@ class _AsyncMetrics:
     def ce_pool_wait_time(self, ms: float) -> None:
         """Time from a CE request's arrival to its DP balancer binding."""
         self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.ce_pool_wait_time", ms, self.extra_attributes
-            ),
+            MaxMeasurement("max.ce_pool_wait_time", ms, self.extra_attributes),
         )
 
     def di_decode_postprocess_time(self, ms: float) -> None:
         """Decode-local time from PrefillResponse receipt to response queue."""
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.di.decode_postprocess_time",
+                "max.di.decode_postprocess_time",
                 ms,
                 self.extra_attributes,
             ),
         )
 
     def di_early_sync_time(self, ms: float) -> None:
-        """Duration of the early-sync guard's blocking commit of the
-        previous batch's structured-output FSM state, when it fired (see
-        ``_should_early_sync_prev_batch``)."""
+        """Duration of the early-sync guard's blocking commit, when it fired.
+
+        Covers the commit of the previous batch's structured-output FSM state (see
+        ``_should_early_sync_prev_batch``).
+        """
         self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.di.early_sync_time", ms, self.extra_attributes
-            ),
+            MaxMeasurement("max.di.early_sync_time", ms, self.extra_attributes),
         )
 
     def di_ce_preempted_tg_iteration_count(self) -> None:
-        """Counter: how often a CE batch admits work while TG requests are
-        pending, giving those TG requests zero progress that iteration."""
+        """Counter: CE batches admitting work while TG requests are pending.
+
+        Those TG requests get zero progress that iteration.
+        """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.di.ce_preempted_tg_iteration_count",
+                "max.di.ce_preempted_tg_iteration_count",
                 1,
                 self.extra_attributes,
             ),
         )
 
     def di_ce_preempted_tg_pending_count(self, count: int) -> None:
-        """Histogram: how large each such preemption was -- the number of TG
-        requests pending at the moment (paired with
-        ``di_ce_preempted_tg_iteration_count``, which counts how often)."""
+        """Histogram: how many TG requests each such preemption left pending.
+
+        Paired with ``di_ce_preempted_tg_iteration_count``, which counts how often.
+        """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.di.ce_preempted_tg_pending_count",
+                "max.di.ce_preempted_tg_pending_count",
                 count,
                 self.extra_attributes,
             ),
         )
 
     def di_handoff_to_first_token_time(self, ms: float) -> None:
-        """Wall-clock time from a prefill-to-decode handoff landing (its
-        token discarded, re-queued as a one-token chunked-CE continuation)
-        to decode's own re-forward actually sending token 1 to the API
-        process. A TTFT contribution specific to the handoff path; the
-        ordinary path's token already arrives with the ``PrefillResponse``,
-        so it has no equivalent wait."""
+        """Wall-clock time from a prefill-to-decode handoff to token 1 at the API.
+
+        Starts when the handoff lands: its token is discarded, and the request is
+        re-queued as a one-token chunked-CE continuation. Ends when decode's own
+        re-forward sends token 1 to the API process.
+
+        A TTFT contribution specific to the handoff path; the ordinary path's token
+        already arrives with the ``PrefillResponse``, so it has no equivalent wait.
+        """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.di.handoff_to_first_token_time",
+                "max.di.handoff_to_first_token_time",
                 ms,
                 self.extra_attributes,
             ),
@@ -1585,7 +1741,7 @@ class _AsyncMetrics:
     def cache_num_used_blocks(self, num_used_blocks: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.num_used_blocks",
+                "max.cache.num_used_blocks",
                 num_used_blocks,
                 self.extra_attributes,
             ),
@@ -1594,7 +1750,7 @@ class _AsyncMetrics:
     def cache_num_total_blocks(self, total_blocks: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.num_total_blocks",
+                "max.cache.num_total_blocks",
                 total_blocks,
                 self.extra_attributes,
             ),
@@ -1605,7 +1761,7 @@ class _AsyncMetrics:
     ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.jenga_small_blocks",
+                "max.cache.jenga_small_blocks",
                 blocks,
                 {
                     **self.extra_attributes,
@@ -1621,7 +1777,7 @@ class _AsyncMetrics:
     ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.jenga_huge_blocks",
+                "max.cache.jenga_huge_blocks",
                 blocks,
                 {
                     **self.extra_attributes,
@@ -1635,7 +1791,7 @@ class _AsyncMetrics:
     def cache_request_prefix_coverage(self, coverage: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.request_prefix_coverage",
+                "max.cache.request_prefix_coverage",
                 coverage,
                 self.extra_attributes,
             ),
@@ -1657,7 +1813,7 @@ class _AsyncMetrics:
         """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.hits",
+                "max.cache.hits",
                 hits,
                 {**self.extra_attributes, "tier": tier},
             ),
@@ -1666,21 +1822,50 @@ class _AsyncMetrics:
     def cache_misses(self, cache_misses: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.misses", cache_misses, self.extra_attributes
+                "max.cache.misses", cache_misses, self.extra_attributes
             ),
         )
 
     def preemption(self) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.preemption_count", 1, self.extra_attributes
+                "max.cache.preemption_count", 1, self.extra_attributes
+            ),
+        )
+
+    def connector_cordon_wait_time(self, ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_cordon_wait_time",
+                ms,
+                self.extra_attributes,
+            ),
+        )
+
+    def connector_cordon_passes(self, passes: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_cordon_passes",
+                passes,
+                self.extra_attributes,
+            ),
+        )
+
+    def connector_lookup_admission_stop(
+        self, reason: LookupAdmissionStop
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_lookup_admission_stops",
+                1,
+                {**self.extra_attributes, "reason": reason},
             ),
         )
 
     def vision_images_encoded(self, images: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.vision.images_encoded",
+                "max.vision.images_encoded",
                 images,
                 self.extra_attributes,
             ),
@@ -1689,7 +1874,7 @@ class _AsyncMetrics:
     def vision_images_cached(self, images: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.vision.images_cached",
+                "max.vision.images_cached",
                 images,
                 self.extra_attributes,
             ),
@@ -1698,7 +1883,7 @@ class _AsyncMetrics:
     def vision_patches_encoded(self, patches: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.vision.patches_encoded",
+                "max.vision.patches_encoded",
                 patches,
                 self.extra_attributes,
             ),
@@ -1707,7 +1892,7 @@ class _AsyncMetrics:
     def vision_tokens_encoded(self, tokens: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.vision.tokens_encoded",
+                "max.vision.tokens_encoded",
                 tokens,
                 self.extra_attributes,
             ),
@@ -1716,7 +1901,7 @@ class _AsyncMetrics:
     def vision_preprocess_cache_hits(self, images: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.vision.preprocess_cache_hits",
+                "max.vision.preprocess_cache_hits",
                 images,
                 self.extra_attributes,
             ),
@@ -1725,7 +1910,7 @@ class _AsyncMetrics:
     def vision_preprocess_cache_misses(self, images: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.vision.preprocess_cache_misses",
+                "max.vision.preprocess_cache_misses",
                 images,
                 self.extra_attributes,
             ),
@@ -1734,7 +1919,7 @@ class _AsyncMetrics:
     def image_admission_decode_time(self, value: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.vision.image_admission_decode_time",
+                "max.vision.image_admission_decode_time",
                 value,
                 self.extra_attributes,
             ),
@@ -1743,7 +1928,7 @@ class _AsyncMetrics:
     def vision_cache_hit_rate(self, hit_rate: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.vision.cache_hit_rate",
+                "max.vision.cache_hit_rate",
                 hit_rate,
                 self.extra_attributes,
             ),
@@ -1752,7 +1937,7 @@ class _AsyncMetrics:
     def video_clips_encoded(self, clips: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.video.clips_encoded",
+                "max.video.clips_encoded",
                 clips,
                 self.extra_attributes,
             ),
@@ -1761,7 +1946,7 @@ class _AsyncMetrics:
     def video_tokens_encoded(self, tokens: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.video.tokens_encoded",
+                "max.video.tokens_encoded",
                 tokens,
                 self.extra_attributes,
             ),
@@ -1770,7 +1955,7 @@ class _AsyncMetrics:
     def video_encoding_time_milliseconds(self, time_ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.video.encoding_time_milliseconds",
+                "max.video.encoding_time_milliseconds",
                 time_ms,
                 self.extra_attributes,
             ),
@@ -1779,7 +1964,7 @@ class _AsyncMetrics:
     def media_items(self, media_kind: str, source: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.items",
+                "max.media.items",
                 1,
                 {
                     **self.extra_attributes,
@@ -1792,7 +1977,7 @@ class _AsyncMetrics:
     def media_resolve_time(self, value: float, source: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.resolve_time",
+                "max.media.resolve_time",
                 value,
                 {**self.extra_attributes, "source": source},
             ),
@@ -1801,7 +1986,7 @@ class _AsyncMetrics:
     def media_item_size(self, num_bytes: int, media_kind: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.item_size",
+                "max.media.item_size",
                 num_bytes,
                 {**self.extra_attributes, "media_kind": media_kind},
             ),
@@ -1810,7 +1995,7 @@ class _AsyncMetrics:
     def media_image_size(self, pixels: int, image_format: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.image_size",
+                "max.media.image_size",
                 pixels,
                 {**self.extra_attributes, "format": image_format},
             ),
@@ -1819,7 +2004,7 @@ class _AsyncMetrics:
     def media_image_decodes(self, image_format: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.image_decodes",
+                "max.media.image_decodes",
                 1,
                 {**self.extra_attributes, "format": image_format},
             ),
@@ -1828,7 +2013,7 @@ class _AsyncMetrics:
     def media_image_decode_ms(self, value: float, image_format: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.image_decode_ms",
+                "max.media.image_decode_ms",
                 value,
                 {**self.extra_attributes, "format": image_format},
             ),
@@ -1837,7 +2022,7 @@ class _AsyncMetrics:
     def media_rejections(self, reason: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.rejections",
+                "max.media.rejections",
                 1,
                 {**self.extra_attributes, "reason": reason},
             ),
@@ -1846,7 +2031,7 @@ class _AsyncMetrics:
     def media_items_per_request(self, items: int, media_kind: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.items_per_request",
+                "max.media.items_per_request",
                 items,
                 {**self.extra_attributes, "media_kind": media_kind},
             ),
@@ -1857,7 +2042,7 @@ class _AsyncMetrics:
     ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.preprocess_cache_evictions",
+                "max.media.preprocess_cache_evictions",
                 evictions,
                 {**self.extra_attributes, "media_kind": media_kind},
             ),
@@ -1868,7 +2053,7 @@ class _AsyncMetrics:
     ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.preprocess_cache_size",
+                "max.media.preprocess_cache_size",
                 num_bytes,
                 {**self.extra_attributes, "media_kind": media_kind},
             ),
@@ -1879,7 +2064,7 @@ class _AsyncMetrics:
     ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.media.preprocess_cache_capacity",
+                "max.media.preprocess_cache_capacity",
                 num_bytes,
                 {**self.extra_attributes, "media_kind": media_kind},
             ),
@@ -1888,7 +2073,7 @@ class _AsyncMetrics:
     def video_frames_per_clip(self, frames: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.video.frames_per_clip",
+                "max.video.frames_per_clip",
                 frames,
                 self.extra_attributes,
             ),
@@ -1905,7 +2090,7 @@ class _AsyncMetrics:
     ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.input_tokens_per_request",
+                "max.input_tokens_per_request",
                 value,
                 self._with_turn(turn),
             ),
@@ -1916,7 +2101,7 @@ class _AsyncMetrics:
     ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.prefix_coverage_per_request",
+                "max.prefix_coverage_per_request",
                 coverage,
                 self._with_turn(turn),
             ),
@@ -1927,7 +2112,7 @@ class _AsyncMetrics:
     ) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.output_tokens_per_request",
+                "max.output_tokens_per_request",
                 value,
                 self._with_turn(turn),
             ),
@@ -1936,7 +2121,7 @@ class _AsyncMetrics:
     def dkv_nixl_read_latency(self, latency_ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.nixl_read_latency",
+                "max.dkv.nixl_read_latency",
                 latency_ms,
                 self.extra_attributes,
             ),
@@ -1945,7 +2130,7 @@ class _AsyncMetrics:
     def dkv_nixl_read_latency_max(self, latency_ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.nixl_read_latency_max",
+                "max.dkv.nixl_read_latency_max",
                 latency_ms,
                 self.extra_attributes,
             ),
@@ -1954,7 +2139,7 @@ class _AsyncMetrics:
     def dkv_nixl_write_latency(self, latency_ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.nixl_write_latency",
+                "max.dkv.nixl_write_latency",
                 latency_ms,
                 self.extra_attributes,
             ),
@@ -1963,7 +2148,7 @@ class _AsyncMetrics:
     def dkv_rpc_acquire_latency(self, latency_ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.rpc_acquire_latency",
+                "max.dkv.rpc_acquire_latency",
                 latency_ms,
                 self.extra_attributes,
             ),
@@ -1972,7 +2157,16 @@ class _AsyncMetrics:
     def dkv_rpc_read_latency(self, latency_ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.rpc_read_latency",
+                "max.dkv.rpc_read_latency",
+                latency_ms,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hinted_lookup_latency(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hinted_lookup_latency",
                 latency_ms,
                 self.extra_attributes,
             ),
@@ -1981,7 +2175,7 @@ class _AsyncMetrics:
     def dkv_connected_clients(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.connected_clients",
+                "max.dkv.connected_clients",
                 value,
                 self.extra_attributes,
             ),
@@ -1990,7 +2184,7 @@ class _AsyncMetrics:
     def dkv_total_clients(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.total_clients",
+                "max.dkv.total_clients",
                 value,
                 self.extra_attributes,
             ),
@@ -1999,7 +2193,7 @@ class _AsyncMetrics:
     def dkv_reconnect_attempts(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.reconnect_attempts",
+                "max.dkv.reconnect_attempts",
                 value,
                 self.extra_attributes,
             ),
@@ -2008,7 +2202,7 @@ class _AsyncMetrics:
     def dkv_settle_queue_depth(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.settle_queue_depth",
+                "max.dkv.settle_queue_depth",
                 value,
                 self.extra_attributes,
             ),
@@ -2017,7 +2211,7 @@ class _AsyncMetrics:
     def dkv_settle_queue_oldest_age_ms(self, value: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.settle_queue_oldest_age_ms",
+                "max.dkv.settle_queue_oldest_age_ms",
                 value,
                 self.extra_attributes,
             ),
@@ -2026,7 +2220,7 @@ class _AsyncMetrics:
     def dkv_owner_releases_halted(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.owner_releases_halted",
+                "max.dkv.owner_releases_halted",
                 value,
                 self.extra_attributes,
             ),
@@ -2035,7 +2229,7 @@ class _AsyncMetrics:
     def dkv_settle_jobs_finished(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.settle_jobs_finished",
+                "max.dkv.settle_jobs_finished",
                 value,
                 self.extra_attributes,
             ),
@@ -2044,7 +2238,7 @@ class _AsyncMetrics:
     def dkv_peer_attaches(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.peer_attaches",
+                "max.dkv.peer_attaches",
                 value,
                 self.extra_attributes,
             ),
@@ -2053,7 +2247,7 @@ class _AsyncMetrics:
     def dkv_peer_attach_failures(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.peer_attach_failures",
+                "max.dkv.peer_attach_failures",
                 value,
                 self.extra_attributes,
             ),
@@ -2062,7 +2256,7 @@ class _AsyncMetrics:
     def dkv_peers_dropped(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.peers_dropped",
+                "max.dkv.peers_dropped",
                 value,
                 self.extra_attributes,
             ),
@@ -2071,7 +2265,7 @@ class _AsyncMetrics:
     def dkv_peer_loads(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.peer_loads",
+                "max.dkv.peer_loads",
                 value,
                 self.extra_attributes,
             ),
@@ -2080,7 +2274,7 @@ class _AsyncMetrics:
     def dkv_peer_load_failures(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.peer_load_failures",
+                "max.dkv.peer_load_failures",
                 value,
                 self.extra_attributes,
             ),
@@ -2089,7 +2283,7 @@ class _AsyncMetrics:
     def dkv_peer_transfer_failures(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.peer_transfer_failures",
+                "max.dkv.peer_transfer_failures",
                 value,
                 self.extra_attributes,
             ),
@@ -2098,7 +2292,7 @@ class _AsyncMetrics:
     def dkv_peer_metadata_refreshes(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.peer_metadata_refreshes",
+                "max.dkv.peer_metadata_refreshes",
                 value,
                 self.extra_attributes,
             ),
@@ -2107,7 +2301,7 @@ class _AsyncMetrics:
     def dkv_peer_metadata_refresh_failures(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.peer_metadata_refresh_failures",
+                "max.dkv.peer_metadata_refresh_failures",
                 value,
                 self.extra_attributes,
             ),
@@ -2116,7 +2310,7 @@ class _AsyncMetrics:
     def dkv_hints_rejected(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.hints_rejected",
+                "max.dkv.hints_rejected",
                 value,
                 self.extra_attributes,
             ),
@@ -2125,7 +2319,25 @@ class _AsyncMetrics:
     def dkv_hints_rejected_by_reason(self, value: int, reason: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.hints_rejected_by_reason",
+                "max.dkv.hints_rejected_by_reason",
+                value,
+                {**self.extra_attributes, "reason": reason},
+            ),
+        )
+
+    def dkv_hints_unused(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hints_unused",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hints_unused_by_reason(self, value: int, reason: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hints_unused_by_reason",
                 value,
                 {**self.extra_attributes, "reason": reason},
             ),
@@ -2134,7 +2346,7 @@ class _AsyncMetrics:
     def dkv_rpc_calls(self, value: int, op: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.rpc_calls",
+                "max.dkv.rpc_calls",
                 value,
                 {**self.extra_attributes, "op": op},
             ),
@@ -2143,7 +2355,7 @@ class _AsyncMetrics:
     def dkv_rpc_time_ms(self, value: float, op: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.rpc_time_ms",
+                "max.dkv.rpc_time_ms",
                 value,
                 {**self.extra_attributes, "op": op},
             ),
@@ -2152,7 +2364,7 @@ class _AsyncMetrics:
     def dkv_rpc_socket_wait_ms(self, value: float, op: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.rpc_socket_wait_ms",
+                "max.dkv.rpc_socket_wait_ms",
                 value,
                 {**self.extra_attributes, "op": op},
             ),
@@ -2161,7 +2373,7 @@ class _AsyncMetrics:
     def dkv_lock_waits(self, value: int, entry: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.lock_waits",
+                "max.dkv.lock_waits",
                 value,
                 {**self.extra_attributes, "entry": entry},
             ),
@@ -2170,7 +2382,7 @@ class _AsyncMetrics:
     def dkv_lock_wait_ms(self, value: float, entry: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.lock_wait_ms",
+                "max.dkv.lock_wait_ms",
                 value,
                 {**self.extra_attributes, "entry": entry},
             ),
@@ -2179,7 +2391,7 @@ class _AsyncMetrics:
     def dkv_touches_deduplicated(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.touches_deduplicated",
+                "max.dkv.touches_deduplicated",
                 value,
                 self.extra_attributes,
             ),
@@ -2188,7 +2400,7 @@ class _AsyncMetrics:
     def dkv_prepare_load_degraded(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.prepare_load_degraded",
+                "max.dkv.prepare_load_degraded",
                 value,
                 self.extra_attributes,
             ),
@@ -2197,7 +2409,7 @@ class _AsyncMetrics:
     def dkv_load_with_plan_degraded(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.load_with_plan_degraded",
+                "max.dkv.load_with_plan_degraded",
                 value,
                 self.extra_attributes,
             ),
@@ -2206,7 +2418,106 @@ class _AsyncMetrics:
     def dkv_load_with_plan_expired(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.load_with_plan_expired",
+                "max.dkv.load_with_plan_expired",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_rounds_while_degraded(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_rounds_while_degraded",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_own_runs_short_of_hint(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.own_runs_short_of_hint",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_split_loads(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.split_loads",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_overlapped_peer_lookups(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.overlapped_peer_lookups",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hinted_lookups(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hinted_lookups",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_reissued(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_reissued",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_abandoned(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_abandoned",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_dropped(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_dropped",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_refused(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_refused",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_expired(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_expired",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_queue_depth(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_queue_depth",
                 value,
                 self.extra_attributes,
             ),
@@ -2215,7 +2526,7 @@ class _AsyncMetrics:
     def dkv_blocked_calls(self, value: int, entry: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.blocked_calls",
+                "max.dkv.blocked_calls",
                 value,
                 {**self.extra_attributes, "entry": entry},
             ),
@@ -2224,7 +2535,7 @@ class _AsyncMetrics:
     def dkv_blocked_ms(self, value: float, entry: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.blocked_ms",
+                "max.dkv.blocked_ms",
                 value,
                 {**self.extra_attributes, "entry": entry},
             ),
@@ -2233,7 +2544,7 @@ class _AsyncMetrics:
     def dkv_read_blocks(self, blocks: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.read_blocks",
+                "max.dkv.read_blocks",
                 blocks,
                 self.extra_attributes,
             ),
@@ -2250,7 +2561,7 @@ class _AsyncMetrics:
         """
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.spec_decode.acceptance_rate_per_position",
+                "max.spec_decode.acceptance_rate_per_position",
                 acceptance_rate,
                 {**self.extra_attributes, "position": str(position)},
             ),
@@ -2259,7 +2570,7 @@ class _AsyncMetrics:
     def batch_input_tokens(self, value: int, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.batch_input_tokens",
+                "max.batch.input_tokens",
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2268,7 +2579,7 @@ class _AsyncMetrics:
     def batch_context_tokens(self, value: int, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.batch_context_tokens",
+                "max.batch.context_tokens",
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2277,7 +2588,7 @@ class _AsyncMetrics:
     def batch_creation_time(self, ms: float, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.batch_creation_time",
+                "max.batch.creation_time",
                 ms,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2286,7 +2597,7 @@ class _AsyncMetrics:
     def batch_prompt_throughput(self, tps: float, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.batch_prompt_throughput",
+                "max.batch.prompt_throughput",
                 tps,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2295,7 +2606,7 @@ class _AsyncMetrics:
     def batch_generation_throughput(self, tps: float, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.batch_generation_throughput",
+                "max.batch.generation_throughput",
                 tps,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2304,7 +2615,7 @@ class _AsyncMetrics:
     def dp_active_token_occupancy(self, pct: float, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dp_active_token_occupancy",
+                "max.dp_active_token_occupancy",
                 pct,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2313,7 +2624,7 @@ class _AsyncMetrics:
     def dp_context_token_occupancy(self, pct: float, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dp_context_token_occupancy",
+                "max.dp_context_token_occupancy",
                 pct,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2322,7 +2633,7 @@ class _AsyncMetrics:
     def dp_active_tokens(self, value: int, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dp_active_tokens",
+                "max.dp_active_tokens",
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2331,7 +2642,7 @@ class _AsyncMetrics:
     def dp_step_capacity_tokens(self, value: int, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dp_step_capacity_tokens",
+                "max.dp_step_capacity_tokens",
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2340,7 +2651,7 @@ class _AsyncMetrics:
     def batch_terminated_reqs(self, value: int, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.batch_terminated_reqs",
+                "max.batch.terminated_reqs",
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2349,7 +2660,7 @@ class _AsyncMetrics:
     def batch_pending_reqs(self, value: int, batch_type: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.batch_pending_reqs",
+                "max.batch.pending_reqs",
                 value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
@@ -2358,14 +2669,14 @@ class _AsyncMetrics:
     def cache_used_kv_pct(self, ratio: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.used_kv_pct", ratio, self.extra_attributes
+                "max.cache.used_kv_pct", ratio, self.extra_attributes
             ),
         )
 
     def cache_used_host_kv_pct(self, ratio: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.used_host_kv_pct",
+                "max.cache.used_host_kv_pct",
                 ratio,
                 self.extra_attributes,
             ),
@@ -2374,7 +2685,7 @@ class _AsyncMetrics:
     def cache_device_blocks_served(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.device_blocks_served",
+                "max.cache.device_blocks_served",
                 count,
                 self.extra_attributes,
             ),
@@ -2383,7 +2694,7 @@ class _AsyncMetrics:
     def cache_h2d_bytes_copied(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.h2d_bytes_copied",
+                "max.cache.h2d_bytes_copied",
                 count,
                 self.extra_attributes,
             ),
@@ -2392,7 +2703,7 @@ class _AsyncMetrics:
     def cache_cross_replica_blocks_copied(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.cross_replica_blocks_copied",
+                "max.cache.cross_replica_blocks_copied",
                 count,
                 self.extra_attributes,
             ),
@@ -2401,7 +2712,7 @@ class _AsyncMetrics:
     def cache_cross_replica_bytes_copied(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.cross_replica_bytes_copied",
+                "max.cache.cross_replica_bytes_copied",
                 count,
                 self.extra_attributes,
             ),
@@ -2410,7 +2721,7 @@ class _AsyncMetrics:
     def cache_d2h_bytes_copied(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.d2h_bytes_copied",
+                "max.cache.d2h_bytes_copied",
                 count,
                 self.extra_attributes,
             ),
@@ -2419,7 +2730,7 @@ class _AsyncMetrics:
     def cache_connector_loads_refused(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.connector_loads_refused",
+                "max.cache.connector_loads_refused",
                 count,
                 self.extra_attributes,
             ),
@@ -2428,7 +2739,7 @@ class _AsyncMetrics:
     def cache_connector_load_failures(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.connector_load_failures",
+                "max.cache.connector_load_failures",
                 count,
                 self.extra_attributes,
             ),
@@ -2437,7 +2748,7 @@ class _AsyncMetrics:
     def cache_connector_offload_blocks_dropped(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.connector_offload_blocks_dropped",
+                "max.cache.connector_offload_blocks_dropped",
                 count,
                 self.extra_attributes,
             ),
@@ -2446,7 +2757,7 @@ class _AsyncMetrics:
     def cache_disk_bytes_read(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.disk_bytes_read",
+                "max.cache.disk_bytes_read",
                 count,
                 self.extra_attributes,
             ),
@@ -2455,7 +2766,7 @@ class _AsyncMetrics:
     def cache_disk_bytes_written(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.disk_bytes_written",
+                "max.cache.disk_bytes_written",
                 count,
                 self.extra_attributes,
             ),
@@ -2464,7 +2775,7 @@ class _AsyncMetrics:
     def cache_used_disk_kv_pct(self, ratio: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.used_disk_kv_pct",
+                "max.cache.used_disk_kv_pct",
                 ratio,
                 self.extra_attributes,
             ),
@@ -2473,7 +2784,7 @@ class _AsyncMetrics:
     def spec_decode_avg_acceptance_length(self, length: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.spec_decode.avg_acceptance_length",
+                "max.spec_decode.avg_acceptance_length",
                 length,
                 self.extra_attributes,
             ),
@@ -2482,7 +2793,7 @@ class _AsyncMetrics:
     def dkv_nixl_read_gib_per_s(self, gib_per_s: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.nixl_read_gib_per_s",
+                "max.dkv.nixl_read_gib_per_s",
                 gib_per_s,
                 self.extra_attributes,
             ),
@@ -2491,7 +2802,7 @@ class _AsyncMetrics:
     def dkv_nixl_write_gib_per_s(self, gib_per_s: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.dkv.nixl_write_gib_per_s",
+                "max.dkv.nixl_write_gib_per_s",
                 gib_per_s,
                 self.extra_attributes,
             ),
@@ -2500,7 +2811,7 @@ class _AsyncMetrics:
     def tool_call_responses(self) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.tool_call.responses",
+                "max.tool_call.responses",
                 1,
                 self.extra_attributes,
             ),
@@ -2509,7 +2820,7 @@ class _AsyncMetrics:
     def tool_call_tools_per_request(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.tool_call.tools_per_request",
+                "max.tool_call.tools_per_request",
                 count,
                 self.extra_attributes,
             ),
@@ -2518,16 +2829,27 @@ class _AsyncMetrics:
     def tool_call_requests(self, choice: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.tool_call.requests",
+                "max.tool_call.requests",
                 1,
                 {**self.extra_attributes, "choice": choice},
             ),
         )
 
+    def export_zero_structured_output_requests(self) -> None:
+        """Exports every kind at zero, so a quiet window reads as zero."""
+        for kind in get_args(_StructuredOutputKind):
+            self.client.send_measurement(
+                MaxMeasurement(
+                    "max.structured_output.requests",
+                    0,
+                    {**self.extra_attributes, "kind": kind},
+                ),
+            )
+
     def structured_output_requests(self, kind: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.structured_output.requests",
+                "max.structured_output.requests",
                 1,
                 {**self.extra_attributes, "kind": kind},
             ),
@@ -2536,7 +2858,7 @@ class _AsyncMetrics:
     def tokenizer_chat_encoder_requests(self, count: int, outcome: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.tokenizer.chat_encoder_requests",
+                "max.tokenizer.chat_encoder_requests",
                 count,
                 {**self.extra_attributes, "outcome": outcome},
             ),
@@ -2545,7 +2867,7 @@ class _AsyncMetrics:
     def tool_call_conformance_error(self, outcome: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.tool_call.conformance_errors",
+                "max.tool_call.conformance_errors",
                 1,
                 {**self.extra_attributes, "outcome": outcome},
             ),
@@ -2554,7 +2876,7 @@ class _AsyncMetrics:
     def structured_output_grammar_rejection(self, kind: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.structured_output.grammar_rejections",
+                "max.structured_output.grammar_rejections",
                 1,
                 {**self.extra_attributes, "kind": kind},
             ),
@@ -2564,7 +2886,7 @@ class _AsyncMetrics:
         """Wall-clock time of an off-thread grammar-matcher build."""
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.structured_output.grammar_build_time",
+                "max.structured_output.grammar_build_time",
                 ms,
                 self.extra_attributes,
             ),
@@ -2573,7 +2895,7 @@ class _AsyncMetrics:
     def response_format_conformance_error(self, outcome: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.response_format.conformance_errors",
+                "max.response_format.conformance_errors",
                 1,
                 {**self.extra_attributes, "outcome": outcome},
             ),

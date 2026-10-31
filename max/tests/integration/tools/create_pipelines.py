@@ -626,6 +626,9 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             torch_dtype=torch_dtype,
             trust_remote_code=True,
         )
+        # The logits recorder runs after the generation config's processors,
+        # and MAX's logits carry no repetition penalty.
+        model.generation_config.repetition_penalty = 1.0
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     def run_torch_text_generation(
@@ -1589,6 +1592,14 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
+    "LiquidAI/LFM3-1.7B": GenericOracle(
+        model_path="LiquidAI/LFM3-1.7B",
+        config_params={"max_length": 8192, "trust_remote_code": True},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "LiquidAI/LFM3-VL-2B": Qwen3VLPipelineOracle(
+        model_path="LiquidAI/LFM3-VL-2B"
+    ),
     "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
         model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
         # BF16 weights use ~278/288 GB on MI355X; cap context + batch to fit KV cache in remaining ~10 GB.
@@ -2047,6 +2058,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "nvidia/Kimi-K2.7-Code-NVFP4": KimiK2_7PipelineOracle(
         "nvidia/Kimi-K2.7-Code-NVFP4"
+    ),
+    # `transformers` cannot load Laguna S-2.1's mixed NVFP4/BF16 experts and
+    # the BF16 source is 236 GB, so the reference side has to be a vLLM golden.
+    "poolside/Laguna-S-2.1-NVFP4": GenericOracle(
+        model_path="poolside/Laguna-S-2.1-NVFP4",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     # Trimmed MiniMax-M3 (dense-only layers) for logit verification. The prompts
     # are pinned and apply_chat_template is off so the input_ids match those the

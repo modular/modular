@@ -118,12 +118,8 @@ def driver_option_tablegen(
         name = name + ".help_gen",
         tbl_outs = [
             (
-                ["-gen-help-text"] + opts,
-                name_without_extension + "HelpText.inc",
-            ),
-            (
-                ["-gen-help-hidden-text"] + opts,
-                name_without_extension + "HelpHiddenText.inc",
+                ["-gen-help-texts"] + opts,
+                name_without_extension + "HelpTexts.inc",
             ),
             (["-gen-man-page"] + opts, manual_output),
             (["-gen-markdown"] + opts, markdown_output),
@@ -140,8 +136,7 @@ def driver_option_tablegen(
             manual_output,
             markdown_output,
             name_without_extension + ".inc",
-            name_without_extension + "HelpText.inc",
-            name_without_extension + "HelpHiddenText.inc",
+            name_without_extension + "HelpTexts.inc",
         ],
         tags = [ALLOW_UNUSED_TAG],
     )
@@ -149,8 +144,7 @@ def driver_option_tablegen(
         name = name + ".inc_files",
         hdrs = [
             name_without_extension + ".inc",
-            name_without_extension + "HelpText.inc",
-            name_without_extension + "HelpHiddenText.inc",
+            name_without_extension + "HelpTexts.inc",
         ],
         include_prefix = include_prefix,
         strip_include_prefix = strip_include_prefix,

@@ -48,7 +48,7 @@ mlir::StringAttr applyLinkageName(mlir::StringAttr resolved,
 ///     name (sanitized on GPU, verbatim on host), then remove the attribute.
 ///  2. On GPU targets, additionally sanitize every other name to
 ///     alphanumeric-only characters for PTX compatibility.
-///  3. Fix up all `SymbolConstantAttr` references in the module to reflect the
+///  3. Fix up all `FuncSymbolAttr` references in the module to reflect the
 ///     new names.
 ///
 /// Sets `failed = true` on errors (unresolved linkage name, duplicate symbols).

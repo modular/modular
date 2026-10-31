@@ -326,8 +326,8 @@ def main() raises:
     print("  kv_block:", cfg.kv_block)
     print("  group:", cfg.group)
     print("  cache_busting:", cfg.cache_busting)
-    print("  seq_len:", seq_len, " num_keys:", num_keys)
-    print("  batch_size:", batch_size, " verify:", verify)
+    print(t"  seq_len: {seq_len}  num_keys: {num_keys}")
+    print(t"  batch_size: {batch_size}  verify: {verify}")
 
     var m = Bench()
     with DeviceContext() as ctx:

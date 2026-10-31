@@ -25,10 +25,10 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import torch
+from max import functional as F
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.gemma4.vision_model.pooling import (
     compute_pool_gather_index,

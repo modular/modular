@@ -32,6 +32,7 @@
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/IRValues.h"
+#include "Mojo/MojoParser/ModuleCache.h"
 #include "Mojo/MojoParser/ModuleLoader.h"
 #include "Mojo/MojoParser/SharedState.h"
 
@@ -221,7 +222,7 @@ private:
   /// Process the given attributes and types for bytecode references.
   WalkResult processBytecodeReferences(Attribute attr) {
     return TypeSwitch<Attribute, WalkResult>(attr)
-        .Case<SymbolConstantAttr, FuncSymbolAttr>([&](auto ref) {
+        .Case([&](FuncSymbolAttr ref) {
           ASTDecl *decl =
               resolveBytecodeReferenceSignature(shared, ref.getSymbol());
           if (!decl)
@@ -255,7 +256,7 @@ private:
 
   WalkResult processBytecodeSignatureReferences(Attribute attr) {
     return TypeSwitch<Attribute, WalkResult>(attr)
-        .Case<SymbolConstantAttr, FuncSymbolAttr>([&](auto ref) {
+        .Case([&](FuncSymbolAttr ref) {
           return success(
               resolveBytecodeReferenceSignature(shared, ref.getSymbol()));
         })
@@ -324,9 +325,6 @@ struct SharedState::Impl {
 
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
-
-  /// Flag indicating if we should diagnose missing doc strings while parsing.
-  bool diagnoseMissingDocStrings = false;
 
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
@@ -429,27 +427,24 @@ static std::string canonicalizeFileCompilationDir(StringRef stripFilePrefix) {
   return workingFileCompilationDir.str().str();
 }
 
-SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
-    : diags(sourceMgr, config.context, config.useMLIRDiagnostics,
-            config.maxNotesPerDiagnostic,
-            canonicalizeFileCompilationDir(config.stripFilePrefix),
-            /*disableWarnings=*/config.options.disableWarnings,
-            /*warningsAsErrors=*/config.options.warningsAsErrors,
+SharedState::SharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+                         const CompilationOptions &options,
+                         const FrontendOptions &frontendOptions)
+    : diags(sourceMgr, context, frontendOptions.useMLIRDiagnostics,
+            frontendOptions.maxNotesPerDiagnostic,
+            canonicalizeFileCompilationDir(frontendOptions.stripFilePrefix),
+            /*disableWarnings=*/frontendOptions.disableWarnings,
+            /*warningsAsErrors=*/frontendOptions.warningsAsErrors,
             /*extraContext=*/this,
-            /*autoFixItHandler=*/config.autoFixItHandler),
-      options(config.options),
+            /*autoFixItHandler=*/frontendOptions.autoFixItHandler),
+      options(options), frontendOptions(frontendOptions),
       declResolver(std::make_unique<DeclResolver>(*this)),
       moduleLoader(std::make_unique<ModuleLoader>(*this)),
-      parserListener(config.parserListener),
-      extensionsScopeMarker(StringAttr::get(config.context, "extension:")),
-      disablePrebuiltPackages(config.disablePrebuiltPackages),
-      useBuiltinModule(config.useBuiltinModule),
+      parserListener(frontendOptions.parserListener),
+      extensionsScopeMarker(StringAttr::get(context, "extension:")),
       impl(std::make_unique<Impl>(*this)) {
-  impl->diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
-  docsBasePath = config.docsBasePath;
-
-  preloadAllKGENDialects(config.context);
-  compilerCaches = KGEN::CompilerCaches::getOrCreate(config.context);
+  preloadAllKGENDialects(context);
+  compilerCaches = KGEN::CompilerCaches::getOrCreate(context);
 
   // Record any existing buffers in the source manager.
   for (int i = 0, e = sourceMgr.getNumBuffers(); i < e; ++i) {
@@ -464,7 +459,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
       [this](SMLoc &loc) { adjustTokenEndPoint(*this, loc); });
 
   if (options.getDebugInfoLevelForInput() > CompilationOptions::kSynthetic) {
-    diBuilder = std::make_unique<DebugInfo::DIBuilder>(config.context);
+    diBuilder = std::make_unique<DebugInfo::DIBuilder>(context);
 
     diBuilder->initializeCompileUnit(
         options.debugInfoLanguage,
@@ -478,7 +473,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
 SharedState::~SharedState() { declResolver.reset(); }
 
 bool SharedState::shouldDiagnoseMissingDocStrings() const {
-  return impl->diagnoseMissingDocStrings;
+  return frontendOptions.diagnoseMissingDocStrings;
 }
 
 void SharedState::initialize(TopLevelModuleASTDecl &topLevelDecl) {
@@ -962,7 +957,9 @@ void SharedState::recordDepEdge(ASTDecl *importer, ASTDecl *imported) {
   return getModuleLoader().recordDepEdge(importer, imported);
 }
 
-bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
+bool SharedState::hasBuiltinModule() const {
+  return frontendOptions.useBuiltinModule;
+}
 
 /// Builds the fully-qualified cache key for a builtin/std lookup into a stack
 /// buffer, so the hot lookup path allocates nothing and interns nothing. The
@@ -1300,6 +1297,107 @@ bool SharedState::tryRegisterConversionThunk(Attribute key, FnOp thunk) {
   return true;
 }
 
+bool SharedState::isIncrParsingEnabled() const {
+  return !frontendOptions.incrParsingCacheFile.empty();
+}
+
+void SharedState::addIncrParsingCacheResumeAttrs(
+    Operation *op, ASTDecl &decl, const llvm::MemoryBuffer &buffer) {
+  LexerCursor resumeCursor = decl.getDeclStartCursor();
+  std::optional<size_t> resumeIndent = resumeCursor.getToken().getIndentation();
+  // A compiler-synthesized decl (e.g. an implicit `__del__`) has no source
+  // cursor to resume from; it serves from its serialized form instead.
+  if (resumeCursor.isInvalid() || !resumeIndent)
+    return;
+  const char *bufferStart = buffer.getBufferStart();
+  // Use the resume token's own spelling, not `resumeCursor.getState()`, which
+  // points past the current token rather than at its start.
+  const char *resumeTokenStart = resumeCursor.getToken().getSpelling().data();
+  int64_t resumeOffset = resumeTokenStart - bufferStart;
+  int64_t resumeIndentation = static_cast<int64_t>(*resumeIndent);
+  int64_t endOffset = decl.getEndCursorState() - bufferStart;
+  int64_t declIndentation = decl.getIndentation();
+  int64_t resumeInfo[] = {resumeOffset, resumeIndentation, endOffset,
+                          declIndentation};
+  op->setAttr(kIncrParsingCacheResumeInfoAttrName,
+              mlir::DenseI64ArrayAttr::get(getContext(), resumeInfo));
+}
+
+/// An alias whose attr payload is fully materialized is complete even when
+/// unparsed (its meaning is just its attrs), so it needs no resume mark.
+static bool isAttrCompleteAlias(Operation *op) {
+  auto alias = dyn_cast<AliasDeclOp>(op);
+  if (!alias || isa<UnresolvedType>(alias.getType()))
+    return false;
+  if (TypedAttr value = alias.getValueAttr())
+    return !isa<UnresolvedAliasValueAttr>(value);
+  // No initializer is legal only for a trait's associated aliases.
+  return isa_and_nonnull<TraitDeclOp>(op->getParentOp());
+}
+
+/// True if the lazy parse left this decl incomplete, so a cache-served run
+/// must resume its parse from source.
+static bool needsSourceResumeMark(const ASTDecl &decl, Operation *op) {
+  switch (decl.resolvedness) {
+  case DeclResolvedness::unparsed:
+    return !isa<ImportOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(op) &&
+           !isAttrCompleteAlias(op);
+  case DeclResolvedness::signature:
+    return isa<FnOp, StructDeclOp, TraitDeclOp, ExtensionDeclOp, FileModuleOp>(
+        op);
+  case DeclResolvedness::body:
+    return false;
+  }
+  llvm_unreachable("unknown DeclResolvedness");
+}
+
+void SharedState::prepareModuleForIncrParsingCache() {
+  auto theModule = cast_or_null<ModuleOp>(getTopLevelDecl().getIfOperation());
+  if (!theModule)
+    return;
+
+  // Reverse index op -> decl, consulted only by walking live IR (decl op links
+  // can dangle).
+  llvm::DenseMap<Operation *, ASTDecl *> opToDecl;
+  for (ASTDecl *decl : declResolver->parsedDeclList)
+    if (decl && !decl->loadedFromBytecode && !decl->isErroneous())
+      if (Operation *op = decl->getIfOperation())
+        if (!decl->getDeclStartCursor().isInvalid())
+          opToDecl[op] = decl;
+
+  // Resolve each module's source buffer once (null = cache-ineligible) so the
+  // mark loop below skips a FindBufferContainingLoc scan per decl.
+  llvm::DenseMap<Operation *, const llvm::MemoryBuffer *> moduleBuffers;
+  auto cacheableModuleBuffer =
+      [&](Operation *op) -> const llvm::MemoryBuffer * {
+    Operation *moduleOp = op;
+    while (moduleOp && !isa<FileModuleOp>(moduleOp))
+      moduleOp = moduleOp->getParentOp();
+    if (!moduleOp)
+      return nullptr;
+    auto [it, inserted] = moduleBuffers.try_emplace(moduleOp, nullptr);
+    if (!inserted)
+      return it->second;
+    ASTDecl *moduleDecl = opToDecl.lookup(moduleOp);
+    ModuleState *state =
+        moduleDecl ? getModuleLoader().lookupState(moduleDecl) : nullptr;
+    if (!state || !state->contentHash)
+      return nullptr;
+    if (unsigned bufferId =
+            getSourceMgr().FindBufferContainingLoc(moduleDecl->getLoc()))
+      it->second = getSourceMgr().getMemoryBuffer(bufferId);
+    return it->second;
+  };
+
+  theModule->walk([&](Operation *op) {
+    ASTDecl *decl = opToDecl.lookup(op);
+    if (!decl || !needsSourceResumeMark(*decl, op))
+      return;
+    if (const llvm::MemoryBuffer *buffer = cacheableModuleBuffer(op))
+      addIncrParsingCacheResumeAttrs(op, *decl, *buffer);
+  });
+}
+
 ASTDecl *
 SharedState::lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
                                          ASTDecl &container,
@@ -1553,12 +1651,15 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
     // Fully resolve any dependencies of the package.
     if (LinkDependencyArrayAttr deps = declPackage.getDependenciesAttr()) {
-      // Each dependency is a top-level package's symbol name (see
-      // mojo-precompile's buildPackage), so any periods belong to the package
-      // name itself; this is never a dotted path.
-      for (FlatSymbolRefAttr dep : deps) {
+      // Each dependency is a package's symbol reference, nested when the
+      // package is within a namespace. Its components are the import path; any
+      // periods belong to a component's name itself.
+      for (SymbolRefAttr dep : deps) {
+        SmallVector<StringRef> components = {dep.getRootReference()};
+        for (FlatSymbolRefAttr nested : dep.getNestedReferences())
+          components.push_back(nested.getValue());
         ModuleASTDecl *depDecl =
-            &importModule({dep.getValue()},
+            &importModule(ImportPath(ArrayRef<StringRef>(components)),
                           /*currentPackage=*/nullptr, packageImportLoc);
         if (failed(declResolver->resolveBody(*depDecl, decl.getLoc())))
           return failure();
@@ -2635,7 +2736,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     // Check for recursion. At this point we have only marked the callee as
     // being processed if we have already visited it in an always-inline
     // context.
-    if (auto symCst = dyn_cast<SymbolConstantAttr>(callee)) {
+    if (auto symCst = FuncSymbolGenerator::dynCast(callee)) {
       auto &resolver = shared.getDeclResolver();
       if (ASTDecl *calleeDecl =
               resolver.getDeclForFuncSymbol(symCst.getSymbol())) {
@@ -2840,7 +2941,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
 
   // Resolve the callee and check to verify it is a "builtin" call that is
   // eligible for parameter inlining.
-  auto symCst = dyn_cast<SymbolConstantAttr>(operands.front());
+  auto symCst = FuncSymbolGenerator::dynCast(operands.front());
   if (!symCst) {
     folder.emitError(callLoc) << "only supports direct calls";
     return {};

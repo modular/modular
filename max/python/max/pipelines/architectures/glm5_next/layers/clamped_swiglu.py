@@ -15,10 +15,10 @@
 GLM-5.3-Flash computes ``silu(min(gate, limit)) * clamp(up, -limit, limit)``.
 Neither existing MAX path computes that, and both fail silently:
 
-* ``max/python/max/nn/linear.py:1072`` applies the activation and *then*
+* ``max/python/max/nn/legacy/linear.py:1072`` applies the activation and *then*
   clamps, so it returns ``min(silu(20), 10) = 10`` where GLM needs
   ``silu(min(20, 10)) = 9.9995``.
-* ``max/python/max/nn/moe/moe.py:99`` clamps first, but adds GPT-OSS's ``+1``
+* ``max/python/max/nn/legacy/moe/moe.py:99`` clamps first, but adds GPT-OSS's ``+1``
   bias on ``up`` and an ``alpha`` scale inside the sigmoid that GLM does not
   have.
 
@@ -30,7 +30,7 @@ Used by the dense MLP, the shared expert, the routed experts and the vision
 tower, so one fix covers all four.
 
 TODO(GLM53-CORE): move this beside the other activations in
-``max/python/max/nn/`` once the vision lane's tower lands, so it is shared
+``max/python/max/nn/legacy/`` once the vision lane's tower lands, so it is shared
 rather than imported across architecture packages. It lives here for now to
 keep the parallel lanes off one shared file.
 """

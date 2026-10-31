@@ -27,6 +27,11 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from std.memory import unsafe_stack_allocation
 from layout import (
     DefaultEngine,
@@ -159,46 +164,49 @@ def _bitonic_local_sort_kernel[
         address_space=.SHARED,
     ]()
 
-    if gid < _n_arg:
-        shared_vals.unsafe_store(tid, input_arg.load[width=1]((gid,)))
-        shared_idxs.unsafe_store(tid, indices_arg.load[width=1]((gid,)))
-    else:
-        shared_vals.unsafe_store(tid, _sentinel_val[input_dtype, ascending]())
-        shared_idxs.unsafe_store(tid, Scalar[indices_dtype](-1))
+    with PDL():
+        if gid < _n_arg:
+            shared_vals.unsafe_store(tid, input_arg.load[width=1]((gid,)))
+            shared_idxs.unsafe_store(tid, indices_arg.load[width=1]((gid,)))
+        else:
+            shared_vals.unsafe_store(
+                tid, _sentinel_val[input_dtype, ascending]()
+            )
+            shared_idxs.unsafe_store(tid, Scalar[indices_dtype](-1))
 
-    var k = 2
-    while k <= BLOCK_SIZE:
-        var j = k >> 1
-        while j > 0:
-            barrier()
-            var partner = tid ^ j
-            if partner > tid:
-                var vi = shared_vals.unsafe_load(tid)
-                var vp = shared_vals.unsafe_load(partner)
+        var k = 2
+        while k <= BLOCK_SIZE:
+            var j = k >> 1
+            while j > 0:
+                barrier()
+                var partner = tid ^ j
+                if partner > tid:
+                    var vi = shared_vals.unsafe_load(tid)
+                    var vp = shared_vals.unsafe_load(partner)
 
-                var cmp_val: Bool
-                comptime if ascending:
-                    cmp_val = vi > vp
-                else:
-                    cmp_val = vi < vp
+                    var cmp_val: Bool
+                    comptime if ascending:
+                        cmp_val = vi > vp
+                    else:
+                        cmp_val = vi < vp
 
-                # Global merges require adjacent blocks to form bitonic runs.
-                var direction = (gid & k) == 0
-                if cmp_val == direction:
-                    shared_vals.unsafe_store(tid, vp)
-                    shared_vals.unsafe_store(partner, vi)
-                    var ii = shared_idxs.unsafe_load(tid)
-                    shared_idxs.unsafe_store(
-                        tid, shared_idxs.unsafe_load(partner)
-                    )
-                    shared_idxs.unsafe_store(partner, ii)
-            j >>= 1
-        k <<= 1
+                    # Global merges require adjacent blocks to form bitonic runs.
+                    var direction = (gid & k) == 0
+                    if cmp_val == direction:
+                        shared_vals.unsafe_store(tid, vp)
+                        shared_vals.unsafe_store(partner, vi)
+                        var ii = shared_idxs.unsafe_load(tid)
+                        shared_idxs.unsafe_store(
+                            tid, shared_idxs.unsafe_load(partner)
+                        )
+                        shared_idxs.unsafe_store(partner, ii)
+                j >>= 1
+            k <<= 1
 
-    barrier()
-    if gid < _n_arg:
-        input_arg.store((gid,), shared_vals.unsafe_load(tid))
-        indices_arg.store((gid,), shared_idxs.unsafe_load(tid))
+        barrier()
+        if gid < _n_arg:
+            input_arg.store((gid,), shared_vals.unsafe_load(tid))
+            indices_arg.store((gid,), shared_idxs.unsafe_load(tid))
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -252,35 +260,38 @@ def _bitonic_merge_local_kernel[
         address_space=.SHARED,
     ]()
 
-    shared_vals.unsafe_store(tid, input_arg.load[width=1]((gid,)))
-    shared_idxs.unsafe_store(tid, indices_arg.load[width=1]((gid,)))
+    with PDL():
+        shared_vals.unsafe_store(tid, input_arg.load[width=1]((gid,)))
+        shared_idxs.unsafe_store(tid, indices_arg.load[width=1]((gid,)))
 
-    var j = BLOCK_SIZE >> 1
-    while j > 0:
+        var j = BLOCK_SIZE >> 1
+        while j > 0:
+            barrier()
+            var partner = tid ^ j
+            if partner > tid:
+                var vi = shared_vals.unsafe_load(tid)
+                var vp = shared_vals.unsafe_load(partner)
+
+                var cmp_val: Bool
+                comptime if ascending:
+                    cmp_val = vi > vp
+                else:
+                    cmp_val = vi < vp
+
+                var direction = (gid & _stage) == 0
+                if cmp_val == direction:
+                    shared_vals.unsafe_store(tid, vp)
+                    shared_vals.unsafe_store(partner, vi)
+                    var ii = shared_idxs.unsafe_load(tid)
+                    shared_idxs.unsafe_store(
+                        tid, shared_idxs.unsafe_load(partner)
+                    )
+                    shared_idxs.unsafe_store(partner, ii)
+            j >>= 1
+
         barrier()
-        var partner = tid ^ j
-        if partner > tid:
-            var vi = shared_vals.unsafe_load(tid)
-            var vp = shared_vals.unsafe_load(partner)
-
-            var cmp_val: Bool
-            comptime if ascending:
-                cmp_val = vi > vp
-            else:
-                cmp_val = vi < vp
-
-            var direction = (gid & _stage) == 0
-            if cmp_val == direction:
-                shared_vals.unsafe_store(tid, vp)
-                shared_vals.unsafe_store(partner, vi)
-                var ii = shared_idxs.unsafe_load(tid)
-                shared_idxs.unsafe_store(tid, shared_idxs.unsafe_load(partner))
-                shared_idxs.unsafe_store(partner, ii)
-        j >>= 1
-
-    barrier()
-    input_arg.store((gid,), shared_vals.unsafe_load(tid))
-    indices_arg.store((gid,), shared_idxs.unsafe_load(tid))
+        input_arg.store((gid,), shared_vals.unsafe_load(tid))
+        indices_arg.store((gid,), shared_idxs.unsafe_load(tid))
 
 
 def _argsort_gpu_impl[
@@ -353,17 +364,18 @@ def _argsort_gpu_impl[
             return
 
         var partner = i ^ _step
-        if partner > i and partner < _n_arg:
-            var cmp_val: Bool
-            comptime if ascending:
-                cmp_val = input_arg[i] > input_arg[partner]
-            else:
-                cmp_val = input_arg[i] < input_arg[partner]
+        with PDL():
+            if partner > i and partner < _n_arg:
+                var cmp_val: Bool
+                comptime if ascending:
+                    cmp_val = input_arg[i] > input_arg[partner]
+                else:
+                    cmp_val = input_arg[i] < input_arg[partner]
 
-            var bitonic_merge_direction = (i & _stage) == 0
-            if cmp_val == bitonic_merge_direction:
-                swap(input_arg[i], input_arg[partner])
-                swap(indices_arg[i], indices_arg[partner])
+                var bitonic_merge_direction = (i & _stage) == 0
+                if cmp_val == bitonic_merge_direction:
+                    swap(input_arg[i], input_arg[partner])
+                    swap(indices_arg[i], indices_arg[partner])
 
     # ---- Main orchestration ----
 
@@ -384,6 +396,7 @@ def _argsort_gpu_impl[
         Int32(n),
         block_dim=BLOCK_SIZE,
         grid_dim=ceildiv(n, BLOCK_SIZE),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     # Phase 2: Global merge stages (for stages beyond BLOCK_SIZE).
@@ -401,6 +414,7 @@ def _argsort_gpu_impl[
                 Int32(k),
                 block_dim=BLOCK_SIZE,
                 grid_dim=ceildiv(n, BLOCK_SIZE),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
             j //= 2
 
@@ -421,6 +435,7 @@ def _argsort_gpu_impl[
             Int32(k),
             block_dim=BLOCK_SIZE,
             grid_dim=ceildiv(n, BLOCK_SIZE),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         k *= 2
 

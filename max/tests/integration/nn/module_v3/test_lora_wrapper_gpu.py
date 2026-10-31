@@ -29,14 +29,14 @@ import pytest
 import torch
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental.nn import (
+from max.nn import (
     LoRA,
     Module,
     lora_layers,
     lora_parameters,
 )
-from max.experimental.nn.common_layers.linear import QKVLinear
-from max.experimental.tensor import Tensor, TensorType
+from max.nn.common_layers.linear import QKVLinear
+from max.tensor.tensor import Tensor, TensorType
 
 pytestmark = pytest.mark.skipif(
     accelerator_count() == 0, reason="requires a GPU"

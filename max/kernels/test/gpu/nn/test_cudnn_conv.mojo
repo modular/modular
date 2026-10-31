@@ -37,14 +37,8 @@ def test_conv_cudnn[
     num_groups: Int = 1,
 ](ctx: DeviceContext) raises:
     print(
-        "== test_cudnn_conv_gpu: dtype_in=",
-        input_type,
-        " dtype_filter=",
-        filter_type,
-        " dtype_out=",
-        output_type,
-        " num_groups=",
-        num_groups,
+        t"== test_cudnn_conv_gpu: dtype_in= {input_type}  dtype_filter="
+        t" {filter_type}  dtype_out= {output_type}  num_groups= {num_groups}"
     )
 
     # Extract dimensions
@@ -228,19 +222,19 @@ def main() raises:
         comptime dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
 
         test_conv_cudnn[
-            IndexList[4](1, 1, 550, 1024),  # input  (NHWC)
+            (1, 1, 550, 1024),  # input  (NHWC)
             (
                 1,
                 7,
                 1024,
                 1024,
             ),  # filter (RSCF) (height, width, in_channels, out_channels)
-            IndexList[4](1, 1, 550, 1024),  # output (NHWC)
+            (1, 1, 550, 1024),  # output (NHWC)
             DType.float32,
             DType.float32,
             DType.float32,
-            IndexList[2](1, 1),  # stride
-            IndexList[2](1, 1),  # dilation
+            (1, 1),  # stride
+            (1, 1),  # dilation
             (
                 0,
                 0,
@@ -254,14 +248,14 @@ def main() raises:
             comptime dtype = dtype_configs[i]
 
             test_conv_cudnn[
-                IndexList[4](1, 8, 8, 16),  # input  (NHWC)
-                IndexList[4](3, 3, 16, 32),  # filter (RSCF)
-                IndexList[4](1, 6, 6, 32),  # output (NHWC)
+                (1, 8, 8, 16),  # input  (NHWC)
+                (3, 3, 16, 32),  # filter (RSCF)
+                (1, 6, 6, 32),  # output (NHWC)
                 dtype,
                 dtype,
                 dtype,
-                IndexList[2](1, 1),  # stride
-                IndexList[2](1, 1),  # dilation
+                (1, 1),  # stride
+                (1, 1),  # dilation
                 (
                     0,
                     0,
@@ -291,14 +285,14 @@ def main() raises:
     print("Creating first device context (default device)...")
     with DeviceContext() as ctx1:
         test_conv_cudnn[
-            IndexList[4](1, 8, 8, 16),  # input  (NHWC)
-            IndexList[4](3, 3, 16, 32),  # filter (RSCF)
-            IndexList[4](1, 6, 6, 32),  # output (NHWC)
+            (1, 8, 8, 16),  # input  (NHWC)
+            (3, 3, 16, 32),  # filter (RSCF)
+            (1, 6, 6, 32),  # output (NHWC)
             DType.float32,
             DType.float32,
             DType.float32,
-            IndexList[2](1, 1),  # stride
-            IndexList[2](1, 1),  # dilation
+            (1, 1),  # stride
+            (1, 1),  # dilation
             (
                 0,
                 0,
@@ -312,14 +306,14 @@ def main() raises:
         print("Creating second device context (device 1)...")
         with DeviceContext(device_id=1) as ctx2:
             test_conv_cudnn[
-                IndexList[4](1, 8, 8, 16),  # input  (NHWC)
-                IndexList[4](3, 3, 16, 32),  # filter (RSCF)
-                IndexList[4](1, 6, 6, 32),  # output (NHWC)
+                (1, 8, 8, 16),  # input  (NHWC)
+                (3, 3, 16, 32),  # filter (RSCF)
+                (1, 6, 6, 32),  # output (NHWC)
                 DType.float32,
                 DType.float32,
                 DType.float32,
-                IndexList[2](1, 1),  # stride
-                IndexList[2](1, 1),  # dilation
+                (1, 1),  # stride
+                (1, 1),  # dilation
                 (
                     0,
                     0,

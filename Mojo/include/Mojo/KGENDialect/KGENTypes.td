@@ -77,7 +77,8 @@ def KGEN_ParamType : KGENType<"Param", "param", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_TypeValueType : KGENType<"TypeValue", "typevalue",
-    [DeclareTypeInterfaceMethods<TraitSymbolInterface>]> {
+    [DeclareTypeInterfaceMethods<TraitSymbolInterface>,
+     DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "Type specified by a parameter expression (value domain)";
   let description = [{
     This is the value domain counterpart to KGEN ParamType. It allows
@@ -416,7 +417,6 @@ def KGEN_FuncType : KGENType<"Func", "func", [
 
     bool isThrows() const { return getFnEffects().isThrows(); }
     bool isAsync() const { return getFnEffects().isAsync(); }
-    bool isCapturing() const { return getFnEffects().isCapturing(); }
     bool isRefResult() const { return getFnEffects().isRefResult(); }
     bool isCABI() const { return getFnEffects().isCABI(); }
 
@@ -536,7 +536,8 @@ def KGEN_FuncLiteralTypeGeneratorType : DialectType<KGENDialect,
 //===----------------------------------------------------------------------===//
 
 def KGEN_FuncLiteralType : KGENType<"FuncLiteral", "func.literal", [
-  DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+  DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "The type of a KGEN literal function";
   let description = [{
     This type describes the type of a literal function in KGEN, in additional to
@@ -569,7 +570,8 @@ def KGEN_FuncLiteralType : KGENType<"FuncLiteral", "func.literal", [
 def PointerType : KGENType<"Pointer", "pointer", [
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "parameterized pointer type";
   let description = [{
     This type represents a pointer. The pointee type is parameterized with a
@@ -641,7 +643,8 @@ def PointerType : KGENType<"Pointer", "pointer", [
 
 class PointerElementType<string lhs, string rhs> : TypesMatchWith<
     "pointer element type", lhs, rhs,
-    "llvm::cast<PointerType>($_self).getElementType()">;
+    "llvm::isa<PointerType>($_self) ? "
+    "llvm::cast<PointerType>($_self).getElementType() : Type()">;
 
 class PointerOf<Type type> : ConfinedType<PointerType,
     [CPred<"llvm::cast<PointerType>($_self).getElementType()">,
@@ -661,7 +664,8 @@ class PointerOf<Type type> : ConfinedType<PointerType,
 def KGEN_ParamListType : KGENType<"ParamList", "param_list", [
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "parameterized variadic type";
   let description = [{
     The `!kgen.param_list` type represents a homogeneously typed list
@@ -698,7 +702,8 @@ def KGEN_ParamListType : KGENType<"ParamList", "param_list", [
 
 class ParamListElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches variadic element type", lhs, rhs,
-    "llvm::cast<KGEN::ParamListType>($_self).getElementType()",
+    "llvm::isa<KGEN::ParamListType>($_self) ? "
+    "llvm::cast<KGEN::ParamListType>($_self).getElementType() : Type()",
     "typeRangeMatches">;
 
 //===----------------------------------------------------------------------===//
@@ -768,7 +773,8 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<ContextuallyEvaluatedTypeInterface,
-                                ["evaluateWithContext"]>]> {
+                                ["evaluateWithContext"]>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "parameterized struct type";
   let description = [{
     This type represents a struct. A struct contains element types arranged in
@@ -985,7 +991,8 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 // StructInstanceType
 //===----------------------------------------------------------------------===//
 
-def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
+def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst",
+    [DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "concretized mojo struct type";
   let description = [{
     This type represents a concretized mojo source struct type. It is the result
@@ -1058,7 +1065,8 @@ def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
 def KGEN_VariantType : KGENType<"Variant", "variant", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<DataLayoutInterface>
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>
 ]> {
   let summary = "A parametric variant type.";
   let description = [{
@@ -1180,7 +1188,8 @@ def KGEN_NeverType : KGENType<"Never", "never", [
 def KGEN_SIMDType : KGENType<"SIMD", "simd", [
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
@@ -1322,7 +1331,8 @@ def UnboundOrIndexOrInt : AnyTypeOf<[
 // Matches if Value has size=1 and same dtype as Operand
 class SIMDSizeOneOfSameDType<string operand, string value> : TypesMatchWith<
     value # " type matches dtype of the " # operand # " operand", operand,
-    value, "KGEN::SIMDType::get(1, llvm::cast<SIMDType>($_self).getDType())">;
+    value, "llvm::isa<SIMDType>($_self) ? "
+    "KGEN::SIMDType::get(1, llvm::cast<SIMDType>($_self).getDType()) : Type()">;
 
 class SIMDSize<string name> :
     StrFunc<"$" # name # ".getType().cast<KGEN::SIMDType>().getResolvedSize()">;
@@ -1332,12 +1342,16 @@ class SIMDOfSameSize<string lhs, string rhs> :
 
 class AddressSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
-    value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
-    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::address))">;
+    value, "llvm::isa<SIMDType>($_self) ? "
+    "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::address)) "
+    ": Type()">;
 
 class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
-    value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
-    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::kBool))">;
+    value, "llvm::isa<SIMDType>($_self) ? "
+    "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::kBool)) "
+    ": Type()">;
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

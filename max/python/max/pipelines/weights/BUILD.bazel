@@ -28,10 +28,11 @@ modular_py_library(
         "torch",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/support",
         requirement("huggingface-hub"),

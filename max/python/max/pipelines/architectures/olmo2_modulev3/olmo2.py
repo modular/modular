@@ -16,25 +16,25 @@ from __future__ import annotations
 
 import functools
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
 from max.graph import ops
-from max.nn.kv_cache import (
+from max.nn import Module
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.embedding import Embedding
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
-    KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.linear import Linear
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.tensor import Tensor
 
 from .layers.attention import Olmo2Attention
 from .layers.rms_norm import Olmo2RMSNorm
@@ -140,6 +140,7 @@ class Olmo2TextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
@@ -192,32 +193,25 @@ class Olmo2TextModel(
         )
 
 
-class Olmo2(Module[..., ModuleV3Outputs]):
-    """The Olmo2 model."""
+class Olmo2(Module[[DecoderInputs], DecoderOutputs]):
+    """The Olmo2 decoder, registered for the ``DECODER`` role."""
 
-    def __init__(
-        self,
-        config: Olmo2Config,
-        kv_params: KVCacheParamInterface,
-    ) -> None:
+    def __init__(self, config: Olmo2Config) -> None:
         super().__init__()
         self.language_model = Olmo2TextModel(config)
         self.config = config
-        self.kv_params = kv_params
+        self.kv_params = config.kv_params
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *variadic_args,
-    ) -> ModuleV3Outputs:
-        symbolic_inputs = self.kv_params.unflatten_kv_inputs(
-            iter(variadic_args)
-        )
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Unflattens the KV inputs, then runs the text model."""
+        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
         kv_collections = tree.leaves(
-            symbolic_inputs, leaf=KVCacheInputsPerDevice
+            self.kv_params.unflatten_kv_inputs(kv_inputs),
+            leaf=KVCacheInputsPerDevice,
         )
         return self.language_model(
-            tokens, kv_collections[0], return_n_logits, input_row_offsets
+            inputs.tokens,
+            kv_collections[0],
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
         )

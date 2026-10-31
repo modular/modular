@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Architecture registration for GLM-5.3-Flash (``glm5_next``).
 
-Text-only. The decoder is assembled in
+Text, images and video. The decoder is assembled in
 :meth:`~.model.Glm5NextModel.graph_specs`, which calls
 ``attach_layers(build_layers())``, so this resolves to GLM-5.3-Flash's own
-graph rather than to DeepSeek-V3.2's. The vision tower has landed its modules
-but is not wired into the graph, so an image request is not served here.
+graph rather than to DeepSeek-V3.2's. The vision tower compiles beside it and
+its rows are scattered onto the image and video-frame placeholders after the
+embedding.
 
 A load failure is a real failure, not bring-up noise.
 
@@ -29,23 +30,21 @@ is what config detection keys on.
 from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.architectures.deepseekV3.batch_processor import (
-    DeepseekV3BatchProcessor,
-)
 from max.pipelines.architectures.glm5_1.reasoning import (  # noqa: F401  registers "glm45"
     GlmReasoningParser,
 )
-from max.pipelines.architectures.glm5_1.tokenizer import GlmTokenizer
 from max.pipelines.architectures.glm5_1.tool_parser import (  # noqa: F401  registers "glm45"
     GlmToolParser,
 )
-from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import Glm5NextBatchProcessor
+from .context import Glm5NextTextAndVisionContext
 from .memory_planner import Glm5NextMemoryPlanner
 from .model import Glm5NextModel
 from .model_config import Glm5NextConfig
+from .tokenizer import Glm5NextTokenizer
 from .weight_adapters import convert_glm5_next_state_dict
 
 __all__ = ["glm5_next_arch"]
@@ -60,26 +59,25 @@ glm5_next_arch = SupportedArchitecture(
     default_encoding=Glm5NextConfig.DEFAULT_ENCODING,
     supported_encodings=Glm5NextConfig.SUPPORTED_ENCODINGS,
     pipeline_model=Glm5NextModel,
-    batching=DeepseekV3BatchProcessor,
-    # TODO(GLM53-VISION): swap to the multimodal context type once placeholder
-    # substitution lands. Text-only until then, which is what M0-M4 of the
-    # bring-up plan gate on anyway.
-    #
-    # When wiring the video path, clamp the sampled frame count before it
-    # reaches the processor. `sample_frames` returns an *empty* array for a
-    # sub-second clip below the target fps -- at `duration=0.9, target_fps=1`,
-    # `extract_t` is 0, the walk appends frame 0, and `len(frame_indices) >
-    # extract_t` then routes to `linspace(num=0)`. That is upstream behaviour,
-    # reproduced faithfully and pinned by
-    # `test_sub_second_clip_below_target_fps_samples_nothing`; neither the
-    # processor nor the reference will reject it, so the caller must.
-    tokenizer=GlmTokenizer,
-    context_type=TextContext,
+    input_modalities={
+        InputModality.TEXT,
+        InputModality.IMAGE,
+        InputModality.VIDEO,
+    },
+    batching=Glm5NextBatchProcessor,
+    tokenizer=Glm5NextTokenizer,
+    context_type=Glm5NextTextAndVisionContext,
     weight_adapters={
         WeightsFormat.safetensors: convert_glm5_next_state_dict,
     },
     config=Glm5NextConfig,
     memory_planner=Glm5NextMemoryPlanner,
+    # A speculative pairing serves with prefix caching off: the KDA state
+    # checkpoints only at a page boundary, which a step's accepted drafts
+    # move past.
+    checkpoints_recurrent_state=True,
+    checkpoint_drafts={"mtp": "MTPGlm5NextDraftModel"},
+    spec_decode_graph_names={"mtp": "glm5_next_with_mtp_graph"},
     multi_gpu_supported=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,

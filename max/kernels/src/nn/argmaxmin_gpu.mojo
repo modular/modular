@@ -380,11 +380,9 @@ def _argmax_biased_scan_kernel[
     var begin = min(split * Int(split_len_arg), num_elements)
     var count = min(Int(split_len_arg), num_elements - begin)
 
+    var best_vals = SIMD[.float32, simd_width](_topk_dead_val[.float32, True]())
+    var best_idxs = SIMD[.int32, simd_width](0)
     with PDL():
-        var best_vals = SIMD[.float32, simd_width](
-            _topk_dead_val[.float32, True]()
-        )
-        var best_idxs = SIMD[.int32, simd_width](0)
         if aligned_arg != 0:
             _argmax_biased_scan[
                 dtype,
@@ -505,7 +503,7 @@ def argmax_with_bias_gpu[
                 [
                     trace_arg("logits", shape, dtype),
                     trace_arg("bias", bias_shape, bias_dtype),
-                    "position=" + String(position),
+                    String(t"position={position}"),
                 ]
             )
         )
@@ -513,7 +511,7 @@ def argmax_with_bias_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "argmax_with_bias_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         if position < 0 or position >= positions:
             raise Error(

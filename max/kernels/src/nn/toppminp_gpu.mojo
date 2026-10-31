@@ -18,7 +18,13 @@ from std.sys import bit_width_of
 
 from std.builtin.dtype import _uint_type_of_width
 from max.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu.primitives import block
 from max.gpu.sync import barrier
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import Dim
 from std.random import Random
@@ -30,8 +36,6 @@ from nn.topk import (
     _block_reduce_topk,
     _topk_dead_val,
 )
-
-from std.utils import IndexList
 
 comptime DEBUG_FILE = False
 comptime SEED = 42
@@ -104,49 +108,53 @@ def topk_wrapper[
     var block_offset = block_lane * block_size
     var stride = block_size * _num_blocks_per_input
     topk_sram[tid] = TopK_2[input_type, largest]()
-    for i in range(tid + block_offset, _num_elements, stride):
-        topk_sram[tid].insert(_in_buffer[i], i)
 
-    barrier()
-
-    # Prepare for _K iterations to find the local top-_K elements
-    for k in range(_K):
-        # Initialize each thread with its own TopK_2 value and index
-        var partial = topk_sram[tid]
-
-        # Perform block-level reduction to find the maximum TopK_2
-        var total = _block_reduce_topk[ascending=largest](partial)
-
-        if tid == 0:
-            # Store the local top-_K values and indices in global memory
-            var vector_idx = total.p
-            local_topk_vals[bid * _K + k] = total.u
-            local_topk_idxs[bid * _K + k] = Int(vector_idx).cast[index_type]()
-
-            comptime if is_top_p:
-                # In top-p sampling, we check if the highest probability token exceeds
-                # the probability threshold (p_threshold). If it does, we can skip sorting
-                # since we'll just sample this token. Otherwise, we need to sort to find
-                # all tokens that sum to p_threshold probability mass.
-                skip_sort[batch_id] = (
-                    total.u > p_threshold[batch_id]
-                ) and not _test_sort
-                # If we're testing sort, we can't skip sort
-            else:
-                # For min-p sampling, we calculate a dynamic threshold as:
-                # threshold = min_p_coefficient * max_probability
-                # This ensures we only consider tokens with probability at least
-                # min_p_coefficient times the highest probability token.
-                var p_threshold_val = p_threshold[batch_id] * total.u
-                # update with actual min-p threshold
-                p_threshold[batch_id] = p_threshold_val
-                skip_sort[batch_id] = False
-
-            # Remove the found maximum from consideration in the next iteration
-            var orig_tid = (vector_idx - block_offset) % stride
-            topk_sram[orig_tid].u = _topk_dead_val[input_type, largest]()
+    with PDL():
+        for i in range(tid + block_offset, _num_elements, stride):
+            topk_sram[tid].insert(_in_buffer[i], i)
 
         barrier()
+
+        # Prepare for _K iterations to find the local top-_K elements
+        for k in range(_K):
+            # Initialize each thread with its own TopK_2 value and index
+            var partial = topk_sram[tid]
+
+            # Perform block-level reduction to find the maximum TopK_2
+            var total = _block_reduce_topk[ascending=largest](partial)
+
+            if tid == 0:
+                # Store the local top-_K values and indices in global memory
+                var vector_idx = total.p
+                local_topk_vals[bid * _K + k] = total.u
+                local_topk_idxs[bid * _K + k] = Int(vector_idx).cast[
+                    index_type
+                ]()
+
+                comptime if is_top_p:
+                    # In top-p sampling, we check if the highest probability token exceeds
+                    # the probability threshold (p_threshold). If it does, we can skip sorting
+                    # since we'll just sample this token. Otherwise, we need to sort to find
+                    # all tokens that sum to p_threshold probability mass.
+                    skip_sort[batch_id] = (
+                        total.u > p_threshold[batch_id]
+                    ) and not _test_sort
+                    # If we're testing sort, we can't skip sort
+                else:
+                    # For min-p sampling, we calculate a dynamic threshold as:
+                    # threshold = min_p_coefficient * max_probability
+                    # This ensures we only consider tokens with probability at least
+                    # min_p_coefficient times the highest probability token.
+                    var p_threshold_val = p_threshold[batch_id] * total.u
+                    # update with actual min-p threshold
+                    p_threshold[batch_id] = p_threshold_val
+                    skip_sort[batch_id] = False
+
+                # Remove the found maximum from consideration in the next iteration
+                var orig_tid = (vector_idx - block_offset) % stride
+                topk_sram[orig_tid].u = _topk_dead_val[input_type, largest]()
+
+            barrier()
 
 
 @inline(.always)
@@ -319,162 +327,162 @@ def radix_sort_pairs_kernel[
     var input_key_ids = input_key_ids_.unsafe_offset(batch_id * _num_keys)
     var output_key_ids = output_key_ids_.unsafe_offset(batch_id * _num_keys)
 
-    if skip_sort[batch_id]:
-        return
+    with PDL():
+        if skip_sort[batch_id]:
+            return
 
-    # Shared mem declarations
-    var s_counts = unsafe_stack_allocation[
-        BLOCK_SIZE * NUM_BUCKETS,
-        Int32,
-        address_space=.SHARED,
-    ]()
-    var total_counts = unsafe_stack_allocation[
-        NUM_BUCKETS,
-        Int32,
-        address_space=.SHARED,
-    ]()
-    var total_offsets = unsafe_stack_allocation[
-        (NUM_BUCKETS + 1),  # +1 extended size for descending
-        Int32,
-        address_space=.SHARED,
-    ]()
-    var total_offsets_descending = unsafe_stack_allocation[
-        NUM_BUCKETS,
-        Int32,
-        address_space=.SHARED,
-    ]()
-    var s_thread_offsets = unsafe_stack_allocation[
-        BLOCK_SIZE * NUM_BUCKETS,
-        Int32,
-        address_space=.SHARED,
-    ]()
+        # Shared mem declarations
+        var s_counts = unsafe_stack_allocation[
+            BLOCK_SIZE * NUM_BUCKETS,
+            Int32,
+            address_space=.SHARED,
+        ]()
+        var total_counts = unsafe_stack_allocation[
+            NUM_BUCKETS,
+            Int32,
+            address_space=.SHARED,
+        ]()
+        var total_offsets = unsafe_stack_allocation[
+            (NUM_BUCKETS + 1),  # +1 extended size for descending
+            Int32,
+            address_space=.SHARED,
+        ]()
+        var total_offsets_descending = unsafe_stack_allocation[
+            NUM_BUCKETS,
+            Int32,
+            address_space=.SHARED,
+        ]()
+        var s_thread_offsets = unsafe_stack_allocation[
+            BLOCK_SIZE * NUM_BUCKETS,
+            Int32,
+            address_space=.SHARED,
+        ]()
 
-    # Initialize counts[NUM_BUCKETS]
-    var counts_stack = Array[Int32, NUM_BUCKETS](fill=0)
-    var counts_buf = TileTensor(counts_stack, row_major[NUM_BUCKETS]())
+        # Initialize counts[NUM_BUCKETS]
+        var counts_stack = Array[Int32, NUM_BUCKETS](fill=0)
+        var counts_buf = TileTensor(counts_stack, row_major[NUM_BUCKETS]())
 
-    # Process elements and compute counts for each thread
-    for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
-        if index < _num_keys:
-            var key = input_keys[index]
-            var normalized_key = normalize(key)
-            comptime KeyType = type_of(normalized_key)
-            var radix = (normalized_key >> KeyType(current_bit)) & KeyType(
-                NUM_BUCKETS - 1
-            )
-            counts_buf[radix] += 1
+        # Process elements and compute counts for each thread
+        for index in range(
+            tid * elems_per_thread, (tid + 1) * elems_per_thread
+        ):
+            if index < _num_keys:
+                var key = input_keys[index]
+                var normalized_key = normalize(key)
+                comptime KeyType = type_of(normalized_key)
+                var radix = (normalized_key >> KeyType(current_bit)) & KeyType(
+                    NUM_BUCKETS - 1
+                )
+                counts_buf[radix] += 1
 
-    # Store counts[NUM_BUCKETS] per thread into shared memory s_counts
-    comptime for i in range(NUM_BUCKETS):
-        s_counts[tid * NUM_BUCKETS + i] = counts_buf[i]
-    barrier()
-
-    # Compute total_counts[NUM_BUCKETS] by summing counts[NUM_BUCKETS] across threads
-    if tid < NUM_BUCKETS:
-        var sum = Int32(0)
-        var bucket_offset = tid
-
-        comptime for t in range(BLOCK_SIZE):
-            sum += s_counts[t * NUM_BUCKETS + bucket_offset]
-        total_counts[bucket_offset] = sum
-    barrier()
-
-    # Perform exclusive scan over total_counts[NUM_BUCKETS] to get total_offsets[NUM_BUCKETS]
-    if tid == 0:
-        total_offsets[0] = 0
-
-        comptime for i in range(1, NUM_BUCKETS + 1):
-            total_offsets[i] = total_offsets[i - 1] + total_counts[i - 1]
-
-    # Compute per-thread starting offsets per radix value
-    comptime for i in range(NUM_BUCKETS):
-        s_thread_offsets[tid * NUM_BUCKETS + i] = s_counts[
-            tid * NUM_BUCKETS + i
-        ]
-    barrier()
-
-    # Perform exclusive scan over s_thread_offsets per radix value
-    comptime for radix in range(NUM_BUCKETS):
-        # Initialize the offset to 1, which will be used to determine the distance
-        # between threads whose values will be reduced/summed.
-        var offset = 1
-        while offset < BLOCK_SIZE:
-            # Initialize a temporary variable to store the value from the neighboring thread.
-            var val = Int32(0)
-            if tid >= offset:
-                # If the current thread ID is greater than or equal to the offset,
-                # fetch the value from the neighboring thread that is 'offset' positions behind.
-                val = s_thread_offsets[(tid - offset) * NUM_BUCKETS + radix]
-
-            # Synchronize all threads to ensure that the value fetching is complete.
-            barrier()
-            # Add the fetched value to the current thread's value.
-            s_thread_offsets[tid * NUM_BUCKETS + radix] += val
-            # Synchronize all threads to ensure that the addition is complete.
-            barrier()
-            # Double the offset for the next iteration to fetch values from farther threads.
-            offset <<= 1
-
-        # After the loop, set the first thread's offset to 0.
-        if tid == 0:
-            s_thread_offsets[tid * NUM_BUCKETS + radix] = 0
-        else:
-            # For all other threads, set the offset to the value of the previous thread.
-            s_thread_offsets[tid * NUM_BUCKETS + radix] = s_thread_offsets[
-                (tid - 1) * NUM_BUCKETS + radix
-            ]
-        # Synchronize all threads to ensure that the final offset values are set.
+        # Store counts[NUM_BUCKETS] per thread into shared memory s_counts
+        comptime for i in range(NUM_BUCKETS):
+            s_counts[tid * NUM_BUCKETS + i] = counts_buf[i]
         barrier()
 
-    # Compute total_offsets_descending[NUM_BUCKETS] if needed
-    comptime if not ascending:
+        # Compute total_counts[NUM_BUCKETS] by summing counts[NUM_BUCKETS] across threads
         if tid < NUM_BUCKETS:
-            total_offsets_descending[tid] = (
-                total_offsets[NUM_BUCKETS] - total_offsets[tid + 1]
-            )
+            var sum = Int32(0)
+            var bucket_offset = tid
+
+            comptime for t in range(BLOCK_SIZE):
+                sum += s_counts[t * NUM_BUCKETS + bucket_offset]
+            total_counts[bucket_offset] = sum
         barrier()
 
-    # Each thread initializes local_offsets[NUM_BUCKETS] = 0
-    var local_offsets_stack = Array[Int32, NUM_BUCKETS](fill=0)
-    var local_offsets_buf = TileTensor(
-        local_offsets_stack, row_major[NUM_BUCKETS]()
-    )
+        # Perform exclusive scan over total_counts[NUM_BUCKETS] to get total_offsets[NUM_BUCKETS]
+        if tid == 0:
+            total_offsets[0] = 0
 
-    # Now, each thread processes its elements, computes destination index, write to output
-    for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
-        if index < _num_keys:
-            var key = input_keys[index]
-            var normalized_key = normalize(key)
-            comptime KeyType = type_of(normalized_key)
-            var radix = Int(
-                (normalized_key >> KeyType(current_bit))
-                & KeyType(NUM_BUCKETS - 1)
-            )
+            comptime for i in range(1, NUM_BUCKETS + 1):
+                total_offsets[i] = total_offsets[i - 1] + total_counts[i - 1]
 
-            # Adjust global_offset for ascending or descending order
-            var global_offset: Int
+        # Compute per-thread starting offsets per radix value
+        comptime for i in range(NUM_BUCKETS):
+            s_thread_offsets[tid * NUM_BUCKETS + i] = s_counts[
+                tid * NUM_BUCKETS + i
+            ]
+        barrier()
 
-            comptime if ascending:
-                global_offset = Int(
-                    total_offsets[radix]
-                    + s_thread_offsets[tid * NUM_BUCKETS + radix]
-                    + local_offsets_buf[radix]
+        # Perform exclusive scan over s_thread_offsets per radix value
+        comptime for radix in range(NUM_BUCKETS):
+            # Initialize the offset to 1, which will be used to determine the distance
+            # between threads whose values will be reduced/summed.
+            var offset = 1
+            while offset < BLOCK_SIZE:
+                # Initialize a temporary variable to store the value from the neighboring thread.
+                var val = Int32(0)
+                if tid >= offset:
+                    # If the current thread ID is greater than or equal to the offset,
+                    # fetch the value from the neighboring thread that is 'offset' positions behind.
+                    val = s_thread_offsets[(tid - offset) * NUM_BUCKETS + radix]
+
+                # Synchronize all threads to ensure that the value fetching is complete.
+                barrier()
+                # Add the fetched value to the current thread's value.
+                s_thread_offsets[tid * NUM_BUCKETS + radix] += val
+                # Synchronize all threads to ensure that the addition is complete.
+                barrier()
+                # Double the offset for the next iteration to fetch values from farther threads.
+                offset <<= 1
+
+            # Make the scan exclusive with the thread's own count. Reading slot
+            # `tid - 1` instead races with thread `tid - 1` writing it.
+            s_thread_offsets[tid * NUM_BUCKETS + radix] -= counts_buf[radix]
+            # Synchronize all threads to ensure that the final offset values are set.
+            barrier()
+
+        # Compute total_offsets_descending[NUM_BUCKETS] if needed
+        comptime if not ascending:
+            if tid < NUM_BUCKETS:
+                total_offsets_descending[tid] = (
+                    total_offsets[NUM_BUCKETS] - total_offsets[tid + 1]
                 )
-            else:
-                global_offset = Int(
-                    total_offsets_descending[radix]
-                    + s_thread_offsets[tid * NUM_BUCKETS + radix]
-                    + local_offsets_buf[radix]
+            barrier()
+
+        # Each thread initializes local_offsets[NUM_BUCKETS] = 0
+        var local_offsets_stack = Array[Int32, NUM_BUCKETS](fill=0)
+        var local_offsets_buf = TileTensor(
+            local_offsets_stack, row_major[NUM_BUCKETS]()
+        )
+
+        # Now, each thread processes its elements, computes destination index, write to output
+        for index in range(
+            tid * elems_per_thread, (tid + 1) * elems_per_thread
+        ):
+            if index < _num_keys:
+                var key = input_keys[index]
+                var normalized_key = normalize(key)
+                comptime KeyType = type_of(normalized_key)
+                var radix = Int(
+                    (normalized_key >> KeyType(current_bit))
+                    & KeyType(NUM_BUCKETS - 1)
                 )
 
-            output_keys[global_offset] = key
+                # Adjust global_offset for ascending or descending order
+                var global_offset: Int
 
-            comptime if current_bit == 0:
-                output_key_ids[global_offset] = Scalar[out_idx_type](index)
-            else:
-                output_key_ids[global_offset] = input_key_ids[index]
+                comptime if ascending:
+                    global_offset = Int(
+                        total_offsets[radix]
+                        + s_thread_offsets[tid * NUM_BUCKETS + radix]
+                        + local_offsets_buf[radix]
+                    )
+                else:
+                    global_offset = Int(
+                        total_offsets_descending[radix]
+                        + s_thread_offsets[tid * NUM_BUCKETS + radix]
+                        + local_offsets_buf[radix]
+                    )
 
-            local_offsets_buf[radix] += 1
+                output_keys[global_offset] = key
+
+                comptime if current_bit == 0:
+                    output_key_ids[global_offset] = Scalar[out_idx_type](index)
+                else:
+                    output_key_ids[global_offset] = input_key_ids[index]
+
+                local_offsets_buf[radix] += 1
 
 
 struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
@@ -554,7 +562,7 @@ def run_radix_sort_pairs_gpu[
     mut keys: DoubleBuffer[dtype, ...],
     mut key_ids: DoubleBuffer[out_idx_type, ...],
     skip_sort: MutPointer[Scalar[.bool], _],
-    in_shape: IndexList,
+    in_shape: Coord[Int, Int],
 ) raises:
     """
     Runs a multi-pass radix sort on key/index pairs across batches on the GPU
@@ -572,7 +580,7 @@ def run_radix_sort_pairs_gpu[
         keys: DoubleBuffer[dtype] - Double buffer holding the keys to sort, swapped each pass.
         key_ids: DoubleBuffer[out_idx_type] - Double buffer holding the key indices, swapped each pass.
         skip_sort: Pointer[Scalar[.bool]] - Per-batch flag indicating whether sorting is skipped.
-        in_shape: IndexList - Shape of the input tensor as [batch_size, vocab_size].
+        in_shape: Coord - Shape of the input tensor as [batch_size, vocab_size].
     """
     var batch_size = in_shape[0]
     var vocab_size = in_shape[1]
@@ -600,6 +608,7 @@ def run_radix_sort_pairs_gpu[
             skip_sort_device,
             grid_dim=Dim(batch_size),
             block_dim=Dim(BLOCK_SIZE),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         keys.swap()
         key_ids.swap()
@@ -639,59 +648,152 @@ def topp_minp_sampling_kernel[
     var tid = thread_idx.x
     var batch_id = block_idx.x
 
-    if skip_sort[batch_id]:
-        # out_token_ids is already set by topk_wrapper
+    with PDL():
+        if skip_sort[batch_id]:
+            # out_token_ids is already set by topk_wrapper
+            return
+
+        var p_threshold = p_thresholds_[batch_id]
+        var sorted_probs = sorted_probs_.unsafe_offset(batch_id * _vocab_size)
+        var sorted_ids = sorted_ids_.unsafe_offset(batch_id * _vocab_size)
+
+        comptime if is_top_p:
+            if tid == 0:
+                var rng_state = Random(seed=SEED)
+                var rng = rng_state.step_uniform()
+                var r = p_threshold * rng[0].cast[dtype]()
+                for i in range(_vocab_size):
+                    r -= sorted_probs[i]
+
+                    if r <= 0.0 or i == _vocab_size - 1:
+                        comptime if DEBUG_FILE:
+                            print("sorted_probs[i]: ", sorted_probs[i])
+                            print("r: ", r)
+                            print("p_threshold: ", p_threshold)
+
+                        out_token_ids[batch_id] = sorted_ids[i]
+                        break
+        else:
+            # Min-P sampling
+            if tid == 0:
+                var rng_state = Random(seed=SEED)
+                var rng = rng_state.step_uniform()
+
+                # Step 1: Filter out tokens with probabilities less than the min-p threshold
+                var sum_filtered_probs = Scalar[dtype](0.0)
+                var num_filtered_tokens = 0
+                for i in range(_vocab_size):
+                    if sorted_probs[i] >= p_threshold:
+                        sum_filtered_probs += sorted_probs[i]
+                        num_filtered_tokens += 1
+                    else:
+                        break
+
+                # Step 2: Sample from normalized distribution of remaining tokens
+                var r = sum_filtered_probs * rng[0].cast[dtype]()
+                # Step 3: Select token based on normalized probabilities
+                for i in range(num_filtered_tokens):
+                    r -= sorted_probs[i]
+
+                    if r <= 0.0 or i == _vocab_size - 1:
+                        out_token_ids[batch_id] = sorted_ids[i]
+
+                        comptime if DEBUG_FILE:
+                            print("sorted_probs[i]: ", sorted_probs[i])
+                            print("r: ", r)
+                            print("p_threshold: ", p_threshold)
+                        break
+
+
+@inline(.always)
+@__name(t"minp_max_threshold_{dtype}_{out_idx_type}_{block_size}")
+def minp_max_threshold_kernel[
+    dtype: DType,
+    out_idx_type: DType,
+    block_size: Int,
+](
+    min_p_coeffs_: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
+    probs_: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
+    out_token_ids: MutPointer[Scalar[out_idx_type], MutUntrackedOrigin],
+    vocab_size: Int32,
+):
+    """Min-p sampling with no ordering anywhere.
+
+    One block per row: reduce the row's maximum probability, form the min-p
+    threshold from it, mask and renormalize, then draw from the masked set.
+
+    Parameters:
+        dtype: DType - scalar values dtype.
+        out_idx_type: DType - output index type.
+        block_size: Int - Number of threads per block.
+
+    Args:
+        min_p_coeffs_: Per-row min-p coefficients, in the caller's range [0, 1]
+            (`min_p_sampling_gpu`'s `min_ps`), not probabilities.
+        probs_: Post-softmax probabilities [batch_size, vocab_size], the buffer
+            `topp_minp_sampling_kernel` reads.
+        out_token_ids: Output token ids [batch_size].
+        vocab_size: Number of tokens in the vocabulary per row.
+
+    The sorted path reaches the same answer in four steps that this one
+    collapses into two scans of the row plus a per-thread walk:
+
+    1. The row maximum. `topk_wrapper[is_top_p=False]` reduces the same buffer
+       with K=1 and writes `p_thresholds[batch_id] = min_p * max` in `dtype`.
+       A max reduce computes the same value, so the threshold below is the same
+       number the sorted path compares against, bit for bit.
+    2. Mask and renormalize: the set is `p >= threshold`, and the sum over it is
+       the normalizer.
+    3. Draw: `r = uniform * sum`, then walk the set subtracting probabilities
+       until `r <= 0`. The sorted path walks the set in descending-probability
+       order; this walks it in thread-major order, a fixed permutation of the
+       row, which draws from the same distribution.
+    """
+    var _vocab = Int(vocab_size)
+    var tid = thread_idx.x
+    var batch_id = block_idx.x
+    var row = probs_.unsafe_offset(batch_id * _vocab)
+
+    # Pass 1: the row maximum, the same reduction the K=1 top-k does.
+    var thread_max = Scalar[dtype].MIN_FINITE
+    for i in range(tid, _vocab, block_size):
+        thread_max = max(thread_max, row[i])
+    var row_max = block.max[block_size=block_size](thread_max)
+
+    # Pass 2: masked sum. The threshold is the sorted path's, evaluated in
+    # `dtype` so `p >= threshold` selects exactly the same elements, and the
+    # sum accumulates in `dtype` like `sum_filtered_probs` does.
+    var threshold = min_p_coeffs_[batch_id] * row_max
+    var thread_sum = Scalar[dtype](0.0)
+    for i in range(tid, _vocab, block_size):
+        if row[i] >= threshold:
+            thread_sum += row[i]
+
+    var total = block.sum[block_size=block_size](thread_sum)
+    var seg_start = block.prefix_sum[block_size=block_size, exclusive=True](
+        thread_sum
+    )
+
+    # Pass 3: the draw. One uniform per row, the same one the sorted path
+    # draws, scaled by the normalizer; the thread whose segment of
+    # thread-major order holds `r` then walks its own elements.
+    var rng = Random(seed=SEED)
+    var r = total * rng.step_uniform()[0].cast[dtype]()
+    if total <= 0.0:
+        # Nothing clears the threshold (min_p > 1, or an all-zero row). The
+        # sorted path leaves the output untouched in this case; write a token
+        # rather than none.
+        if tid == 0:
+            out_token_ids[batch_id] = Int(0).cast[out_idx_type]()
         return
 
-    var p_threshold = p_thresholds_[batch_id]
-    var sorted_probs = sorted_probs_.unsafe_offset(batch_id * _vocab_size)
-    var sorted_ids = sorted_ids_.unsafe_offset(batch_id * _vocab_size)
-
-    comptime if is_top_p:
-        if tid == 0:
-            var rng_state = Random(seed=SEED)
-            var rng = rng_state.step_uniform()
-            var r = p_threshold * rng[0].cast[dtype]()
-            for i in range(_vocab_size):
-                r -= sorted_probs[i]
-
-                if r <= 0.0 or i == _vocab_size - 1:
-                    comptime if DEBUG_FILE:
-                        print("sorted_probs[i]: ", sorted_probs[i])
-                        print("r: ", r)
-                        print("p_threshold: ", p_threshold)
-
-                    out_token_ids[batch_id] = sorted_ids[i]
-                    break
-    else:
-        # Min-P sampling
-        if tid == 0:
-            var rng_state = Random(seed=SEED)
-            var rng = rng_state.step_uniform()
-
-            # Step 1: Filter out tokens with probabilities less than the min-p threshold
-            var sum_filtered_probs = Scalar[dtype](0.0)
-            var num_filtered_tokens = 0
-            for i in range(_vocab_size):
-                if sorted_probs[i] >= p_threshold:
-                    sum_filtered_probs += sorted_probs[i]
-                    num_filtered_tokens += 1
-                else:
-                    break
-
-            # Step 2: Sample from normalized distribution of remaining tokens
-            var r = sum_filtered_probs * rng[0].cast[dtype]()
-            # Step 3: Select token based on normalized probabilities
-            for i in range(num_filtered_tokens):
-                r -= sorted_probs[i]
-
-                if r <= 0.0 or i == _vocab_size - 1:
-                    out_token_ids[batch_id] = sorted_ids[i]
-
-                    comptime if DEBUG_FILE:
-                        print("sorted_probs[i]: ", sorted_probs[i])
-                        print("r: ", r)
-                        print("p_threshold: ", p_threshold)
+    if r >= seg_start and r < seg_start + thread_sum:
+        var remaining = r - seg_start
+        for i in range(tid, _vocab, block_size):
+            if row[i] >= threshold:
+                remaining -= row[i]
+                out_token_ids[batch_id] = Int(i).cast[out_idx_type]()
+                if remaining <= 0.0:
                     break
 
 
@@ -716,6 +818,7 @@ def _topp_minp_sampling_gpu[
     //,
     is_top_p: Bool,
     _test_sort: Bool = False,
+    use_max_threshold_minp: Bool = False,
 ](
     ctx: DeviceContext,
     p_thresholds: TileTensor[dtype, ...],
@@ -740,6 +843,12 @@ def _topp_minp_sampling_gpu[
             threshold for token inclusion.
         _test_sort: Bool - For internal testing purposes to check if the
             sorted probs are in descending order.
+        use_max_threshold_minp: Bool - Min-P only. False (default) keeps the
+            sort-based path: K=1 top-k for the row maximum, a radix sort of the
+            probabilities, then the sampler's walk over the sorted prefix. True
+            drops the sort and uses `minp_max_threshold_kernel`: row max,
+            threshold, mask, renormalize, draw. Top-P always uses the
+            sort-based path.
     Args:
         ctx: DeviceContext
             The context for GPU execution.
@@ -775,14 +884,19 @@ def _topp_minp_sampling_gpu[
     comptime assert _is_supported_dtype[dtype](), String(
         "Unsupported dtype: ", dtype
     )
+    comptime assert not (use_max_threshold_minp and is_top_p), String(
+        "use_max_threshold_minp is for Min-P only"
+    )
+    comptime assert not (use_max_threshold_minp and _test_sort), String(
+        "_test_sort checks the sorted probabilities, which the "
+        "max-and-threshold Min-P path does not produce"
+    )
 
     comptime BLOCK_SIZE = WARP_SIZE if ctx.target.is_apple_gpu() else 256
 
     # Step 1; Apply temperature scaling to the logits and apply
     # softmax to get probabilities
-    var input_shape = IndexList[input_logits.rank](
-        Int(input_logits.dim[0]()), Int(input_logits.dim[1]())
-    )
+    var input_shape = (Int(input_logits.dim[0]()), Int(input_logits.dim[1]()))
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
@@ -796,7 +910,11 @@ def _topp_minp_sampling_gpu[
 
     var input_size = input_logits.num_elements()
     # TODO: Should softmax be done in-place without needing this other buffer?
-    var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
+    # The radix sort ping-pongs between two buffers; the max-and-threshold
+    # Min-P path reads the probabilities once more and needs only one.
+    var probs_buf = ctx.enqueue_create_buffer[dtype](
+        input_size if use_max_threshold_minp else input_size * 2
+    )
     var input_probs = TileTensor(
         probs_buf,
         row_major(batch_size, vocab_size),
@@ -804,11 +922,29 @@ def _topp_minp_sampling_gpu[
 
     _softmax_gpu[dtype, 1, input_logits.rank](
         apply_temperature,
-        Coord(input_shape),
+        input_shape,
         input_probs,
         input_logits.rank - 1,
         ctx,
     )
+
+    comptime if use_max_threshold_minp:
+        # Min-p needs no ordering: the threshold is a function of the row
+        # maximum alone, so the K=1 top-k, the radix sort, the ids buffer the
+        # sort carries, and the skip-sort flag all drop out.
+        comptime minp_kernel = minp_max_threshold_kernel[
+            dtype, out_idx_type, BLOCK_SIZE
+        ]
+        ctx.enqueue_function[minp_kernel](
+            p_thresholds.to_device_buffer(ctx),
+            probs_buf,
+            out_token_ids.to_device_buffer(ctx),
+            Int32(vocab_size),
+            grid_dim=batch_size,
+            block_dim=BLOCK_SIZE,
+        )
+        _ = probs_buf^
+        return
 
     # Step 2: Do a Top K=1 search on each vocab_size row of the
     #   probabilities tensor. This is to check if the most probable
@@ -839,6 +975,7 @@ def _topp_minp_sampling_gpu[
         skip_sort,
         grid_dim=batch_size,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     # Step 3: Apply a global sort on the input tensor of probs
@@ -890,6 +1027,7 @@ def _topp_minp_sampling_gpu[
         Int32(vocab_size),
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
     _ = max_vals^
     _ = skip_sort^
@@ -934,6 +1072,7 @@ def min_p_sampling_gpu[
     out_idx_type: DType,
     //,
     _test_sort: Bool = False,
+    use_max_threshold: Bool = False,
 ](
     ctx: DeviceContext,
     min_ps: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -945,9 +1084,32 @@ def min_p_sampling_gpu[
 ) raises:
     """
     GPU implementation of Min-P sampling for token selection.
-    This function applies temperature scaling, softmax, a radix sort, and then
-    samples tokens based on the calculated probability threshold (Min-P).
+    This function applies temperature scaling and softmax, and then samples
+    tokens based on the calculated probability threshold (Min-P).
+
+    Parameters:
+        dtype: DType - The data type of the input logits, min_ps, and
+            temperature.
+        out_idx_type: DType - The data type for output token indices.
+        _test_sort: Bool - For internal testing purposes to check if the
+            sorted probs are in descending order. Requires the sort-based path.
+        use_max_threshold: Bool - Whether to sample without ordering: reduce the
+            row maximum, form the threshold from it, mask, renormalize, and
+            draw. False (default) keeps the path that radix sorts the
+            probabilities first. Both draw from the same set of tokens.
+
+    Args:
+        ctx: DeviceContext
+            The context for GPU execution.
+        min_ps: Per-row min-p coefficients in [0, 1]; the threshold is
+            `min_p * max_probability`.
+        input_logits: Input logits tensor of shape [batch_size, vocab_size].
+        out_token_ids: Output buffer for sampled token indices of shape
+            [batch_size, 1].
+        temperature: Temperature for softmax scaling of logits (default=1.0).
     """
-    _topp_minp_sampling_gpu[is_top_p=False, _test_sort=_test_sort](
-        ctx, min_ps, input_logits, out_token_ids, temperature
-    )
+    _topp_minp_sampling_gpu[
+        is_top_p=False,
+        _test_sort=_test_sort,
+        use_max_threshold_minp=use_max_threshold,
+    ](ctx, min_ps, input_logits, out_token_ids, temperature)

@@ -79,6 +79,21 @@ probably always create PDFs that look "changed" to git. The PDFs are binary
 files and include metadata such as the creation timestamp that will result in a
 changed file, even if the visible PDF is exactly the same as it was.
 
+## Code coverage report
+
+To see which Mojo docs pages have tested Python and Mojo snippets, run the
+coverage script from the repo root:
+
+```bash
+python3 Mojo/docs/site/scripts/report-code-coverage.py
+# or:
+./bazelw run //Mojo/docs/site/scripts:report-code-coverage
+```
+
+That writes `Mojo/docs/site/scripts/code-coverage.md` by default. Pass
+`--markdown PATH` to write somewhere else, `--json PATH` for JSON, or
+`--fail-under PERCENT` to exit non-zero when coverage is below that value.
+
 ## Contributing
 
 If you see something in the docs that is wrong or could be improved, we'd love

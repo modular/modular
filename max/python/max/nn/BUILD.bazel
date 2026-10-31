@@ -1,37 +1,36 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
 package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
     name = "nn",
     srcs = glob(["**/*.py"]),
-    # max.experimental.nn is imported only by a docstring example in
-    # __init__.py; it depends back on this target, so keep it out of `deps`.
-    docstring_example_deps = [
-        "//max/python/max/experimental/nn",
-    ],
-    # rich is used as a runtime protocol (_rich_traceback_omit) not via import.
-    # //max/python/max:tensor is an alias for //max/python/max/experimental;
-    # the pydeps tool resolves the alias so it appears as an unused dep since
-    # max.nn files don't directly import from max.experimental.*.
+    # Several examples compile models; shard to stay under the 800s CI clamp.
+    # Listing legacy here keeps its examples out of this test; they run
+    # in legacy's own docstring test.
+    docstring_example_deps = ["//max/python/max/nn/legacy"],
+    docstring_example_shard_count = 4,
+    docstring_example_test_rule = modular_eager_py_test,
+    # numpy and support are used transitively through max.nn.legacy, not directly
+    # imported by max.nn files.
     ignore_extra_deps = [
-        requirement("rich"),
-        "//max/python/max/experimental",
+        requirement("numpy"),
+        "//max/python/max/support",
     ],
     test_docstring_examples = True,
     deps = [
         requirement("numpy"),
         requirement("rich"),
         requirement("typing-extensions"),
-        "//max/python/max:_core",
-        "//max/python/max:_kv_core",
         "//max/python/max:tensor",
         "//max/python/max:tree",
-        "//max/python/max/_kv_cache_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/profiler",
         "//max/python/max/support",
     ],
 )

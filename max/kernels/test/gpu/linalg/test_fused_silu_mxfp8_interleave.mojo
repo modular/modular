@@ -74,14 +74,7 @@ def _test_silu_mxfp8[
     var M = total_num_tokens
 
     print(
-        "  H=",
-        H,
-        " M=",
-        M,
-        " active=",
-        num_active_experts,
-        " clamp=",
-        clamp_activation,
+        t"  H={H} M={M} active={num_active_experts} clamp={clamp_activation}",
         sep="",
     )
 
@@ -312,14 +305,9 @@ def _test_silu_mxfp8[
 
     if out_mismatch != 0 or sf_mismatch != 0:
         print(
-            "    OUT mismatch count =",
-            out_mismatch,
-            " first @ idx=",
-            first_bad_out,
-            "  SF mismatch count =",
-            sf_mismatch,
-            " first @ idx=",
-            first_bad_sf,
+            t"    OUT mismatch count = {out_mismatch}  first @ idx="
+            t" {first_bad_out}   SF mismatch count = {sf_mismatch}  first @"
+            t" idx= {first_bad_sf}"
         )
         if first_bad_out >= 0:
             var m_bad, k_bad = divmod(first_bad_out, H)
@@ -330,14 +318,8 @@ def _test_silu_mxfp8[
                 SIMD[fp8_dtype, 1](out_host_ptr[first_bad_out])
             )[0]
             print(
-                "    first OUT bad: m=",
-                m_bad,
-                " k=",
-                k_bad,
-                " ref(byte)=",
-                ref_byte,
-                " got(byte)=",
-                got_byte,
+                t"    first OUT bad: m= {m_bad}  k= {k_bad}  ref(byte)="
+                t" {ref_byte}  got(byte)= {got_byte}"
             )
         raise Error("MXFP8 fused-silu reference disagrees with kernel output")
 

@@ -90,14 +90,8 @@ def run_finite_check[
     # physical cache and ragged K/V to that total.
     var num_keys = cache_length + seq_len
     print(
-        "  [large-cache] seq_len:",
-        seq_len,
-        " cache_length:",
-        cache_length,
-        " num_keys(total):",
-        num_keys,
-        " page_size:",
-        page_size,
+        t"  [large-cache] seq_len: {seq_len}  cache_length: {cache_length} "
+        t" num_keys(total): {num_keys}  page_size: {page_size}"
     )
 
     comptime scale = Float32(0.125)

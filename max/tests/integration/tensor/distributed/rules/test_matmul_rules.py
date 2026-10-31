@@ -16,9 +16,9 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.experimental.sharding import DeviceMapping, Partial, TensorLayout
-from max.experimental.sharding.rules import matmul_rule
 from max.graph import Shape
+from max.tensor.sharding import DeviceMapping, Partial, TensorLayout
+from max.tensor.sharding.rules import matmul_rule
 
 from rules._fixtures import MESH_1D, MESH_2D, M, P, R, S, pick
 

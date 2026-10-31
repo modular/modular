@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Implements the DeepSeek-V4-Flash PipelineModel."""
 
 from __future__ import annotations
@@ -27,8 +26,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphPipelineModelWithKVCache,
@@ -75,6 +74,7 @@ class DeepseekV4Inputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The buffers the model takes as graph inputs."""
         assert self.kv_cache_inputs is not None
         return (
             self.tokens,
@@ -100,6 +100,7 @@ class DeepseekV4BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The symbolic inputs the batch processor builds."""
         # A single device keeps the signal-free signature, and with it the
         # compiled graph, of the single-device bringup.
         return ragged_kv_symbolic_inputs(
@@ -116,6 +117,7 @@ class DeepseekV4BatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV4Inputs:
+        """Builds the first token inputs from the request batch."""
         context_batch = single_replica_context_batch(
             replica_batches, processor_name=type(self).__qualname__
         )
@@ -307,6 +309,7 @@ class DeepseekV4Model(GraphPipelineModelWithKVCache[TextContext]):
         }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         model_inputs = cast(DeepseekV4Inputs, model_inputs)
         model_outputs = self.model.execute(*model_inputs.buffers)
         assert self.batch_processor is not None

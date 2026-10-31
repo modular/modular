@@ -27,13 +27,8 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "Format/FormatOptions.inc"
+#include "Format/FormatOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct FormatOptTable : public llvm::opt::OptTable {
-  FormatOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 /// Resolve the path to the mblack formatter binary via modular.cfg.
 /// On success, writes the path to \p outPath and returns 0.
@@ -56,25 +51,16 @@ static int resolveMBlackPath(const State &state, std::string &outPath) {
 /// Format a set of Mojo source files. Returns an integer representing a
 /// successful exit code if formatting succeeded, otherwise returns a failure
 /// code.
-static int format(const State &state) {
+static int format(const State &subcommandState) {
   // Parse command line arguments.
-  FormatOptTable options;
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
+  State state = subcommandState;
+  options::Table optTable;
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(optTable, options::helpTexts(), args))
+    return *exitCode;
 
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
-#include "Format/FormatOptionsHelpText.inc"
-    );
-  } else if (args.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
-#include "Format/FormatOptionsHelpHiddenText.inc"
-    );
-  }
-
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
+  if (int result = state.rejectInvalidArguments(args))
     return result;
 
   // Handle --print-cache-dir by forwarding to mblack.

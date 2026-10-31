@@ -19,11 +19,54 @@ This version is still a work in progress.
   recommends it for coding and agent workloads. Pass `clear_thinking=True` in
   the chat template options to drop earlier reasoning.
 
+- FLUX.2 models now generate more than one image per request, so
+  `num_images` above 1 in `max serve` and `num_images_per_prompt` in
+  `generate_images()` and `AutoModel.generate()` work for them. Such a
+  request used to fail in the first denoising step.
+
 - InternVL and Gemma 3 multimodal models now return log probabilities, so
   `logprobs` in `max serve` and `output_logprobs` in `generate()` work for
   them.
 
+- Added support for
+  [`poolside/Laguna-S-2.1-NVFP4`](https://huggingface.co/poolside/Laguna-S-2.1-NVFP4)
+  on the `LagunaForCausalLM` architecture. The checkpoint interleaves 12
+  full-attention layers with 36 sliding-window layers on a 512-token window,
+  gates attention output per head rather than per element, and mixes expert
+  precisions: NVFP4 routed experts in layers 1-39 and bfloat16 ones in layers
+  40-47, with the dense first layer and every shared expert in bfloat16
+  throughout. Attention type, query-head count, RoPE scaling and MLP precision
+  are now all resolved per layer, so `poolside/Laguna-M.1-NVFP4` keeps its
+  uniform layout.
+
+- Added support for
+  [`LiquidAI/LFM3-1.7B`](https://huggingface.co/LiquidAI/LFM3-1.7B) and
+  [`LiquidAI/LFM3-1.7B-Base`](https://huggingface.co/LiquidAI/LFM3-1.7B-Base)
+  on the new `Lfm3ForCausalLM` architecture.
+
+- Added support for
+  [`LiquidAI/LFM3-VL-2B`](https://huggingface.co/LiquidAI/LFM3-VL-2B) on the
+  `Lfm3VlForConditionalGeneration` architecture, with image and video input.
+
+- Added support for
+  [`LiquidAI/LFM3-Omni-2B`](https://huggingface.co/LiquidAI/LFM3-Omni-2B) on
+  the `Lfm3OmniForConditionalGeneration` architecture, with text, image and
+  video input.
+
 ## Inference server
+
+- Serving metric names now use `max.*` instead of `maxserve.*`. Batch
+  instruments use `max.batch.*`, such as `max.batch.size`. Prometheus
+  exposes the corresponding `max_*` families. Update collector allowlists,
+  dashboards, and alerts with the deployment; existing metric history stays
+  under its previous names. Units, labels, histogram boundaries, and
+  benchmark result fields are unchanged.
+
+- `max serve` now rejects an image generation request that asks for more
+  than 4 images with a 422 error naming `num_images`, the same response as
+  other out-of-range image options. `generate_images()` and
+  `AutoModel.generate()` raise a `ValueError` for `num_images_per_prompt`
+  above 4 before any prompt runs. A request had no upper limit before.
 
 - `/v1/completions` now returns a 400 error for `echo` with `logprobs` on a
   server started without `--enable-echo`, when the model computes log
@@ -44,6 +87,20 @@ This version is still a work in progress.
 
 ### Server metrics
 
+- `maxserve_batch_execution_time_milliseconds` now measures the executor
+  call when overlap is off. The former full scheduler-step duration is
+  available as `maxserve_scheduler_batch_step_time_milliseconds`. Batch
+  throughput uses the executor interval and counts returned output tokens,
+  including prefill outputs and accepted speculative tokens. See the
+  [batch timing contract](/serve/metrics#batch-scheduler) for overlap timing.
+  Intermediate prefill chunks returning no tokens now contribute zero to
+  the CE generation-throughput histogram, shifting its distribution on
+  chunked-prefill workloads. The benchmark harness's
+  `prefill_batch_execution_time_ms` and `decode_batch_execution_time_ms`
+  columns use `maxserve_batch_execution_time_milliseconds`, so MAX's
+  synchronous values now exclude scheduler work; comparisons with older
+  builds are not like for like.
+
 - Added `maxserve_request_client_disconnect_cancellations_total`, which
   counts streamed responses cut short by a client disconnect and completion
   requests abandoned while waiting for a result, split by `phase`. A
@@ -53,11 +110,45 @@ This version is still a work in progress.
 
 ## `max` CLI
 
+- `max generate` runs image generation models such as FLUX.2 and saves the
+  images to `--output`, which defaults to `image.png` and whose suffix picks
+  the format. A path without a suffix is a directory, created with its parents
+  if missing. It adds `--negative-prompt`, `--height`, `--width`,
+  `--num-inference-steps`, `--guidance-scale`, `--true-cfg-scale`,
+  `--strength` and `--num-images-per-prompt` for them, and takes the input
+  image from `--image_url`. A flag the user set for the other kind of model,
+  including `--max-batch-size` and `--device-graph-capture` on an image
+  model, raises an error before anything loads. Text models run as before.
+
 ## Python API
 
-- `max.nn.Transformer`, `DistributedTransformer`, `logits_postprocess()` and
-  `distributed_logits_postprocess()` return a
-  `max.nn.graph_groups.DecoderOutputs` of named groups instead of a tuple.
+- The eager `Module` framework moved from `max.experimental.nn` to `max.nn`,
+  and the graph-based layers that `max.nn` held moved to `max.nn.legacy`.
+  `max.nn.legacy` is deprecated and will be removed in MAX 27.1. Code that
+  uses it gets a `DeprecationWarning` naming the line that used it. To keep
+  using the graph-based layers until then, change `from max.nn import ...` to
+  `from max.nn.legacy import ...`.
+
+- A custom op whose Mojo kernel is registered wrong, or doesn't match its
+  call, now raises `max.graph.KernelRegistrationError`, a `ValueError`
+  subclass. The message points at the Mojo code the way the Mojo compiler
+  does: the file, line and column, the source line and a caret. A custom op
+  package's kernels are now checked when it loads, so a misplaced
+  `DeviceContext` argument fails there instead of while compiling the
+  generated code.
+
+- Source tracebacks (`InferenceSession.debug.source_tracebacks`) now stop at
+  your code's call into the graph API, so errors point at the lines that
+  created each op rather than at MAX's implementation of it. Set
+  `source_tracebacks_hide_internal = False` to keep every frame. Errors
+  that `Model.execute` raises are now `max.engine.ModelExecutionError`, a
+  `RuntimeError` subclass that is also a `ValueError`, so existing
+  `except ValueError` handlers keep working.
+
+- `max.nn.legacy.Transformer`, `DistributedTransformer`,
+  `logits_postprocess()` and `distributed_logits_postprocess()` return a
+  `max.nn.legacy.graph_groups.DecoderOutputs` of named groups instead of a
+  tuple.
   Read the logits as
   `outputs.logits["logits"]` rather than `outputs[1]`, and pass the outputs to
   `Graph.output(outputs)` rather than unpacking them. The graph's outputs keep
@@ -67,20 +158,39 @@ This version is still a work in progress.
   dtype. The inputs keep their own dtypes and are no longer cast to a common
   one, so `bfloat16` inputs with `out_dtype=DType.float32` keep the float32
   accumulator. Without `out_dtype`, `ops.matmul()`, the `@` operator and
-  `max.experimental.functional`'s `matmul()` require both inputs to share a
-  dtype, which the result keeps, so `max.nn.Linear` raises when its input and
-  weight dtypes differ.
-  `max.experimental.nn.Linear` casts its input to the weight's dtype, so a
+  `max.functional`'s `matmul()` require both inputs to share a dtype, which
+  the result keeps, so `max.nn.legacy.Linear` raises when its input and weight
+  dtypes differ. `max.nn.Linear` casts its input to the weight's dtype, so a
   float32 input to a bfloat16 `Linear` now gives bfloat16 instead of float32.
 
 - Added `max.driver.Buffer.memset(value)` to fill a contiguous buffer or
   slice in place with a byte value, without allocating a source buffer.
 
+- Added `max.driver.Buffer.memset(value)` to fill a contiguous buffer or
+  slice in place with a byte value, without allocating a source buffer.
+
+- Added `ops.allreduce_rms_norm` and `max.functional.allreduce_rms_norm`, a
+  fused allreduce + RMSNorm collective for bfloat16 2-D tensors: every device
+  ends up with the RMS norm of the summed tensor, computed in one launch. The
+  norm runs on the unrounded float32 sum, so it is not bit-identical to
+  `allreduce_sum` followed by `rms_norm`, which reads the sum rounded back to
+  bfloat16. The `max.functional` form falls back to that two-launch path for
+  inputs that are not 2-D bfloat16 and for meshes without signal buffers.
+
 - Added the `ops.CoordinateTransformMode` and `ops.RoundMode` enums.
-  `ops.resize_linear`, `ops.resize_nearest`, and their `max.experimental`
-  functional counterparts take them for `coordinate_transform_mode` and
+  `ops.resize_linear`, `ops.resize_nearest`, and their `max.functional`
+  counterparts take them for `coordinate_transform_mode` and
   `round_mode` in place of the integer codes 0-3. The integer codes still
   work.
+
+- `ops.resize_bicubic()` and its `max.functional` counterpart
+  take an `antialias` keyword argument. With `antialias=True`, the resize
+  uses the filter of Pillow's `BICUBIC` and matches PyTorch's
+  `interpolate(mode="bicubic", antialias=True)` to float32 rounding. The
+  antialiased resize runs on the CPU, on a float32 input, or on a uint8 input
+  that it resizes to uint8, rounding and clamping once at the end.
+  `ops.resize_bicubic()` also takes its output size as a runtime int64
+  tensor, with `out_dims` declaring the output's dimensions.
 
 - Added `max.driver.float32_to_bfloat16_as_uint16()`,
   `max.driver.bfloat16_as_uint16_to_float32()`, and
@@ -100,9 +210,9 @@ This version is still a work in progress.
   `after` event and no longer syncs implicitly. Mojo's `reassign_ownership_to()`
   is removed; use `enqueue_wait_for()` and keep buffers alive until synced.
 
-- Removed `max.nn.FusedMLP`. Use `max.nn.MLP`, which takes the separate
-  `gate_proj` and `up_proj` weights a checkpoint ships and fuses their matmuls
-  in the graph.
+- Removed `max.nn.legacy.FusedMLP`. Use `max.nn.legacy.MLP`, which takes the
+  separate `gate_proj` and `up_proj` weights a checkpoint ships and fuses their
+  matmuls in the graph.
 
 - Removed `max_single_alloc_size()` and `run_healthcheck()` from the Mojo
   `DeviceContext`. On NVIDIA and AMD GPUs the health check still runs when a
@@ -136,13 +246,55 @@ This version is still a work in progress.
   URIs and base64 data, including OpenAI `image_url` parts. URLs are fetched
   with a 30 second timeout and a 100 MiB limit per image.
 
+- Errors from `AutoModel.generate()` and `AutoModel.generate_iter()` now name
+  `AutoModel`, not `generate()`. An image part that holds its own image, or
+  an `image_url` part, now raises `ValueError` pointing to `AutoProcessor`,
+  even when `images` gives the row the right count.
+
+- Added `generate_images()` in `max.pipelines.lib.generate_images`, which runs
+  an image generation pipeline such as FLUX.2 in your own process and returns
+  one list of PIL images per prompt, in prompt order. Each prompt runs as the
+  request `max serve` builds for it, so the model's defaults are the same as in
+  serve.
+
+- `AutoModel` now loads image generation models such as FLUX.2, and
+  `AutoModel.generate(prompt=...)` runs them and returns a
+  `GenerateImagesResult`. Text models keep the same `generate()` call and
+  result. An argument for the other kind of model raises a `ValueError` that
+  names it. Image models need `max_batch_size=1` and no device graph capture.
+  `AutoPipeline` runs image models too, through
+  `AutoModel.generate(prompt=...)`, and returns a prompt's list of images.
+  On an image model, `AutoModel.generate_iter()` points to
+  `AutoModel.generate(prompt=...)`, and `generate()` points to
+  `generate_images()`.
+
+- `generate_images()`, `AutoPipeline` and the image path of
+  `AutoModel.generate()` take `images`, one list of input images per prompt as
+  for text `generate()`, each image encoded bytes or a PIL image. A list holds
+  one image, or none for a text-only prompt. FLUX.2 and Z-Image run image to
+  image this way. They also take `strength`, which Z-Image reads and FLUX.2
+  ignores. `ZImagePipeline` now lists image input.
+
+- `generate()` and `GenerateIterator` raise the same `TypeError` for a bare
+  image or bytes passed as `images` as for any other `images` that is not one
+  list of images per conversation, instead of a Python iteration error.
+
 - Removed the `blocking_sync`, `disable_timing` and `interprocess` parameters
   from the Mojo `DeviceContext.create_event()`, along with `EventFlags`. Events
   never record timing; use `DeviceContext.execution_time()` to time kernels.
 
+- Removed the `per_layer_buffers` KV cache option, which gave each layer its
+  own buffer to get past a device's per-allocation size limit, along with the
+  `kv_blocks_per_layer` and `kv_scales_per_layer` fields of
+  `KVCacheInputsPerDevice`. A KV cache is again one buffer per device, capped
+  at that limit.
+
 ## C API
 
 ## Kernels and GPU programming
+
+- Enabled automatic fusion of eligible bfloat16 matrix multiplications and
+  SwiGLU activations on NVIDIA B200 GPUs.
 
 - The deprecated `LayoutTensor` and `LayoutTensorIter` types have been removed
   from the `layout` package, along with the `to_layout_tensor()` and
@@ -172,6 +324,20 @@ This version is still a work in progress.
   per row. The `Span` overloads and the 1-D `sum` and `mean` overloads that
   take a length and an `input_fn` are unchanged.
 
+- Added `DeviceContext.device()`, which returns a `Device` view of the
+  accelerator with an `id` field and `get_name()`, `get_attribute()`,
+  `is_host_unified()`, `get_arch()` and `can_access_peer()` methods.
+  `DeviceContext.id()`, `name()`, `get_attribute()`, `is_host_unified()` and
+  `can_access()` are deprecated: write `ctx.device().id`,
+  `ctx.device().get_name()`, `ctx.device().can_access_peer(peer.device())`
+  and so on.
+
+- `DeviceContext.enqueue_function()` accepts a `GridBlockLaunchConfig` (grid,
+  block, dynamic shared memory) or `ClusterLaunchConfig` (plus thread block
+  clusters) from `max.gpu.host` as its first argument. A cluster launch on a
+  GPU without clusters fails to compile; generic code checks
+  `conforms_to(DeviceContext.ExecutionConfigType, ClusterExecutionConfig)`.
+
 ## Tools
 
 - Added the ability to install `max-serve` and `max-benchmark` as Conda extras,
@@ -179,6 +345,11 @@ This version is still a work in progress.
   `max[extras=[all]]` installs both plus `mojo`.
 
 ## Fixes
+
+- Loading a model on a device that reports no free memory now fails with a
+  "Model size exceeds available memory" error. Memory planning used to treat
+  0 as unmeasured and size against the device's total memory, so a full host
+  could crash during loading instead.
 
 - `max serve` now runs prompts given as token ids, with no images, on Gemma 3,
   InternVL, Idefics3, Pixtral and Qwen 2.5 VL. These requests used to fail in
@@ -190,6 +361,10 @@ This version is still a work in progress.
   `generate()`, `GenerateIterator` and `AutoModel.generate()` raise
   `InputError` for such an id in `input_ids`. Embeddings requests the
   tokenizer rejects, such as a too-long prompt, now return a 400, not a 500.
+
+- The free memory that CPU and Apple GPU devices report now accounts for
+  memory used by other processes. Before, MAX could start a model that didn't
+  fit in memory, which on macOS could exhaust swap and crash the machine.
 
 ## Mojo language
 

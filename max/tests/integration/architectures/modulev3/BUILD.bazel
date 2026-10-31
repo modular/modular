@@ -46,13 +46,15 @@ modular_py_test(
         "manual",  # TODO (MODELS-1354): This is timing out, re-enable after investigation
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/architectures/granite_modulev3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/architectures/olmo_modulev3",
         "//max/python/max/pipelines/architectures/phi3_modulev3",

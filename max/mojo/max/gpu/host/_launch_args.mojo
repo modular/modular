@@ -13,8 +13,8 @@
 """Shared helpers for packing GPU kernel launch arguments.
 
 These are implementation details of `DeviceFunction`'s launch paths (see
-`device_context.mojo` and `_device_context_metal.mojo`); they are not part of
-the public API.
+`device_context.mojo` and `_device_context_metal.mojo`) and are shared by the
+legacy and HAL device contexts; they are not part of the public API.
 """
 
 from std.sys import CompilationTarget, align_of, size_of
@@ -22,6 +22,71 @@ from std.sys import CompilationTarget, align_of, size_of
 from std.math import align_up
 
 from std.builtin.device_passable import DevicePassable
+
+
+struct DenseArgs[addrs_origin: Origin, length: Int]:
+    """Storage for the per-argument address and size slots of a kernel launch.
+
+    Slot `i` of `addrs` points at the bytes of the `i`-th launch
+    argument, and slot `i` of `sizes` is that argument's size in
+    bytes. Callers fill both arrays and pass pointers to them to the enqueuer.
+
+    Parameters:
+        addrs_origin: The origin the argument address pointers borrow from.
+        length: The number of argument slots.
+    """
+
+    var addrs: Array[OpaquePointer[Self.addrs_origin], Self.length]
+    var sizes: Array[UInt64, Self.length]
+
+    def __init__(out self):
+        """Initializes the address slots uninitialized and the sizes to zero."""
+        self.addrs = Array[OpaquePointer[Self.addrs_origin], Self.length](
+            uninitialized=True
+        )
+        self.sizes = Array[UInt64, Self.length](fill=0)
+
+
+trait DeviceFunctionWrapper:
+    """Selects the function that `DeviceFunction` compiles for a user kernel.
+
+    Most targets compile the kernel as written. A target that launches through
+    a generated entry point supplies a wrapper that produces it.
+    """
+
+    comptime Entry[
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        f: def(*args: *declared_arg_types) thin -> ret_type,
+    ]: TrivialRegisterPassable
+    """The type of the function compiled for `f`."""
+
+    comptime wrap[
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        f: def(*args: *declared_arg_types) thin -> ret_type,
+    ]: Self.Entry[f]
+    """The function compiled for `f`."""
+
+
+struct _IdentityWrapper(DeviceFunctionWrapper):
+    """Compiles the kernel as written, with no entry point."""
+
+    comptime Entry[
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        f: def(*args: *declared_arg_types) thin -> ret_type,
+    ] = type_of(f)
+
+    comptime wrap[
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        f: def(*args: *declared_arg_types) thin -> ret_type,
+    ]: Self.Entry[f] = f
 
 
 # TODO(MSTDL-3307): Move this back to being a method on DeviceFunction

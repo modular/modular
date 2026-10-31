@@ -47,7 +47,7 @@ def test_compute_fn[
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that a compute closure's result is what the kernel stores
     into `c`, at the index the closure was given."""
-    print("compute:", a_type, "->", c_type, m, "x", N, "x", K, num_k_partitions)
+    print(t"compute: {a_type} -> {c_type} {m} x {N} x {K} {num_k_partitions}")
     comptime config = MatmulKernels[
         a_type, a_type, c_type, True
     ]().ampere_256x64_4
@@ -102,9 +102,7 @@ def test_epilogue_fn[
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that a store closure receives each output at its index and that
     the kernel itself leaves `c` untouched."""
-    print(
-        "epilogue:", a_type, "->", c_type, m, "x", N, "x", K, num_k_partitions
-    )
+    print(t"epilogue: {a_type} -> {c_type} {m} x {N} x {K} {num_k_partitions}")
     comptime config = MatmulKernels[
         a_type, a_type, c_type, True
     ]().ampere_256x64_4

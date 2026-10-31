@@ -91,25 +91,6 @@ kgen.generator @constexpr_load_store() {
 
 // -----
 
-kgen.generator @return_it<A>() -> index {
-  %0 = kgen.param.constant = <A>
-  hlcf.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func @call_it
-kgen.generator @call_it() {
-  // CHECK-NEXT: <1>
-  kgen.param.constant = <apply(:() -> index bind_params(:<index>() -> index @return_it, :index 1))>
-  // CHECK-NEXT: <2>
-  kgen.param.constant = <apply(:() -> index bind_params(:<index>() -> index @return_it, :index 2))>
-  // CHECK-NEXT: <3>
-  kgen.param.constant = <apply(:() -> index bind_params(:<index>() -> index @return_it,
-    :index apply(:() -> index bind_params(:<index>() -> index @return_it, 3))))>
-  hlcf.return
-}
-
-// -----
-
 kgen.generator @callee(%arg0: index) -> index {
   %0 = index.add %arg0, %arg0
   hlcf.return %0 : index
@@ -177,22 +158,6 @@ kgen.generator @call_it() {
   hlcf.return
 }
 
-// CHECK-MAIN-LABEL: kgen.func @"rebind_value,dtype=ui8"
-kgen.generator @rebind_value<dtype: dtype>(%a: !kgen.scalar<ui8>) -> !kgen.scalar<dtype> {
-  // CHECK-MAIN-NEXT: return %arg0 : !kgen.scalar<ui8>
-  %result = kgen.rebind %a : !kgen.scalar<ui8> to !kgen.scalar<dtype>
-  hlcf.return %result : !kgen.scalar<dtype>
-}
-
-// CHECK-LABEL: kgen.func @rebind_it
-kgen.generator @rebind_it() {
-  // CHECK-NEXT: constant: scalar<ui8> = <4>
-  kgen.param.declare Fn: (!kgen.scalar<ui8>) -> !kgen.scalar<ui8> =
-    <bind_params(:<dtype>(!kgen.scalar<ui8>) -> !kgen.scalar<*(0,0)> @rebind_value, :dtype ui8)>
-  kgen.param.constant: scalar<ui8> = <apply(:(!kgen.scalar<ui8>) -> !kgen.scalar<ui8> Fn, <4>)>
-  hlcf.return
-}
-
 // -----
 
 kgen.generator @box(%a: index) -> !kgen.struct<(index)> {
@@ -212,12 +177,12 @@ kgen.generator @callee<a: !kgen.struct<(index)>>(
 
 // CHECK-LABEL: kgen.func @unbox_in_result_sig
 kgen.generator @unbox_in_result_sig() {
-  // CHECK-NEXT: kgen.create_closure[(!pop.array<2, index>) -> (): @"callee,a={ 2 }"]()
+  // CHECK-NEXT: kgen.create_func_ptr[(!pop.array<2, index>) -> (): @"callee,a={ 2 }"]()
   kgen.param.declare a = <2>
   kgen.param.declare fn: <!kgen.struct<(index)>>(
     !pop.array<apply(:(!kgen.struct<(index)>) -> index @unbox, *(0,0)), index>
-  ) -> () = <@callee>
-  kgen.create_closure[(
+  ) -> () = <@callee<:!kgen.struct<(index)> *(0,0)>>
+  kgen.create_func_ptr[(
     !pop.array<apply(:(!kgen.struct<(index)>) -> index @unbox,
                      apply(:(index) -> !kgen.struct<(index)> @box, a)),
                index>) -> ():
@@ -270,12 +235,12 @@ kgen.generator @some_function() {
 }
 
 kgen.generator @return_closure_formation() -> !kgen.generator<() -> ()> {
-  %0 = kgen.create_closure[() -> (): @some_function]()
+  %0 = kgen.create_func_ptr[() -> (): @some_function]()
   hlcf.return %0 : !kgen.generator<() -> ()>
 }
 
-// CHECK-LABEL: kgen.func export @interpret_create_closure
-kgen.generator export @interpret_create_closure() {
+// CHECK-LABEL: kgen.func export @interpret_create_func_ptr
+kgen.generator export @interpret_create_func_ptr() {
   // CHECK-NEXT: constant: () -> () = <@some_function>
   kgen.param.constant: () -> () = <apply(:() -> !kgen.generator<() -> ()> @return_closure_formation)>
   hlcf.return
@@ -568,7 +533,7 @@ kgen.generator @testExternalization(%arg0: !kgen.pointer<(index) -> index>) -> !
 // CHECK-MAIN-LABEL: kgen.func @"testInternalization{{.*}}() -> index {
 kgen.generator @testInternalization<ptr: !kgen.pointer<(index) -> index>>() -> index {
   %0 = kgen.param.constant = <7>
-  // CHECK-MAIN: %pointer = kgen.param.constant: pointer<(index) -> index> = <#interp.memref<{[(#memory_handle, stack, [], [0])], [#kgen.symbol.constant<@target> : !kgen.generator<(index) -> index>]}, 0, 0>>
+  // CHECK-MAIN: %pointer = kgen.param.constant: pointer<(index) -> index> = <#interp.memref<{[(#memory_handle, stack, [], [0])], [#kgen.gen<#kgen.func.symbol<@target>> : !kgen.generator<(index) -> index>]}, 0, 0>>
   %pointer = kgen.param.constant: pointer<(index) -> index> = <ptr>
   %3 = pop.load %pointer : !kgen.pointer<(index) -> index>
   %4 = kgen.call_indirect %3(%0) : (index) -> index
@@ -620,7 +585,7 @@ kgen.generator export @top() {
 // CHECK-MAIN-DAG: [[MHSig:#.*]] = #interp.memory_handle<8, "0x0000000000000000">
 // CHECK-MAIN-LABEL: kgen.func @"captureIt{{.*}}"(%arg0: index) -> index {
 kgen.generator @"captureIt"<dst_layout: pointer<index>, idx_type: dtype>(%arg0: index) -> index {
-  // CHECK-MAIN-NEXT: %pointer = kgen.param.constant: pointer<index> = <#interp.memref<{[([[MHVal]], heap, [], []), ([[MHSig]], stack, [], [0])], [#kgen.symbol.constant<@captureIt<:pointer<index> #interp<coord(0, 0)>, :dtype ?>> : !kgen.generator<<dtype>(index) -> index>]}, 0, 0>>
+  // CHECK-MAIN-NEXT: %pointer = kgen.param.constant: pointer<index> = <#interp.memref<{[([[MHVal]], heap, [], []), ([[MHSig]], stack, [], [0])], [#kgen.gen<#kgen.func.symbol<@captureIt<:pointer<index> #interp<coord(0, 0)>, :dtype *(0,0)>>> : !kgen.generator<<dtype>(index) -> index>]}, 0, 0>>
   %pointer = kgen.param.constant: pointer<index> = <dst_layout>
   %3 = pop.load %pointer : !kgen.pointer<index>
   hlcf.return %3 : index
@@ -628,7 +593,7 @@ kgen.generator @"captureIt"<dst_layout: pointer<index>, idx_type: dtype>(%arg0: 
 
 kgen.generator @embedMemRefInSymbol<dst_layout: pointer<index>>() -> index {
   %0 = kgen.param.constant: index = <0>
-  kgen.param.declare symbolWithMemRef: <dtype>(index) -> index = <@"captureIt"<:pointer<index> dst_layout, :dtype ?>>
+  kgen.param.declare symbolWithMemRef: <dtype>(index) -> index = <@"captureIt"<:pointer<index> dst_layout, :dtype *(0,0)>>
 
   // The "store to mem" operation results in an opaque capture of a PointerAttr.
   kgen.param.apply callIt = [(!kgen.pointer<<dtype>(index) -> index>) -> !kgen.generator<<dtype>(index) -> index>: @call_it](store_to_mem(symbolWithMemRef))
@@ -1207,7 +1172,7 @@ kgen.generator @recursive_fnptr_init(
 // `func_ptr_bitcast` of the symbol.
 // CHECK-LABEL: kgen.func export @recursive_fnptr_driver
 kgen.generator export @recursive_fnptr_driver() {
-  // CHECK: kgen.param.constant: struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly> = <{ 3, #kgen.func_ptr_bitcast<#kgen.symbol.constant<@recursive_fnptr_bar> : !kgen.generator<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>> }>
+  // CHECK: kgen.param.constant: struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly> = <{ 3, #kgen.func_ptr_bitcast<#kgen.func.symbol<@recursive_fnptr_bar> : !kgen.func<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>> }>
   kgen.param.constant: struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly> = <apply_result_slot(:(index, !kgen.generator<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>, !kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> byref_result) -> !kgen.none @recursive_fnptr_init, 3, @recursive_fnptr_bar)>
   hlcf.return
 }

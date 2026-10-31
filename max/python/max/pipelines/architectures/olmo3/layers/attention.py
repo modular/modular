@@ -17,22 +17,22 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Linear, Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.olmo2_modulev3.layers.rms_norm import (
     Olmo2RMSNorm,
 )
+from max.tensor import Tensor
 
 
 class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
@@ -78,7 +78,6 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
             use_qk_norm: Whether to use Q and K normalization.
             qk_norm_eps: Epsilon value for Q and K normalization.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -164,6 +163,7 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the attention over ``x``."""
         total_seq_len = x.shape[0]
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 

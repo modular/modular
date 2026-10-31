@@ -45,9 +45,12 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flare_mla_prefill_plan, mla_prefill_decode_graph
-from max.nn.kv_cache import KVCacheInputsPerDevice, MLAKVCacheParams
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import (
+    flare_mla_prefill_plan,
+    mla_prefill_decode_graph,
+)
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MLAKVCacheParams
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import RequestID

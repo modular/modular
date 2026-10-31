@@ -18,8 +18,8 @@ from std.utils._serialize import _serialize, _serialize_elements
 
 def _iota_ptr(
     data: List[Int32],
-) -> OptionalPointer[Scalar[DType.int32], ImmutAnyOrigin]:
-    return OptionalPointer[Scalar[DType.int32], ImmutAnyOrigin](
+) -> Optional[Pointer[Scalar[DType.int32], ImmutAnyOrigin]]:
+    return Optional[Pointer[Scalar[DType.int32], ImmutAnyOrigin]](
         data.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
     )
 
@@ -32,7 +32,7 @@ def _iota(n: Int) -> List[Int32]:
 
 
 def _write_tensor(
-    ptr: OptionalPointer[Scalar[DType.int32], ImmutAnyOrigin],
+    ptr: Optional[Pointer[Scalar[DType.int32], ImmutAnyOrigin]],
     shape: List[Int],
     mut writer: Some[Writer],
 ):

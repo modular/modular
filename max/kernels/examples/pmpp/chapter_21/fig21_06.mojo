@@ -30,8 +30,8 @@ from dcs_utils import GridDim, init_atoms, verify_grid
 
 
 def cenergy_gather_kernel(
-    energygrid: MutPointer[Float32, MutAnyOrigin],
-    atoms: ImmPointer[Float32, ImmutAnyOrigin],
+    energygrid: MutPointer[Float32, MutUntrackedOrigin],
+    atoms: ImmPointer[Float32, ImmUntrackedOrigin],
     grid_x_dev: Int32,
     grid_y_dev: Int32,
     gridspacing: Float32,

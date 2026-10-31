@@ -2089,6 +2089,10 @@ def MGP_DeviceWaitOp : MGP_DeviceOp<"device_wait", [
     back into its base stream. MOGGToMGP moves such a wait to the first
     consumer of the side stream's results, and LowerPrimitives keeps it out of
     sequence fusion.
+
+    The `isSideStreamFork` attribute marks the wait that forks a side stream
+    off its base stream. LowerPrimitives keeps it out of sequence fusion too,
+    so the host records the fork as soon as its inputs are ready.
   }];
 
   let arguments = (ins
@@ -2097,11 +2101,13 @@ def MGP_DeviceWaitOp : MGP_DeviceOp<"device_wait", [
     MGP_DeviceContextType:$waitingDeviceContext,
     MGP_DeviceContextType:$signalingDeviceContext,
     M_DeviceRefAttr:$bDevice,
-    UnitAttr:$isSideStreamJoin
+    UnitAttr:$isSideStreamJoin,
+    UnitAttr:$isSideStreamFork
   );
   let results = (outs ChainType:$outChain);
   let assemblyFormat = [{
     `(` operands `)` `device` $bDevice (`isSideStreamJoin` $isSideStreamJoin^)?
+        (`isSideStreamFork` $isSideStreamFork^)?
         attr-dict `:` functional-type(operands, results)
   }];
 

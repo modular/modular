@@ -15,16 +15,16 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, TensorLayout
-from max.experimental.sharding.rules import (
+from max.graph import Shape
+from max.tensor.sharding import DeviceMapping, TensorLayout
+from max.tensor.sharding.rules import (
     binary_rule,
     cast_rule,
     ternary_rule,
     unary_rule,
 )
-from max.graph import Shape
 
 from rules._fixtures import MESH_1D, MESH_2D, M, P, R, S, pick
 

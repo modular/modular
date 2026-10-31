@@ -111,7 +111,9 @@ def scatter_pull_kernel[
                 data_ptr.unsafe_load(tail_idx),
             )
 
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, _my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False, sync_after_wait=True](
+            rank_sigs, my_sig, _my_rank
+        )
 
 
 # --- Wrapper functions ---
@@ -204,7 +206,7 @@ def scatter[
         input_ptrs,
         chunk_num_elems,
         rank_sigs,
-        Int32(ctx.id()),
+        Int32(ctx.device().id),
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(pdl_level),

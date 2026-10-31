@@ -22,10 +22,9 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.nn import Module as ModuleV3
-from max.experimental.nn import module_dataclass
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module as ModuleV3
+from max.nn import module_dataclass
 from max.pipelines.lib import (
     GraphRole,
     GraphSpec,
@@ -33,6 +32,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     ModuleV3MultiGraphPipelineModelWithKVCache,
 )
+from max.tensor import Tensor
 
 X = TensorType(DType.float32, [2], device=DeviceRef.CPU())
 

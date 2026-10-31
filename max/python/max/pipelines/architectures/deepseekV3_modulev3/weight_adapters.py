@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Safetensor weight adapter for ModuleV3 DeepSeek-V3 checkpoints."""
 
 from __future__ import annotations
 

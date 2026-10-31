@@ -236,7 +236,7 @@ void CallGraph::deduplicateNode(CallGraphNode *node) {
         }
       }
       if (replaceTo) {
-        call.setCalleeAttr(SymbolConstantAttr::get(replaceTo));
+        call.setCalleeAttr(FuncSymbolGenerator::get(replaceTo));
       }
     }
 
@@ -276,7 +276,7 @@ void CallGraph::replaceCallSitesWithLexMin() {
         // Callees that are external or part of a cycle are not deduplicated.
         if (it == representativeToLexMin.end())
           continue;
-        call.setCalleeAttr(SymbolConstantAttr::get(it->second));
+        call.setCalleeAttr(FuncSymbolGenerator::get(it->second));
       }
     });
   }

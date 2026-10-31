@@ -28,7 +28,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import moe_sink_gate_router
+from max.nn.legacy.kernels import moe_sink_gate_router
 from max.pipelines.architectures.inkling.layers.moe import (
     InklingGate,
     padded_router_rows,

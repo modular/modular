@@ -21,8 +21,12 @@ from std.testing import assert_equal
 
 
 def copy_kernel[
-    src_dtype: DType, dst_dtype: DType, M: Int, swizzled: Bool
-](output: MutPointer[Scalar[dst_dtype], MutAnyOrigin],):
+    src_dtype: DType,
+    dst_dtype: DType,
+    M: Int,
+    swizzled: Bool,
+    output_origin: MutOrigin,
+](output: MutPointer[Scalar[dst_dtype], output_origin],):
     comptime P = M // 8
     var local = stack_allocation[src_dtype, address_space=.LOCAL](
         row_major[P, 4]()
@@ -64,9 +68,11 @@ def test_copy[
     with output.map_to_host() as host:
         for i in range(count + 16):
             host[i] = Scalar[dst_dtype](-99)
-    ctx.enqueue_function[copy_kernel[src_dtype, dst_dtype, M, swizzled]](
-        output, grid_dim=(1,), block_dim=(64,)
-    )
+    ctx.enqueue_function[
+        copy_kernel[
+            src_dtype, dst_dtype, M, swizzled, output_origin=origin_of(output)
+        ]
+    ](output, grid_dim=(1,), block_dim=(64,))
     with output.map_to_host() as host:
         for i in range(8):
             assert_equal(host[i], Scalar[dst_dtype](-99))

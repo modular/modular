@@ -4142,14 +4142,19 @@ def MO_ResizeBicubicOp : MO_TensorOp<"resize.bicubic", [
 ]> {
   let summary = "Bicubic resize operation";
   let description = [{
-    Resizes a tensor with bicubic interpolation (Keys' cubic convolution,
-    a = -0.5, over a 4x4 neighborhood).
+    Resizes the height and width of an NCHW tensor with bicubic
+    interpolation. By default the filter is Keys' cubic convolution with
+    a = -0.75 over a 4x4 neighborhood, as torch's bicubic `interpolate`.
+    `antialias` instead uses the a = -0.5 cubic stretched by the downscale
+    factor, with its weights normalized, as torch's `antialias=True` and
+    Pillow's BICUBIC; it runs on the CPU, on a float32 or uint8 input, in
+    float32. A uint8 output rounds half to even and clamps once, on store.
 
     Example:
     ```mlir
       %input : !mo.tensor<[1, 3, 224, 224], f32>
       %size = mo.constant <#M.dense_array<1, 3, 448, 448> : tensor<4xsi64>> : !mo.tensor<[4], si64>
-      %res = mo.resize.bicubic(%input, %size) :
+      %res = mo.resize.bicubic(%input, %size) [antialias = false] :
         (!mo.tensor<[1, 3, 224, 224], f32>, !mo.tensor<[4], si64>) ->
           !mo.tensor<[1, 3, 448, 448], f32>
     ```
@@ -4157,13 +4162,16 @@ def MO_ResizeBicubicOp : MO_TensorOp<"resize.bicubic", [
   let arguments = (ins
     MO_Tensor:$input,
     MO_IndicesTensor:$size,
+    BoolAttr:$antialias,
     MO_ParamDecls:$outputParamDecls
   );
 
   let results = (outs MO_Tensor:$result);
 
   let assemblyFormat = [{
-    `` custom<ParamDecls>($outputParamDecls) `(` operands `)` attr-dict `:` functional-type(operands, results)
+    `` custom<ParamDecls>($outputParamDecls) `(` operands `)`
+    `[` `antialias` `=` $antialias `]` attr-dict `:`
+    functional-type(operands, results)
   }];
 }
 
@@ -4857,7 +4865,6 @@ def MO_BufferTransferOp : MO_DeviceAgnosticMutableOp<"buffer.transfer", [
 // mo.buffer.
 def MO_BufferCreateOp : MO_Op<"buffer.create", [
   MO_PreservedDuringKernelLowering,
-  Pure,
 ]> {
   let summary = "Creates a buffer on a specific device, optionally initialized.";
   let description = [{
@@ -4880,7 +4887,8 @@ def MO_BufferCreateOp : MO_Op<"buffer.create", [
     // Single-element elements attr of the buffer's dtype (verified).
     OptionalAttr<AnyAttr>:$initValue
   );
-  let results = (outs MO_Buffer:$result);
+
+  let results = (outs Res<MO_Buffer, "result buffer", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
     (` ` `[` `initValue` `=` $initValue^ `]`)? attr-dict `:`
@@ -5254,6 +5262,13 @@ def MO_AllGatherOp : MO_DistributedOp<"distributed.allgather", [
   let description = [{
     Concatenates inputs, one per device, along dimension 0 and replicates the
     result on every device.
+
+    With `slice_rows`, device `d` receives only rows
+    `[d * R / N, (d + 1) * R / N)` of each gathered piece, where `R` is the
+    row count of every input and `N` the device count, instead of the whole
+    piece. It needs one full-world group (`group_size` equal to the input
+    count), and its results have `R / N` rows. This moves `N` times fewer
+    bytes than the plain form followed by a row slice, with the same values.
   }];
   let hasVerifier = 1;
   // Folds the single-input case.
@@ -5262,6 +5277,43 @@ def MO_AllGatherOp : MO_DistributedOp<"distributed.allgather", [
     Variadic<MO_Tensor>:$inputs,
     Variadic<MO_Buffer>:$signalBuffers,
     MO_Chain:$inChain,
+    DefaultValuedAttr<I64Attr, "0">:$group_size,
+    DefaultValuedAttr<BoolAttr, "false">:$slice_rows
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$outputs,
+    MO_Chain:$outChain
+  );
+
+  let assemblyFormat = [{
+    `(` operands `)` `` custom<AllGatherAttrs>($group_size, $slice_rows)
+    attr-dict `:` functional-type(operands, results)
+  }];
+}
+
+def MO_AllGatherConcatOp : MO_DistributedOp<"distributed.allgather.concat", [
+  MO_HasDeviceInterface,
+  MO_MultiDevice,
+]> {
+  let summary = "AllGather across N devices into one tensor per device.";
+  let description = [{
+    Concatenates inputs, one per device, along `axis` and replicates the
+    result on every device. `axis` may be negative. A `group_size` smaller
+    than the input count splits devices into contiguous groups, each of which
+    gathers only its own inputs.
+
+    Unlike `mo.distributed.allgather`, which returns each gathered piece
+    separately, each device receives one tensor, so a target whose collective
+    writes the concatenated tensor directly needs no per-piece copies.
+  }];
+  let hasVerifier = 1;
+  // Folds the single-input case.
+  let hasFolder = 1;
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    MO_Chain:$inChain,
+    DefaultValuedAttr<I64Attr, "-1">:$axis,
     DefaultValuedAttr<I64Attr, "0">:$group_size
   );
   let results = (outs
@@ -5270,8 +5322,8 @@ def MO_AllGatherOp : MO_DistributedOp<"distributed.allgather", [
   );
 
   let assemblyFormat = [{
-    `(` operands `)` (` ` `[` `group_size` `=` $group_size^ `]`)? attr-dict `:`
-    functional-type(operands, results)
+    `(` operands `)` `` custom<AllGatherConcatAttrs>($axis, $group_size)
+    attr-dict `:` functional-type(operands, results)
   }];
 }
 

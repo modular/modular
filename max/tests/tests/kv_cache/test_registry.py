@@ -22,7 +22,7 @@ import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
@@ -34,7 +34,7 @@ from max.nn.kv_cache import (
     RecurrentStateRegion,
     estimated_memory_size,
 )
-from max.nn.kv_cache.cache_params import TIERED_CONNECTOR_TYPES
+from max.nn.legacy.kv_cache.cache_params import TIERED_CONNECTOR_TYPES
 from max.pipelines.kv_cache import (
     JengaKVCacheManager,
     PagedKVCacheManager,
@@ -92,7 +92,8 @@ class TestUseJengaKvCache:
     """Default and opt-out behavior for the Jenga manager."""
 
     @pytest.mark.parametrize(
-        "model_name", ["openai/gpt-oss-20b", "Qwen/Qwen3-8B"]
+        "model_name",
+        ["openai/gpt-oss-20b", "Qwen/Qwen3-8B", "poolside/Laguna-S-2.1-NVFP4"],
     )
     def test_legacy_env_disables_jenga(
         self, model_name: str, monkeypatch: pytest.MonkeyPatch

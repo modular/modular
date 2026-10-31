@@ -160,16 +160,8 @@ def main() raises:
 
         for root in range(ngpus):
             print(
-                "====broadcast-subgroup-",
-                dtype,
-                "-ngpus-",
-                ngpus,
-                "-devoffset-",
-                dev_offset,
-                "-root-",
-                root,
-                "-nelems-",
-                length,
+                t"====broadcast-subgroup- {dtype} -ngpus- {ngpus} -devoffset-"
+                t" {dev_offset} -root- {root} -nelems- {length}"
             )
             broadcast_subgroup_test[dtype, ngpus](
                 list_of_ctxs, length, root, dev_offset

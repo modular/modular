@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Staging contexts and allocated-dim-name collisions for
-`max.experimental.custom.declare`.
+`max.functional.custom_op.declare`.
 
 The sibling suite (``test_custom_op_def.py``) covers eager calls, one top-level
 `Graph`, and the declaration grammar. This one covers where else a def can be
@@ -36,10 +36,10 @@ from max import engine
 from max._interpreter_ops import custom_gc
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import custom as C
-from max.experimental.tensor import Tensor
-from max.experimental.testing import assert_all_close
+from max.functional import custom_op as C
 from max.graph import DeviceRef, DimLike, Graph, TensorType, TensorValue, ops
+from max.tensor import Tensor
+from max.tensor.testing import assert_all_close
 
 KERNELS = Path(os.environ["MODULAR_CUSTOM_OP_DEF_KERNELS_PATH"])
 

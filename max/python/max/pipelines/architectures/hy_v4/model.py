@@ -16,14 +16,18 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.lib import ModuleV3PipelineModelWithKVCache, PipelineConfig
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from typing_extensions import override
 
 from .batch_processor import HYV4BatchProcessor
@@ -52,11 +56,60 @@ def check_parallelism(pipeline_config: PipelineConfig, n_devices: int) -> None:
 class HYV4Model(
     LogProbabilitiesMixin, ModuleV3PipelineModelWithKVCache[TextContext]
 ):
-    """Hy4 on one GPU, or on several with tensor-parallel attention and
-    expert-parallel MoE."""
+    """Hy4 on one GPU, or on several with a sharded attention and MoE."""
 
     model_config_cls: ClassVar[type[Any]] = HYV4Config
     batch_processor_cls: ClassVar[type[HYV4BatchProcessor]] = HYV4BatchProcessor
+
+    @classmethod
+    def build_module(cls, context: ModelLoadContext) -> tuple[HYV4, HYV4Config]:
+        """Builds Hy4 for the checkpoint ``context`` names.
+
+        The module holds no weights: it compiles with those
+        :meth:`checkpoint_weights` returns. A caller that sized the cache
+        passes its KV params.
+        """
+        pipeline_config = context.pipeline_config
+        check_parallelism(
+            pipeline_config, len(pipeline_config.model.device_specs)
+        )
+        config = HYV4Config.initialize(
+            pipeline_config, max_seq_len=context.max_seq_len
+        )
+        if context.kv_params is not None:
+            assert isinstance(context.kv_params, MultiKVCacheParams)
+            config.kv_params = context.kv_params
+        config.max_batch_context_length = (
+            context.max_batch_total_tokens or config.max_batch_context_length
+        )
+        config.quant_config = parse_quant_config(
+            pipeline_config.model.huggingface_config,
+            cls.checkpoint_weights(context, config),
+            config.dtype,
+        )
+        devices = [ref.to_device() for ref in config.devices]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        # As `_module_default_dtype`: fp32 tensors are declared explicitly.
+        # Sharding inside the build's lazy context keeps it in that graph;
+        # outside it, each weight would be realized eagerly.
+        with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
+            module = HYV4(config)
+            if len(devices) > 1:
+                module.language_model.shard()
+        return module, config
+
+    @classmethod
+    def checkpoint_weights(
+        cls, context: ModelLoadContext, config: HYV4Config
+    ) -> dict[str, Any]:
+        """Returns the weights the built module compiles with.
+
+        ``Module.compile`` shards them inside the graph.
+        """
+        del config
+        return parse_state_dict_from_weights(
+            context.pipeline_config, context.weights, context.adapter
+        )
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> HYV4Config:

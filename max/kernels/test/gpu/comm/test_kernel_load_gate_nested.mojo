@@ -54,7 +54,7 @@ def _unrelated[tag: Int]():
 
 
 def _mark(start_ns: Int, label: String):
-    print("[", Float64(monotonic() - start_ns) / 1.0e6, "ms ] ", label, sep="")
+    print(t"[{Float64(monotonic() - start_ns) / 1.0e6}ms ] {label}")
 
 
 def _abort_hung(name: StaticString) -> Never:
@@ -180,8 +180,8 @@ def main() raises:
 
     # The opener and the control's loader must avoid the device workers, which
     # run the per-device launch bodies, and each other.
-    var dev0_worker = task_id_for_device(Int(ctx0.id()))
-    var dev1_worker = task_id_for_device(Int(ctx1.id()))
+    var dev0_worker = task_id_for_device(Int(ctx0.device().id))
+    var dev1_worker = task_id_for_device(Int(ctx1.device().id))
     var spare = List[Int]()
     for worker in range(1, parallelism_level()):
         if worker != dev0_worker and worker != dev1_worker:
@@ -190,15 +190,8 @@ def main() raises:
     var opener_worker = spare[0]
     var other_worker = spare[1]
     print(
-        "workers: dev0=",
-        dev0_worker,
-        " dev1=",
-        dev1_worker,
-        " opener=",
-        opener_worker,
-        " other=",
-        other_worker,
-        sep="",
+        t"workers:"
+        t" dev0={dev0_worker} dev1={dev1_worker} opener={opener_worker} other={other_worker}"
     )
 
     _run_scenario[0](ctx0, ctx1, opener_worker, other_worker, "control")

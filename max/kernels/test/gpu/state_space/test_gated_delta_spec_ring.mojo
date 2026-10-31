@@ -33,7 +33,7 @@ from state_space.gated_delta import (
     gated_delta_state_fold_gpu,
 )
 from std.random import rand, seed
-from std.testing import TestSuite, assert_equal
+from std.testing import TestSuite, _assert_aborts, assert_equal
 
 comptime WORK_DTYPE = DType.float32
 comptime STATE_DTYPE = DType.bfloat16
@@ -1022,6 +1022,160 @@ def test_the_shortest_ring() raises:
 def test_ragged_windows() raises:
     with DeviceContext() as ctx:
         run_ring_case[32, 32, 4](RingCase(2, 6, 3, [1, 4, 2], [1, 3, 0]), ctx)
+
+
+def run_records_only_traps[
+    KEY_HEAD_DIM: Int,
+    VALUE_HEAD_DIM: Int,
+    RING_LEN: Int,
+](seq_length: Int, ctx: DeviceContext) raises:
+    """Launches `RECORDS_ONLY=True` over one row and syncs.
+
+    The kernel contract is that every row fits the ring; `input_row_offsets`
+    is device data the host cannot check, so the kernel traps a longer row
+    itself. The trap surfaces as a raised error at the sync.
+    """
+    assert seq_length > RING_LEN, "the trap case needs a row past the ring"
+    var nv = 1
+    var nk = 1
+    var key_dim = nk * KEY_HEAD_DIM
+    var value_dim = nv * VALUE_HEAD_DIM
+    var conv_dim = key_dim * 2 + value_dim
+    var state_rows = 1
+
+    seed(0x5EED)
+    var qkv_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](
+        seq_length * conv_dim
+    )
+    rand[WORK_DTYPE](
+        qkv_h.unsafe_ptr(), seq_length * conv_dim, min=-1.0, max=1.0
+    )
+    var decay_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](seq_length * nv)
+    rand[WORK_DTYPE](decay_h.unsafe_ptr(), seq_length * nv, min=0.05, max=0.99)
+    var beta_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](seq_length * nv)
+    rand[WORK_DTYPE](beta_h.unsafe_ptr(), seq_length * nv, min=0.05, max=0.99)
+    var pool_seed_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](
+        state_rows * nv * KEY_HEAD_DIM * VALUE_HEAD_DIM
+    )
+    rand[WORK_DTYPE](
+        pool_seed_h.unsafe_ptr(),
+        state_rows * nv * KEY_HEAD_DIM * VALUE_HEAD_DIM,
+        min=-1.0,
+        max=1.0,
+    )
+    var pool_h = ctx.enqueue_create_host_buffer[STATE_DTYPE](
+        state_rows * nv * KEY_HEAD_DIM * VALUE_HEAD_DIM
+    )
+    for i in range(state_rows * nv * KEY_HEAD_DIM * VALUE_HEAD_DIM):
+        pool_h[i] = Scalar[STATE_DTYPE](pool_seed_h[i])
+
+    var qkv_dev = ctx.enqueue_create_buffer[WORK_DTYPE](seq_length * conv_dim)
+    var decay_dev = ctx.enqueue_create_buffer[WORK_DTYPE](seq_length * nv)
+    var beta_dev = ctx.enqueue_create_buffer[WORK_DTYPE](seq_length * nv)
+    var pool_dev = ctx.enqueue_create_buffer[STATE_DTYPE](
+        state_rows * nv * KEY_HEAD_DIM * VALUE_HEAD_DIM
+    )
+    var out_dev = ctx.enqueue_create_buffer[WORK_DTYPE](seq_length * value_dim)
+    var record_stride = gated_delta_ring_record_elements[
+        KEY_HEAD_DIM, VALUE_HEAD_DIM
+    ](nv // nk)
+    var ring_dev = ctx.enqueue_create_buffer[RING_DTYPE](
+        RING_LEN * record_stride
+    )
+
+    with ctx.push_context():
+        ctx.enqueue_copy(qkv_dev, qkv_h.unsafe_ptr())
+        ctx.enqueue_copy(decay_dev, decay_h.unsafe_ptr())
+        ctx.enqueue_copy(beta_dev, beta_h.unsafe_ptr())
+        ctx.enqueue_copy(pool_dev, pool_h.unsafe_ptr())
+    ctx.synchronize()
+    var offsets = List[Int]()
+    offsets.append(0)
+    offsets.append(seq_length)
+    var offsets_dev = _upload_table(ctx, offsets)
+    var slots = List[Int]()
+    slots.append(0)
+    var slot_dev = _upload_table(ctx, slots)
+    var ring_slot_dev = _upload_table(ctx, slots)
+
+    var qkv_tt = TileTensor(qkv_dev, row_major(seq_length, conv_dim))
+    var decay_tt = TileTensor(decay_dev, row_major(seq_length, nv))
+    var beta_tt = TileTensor(beta_dev, row_major(seq_length, nv))
+    var offsets_tt = TileTensor(offsets_dev, row_major(2))
+    var slot_tt = TileTensor(slot_dev, row_major(1))
+    var ring_slot_tt = TileTensor(ring_slot_dev, row_major(1))
+    var pool_tt = TileTensor(
+        pool_dev, row_major(state_rows, nv, KEY_HEAD_DIM, VALUE_HEAD_DIM)
+    )
+    var out_tt = TileTensor(out_dev, row_major(seq_length, value_dim))
+    var ring_tt = TileTensor(
+        ring_dev, row_major(1, nk, RING_LEN, record_stride)
+    )
+
+    var records_only_kernel = ctx.compile_function[
+        gated_delta_recurrence_verify_ring_gpu[
+            WORK_DTYPE,
+            STATE_DTYPE,
+            RING_DTYPE,
+            KEY_HEAD_DIM,
+            VALUE_HEAD_DIM,
+            RING_LEN,
+            out_tt.LayoutType,
+            qkv_tt.LayoutType,
+            decay_tt.LayoutType,
+            beta_tt.LayoutType,
+            pool_tt.LayoutType,
+            slot_tt.LayoutType,
+            offsets_tt.LayoutType,
+            ring_tt.LayoutType,
+            ring_slot_tt.LayoutType,
+            out_tt.Engine,
+            True,
+        ]
+    ]()
+    ctx.enqueue_function(
+        records_only_kernel,
+        Int32(1),
+        Int32(nv),
+        Int32(nk),
+        Int32(key_dim),
+        out_tt,
+        pool_tt,
+        slot_tt,
+        qkv_tt,
+        decay_tt,
+        beta_tt,
+        offsets_tt,
+        ring_tt,
+        ring_slot_tt,
+        grid_dim=(1,),
+        block_dim=(VALUE_HEAD_DIM,),
+    )
+    ctx.synchronize()
+
+
+def test_records_only_traps_a_row_past_the_ring() raises:
+    """`RECORDS_ONLY` makes a longer row a kernel contract violation.
+
+    The default instantiation still commits such a row (see
+    `test_row_longer_than_the_ring_commits_itself`); with `RECORDS_ONLY`
+    the writeback is gone, so a silent state drop would be corruption
+    instead. The kernel's safe assert must trap it.
+    """
+
+    # A trapped device-side assert poisons the CUDA context, and its
+    # teardown then aborts, so the launch runs in a re-exec'd child via
+    # `assert_aborts` rather than a `try` here.
+    def trigger() raises {} -> None:
+        with DeviceContext() as ctx:
+            run_records_only_traps[32, 32, 4](6, ctx)
+
+    # `std.testing.assert_aborts` is exported as `_assert_aborts`; the
+    # underscore is a stdlib convention, not a privacy marker here.
+    _assert_aborts(
+        trigger,
+        contains="exceeding RING_LEN=4",
+    )
 
 
 def test_production_head_dims() raises:

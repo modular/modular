@@ -25,7 +25,7 @@ import pytest
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph.weights import SafetensorWeights
-from max.nn.quant_config import QuantFormat
+from max.nn.legacy.quant_config import QuantFormat
 from max.pipelines.architectures.mimo_v2.quant import parse_quant_scheme
 from max.pipelines.architectures.mimo_v2.weight_adapters import (
     convert_safetensor_state_dict,

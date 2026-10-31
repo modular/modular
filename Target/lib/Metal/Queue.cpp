@@ -20,6 +20,7 @@
 #include "Event.h"
 #include "Function.h"
 #include "Memory.h"
+#include "llvm/ADT/SmallVector.h"
 #include <algorithm>
 
 DriverResult<M_driver_queue_t>
@@ -45,9 +46,14 @@ M_driver_queue::create(M_driver_context_t context) {
   blit->endEncoding();
   primer->commit();
 
+  NS::SharedPtr<MTL::Event> timeline =
+      NS::TransferPtr(context->device->mDevice->newEvent());
+  if (!timeline)
+    return tl::unexpected(M_DRIVER_STATUS_OUT_OF_MEMORY);
+
   M_driver_queue_t queue = new (std::nothrow) M_driver_queue{
-      context,          commandQueue,      orderFence,   /*mDonatedWaits=*/{},
-      /*mCommitSeq=*/0, /*mDrainedSeq=*/0, /*mMutex=*/{}};
+      context,          commandQueue,      orderFence,    /*mDonatedWaits=*/{},
+      /*mCommitSeq=*/0, /*mDrainedSeq=*/0, /*mMutex=*/{}, timeline};
   if (!queue)
     return tl::unexpected(M_DRIVER_STATUS_OUT_OF_MEMORY);
   return queue;
@@ -80,6 +86,19 @@ void M_driver_queue::encodeDonatedWaits(MTL::CommandBuffer *cb) {
   }
 }
 
+bool M_driver_queue::allDonatedWaitsCarried() const {
+  return std::all_of(mDonatedWaits.begin(), mDonatedWaits.end(),
+                     [](const DonatedWait &w) { return w.carried; });
+}
+
+void M_driver_queue::commitWithTimeline(MTL::CommandBuffer *cb) {
+  cb->encodeSignalEvent(mTimeline.get(), ++mTimelineSeq);
+  cb->commit();
+  // Every caller encodes all pending waits into cb first.
+  for (DonatedWait &wait : mDonatedWaits)
+    wait.carried = true;
+}
+
 M_driver_status_t M_driver_queue::drainPriorWork() {
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -102,7 +121,7 @@ M_driver_status_t M_driver_queue::drainPriorWork() {
           "Failed to create blit encoder for drain");
     blit->waitForFence(mOrderingFence.get());
     blit->endEncoding();
-    cmdBuffer->commit();
+    commitWithTimeline(cmdBuffer);
   }
   cmdBuffer->waitUntilCompleted();
   {
@@ -248,7 +267,7 @@ M_driver_status_t M_driver_queue::enqueueBlit(MTL::Buffer *dst,
   encoder->updateFence(mOrderingFence.get());
   encoder->endEncoding();
 
-  cmdBuffer->commit();
+  commitWithTimeline(cmdBuffer);
   mCommitSeq += 1;
   return M_DRIVER_STATUS_SUCCESS;
 }
@@ -356,6 +375,8 @@ M_driver_status_t M_driver_queue::fillMemory(M_driver_memory_t dst,
 
 namespace {
 MTL::Size toSize(M_driver_dim_t dim) { return {dim.x, dim.y, dim.z}; }
+
+constexpr uint64_t kSetBytesLimit = 4096;
 } // namespace
 
 M_driver_status_t
@@ -383,10 +404,6 @@ M_driver_queue::execute(M_driver_function_t function,
     if (argSizes[i] == 0)
       return context->device->driver->status.create(
           "Unknown argument size at index " + std::to_string(i));
-    // Reject per-argument buffers at or above the device's per-buffer size
-    // limit, mirroring the guard on context allocations. Checked here, before
-    // the encoder is opened, so the per-arg newBuffer() below cannot return
-    // null mid-encode.
     if (argSizes[i] >= maxBufferLength)
       return context->device->driver->status.create(
           "Failed to allocate MTL Buffer of a size " +
@@ -407,6 +424,22 @@ M_driver_queue::execute(M_driver_function_t function,
           " exceeds device limit of " + std::to_string(maxSharedMemBytes));
   }
 
+  // Allocated before the encoder opens so a failure cannot leave one open.
+  llvm::SmallVector<NS::SharedPtr<MTL::Buffer>, 8> oversizedArgBuffers(
+      function->argumentCount);
+  for (uint32_t i = 0; i < function->argumentCount; ++i) {
+    if (argSizes[i] <= kSetBytesLimit)
+      continue;
+    oversizedArgBuffers[i] =
+        NS::TransferPtr(context->device->mDevice->newBuffer(
+            args[i], argSizes[i],
+            MTL::ResourceOptions(MTL::StorageModeShared) |
+                MTL::ResourceOptions(MTL::CPUCacheModeWriteCombined)));
+    if (!oversizedArgBuffers[i])
+      return context->device->driver->status.create(
+          "Failed to allocate MTL Buffer for argument " + std::to_string(i));
+  }
+
   std::lock_guard<std::mutex> lock(mMutex);
 
   MTL::CommandBuffer *cmdBuffer = mCommandQueue->commandBuffer();
@@ -421,17 +454,11 @@ M_driver_queue::execute(M_driver_function_t function,
         "Failed to create compute command encoder");
   encoder->setComputePipelineState(function->pipelineState.get());
 
-  // Bind all buffer arguments. Arguments were validated above, before the
-  // encoder was opened.
   for (uint32_t i = 0; i < function->argumentCount; ++i) {
-    // We have more complex argument, such as pointer to a struct. Allocate
-    // new MTLBuffer and set it.
-    NS::SharedPtr<MTL::Buffer> buf =
-        NS::TransferPtr(context->device->mDevice->newBuffer(
-            args[i], argSizes[i],
-            MTL::ResourceOptions(MTL::StorageModeShared) |
-                MTL::ResourceOptions(MTL::CPUCacheModeWriteCombined)));
-    encoder->setBuffer(buf.get(), 0, i);
+    if (oversizedArgBuffers[i])
+      encoder->setBuffer(oversizedArgBuffers[i].get(), 0, i);
+    else
+      encoder->setBytes(args[i], argSizes[i], i);
   }
 
   // Set resources that might be used by the kernel
@@ -451,7 +478,7 @@ M_driver_queue::execute(M_driver_function_t function,
   encoder->updateFence(mOrderingFence.get());
   encoder->endEncoding();
 
-  cmdBuffer->commit();
+  commitWithTimeline(cmdBuffer);
   mCommitSeq += 1;
   return M_DRIVER_STATUS_SUCCESS;
 }
@@ -463,6 +490,17 @@ M_driver_status_t M_driver_queue::recordEvent(M_driver_event_t event) {
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
 
   std::lock_guard<std::mutex> lock(mMutex);
+
+  // Signpost unless a wait is not on the timeline yet, or the host must wait.
+  if (!event->sharedEvent && !mNativeHandleExported &&
+      allDonatedWaitsCarried()) {
+    std::lock_guard<std::mutex> eventLock(event->mutex);
+    event->signpostTimeline.emplace(mTimeline);
+    event->signpostValue = mTimelineSeq;
+    return M_DRIVER_STATUS_SUCCESS;
+  }
+  if (!event->ensureDeviceEvent())
+    return M_DRIVER_STATUS_OUT_OF_MEMORY;
 
   MTL::CommandBuffer *cmdBuffer = mCommandQueue->commandBuffer();
   if (cmdBuffer == nullptr)
@@ -486,7 +524,11 @@ M_driver_status_t M_driver_queue::recordEvent(M_driver_event_t event) {
   if (previous > 0)
     cmdBuffer->encodeWait(event->getEvent(), previous);
   cmdBuffer->encodeSignalEvent(event->getEvent(), reserved);
-  cmdBuffer->commit();
+  {
+    std::lock_guard<std::mutex> eventLock(event->mutex);
+    event->signpostTimeline.reset();
+  }
+  commitWithTimeline(cmdBuffer);
   mCommitSeq += 1;
   return M_DRIVER_STATUS_SUCCESS;
 }
@@ -503,6 +545,19 @@ M_driver_status_t M_driver_queue::waitForEvents(M_driver_event_t *events,
 
   // Capture each external's value now (CUDA capture-at-call semantics).
   for (uint32_t i = 0; i < numEvents; ++i) {
+    {
+      std::lock_guard<std::mutex> eventLock(events[i]->mutex);
+      if (events[i]->signpostTimeline) {
+        if (events[i]->signpostValue == 0)
+          continue;
+        mDonatedWaits.push_back(
+            DonatedWait{*events[i]->signpostTimeline, /*sharedView=*/nullptr,
+                        events[i]->signpostValue,
+                        std::make_shared<std::atomic<bool>>(false)});
+        mCommitSeq += 1;
+        continue;
+      }
+    }
     uint64_t target = events[i]->targetValue.load(std::memory_order_acquire);
     // A never-recorded event is complete (CUDA semantics).
     if (target == 0)
@@ -649,6 +704,7 @@ M_driver_status_t M_driver_queue_property(M_driver_queue_t queue,
   if (property_name == nullptr || value == nullptr)
     return M_DRIVER_STATUS_INVALID_ARG;
   if (llvm::StringRef(property_name) == M_DRIVER_QUEUE_PROPERTY_NATIVE_HANDLE) {
+    queue->mNativeHandleExported = true;
     *static_cast<uint64_t *>(value) =
         reinterpret_cast<uint64_t>(queue->mCommandQueue.get());
     return M_DRIVER_STATUS_SUCCESS;

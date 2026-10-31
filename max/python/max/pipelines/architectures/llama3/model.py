@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Llama3 pipeline model."""
 
 from __future__ import annotations
 
@@ -23,9 +24,9 @@ from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.layer import Module
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -43,7 +44,6 @@ from max.pipelines.lib.graph_specs import (
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 
 from .batch_processor import Llama3BatchProcessor
@@ -80,6 +80,7 @@ class Llama3Inputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         if self.data_parallel_splits is not None:
             if isinstance(self.data_parallel_splits, Buffer):
                 splits_tensor = self.data_parallel_splits
@@ -164,10 +165,19 @@ class LlamaModelBase(
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
-        """
+        """Initializes the pipeline model.
+
         Args:
             pipeline_config: The configuration for this pipeline.
             session: The container for the runtime for this model.
+            devices: The devices the model runs on.
+            kv_cache_config: The KV cache configuration.
+            weights: The checkpoint's weights.
+            memory_plan: The memory plan the model was sized against.
+            adapter: Rewrites the checkpoint's weight names, when given.
+            return_logits: Which logits the graph returns.
+            return_hidden_states: Which hidden states the graph returns.
+            max_batch_size: The largest batch the graph handles.
         """
         super().__init__(
             pipeline_config,
@@ -199,6 +209,7 @@ class LlamaModelBase(
         return inputs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the model and returns its outputs."""
         assert isinstance(model_inputs, Llama3Inputs)
         assert model_inputs.kv_cache_inputs is not None
         model_outputs = self.model.execute(*model_inputs.buffers)
@@ -285,8 +296,11 @@ class LlamaModelBase(
         return self.state_dict
 
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
-        """Returns the decoder: data-parallel when the config asks for it,
-        else tensor-parallel across several devices, else single-device."""
+        """Returns the decoder's graph spec.
+
+        It is data-parallel when the config asks for it, tensor-parallel
+        across several devices otherwise, or single-device.
+        """
         assert isinstance(model_config, Llama3Config)
         if model_config.data_parallel_degree > 1:
             spec = self._data_parallel_spec(model_config)
@@ -322,68 +336,3 @@ class LlamaModelBase(
             self._bind_graph_inputs(single_model.input_tree(self.kv_params)),
             weights=single_model.state_dict(),
         )
-
-
-class Llama3Model(LlamaModelBase):
-    """Llama 3 pipeline model implementation."""
-
-    config_class: type[Llama3Config] = Llama3Config
-    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
-    """Normalization layer."""
-
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        *,
-        memory_plan: MemoryPlan,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        max_batch_size: int = 1,
-    ) -> None:
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter=adapter,
-            return_logits=return_logits,
-            return_hidden_states=return_hidden_states,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
-        )
-
-    @classmethod
-    def build_module(
-        cls, context: ModelLoadContext
-    ) -> tuple[Module, Llama3Config]:
-        """Builds the Llama 3 module on one device or tensor-parallel.
-
-        Defined here rather than on :class:`LlamaModelBase`, whose other
-        subclasses build modules of their own.
-
-        Raises:
-            ValueError: If the config is data-parallel, whose replicas the
-                data-parallel graph builds itself.
-        """
-        state_dict = parse_state_dict_from_weights(
-            context.pipeline_config, context.weights, context.adapter
-        )
-        config = cls._finalized_config(context, state_dict)
-        if config.data_parallel_degree > 1:
-            raise ValueError(
-                "Llama 3 builds data-parallel replicas inside its graph;"
-                " there is no single module to return."
-            )
-        module: Module = (
-            DistributedLlama3(config)
-            if len(config.devices) > 1
-            else Llama3(config)
-        )
-        _load_weights(module, state_dict)
-        return module, config

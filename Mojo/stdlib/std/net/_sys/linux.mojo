@@ -182,8 +182,8 @@ struct sockaddr_storage(Copyable, Writable):
 
 def accept4(
     sockfd: c_int,
-    addr: OptionalMutPointer[sockaddr, _],
-    addrlen: OptionalMutPointer[socklen_t, _],
+    addr: Optional[MutPointer[sockaddr, _]],
+    addrlen: Optional[MutPointer[socklen_t, _]],
     flags: c_int,
 ) -> c_int:
     """C `accept4(2)`: `accept` that applies `SOCK_*` flags atomically."""

@@ -21,8 +21,8 @@ from max import tree
 from max._artifact.value_types import treedef_from_json, treedef_to_json
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn import graph_groups
-from max.nn.graph_groups import (
+from max.nn.legacy import graph_groups
+from max.nn.legacy.graph_groups import (
     BatchContext,
     ConvStates,
     DecoderOutputs,
@@ -30,14 +30,21 @@ from max.nn.graph_groups import (
     EPPayload,
     GraphGroup,
     HiddenStates,
+    ItemPositions,
     Logits,
     MRoPEPositions,
     RaggedBatch,
     SparseIndices,
     TPSignals,
+    VisionEmbeddings,
+    VisionHostMax,
     VisionMerge,
+    VisionRowIndex,
+    VisionRows,
+    VisionSegments,
+    VisionSelfIndex,
 )
-from max.nn.transformer import ReturnHiddenStates, logits_outputs
+from max.nn.legacy.transformer import ReturnHiddenStates, logits_outputs
 
 
 def _values(n: int) -> list[TensorValue]:
@@ -64,12 +71,24 @@ def _examples() -> list[GraphGroup[Any, Any]]:
         ConvStates(states=(a,)),
         SparseIndices(rows=(b,)),
         DecoderOutputs(logits=logits, hidden_states=HiddenStates(all=(a,))),
+        VisionRows(pixel_values=(t,), grid_thw=t),
+        VisionSegments(cu_seqlens=(t,)),
+        VisionRowIndex(pool_gather_index=(t,)),
+        VisionSelfIndex(reverse_index=t),
+        VisionHostMax(max_seqlen=t),
+        VisionEmbeddings(image_embeddings=(a, b)),
+        ItemPositions(position_ids=a, position_advance=b),
     ]
 
 
 def test_examples_cover_every_group() -> None:
     names = {type(group).__name__ for group in _examples()}
-    assert names == set(graph_groups.__all__) - {"GraphGroup", "LogitsName"}
+    assert names == set(graph_groups.__all__) - {
+        "GraphGroup",
+        "LogitsName",
+        "group_fields",
+        "vision_outputs",
+    }
 
 
 @pytest.mark.parametrize("index", range(len(_examples())))

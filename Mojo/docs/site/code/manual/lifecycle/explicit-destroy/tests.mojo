@@ -35,7 +35,7 @@
 #      raises; implicitly destructible fields are cleaned up during unwinding.
 #      -> test_dispose_before_raise, test_implicit_field_cleaned_on_unwind;
 #         raising with a live linear field is claim C4
-#   6. A custom `where` message improves the diagnostic.
+#   6. A custom `else` message improves the diagnostic.
 #      -> not runtime-testable; claim C1 carries the message text
 #   7. Parameterized code over `AnyType`/`Movable` accepts explicitly destroyed
 #      values but can't destroy them, except by returning them or by receiving
@@ -55,7 +55,7 @@
 # 2026-08-21, Mojo 1.1.0.dev0, and recorded with the diagnostic that fires:
 #   C1. A value left unconsumed: "'tally' abandoned without being explicitly
 #       destroyed: type 'Tally' does not conform to 'Deinitable' and must be
-#       explicitly destroyed". With a `where` message, that message replaces
+#       explicitly destroyed". With an `else` message, that message replaces
 #       the trailing explanation.
 #   C2. `raises` on `__deinit__()`: "destructor must not declare 'raises';
 #       remove the 'raises' keyword"

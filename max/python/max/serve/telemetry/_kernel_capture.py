@@ -91,8 +91,7 @@ def configure_kernel_capture(settings: Settings) -> bool:
 
 @dataclasses.dataclass(frozen=True)
 class TracedPass:
-    """A forward pass that ran under an armed kernel capture with at least one
-    traced request."""
+    """A forward pass with at least one traced request during a capture."""
 
     batch_id: int
     level: RequestTraceLevel
@@ -113,9 +112,11 @@ _capture_dir: str | None = None
 
 
 def kernel_capture_path() -> str:
-    """Returns where this worker saves a per-request kernel capture: a fixed
-    name in a private directory made on first use. Each capture overwrites
-    the last, so the latest stays on disk for inspection."""
+    """Returns where this worker saves a per-request kernel capture.
+
+    The name is fixed in a private directory made on first use. Each capture
+    overwrites the last, so the latest stays on disk for inspection.
+    """
     global _capture_dir
     if _capture_dir is None:
         # The plugin's write follows symlinks, so a predictable name in a
@@ -184,9 +185,11 @@ class KernelCapture:
 
     @property
     def may_record(self) -> bool:
-        """Whether a capture may be recording, so every pass needs a
-        ``max.batch`` range for the replay to tell traced passes' GPU work
-        from untraced ones'."""
+        """Whether a capture may be recording.
+
+        When it may, every pass needs a ``max.batch`` range so the replay can
+        tell traced passes' GPU work from untraced ones'.
+        """
         return self._armed or (self._thread is not None and self._thread.busy)
 
     def begin_pass(
@@ -237,8 +240,9 @@ class KernelCapture:
         batch_span: Span,
         host_start_ns: int,
     ) -> list[RequestID]:
-        """Records a pass that ran while the capture was armed, stopping the
-        capture at the pass cap.
+        """Records a pass that ran while the capture was armed.
+
+        Stops the capture when the pass cap is reached.
 
         Args:
             batch_id: The pass's batch ID.
@@ -293,8 +297,10 @@ class KernelCapture:
         return []
 
     def untrace(self, request_id: RequestID) -> None:
-        """Untraces a request that has left, stopping the capture if it was
-        the last traced one."""
+        """Untraces a request that has left.
+
+        The capture stops when the request was the last traced one.
+        """
         if (
             self._traced.pop(request_id, None) is None
             or self._traced
@@ -338,8 +344,10 @@ class KernelCaptureThread:
 
     @property
     def busy(self) -> bool:
-        """Whether a submitted capture is still being stopped, saved or
-        replayed."""
+        """Whether a submitted capture is still running.
+
+        A capture that is stopping, saving, or replaying counts as running.
+        """
         return not self._idle.is_set()
 
     def submit(self, output_path: str, passes: list[TracedPass]) -> None:
@@ -464,8 +472,10 @@ def _kineto_clock_offset_ns(
 
 
 def _covered_ns(intervals: Sequence[tuple[int, int]]) -> int:
-    """Returns how long at least one of ``intervals`` covers, overlaps
-    counted once."""
+    """Returns how long at least one of ``intervals`` covers.
+
+    Overlapping intervals count once.
+    """
     covered = 0
     covered_until = -1
     for start_ns, end_ns in sorted(intervals):
@@ -645,9 +655,12 @@ def replay_kernel_capture(
     cut_off = len(ranges)
 
     def pass_at(launched_us: float) -> int:
-        """Returns the index of the last range to start at or before a
-        launch, -1 if none did, or ``cut_off`` for a launch after the last
-        range's end, which belongs to a pass whose range the stop cut off."""
+        """Returns the index of the last range to start at or before a launch.
+
+        Returns -1 when no range did, or ``cut_off`` for a launch after the
+        last range's end, which belongs to a pass whose range the stop cut
+        off.
+        """
         i = bisect_right(range_starts, launched_us) - 1
         if i >= 0 and i + 1 == cut_off and launched_us > ranges[i][1]:
             return cut_off

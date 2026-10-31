@@ -82,6 +82,7 @@ modular_cc_binary(
         "@imgui_docking",
         "@imgui_docking//:platform-glfw",
         "@imgui_docking//:renderer-opengl3",
+        "@llvm-project//mlir:QuantOps",
         "@portable_file_dialogs",
     ],
 )

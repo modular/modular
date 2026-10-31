@@ -20,7 +20,7 @@ For example, here's how to print to a file
 var f = open("my_file.txt", "w")
 var fd = RawFileDescriptor(f)
 print("hello", file=fd)
-f.close()
+f^.close()
 ```
 
 """
@@ -29,14 +29,16 @@ from std.ffi import (
     c_ssize_t,
     c_int,
     external_call,
-    get_errno,
 )
 
 from std.collections import Span
 from std.memory import MaybeUninit
 from std.os import abort
-from std.sys._libc import close as libc_close
-from std.utils._nicheable import UnsafeSingleNicheable
+from std.sys._libc import FcntlCommands, close as libc_close, fcntl
+from std.utils._nicheable import UnsafeSingleNicheable, _FieldNicheable
+
+from ._syscall import check
+from .error import IOError
 
 
 struct RawFileDescriptor(
@@ -93,7 +95,11 @@ struct RawFileDescriptor(
         Args:
             f: The file handle.
         """
-        self._value = c_int(f._get_raw_fd())
+        self = f._get_raw_fd()
+
+    @inline(.always)
+    def _raw(self) -> c_int:
+        return self._value
 
     # ===------------------------------------------------------------------===#
     # UnsafeSingleNicheable
@@ -140,7 +146,7 @@ struct RawFileDescriptor(
         self.write_bytes(string.as_bytes())
 
     @inline(.always)
-    def read_bytes(mut self, buffer: MutSpan[Byte, _]) raises -> Int:
+    def read_bytes(mut self, buffer: MutSpan[Byte, _]) raises IOError -> Int:
         """Read a number of bytes from the file into a buffer.
 
         Args:
@@ -163,12 +169,12 @@ struct RawFileDescriptor(
         comptime assert (
             CompilationTarget.is_macos() or CompilationTarget.is_linux()
         ), "`read_bytes()` is not yet implemented for unknown platform."
-        var read = external_call["read", c_ssize_t](
-            self._value, buffer.unsafe_ptr(), len(buffer)
+        return check(
+            external_call["read", c_ssize_t](
+                self._value, buffer.unsafe_ptr(), len(buffer)
+            ),
+            "read",
         )
-        if read < 0:
-            raise Error("Failed to read bytes.")
-        return read
 
     def isatty(self) -> Bool:
         """Checks whether a file descriptor refers to a terminal.
@@ -196,18 +202,16 @@ struct RawFileDescriptor(
             return False
         return external_call["isatty", c_int](self._value) != 0
 
-    def close(self) raises:
+    def close(self) raises IOError:
         """Closes the file descriptor.
 
         Raises:
             If the descriptor is not open, or if the close fails. A failed
             close can mean buffered writes never reached the file.
         """
-        # TODO: Raise `IOError` once it exists.
-        if libc_close(self._value) != 0:
-            raise Error("close failed err: ", String(get_errno()))
+        _ = check(libc_close(self._value), "close")
 
-    def fchdir(self) raises:
+    def fchdir(self) raises IOError:
         """Changes the current working directory to the one
            represented by this fd.
 
@@ -215,16 +219,13 @@ struct RawFileDescriptor(
             If the operations fails. In particular if the fd is
             not a directory.
         """
-        var result = external_call["fchdir", c_int](self._value)
-        if result < 0:
-            var err = get_errno()
-            raise Error("fchdir failed err: ", String(err))
+        _ = check(external_call["fchdir", c_int](self._value), "fchdir")
 
 
 struct FileDescriptor(
     not Deinitable else "close it with `fd^.close()`, since closing can fail",
     Movable,
-    UnsafeSingleNicheable,
+    _FieldNicheable,
 ):
     """Owning file descriptor that is closed explicitly with `close()`.
 
@@ -252,7 +253,35 @@ struct FileDescriptor(
         """
         self._value = unsafe_raw_fd
 
-    def close(deinit self) raises:
+    def __init__(
+        out self, *, copy_borrowed: BorrowedFileDescriptor[_]
+    ) raises IOError:
+        """Constructs a new owner by duplicating a borrowed descriptor.
+
+        The new `FileDescriptor` owns a fresh descriptor that refers to the
+        same open file description as `copy_borrowed`, so the two share the
+        file offset and status flags but are closed independently. The copy
+        is close-on-exec, so child processes don't inherit it.
+
+        Args:
+            copy_borrowed: The descriptor to duplicate.
+
+        Raises:
+            If the duplication fails.
+        """
+        # From 3 up, so the copy can't take the place of a closed standard
+        # stream.
+        var fd = check(
+            fcntl(
+                copy_borrowed._value._value,
+                FcntlCommands.F_DUPFD_CLOEXEC,
+                c_int(3),
+            ),
+            "fcntl",
+        )
+        self._value = RawFileDescriptor(unsafe_unchecked_value=fd)
+
+    def close(deinit self) raises IOError:
         """Closes the owned file descriptor.
 
         Raises:
@@ -261,25 +290,15 @@ struct FileDescriptor(
         """
         self._value.close()
 
-    # ===------------------------------------------------------------------===#
-    # UnsafeSingleNicheable
-    # ===------------------------------------------------------------------===#
-
-    @staticmethod
     @inline(.always)
-    @doc_hidden
-    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
-        memory.unsafe_bitcast[c_int]().write(RawFileDescriptor._InvalidFd)
+    def _raw(self) -> c_int:
+        return self._value._raw()
 
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
-        return memory.unsafe_bitcast[c_int]()[] == RawFileDescriptor._InvalidFd
+    comptime _KgenNichedFieldName = "_value".value
 
 
 struct BorrowedFileDescriptor[origin: ImmOrigin](
-    TrivialRegisterPassable, UnsafeSingleNicheable
+    TrivialRegisterPassable, _FieldNicheable
 ):
     """Copyable, non-owning view of a `FileDescriptor`.
 
@@ -313,18 +332,4 @@ struct BorrowedFileDescriptor[origin: ImmOrigin](
         """
         self._value = fd._value
 
-    # ===------------------------------------------------------------------===#
-    # UnsafeSingleNicheable
-    # ===------------------------------------------------------------------===#
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
-        memory.unsafe_bitcast[c_int]().write(RawFileDescriptor._InvalidFd)
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
-        return memory.unsafe_bitcast[c_int]()[] == RawFileDescriptor._InvalidFd
+    comptime _KgenNichedFieldName = "_value".value

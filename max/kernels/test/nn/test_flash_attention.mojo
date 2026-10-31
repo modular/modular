@@ -59,7 +59,7 @@ def reference_attention_bshd[
         comptime assert buf.rank == buf.flat_rank
         var shape = coord_to_index_list(buf.layout.shape_coord())
         var num_heads = shape[buf.rank - 2] if buf.rank == 4 else 1
-        var shape_4d = Index(shape[0], shape[1], num_heads, shape[buf.rank - 1])
+        var shape_4d = (shape[0], shape[1], num_heads, shape[buf.rank - 1])
         return buf.reshape(Coord(shape_4d))
 
     def reshape_mask_4d(
@@ -75,8 +75,11 @@ def reference_attention_bshd[
         comptime assert buf.rank == buf.flat_rank
         var shape = coord_to_index_list(buf.layout.shape_coord())
         var num_heads = shape[1] if buf.rank == 4 else 1
-        var shape_4d = Index(
-            shape[0], num_heads, shape[buf.rank - 2], shape[buf.rank - 1]
+        var shape_4d = (
+            shape[0],
+            num_heads,
+            shape[buf.rank - 2],
+            shape[buf.rank - 1],
         )
         return buf.reshape(Coord(shape_4d))
 
@@ -198,7 +201,7 @@ def reference_attention_bshd_with_sinks[
         comptime assert buf.rank == buf.flat_rank
         var shape = coord_to_index_list(buf.layout.shape_coord())
         var num_heads = shape[buf.rank - 2] if buf.rank == 4 else 1
-        var shape_4d = Index(shape[0], shape[1], num_heads, shape[buf.rank - 1])
+        var shape_4d = (shape[0], shape[1], num_heads, shape[buf.rank - 1])
         return buf.reshape(Coord(shape_4d))
 
     def reshape_mask_4d(
@@ -214,8 +217,11 @@ def reference_attention_bshd_with_sinks[
         comptime assert buf.rank == buf.flat_rank
         var shape = coord_to_index_list(buf.layout.shape_coord())
         var num_heads = shape[1] if buf.rank == 4 else 1
-        var shape_4d = Index(
-            shape[0], num_heads, shape[buf.rank - 2], shape[buf.rank - 1]
+        var shape_4d = (
+            shape[0],
+            num_heads,
+            shape[buf.rank - 2],
+            shape[buf.rank - 1],
         )
         return buf.reshape(Coord(shape_4d))
 
@@ -570,7 +576,7 @@ def test_flash_attention[dtype: DType]() raises:
     test_case[
         dtype,
         batch_rank=1,
-        output_static_shape=IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 128),
+        output_static_shape=(UNKNOWN_VALUE, UNKNOWN_VALUE, 128),
     ](
         TestCaseConfig(
             batch_dims=Index(1),
@@ -584,7 +590,7 @@ def test_flash_attention[dtype: DType]() raises:
     test_case[
         dtype,
         batch_rank=1,
-        output_static_shape=IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 160),
+        output_static_shape=(UNKNOWN_VALUE, UNKNOWN_VALUE, 160),
     ](
         TestCaseConfig(
             batch_dims=Index(1),
@@ -598,7 +604,7 @@ def test_flash_attention[dtype: DType]() raises:
     test_case[
         dtype,
         batch_rank=1,
-        output_static_shape=IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 300),
+        output_static_shape=(UNKNOWN_VALUE, UNKNOWN_VALUE, 300),
     ](
         TestCaseConfig(
             batch_dims=Index(1),
@@ -790,9 +796,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     seed(42)
 
     # Create test tensors in BSHD format
-    var q_shape = Index(batch_size, seq_len, num_heads, depth_dim)
-    var kv_shape = Index(batch_size, kv_seq_len, num_heads, depth_dim)
-    var mask_shape = Index(batch_size, num_heads, seq_len, kv_seq_len)
+    var q_shape = (batch_size, seq_len, num_heads, depth_dim)
+    var kv_shape = (batch_size, kv_seq_len, num_heads, depth_dim)
+    var mask_shape = (batch_size, num_heads, seq_len, kv_seq_len)
 
     var q = build_ndbuffer[dtype](q_shape)
     var k = build_ndbuffer[dtype](kv_shape)
@@ -868,12 +874,8 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         ):
             if mismatches_no_sinks < 3:
                 print(
-                    "No-sinks mismatch at",
-                    i,
-                    ":",
-                    output_no_sinks[coord],
-                    "vs",
-                    ref_output_no_sinks[coord],
+                    t"No-sinks mismatch at {i} : {output_no_sinks[coord]} vs"
+                    t" {ref_output_no_sinks[coord]}"
                 )
             mismatches_no_sinks += 1
 
@@ -932,12 +934,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         ):
             if mismatches_with_sinks < 3:
                 print(
-                    "With-sinks mismatch at",
-                    i,
-                    ":",
-                    output_with_sinks[coord],
-                    "vs",
-                    ref_output_with_sinks[coord],
+                    t"With-sinks mismatch at {i} :"
+                    t" {output_with_sinks[coord]} vs"
+                    t" {ref_output_with_sinks[coord]}"
                 )
             mismatches_with_sinks += 1
 

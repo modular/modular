@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -I=%S/inputs %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I%S/inputs %s | FileCheck %s
 
 # An import also brings in every extension visible in the source module,
 # including ones that module imported itself. Thing's extension reaches the file

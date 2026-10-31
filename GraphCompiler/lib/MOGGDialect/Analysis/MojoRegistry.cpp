@@ -33,6 +33,7 @@
 #include "Mojo/MojoParser/SharedState.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Support/AssertStream.h"
+#include "Support/Diagnostics/FormatScopedDiagnosticHandler.h"
 #include "Support/Filesystem/Paths.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSet.h"
@@ -71,6 +72,27 @@ MojoRegistry::lookupKernel(llvm::StringRef name) const {
 
 bool MojoRegistry::containsKernel(llvm::StringRef name) const {
   return kernelByName.contains(name);
+}
+
+std::optional<llvm::StringRef>
+MojoRegistry::suggestKernelName(llvm::StringRef name) const {
+  // A typo changes about one character in three, and at least a couple.
+  unsigned maxDistance = std::max<size_t>(2, name.size() / 3);
+  std::optional<llvm::StringRef> best;
+  unsigned bestDistance = maxDistance + 1;
+  for (const auto &entry : kernelByName) {
+    llvm::StringRef candidate = entry.getKey();
+    unsigned distance =
+        name.edit_distance(candidate, /*AllowReplacements=*/true,
+                           /*MaxEditDistance=*/maxDistance);
+    // Ties break by name, so the suggestion doesn't depend on hash order.
+    if (distance < bestDistance ||
+        (distance == bestDistance && best && candidate < *best)) {
+      bestDistance = distance;
+      best = candidate;
+    }
+  }
+  return best;
 }
 
 KernelDeclOp
@@ -166,7 +188,12 @@ static std::tuple<bool, int> resolutionRank(KernelDeclOp decl) {
 ErrorOr<KernelDeclOp>
 MojoRegistry::getResolvedKernel(llvm::StringRef name,
                                 DeviceRefAttr device) const {
-  DeviceInfoAttr deviceInfo = deviceInfoMapping.get(device);
+  return getResolvedKernel(name, deviceInfoMapping.get(device));
+}
+
+ErrorOr<KernelDeclOp>
+MojoRegistry::getResolvedKernel(llvm::StringRef name,
+                                DeviceInfoAttr deviceInfo) const {
   auto it = kernelByName.find(name);
   ASSERT_STREAM(it != kernelByName.end(),
                 "no kernel registered for '" << name << "'");
@@ -252,7 +279,7 @@ namespace {
 class LITModuleResolver {
 public:
   explicit LITModuleResolver(mlir::MLIRContext *ctx)
-      : config(ctx, options), sharedState(sourceMgr, config) {}
+      : sharedState(sourceMgr, ctx, options, KGEN::FrontendOptions()) {}
 
   /// Resolve `moduleName` to the path of its precompiled binary package.
   ErrorOr<std::string> resolveBinaryPackagePath(llvm::StringRef moduleName) {
@@ -276,10 +303,9 @@ public:
   KGEN::LIT::SharedState &getSharedState() { return sharedState; }
 
 private:
-  // Order matters: `config` refers to `options`, `sharedState` to both.
+  // Order matters: `sharedState` refers to `sourceMgr` and `options`.
   llvm::SourceMgr sourceMgr;
   KGEN::CompilationOptions options;
-  KGEN::LIT::ParserConfig config;
   KGEN::LIT::SharedState sharedState;
 };
 
@@ -424,6 +450,21 @@ static StringAttr getParamTypeName(MLIRContext *ctx, Type paramType) {
                                   .str());
 }
 
+// A registry built over a module of kernel decls alone, like the one behind
+// Python's `Analysis`, has no `mo.device_info_mapping`, so it knows a device
+// only by its label. The graph module holding `op` carries the full device
+// info, which a registration scoped by `api`, `arch`, or `model` needs.
+static ErrorOr<KernelDeclOp> resolveKernelForOp(const MojoRegistry &registry,
+                                                llvm::StringRef name,
+                                                mlir::Operation *op,
+                                                DeviceRefAttr device) {
+  auto module = op->getParentOfType<mlir::ModuleOp>();
+  if (module && module->hasAttr(MO::DeviceInfoMapping::kAttrName))
+    return registry.getResolvedKernel(
+        name, MO::DeviceInfoMapping(module).get(device));
+  return registry.getResolvedKernel(name, device);
+}
+
 static ErrorOrSuccess validateCustomOpParameters(const MojoRegistry &registry,
                                                  MO::CustomOp customOp) {
   if (!registry.containsKernel(customOp.getSymbol())) {
@@ -431,8 +472,8 @@ static ErrorOrSuccess validateCustomOpParameters(const MojoRegistry &registry,
         llvm::formatv("no kernel registered for '{}'", customOp.getSymbol())
             .str());
   }
-  auto declOpOr =
-      registry.getResolvedKernel(customOp.getSymbol(), customOp.getDevice());
+  auto declOpOr = resolveKernelForOp(registry, customOp.getSymbol(), customOp,
+                                     customOp.getDevice());
   if (declOpOr.isError())
     return declOpOr.takeError();
   KernelDeclOp declOp = *declOpOr;
@@ -631,6 +672,19 @@ static ErrorOrSuccess validateCustomOpParameters(const MojoRegistry &registry,
 
 } // namespace M::MOGG
 
+/// Formats `message` as a Mojo-style diagnostic at `loc`, with the Mojo
+/// source line, and a note at `noteLoc` when it points elsewhere.
+static Error kernelError(Location loc, const std::string &message,
+                         std::optional<Location> noteLoc = std::nullopt,
+                         const std::string &note = "") {
+  mlir::Diagnostic diag(loc, mlir::DiagnosticSeverity::Error);
+  diag << message;
+  if (noteLoc && *noteLoc != loc)
+    diag.attachNote(*noteLoc) << note;
+  return Error(llvm::formatv(
+      "\n{0}", FormatScopedDiagnosticHandler::formatWithSource(diag)));
+}
+
 ErrorOrSuccess M::MOGG::verifyCustomOp(const MojoRegistry &registry,
                                        mlir::Operation *op) {
   MojoOperationInfo info = getMojoOperationInfo(op);
@@ -640,49 +694,65 @@ ErrorOrSuccess M::MOGG::verifyCustomOp(const MojoRegistry &registry,
                      .str());
 
   if (!registry.containsKernel(info.operationName)) {
-    return Error(
-        llvm::formatv("no kernel registered for '{}'", info.operationName)
-            .str());
+    std::string message =
+        llvm::formatv("no kernel registered for '{}'", info.operationName);
+    if (auto suggestion = registry.suggestKernelName(info.operationName))
+      message += llvm::formatv("; did you mean '{}'?", *suggestion).str();
+    return Error(message);
   }
 
   // Catch MO-vs-kernel operand type mismatches before lowering emits Mojo.
   DeviceRefAttr device = MojoRegistry::getDeviceRefForOp(op);
-  auto declOpOr = registry.getResolvedKernel(info.operationName, device);
+  auto declOpOr = resolveKernelForOp(registry, info.operationName, op, device);
   if (declOpOr.isError())
     return declOpOr.takeError();
-  KernelDeclAdaptor adaptor(*declOpOr);
+  KernelDeclOp declOp = *declOpOr;
+  Location structLoc = declOp.getMojoStructLocation();
+  KernelDeclAdaptor adaptor(declOp);
   if (adaptor.isReduction()) {
     StringRef name = info.operationName;
     if (op->getNumOperands() != 1)
-      return Error(llvm::formatv("reduction '{}' takes one input, got {}", name,
-                                 op->getNumOperands())
-                       .str());
+      return kernelError(structLoc,
+                         llvm::formatv("reduction '{}' takes one input, got {}",
+                                       name, op->getNumOperands()));
     size_t numFields = adaptor.reduction->getOutputs().size();
     if (op->getNumResults() != numFields)
-      return Error(llvm::formatv("reduction '{}' has {} output fields, but the "
-                                 "op has {} results",
-                                 name, numFields, op->getNumResults())
-                       .str());
+      return kernelError(structLoc,
+                         llvm::formatv("reduction '{}' has {} output fields, "
+                                       "but the op has {} results",
+                                       name, numFields, op->getNumResults()));
     ErrorOr<int64_t> axis =
         MO::getReductionAxis(op->getOperand(0), op->getResultTypes());
     if (axis.isError())
-      return Error(
-          llvm::formatv("reduction '{}' {}", name, axis.getError()).str());
+      return kernelError(
+          structLoc, llvm::formatv("reduction '{}' {}", name, axis.getError()));
   } else {
     if (!adaptor.executeFunction)
-      return Error(llvm::formatv("kernel '{}' has no execute function",
-                                 info.operationName)
-                       .str());
+      return kernelError(structLoc,
+                         llvm::formatv("kernel '{}' has no execute function",
+                                       info.operationName));
+    Location executeLoc =
+        declOp.getMojoFunctionLocation(KernelFunctionKind::Execute);
+    KernelArgBlame blame;
     auto mappingOr =
-        mapMOOpToKernelImplementation(op, *adaptor.executeFunction);
-    if (mappingOr.isError())
-      return mappingOr.takeError();
+        mapMOOpToKernelImplementation(op, *adaptor.executeFunction, blame);
+    if (mappingOr.isError()) {
+      Location loc =
+          blame ? declOp.getMojoArgLocation(KernelFunctionKind::Execute, *blame)
+                : executeLoc;
+      return kernelError(loc, mappingOr.getError(), executeLoc,
+                         llvm::formatv("in the 'execute' entry point of '{}'",
+                                       info.operationName));
+    }
   }
 
   // For mo.custom, additionally check that user-supplied params match the
   // kernel's compile-time parameter list (struct + fn-level).
-  if (auto custom = mlir::dyn_cast<MO::CustomOp>(op))
-    return validateCustomOpParameters(registry, custom);
+  if (auto custom = mlir::dyn_cast<MO::CustomOp>(op)) {
+    ErrorOrSuccess params = validateCustomOpParameters(registry, custom);
+    if (params.isError())
+      return kernelError(structLoc, params.getError());
+  }
 
   return success();
 }

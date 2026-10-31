@@ -106,21 +106,9 @@ def multistage_gemm_run[
     comptime transpose_b = True
 
     print(
-        "M:",
-        M,
-        "N:",
-        N,
-        "K:",
-        K,
-        in_type,
-        "->",
-        out_type,
-        "use_epilogue:",
-        use_epilogue,
-        "num_k_partitions:",
-        num_k_partitions,
-        "runtime_k:",
-        runtime_k,
+        t"M: {M} N: {N} K: {K} {in_type} -> {out_type} use_epilogue:"
+        t" {use_epilogue} num_k_partitions: {num_k_partitions} runtime_k:"
+        t" {runtime_k}"
     )
 
     var a_shape = row_major(Idx[M], Idx[K])

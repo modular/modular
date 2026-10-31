@@ -25,7 +25,12 @@ from max.algorithm.functional import elementwise
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
-from max.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+)
 from std.collections import Optional, OptionalReg
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -92,8 +97,6 @@ from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
 
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
-
-from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (ragged)
@@ -164,20 +167,20 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
                         "weight",
                         coord_to_index_list(weight.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
                 ]
             )
         )
 
-    comptime name = "mo.fused_qkv_matmul.ragged.paged.nhead_" + String(
-        kv_collection.kv_params.num_heads
-    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
+    comptime name = String(
+        t"mo.fused_qkv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+    )
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged[
             kv_collection.CacheType,
@@ -260,20 +263,20 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
                         "weight",
                         coord_to_index_list(weight.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
                 ]
             )
         )
 
-    comptime name = "mo.fused_qkv_matmul.ragged.paged.bias.nhead_" + String(
-        kv_collection.kv_params.num_heads
-    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
+    comptime name = String(
+        t"mo.fused_qkv_matmul.ragged.paged.bias.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+    )
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_bias[
             kv_collection.CacheType,
@@ -298,7 +301,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     weight_dtype: DType,
     output_dtype: DType,
     scale_dtype: DType,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     target: StaticString = "cpu",
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -387,28 +390,20 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
                         "weight_scale",
                         coord_to_index_list(weight_scale.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
                 ]
             )
         )
 
-    comptime name = "mo.fused_qkv_matmul.ragged.paged.scale.nhead_" + String(
-        kv_collection.kv_params.num_heads
-    ) + ".hdim_" + String(
-        kv_collection.kv_params.head_size
-    ) + ".m_scale_granularity_" + String(
-        scales_granularity_mnk[0]
-    ) + ".n_scale_granularity_" + String(
-        scales_granularity_mnk[1]
-    ) + ".k_scale_granularity_" + String(
-        scales_granularity_mnk[2]
+    comptime name = String(
+        t"mo.fused_qkv_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}.m_scale_granularity_{scales_granularity_mnk[0]}.n_scale_granularity_{scales_granularity_mnk[1]}.k_scale_granularity_{scales_granularity_mnk[2]}"
     )
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_scale[
             kv_collection.CacheType,
@@ -528,21 +523,21 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
                         "weight_scale",
                         coord_to_index_list(weight_scale.layout.shape_coord()),
                     ),
-                    "tensor_sf=" + String(tensor_sf),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    String(t"tensor_sf={tensor_sf}"),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
                 ]
             )
         )
 
-    comptime name = "mo.fused_qkv_matmul.ragged.paged.scale.nhead_" + String(
-        kv_collection.kv_params.num_heads
-    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
+    comptime name = String(
+        t"mo.fused_qkv_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+    )
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_scale_float4[
             kv_collection.CacheType,
@@ -701,7 +696,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
     collection_t: KVCollectionT,
     //,
     cache_t: KVCacheT,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     *,
     target: StaticString,
 ](
@@ -1168,7 +1163,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     scale_dtype: DType,
     cache_t: KVCacheT,
     //,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     *,
     target: StaticString,
 ](
@@ -1745,27 +1740,27 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
                         "weight",
                         coord_to_index_list(weight.layout.shape_coord()),
                     ),
-                    "tensor_sf=" + String(tensor_sf),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
-                    "idx_num_heads="
-                    + String(index_kv_collection.kv_params.num_heads),
-                    "idx_head_size="
-                    + String(index_kv_collection.kv_params.head_size),
+                    String(t"tensor_sf={tensor_sf}"),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
+                    String(
+                        t"idx_num_heads={index_kv_collection.kv_params.num_heads}"
+                    ),
+                    String(
+                        t"idx_head_size={index_kv_collection.kv_params.head_size}"
+                    ),
                 ]
             )
         )
 
-    comptime name = "mo.fused_qkv_index_matmul.ragged.paged.scale.nhead_" + String(
-        kv_collection.kv_params.num_heads
-    ) + ".hdim_" + String(
-        kv_collection.kv_params.head_size
+    comptime name = String(
+        t"mo.fused_qkv_index_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
     )
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
@@ -2146,24 +2141,26 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
                         "weight",
                         coord_to_index_list(weight.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
-                    "idx_num_heads="
-                    + String(index_kv_collection.kv_params.num_heads),
-                    "idx_head_size="
-                    + String(index_kv_collection.kv_params.head_size),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
+                    String(
+                        t"idx_num_heads={index_kv_collection.kv_params.num_heads}"
+                    ),
+                    String(
+                        t"idx_head_size={index_kv_collection.kv_params.head_size}"
+                    ),
                 ]
             )
         )
 
-    comptime name = "mo.fused_qkv_index_matmul.ragged.paged.nhead_" + String(
-        kv_collection.kv_params.num_heads
-    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
+    comptime name = String(
+        t"mo.fused_qkv_index_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+    )
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_index_matmul_kv_cache_ragged[target=target,](
             hidden_state,
@@ -2515,7 +2512,7 @@ def _matmul_blockwise_scaled_fp8_common[
     //,
     *,
     target: StaticString,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
 ](
     hidden_state: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
@@ -2795,20 +2792,19 @@ def kv_matmul_ragged_paged[
                         "weight",
                         coord_to_index_list(weight.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
                 ]
             )
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.kv_matmul.ragged.paged.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        String(
+            t"mo.kv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _matmul_kv_cache_ragged[target=target](
             hidden_state,
@@ -3004,18 +3000,17 @@ def k_matmul_ragged_paged[
                         "weight",
                         coord_to_index_list(weight.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
+                    String(t"layer_idx={layer_idx}"),
                 ]
             )
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.k_matmul.ragged.paged.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        String(
+            t"mo.k_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _matmul_k_cache_ragged[target=target](
             hidden_state,
@@ -3122,7 +3117,7 @@ def k_matmul_ragged_paged_scale[
     weight_dtype: DType,
     scale_dtype: DType,
     target: StaticString,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3191,18 +3186,17 @@ def k_matmul_ragged_paged_scale[
                         "weight_scale",
                         coord_to_index_list(weight_scale.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
+                    String(t"layer_idx={layer_idx}"),
                 ]
             )
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.k_matmul.ragged.paged.scale.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        String(
+            t"mo.k_matmul.ragged.paged.scale.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         comptime assert is_gpu[
             target
@@ -3233,7 +3227,7 @@ def _matmul_k_cache_ragged_scale_impl[
     cache_t: KVCacheT,
     *,
     target: StaticString,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3409,9 +3403,9 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
                         "v_weight",
                         coord_to_index_list(v_weight.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
                     "quantization_encoding_q=" + quantization_encoding_q,
                     "quantization_encoding_k=" + quantization_encoding_k,
                     "quantization_encoding_v=" + quantization_encoding_v,
@@ -3420,11 +3414,9 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
         )
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
-        "mo.kv_matmul.ragged.paged.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size)
-        + ".quantization_encoding_q="
+        String(
+            t"mo.kv_matmul.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}.quantization_encoding_q="
+        )
         + quantization_encoding_q
         + ".quantization_encoding_k="
         + quantization_encoding_k
@@ -3800,21 +3792,21 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                         "freqs_cis",
                         coord_to_index_list(freqs_cis.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
-                    "interleaved=" + String(interleaved),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
+                    String(t"interleaved={interleaved}"),
                 ]
             )
         )
 
-    comptime name = "mo.fused_qk_rope.ragged.paged.nhead_" + String(
-        kv_collection.kv_params.num_heads
-    ) + ".hdim_" + String(kv_collection.kv_params.head_size)
+    comptime name = String(
+        t"mo.fused_qk_rope.ragged.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+    )
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         comptime if has_position_ids:
             fused_qk_rope_ragged[
@@ -3829,10 +3821,13 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                 input_row_offsets,
                 kv_collection,
                 freqs_cis,
-                TileTensor(
-                    position_ids.ptr.as_unsafe_any_origin(),
-                    position_ids.layout,
-                ).as_imm(),
+                rebind[
+                    TileTensor[
+                        .uint32,
+                        type_of(position_ids).LayoutType,
+                        ImmutAnyOrigin,
+                    ]
+                ](position_ids.reshape(position_ids.layout)),
                 layer_idx,
                 output,
                 context,
@@ -3915,28 +3910,26 @@ def generic_flash_attention_kv_cache_ragged[
         desc_parts.append(
             trace_arg("q", coord_to_index_list(q.layout.shape_coord()))
         )
-        desc_parts.append("scale=" + String(scale))
-        desc_parts.append("layer_idx=" + String(layer_idx))
+        desc_parts.append(String(t"scale={scale}"))
+        desc_parts.append(String(t"layer_idx={layer_idx}"))
         desc_parts.append(
-            "num_heads=" + String(collection_t.kv_params.num_heads)
+            String(t"num_heads={collection_t.kv_params.num_heads}")
         )
         desc_parts.append(
-            "head_size=" + String(collection_t.kv_params.head_size)
+            String(t"head_size={collection_t.kv_params.head_size}")
         )
-        desc_parts.append("local_window_size=" + String(local_window_size))
+        desc_parts.append(String(t"local_window_size={local_window_size}"))
         desc_parts.append("sink=False")
         return String(";").join(desc_parts)
 
-    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + ".nhead_" + String(
-        collection_t.kv_params.num_heads
-    ) + ".hdim_" + String(
-        collection_t.kv_params.head_size
+    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + String(
+        t".nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
     )
 
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flash_attention_dispatch[
             target=target,
@@ -3987,6 +3980,9 @@ def _launch_flash_attention_with_mask[
             "CPU flash attention requires output dtype == q dtype;"
             " the distinct-output-dtype (fp8->bf16) path is GPU-only."
         )
+        comptime assert (
+            not cache_t.kv_params.is_split()
+        ), "a split KV cache's attention is GPU-only"
         return flash_attention_kv_cache_cpu(
             q,
             input_row_offsets,
@@ -4116,22 +4112,20 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
         desc_parts.append(
             trace_arg("q", coord_to_index_list(q.layout.shape_coord()))
         )
-        desc_parts.append("scale=" + String(scale))
-        desc_parts.append("layer_idx=" + String(layer_idx))
+        desc_parts.append(String(t"scale={scale}"))
+        desc_parts.append(String(t"layer_idx={layer_idx}"))
         desc_parts.append(
-            "num_heads=" + String(collection_t.kv_params.num_heads)
+            String(t"num_heads={collection_t.kv_params.num_heads}")
         )
         desc_parts.append(
-            "head_size=" + String(collection_t.kv_params.head_size)
+            String(t"head_size={collection_t.kv_params.head_size}")
         )
-        desc_parts.append("local_window_size=" + String(local_window_size))
+        desc_parts.append(String(t"local_window_size={local_window_size}"))
         desc_parts.append("relative_position_bias=True")
         return String(";").join(desc_parts)
 
-    comptime name = "mo.mha.ragged." + collection_t.name_str + ".rel_logits.nhead_" + String(
-        collection_t.kv_params.num_heads
-    ) + ".hdim_" + String(
-        collection_t.kv_params.head_size
+    comptime name = "mo.mha.ragged." + collection_t.name_str + String(
+        t".rel_logits.nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
     )
 
     var k = kv_collection.get_key_cache(Int(layer_idx))
@@ -4165,7 +4159,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return dispatch_relative_logits_mask[local_window_size,](
             bias,
@@ -4236,28 +4230,26 @@ def generic_flash_attention_kv_cache_ragged_sink[
         desc_parts.append(
             trace_arg("q", coord_to_index_list(q.layout.shape_coord()))
         )
-        desc_parts.append("scale=" + String(scale))
-        desc_parts.append("layer_idx=" + String(layer_idx))
+        desc_parts.append(String(t"scale={scale}"))
+        desc_parts.append(String(t"layer_idx={layer_idx}"))
         desc_parts.append(
-            "num_heads=" + String(collection_t.kv_params.num_heads)
+            String(t"num_heads={collection_t.kv_params.num_heads}")
         )
         desc_parts.append(
-            "head_size=" + String(collection_t.kv_params.head_size)
+            String(t"head_size={collection_t.kv_params.head_size}")
         )
-        desc_parts.append("local_window_size=" + String(local_window_size))
+        desc_parts.append(String(t"local_window_size={local_window_size}"))
         desc_parts.append("sink=True")
         return String(";").join(desc_parts)
 
-    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + ".nhead_" + String(
-        collection_t.kv_params.num_heads
-    ) + ".hdim_" + String(
-        collection_t.kv_params.head_size
+    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + String(
+        t".nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
     )
 
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flash_attention_dispatch[
             target=target,
@@ -4406,10 +4398,10 @@ def generic_flare_mla_decode_kv_cache_ragged[
                         "q",
                         coord_to_index_list(q.layout.shape_coord()),
                     ),
-                    "scale=" + String(scale),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(collection_t.kv_params.num_heads),
-                    "head_size=" + String(collection_t.kv_params.head_size),
+                    String(t"scale={scale}"),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={collection_t.kv_params.num_heads}"),
+                    String(t"head_size={collection_t.kv_params.head_size}"),
                 ]
             )
         )
@@ -4419,12 +4411,11 @@ def generic_flare_mla_decode_kv_cache_ragged[
         + collection_t.name_str
         + "."
         + mask_str
-        + ".nhead_"
-        + String(collection_t.kv_params.num_heads)
-        + ".hdim_"
-        + String(collection_t.kv_params.head_size),
+        + String(
+            t".nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -4646,7 +4637,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     buffer_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
@@ -4677,7 +4668,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         v: Value tile tensor with shape (total_seq_len, num_heads, kv_head_size).
         buffer_row_offsets: Tile tensor denoting the start and end position of
             each K entry in the ragged K/V tensor.
-        cache_offsets: Mutable tile tensor denoting the start position of each
+        cache_offsets: Tile tensor denoting the start position of each
             K entry in the PagedKVCacheCollection.
         input_row_offsets: Tile tensor denoting the start and end position of
             each Q entry in the batch.
@@ -4725,10 +4716,10 @@ def generic_flare_mla_prefill_kv_cache_ragged[
                             input_row_offsets.layout.shape_coord()
                         ),
                     ),
-                    "scale=" + String(scale),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(collection_t.kv_params.num_heads),
-                    "head_size=" + String(collection_t.kv_params.head_size),
+                    String(t"scale={scale}"),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={collection_t.kv_params.num_heads}"),
+                    String(t"head_size={collection_t.kv_params.head_size}"),
                 ]
             )
         )
@@ -4738,12 +4729,11 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         + collection_t.name_str
         + "."
         + mask_str
-        + ".nhead_"
-        + String(collection_t.kv_params.num_heads)
-        + ".hdim_"
-        + String(collection_t.kv_params.head_size),
+        + String(
+            t".nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flare_mla_prefill_kv_cache_ragged[
             mask_str=mask_str,
@@ -4780,7 +4770,7 @@ def _flare_mla_prefill_kv_cache_ragged[
     buffer_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
@@ -4884,7 +4874,7 @@ def generic_flare_mla_prefill_ragged_paged_plan[
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mla.prefill.ragged.paged.plan", task_id=Int(context.id())
+        "mo.mla.prefill.ragged.paged.plan", task_id=Int(context.device().id)
     ):
         mla_prefill_plan(
             buffer_row_offsets,
@@ -4940,6 +4930,7 @@ def kv_cache_row_offsets_ragged_paged[
         cache_lengths,
         grid_dim=max(ceildiv(batch_size, 128), 1),
         block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -4985,19 +4976,23 @@ def kv_cache_row_offsets_ragged_paged_kernel[
 
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     var output_idx = global_idx.x
+
     if output_idx > batch_size:
         return
 
-    var running_length = 0
-    var prev_input_row_offset = Int(input_row_offsets[0])
-    for batch_idx in range(output_idx):
-        var row_offset = Int(input_row_offsets[batch_idx + 1])
-        running_length += (
-            Int(cache_lengths[batch_idx]) + row_offset - prev_input_row_offset
-        )
-        prev_input_row_offset = row_offset
+    with PDL():
+        var running_length = 0
+        var prev_input_row_offset = Int(input_row_offsets[0])
+        for batch_idx in range(output_idx):
+            var row_offset = Int(input_row_offsets[batch_idx + 1])
+            running_length += (
+                Int(cache_lengths[batch_idx])
+                + row_offset
+                - prev_input_row_offset
+            )
+            prev_input_row_offset = row_offset
 
-    cache_row_offsets[output_idx] = UInt32(running_length)
+        cache_row_offsets[output_idx] = UInt32(running_length)
 
 
 @inline(.always)
@@ -5248,9 +5243,9 @@ def generic_cross_attention_kv_cache[
                             kv_input_row_offsets.layout.shape_coord()
                         ),
                     ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(collection_t.kv_params.num_heads),
-                    "head_size=" + String(collection_t.kv_params.head_size),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={collection_t.kv_params.num_heads}"),
+                    String(t"head_size={collection_t.kv_params.head_size}"),
                 ]
             )
         )
@@ -5266,12 +5261,11 @@ def generic_cross_attention_kv_cache[
         + collection_t.name_str
         + "."
         + mask_str
-        + ".nhead_"
-        + String(collection_t.kv_params.num_heads)
-        + ".hdim_"
-        + String(collection_t.kv_params.head_size),
+        + String(
+            t".nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _cross_attention_dispatch[
             target=target,
@@ -5348,11 +5342,9 @@ def generic_kv_cache_radd_dispatch[
     comptime assert a.LayoutType._shape_types[
         1
     ].is_static_value, "Input tensor must have known shape in last dim"
-    comptime assert a.static_shape[1] == hidden_size * 2, (
-        "Mismatch in hidden size between input "
-        + String(a.static_shape[1])
-        + " and KV tensors "
-        + String(hidden_size)
+    comptime assert a.static_shape[1] == hidden_size * 2, String(
+        t"Mismatch in hidden size between input {a.static_shape[1]} and KV"
+        t" tensors {hidden_size}"
     )
 
     var layer_idx_cast = Int(layer_idx)
@@ -5428,6 +5420,8 @@ def kv_cache_store_ragged[
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int](Coord) -> SIMD[cache_t.dtype, width],
+    *,
+    head_dim_offset: Int = 0,
 ](
     cache: cache_t,
     input_shape: Coord,
@@ -5449,6 +5443,8 @@ def kv_cache_store_ragged[
         target: Compilation target string used to dispatch GPU versus CPU
             paths.
         InputFnType: Type of `input_fn` (inferred).
+        head_dim_offset: Cache column of the input's first column: the
+            value's `v_col_base()` in a split cache, else 0.
 
     Args:
         cache: The KVCache object to write key or value entries into.
@@ -5484,7 +5480,7 @@ def kv_cache_store_ragged[
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row)
         var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
         var h_idx = Int(idx[1])
-        var hd_idx = Int(idx[2])
+        var hd_idx = Int(idx[2]) + head_dim_offset
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         cache.store(
@@ -5517,7 +5513,7 @@ def kv_cache_store_padded[
     & def[width: Int, alignment: Int](Coord) -> SIMD[cache_t.dtype, width],
 ](
     cache: cache_t,
-    input_shape: IndexList[4],
+    input_shape: Coord,
     valid_lengths: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     input_fn: InputFnType,
     context: DeviceContext,
@@ -5537,7 +5533,7 @@ def kv_cache_store_padded[
 
     Args:
         cache: The KVCache object to write key or value entries into.
-        input_shape: Shape of the input as a 4D index list (batch, tokens,
+        input_shape: Shape of the input as a 4D `Coord` (batch, tokens,
             heads, head_size).
         valid_lengths: Tensor with shape (batch_size,) giving the number of
             valid tokens per batch; rows beyond this are skipped.
@@ -5579,7 +5575,7 @@ def kv_cache_store_padded[
 
     elementwise[
         simd_width, target=target, _trace_description="kv_cache_store_padded"
-    ](write_to_cache, Coord(input_shape), context)
+    ](write_to_cache, input_shape, context)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -5645,11 +5641,9 @@ def kv_cache_2m_iadd_dispatch[
     comptime assert kv.LayoutType._shape_types[
         1
     ].is_static_value, "Input tensor must have known shape in last dim"
-    comptime assert kv.static_shape[1] == hidden_size, (
-        "Mismatch in hidden size between input "
-        + String(kv.static_shape[1])
-        + " and KV tensors "
-        + String(hidden_size)
+    comptime assert kv.static_shape[1] == hidden_size, String(
+        t"Mismatch in hidden size between input {kv.static_shape[1]} and KV"
+        t" tensors {hidden_size}"
     )
 
     var layer_idx_cast = Int(layer_idx)
@@ -5658,7 +5652,7 @@ def kv_cache_2m_iadd_dispatch[
     var m = Int(lora_end_idx[0])
 
     # [2m, N]
-    var elementwise_shape = IndexList[2](2 * m, Int(kv.dim[1]()))
+    var elementwise_shape = (2 * m, Int(kv.dim[1]()))
 
     def iadd[
         width: Int, alignment: Int = 1
@@ -5703,18 +5697,14 @@ def kv_cache_2m_iadd_dispatch[
     comptime if is_gpu[target]():
         with Trace[TraceLevel.OP, target=target](
             "kv-cache-2m-iadd",
-            task_id=Int(ctx.id()),
+            task_id=Int(ctx.device().id),
         ):
             comptime compile_target = ctx.target
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-            elementwise[simd_width, target=target](
-                iadd, Coord(elementwise_shape), ctx
-            )
+            elementwise[simd_width, target=target](iadd, elementwise_shape, ctx)
     else:
         comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[simd_width, target=target](
-            iadd, Coord(elementwise_shape), ctx
-        )
+        elementwise[simd_width, target=target](iadd, elementwise_shape, ctx)

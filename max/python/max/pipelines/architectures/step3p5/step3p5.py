@@ -46,37 +46,37 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.comm import Signals
-from max.nn.comm.allreduce import Allreduce
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.moe import (
     GatedActivation,
     MoE,
     make_concatenated_gated_activation_fn,
 )
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
-from max.nn.transformer import (
+from max.nn.legacy.transformer import (
     DecoderOutputs,
     ReturnHiddenStates,
     forward_sequential_layers,
     logits_outputs,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
@@ -372,6 +372,7 @@ class Step3p5TransformerBlock(Module):
         input_row_offsets: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
+        """Runs the block over its sharded hidden states."""
         # Input layer norm
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -510,6 +511,7 @@ class Step3p5MoEWithSharedExpert(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Routes ``x`` through the experts and adds the shared expert's output."""
         if self._ep_batch_manager is not None:
             # In EP mode, ``forward_moe_sharded_layers`` drives this layer
             # via the per-shard helpers (``gate``, ``_local_ep_compute``,
@@ -531,14 +533,17 @@ class Step3p5MoEWithSharedExpert(Module):
 
     @property
     def gate(self) -> Callable[[TensorValue], tuple[TensorValue, TensorValue]]:
+        """The router these experts share."""
         return self.moe.gate
 
     @property
     def num_experts_per_token(self) -> int:
+        """How many experts each token routes to."""
         return self.moe.num_experts_per_token
 
     @property
     def ep_batch_manager(self) -> EPBatchManager:
+        """The expert-parallel batch manager."""
         assert self._ep_batch_manager is not None, (
             "EPBatchManager must be provided to use expert-parallel forward"
         )
@@ -546,12 +551,14 @@ class Step3p5MoEWithSharedExpert(Module):
 
     @property
     def has_shared_experts(self) -> bool:
+        """Whether the block carries a shared expert."""
         # The shared expert is always present for Step-3.5; advertise that
         # to the EP forward path so it adds the shared-expert output after
         # the combine step.
         return True
 
     def shared_experts(self, x: TensorValue) -> TensorValue:
+        """Runs the shared expert over ``x``."""
         return self.share_expert(x)
 
     def _ep_dispatch_input_scales(self) -> TensorValue | None:
@@ -569,6 +576,7 @@ class Step3p5MoEWithSharedExpert(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the experts' weights are split across devices."""
         return self.moe.sharding_strategy
 
     @sharding_strategy.setter
@@ -586,6 +594,7 @@ class Step3p5MoEWithSharedExpert(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Step3p5MoEWithSharedExpert]:
+        """Splits the experts and the shared expert across ``devices``."""
         devices_list = list(devices)
         moe_shards = self.moe.shard(devices_list)
         share_expert_shards = self.share_expert.shard(devices_list)
@@ -797,6 +806,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         data_parallel_splits: TensorValue | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> DecoderOutputs:
+        """Runs the language graph over tokens and the KV collections."""
         # Embeddings
         h = self.embed_tokens(tokens, signal_buffers)
 
@@ -927,6 +937,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types for ``kv_params``."""
         device_ref = self.devices[0]
 
         tokens_type = TensorType(

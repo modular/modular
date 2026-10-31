@@ -31,14 +31,15 @@ from typing import ClassVar
 import numpy as np
 import pytest
 from _test_helpers import assert_no_shadowed_tests
-from max.experimental.functional import (
+from max.functional import (
     cumsum,
     mean,
     softmax,
     sum,
     transfer_to,
 )
-from max.experimental.sharding import (
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
@@ -47,7 +48,6 @@ from max.experimental.sharding import (
     ShardingError,
     auto_reshard,
 )
-from max.experimental.tensor import Tensor
 
 # ── Sum ──────────────────────────────────────────────────────────────
 

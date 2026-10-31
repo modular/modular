@@ -129,9 +129,12 @@ def LIT_FnOp : LITOp<"fn", [
     /// parameter bindings.
     TypedAttr getBoundReference(ParameterEvaluationContext &evalContext,
                                 ParameterExprArrayAttr bindings = {});
-    SymbolConstantAttr
+    FuncSymbolGenerator
     getBoundSymbolRef(ParameterEvaluationContext &evalContext,
                       ParameterExprArrayAttr bindings = {});
+    FuncSymbolGenerator
+    getBoundSymbolRef(ParameterEvaluationContext &evalContext,
+                      ArrayRef<TypedAttr> bindings);
 
     /// Return a GeneratorAttr that generates a FuncLiteralAttr for this
     /// function. `dischargedBodyConstraints` is an optional bitmask over the
@@ -384,11 +387,19 @@ def LIT_PackageOp : LITOp<"package", [
     If the package was precompiled it may also contain:
     - The set of link dependencies for this package, `dependencies`.
 
+    A package marked `namespace` models a namespace: plain directories
+    spanning import roots, which group the packages within them but are not a
+    package themselves.
+
     Example:
 
     ```mlir
     lit.package @foo {
       lit.file_module @bar {
+      }
+    }
+    lit.package namespace @ns {
+      lit.package @baz {
       }
     }
     ```
@@ -400,7 +411,8 @@ def LIT_PackageOp : LITOp<"package", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // References to the dependencies of this package.
     OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies,
-    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules
+    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules,
+    UnitAttr:$isNamespace
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -412,7 +424,9 @@ def LIT_PackageOp : LITOp<"package", [
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>
   ];
-  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
+  let assemblyFormat = [{
+    (`namespace` $isNamespace^)? $sym_name attr-dict-with-keyword $bodyRegion
+  }];
   let hasVerifier = 1;
 }
 
@@ -465,8 +479,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
     UnitAttr:$synthetic,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
-    OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
-    OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
+    OptionalAttr<KGEN_GeneratorAttr>:$moveInit,
+    OptionalAttr<KGEN_GeneratorAttr>:$copyInit,
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
@@ -1664,7 +1678,8 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
 
 class RefImmutType<string lhs, string rhs> : TypesMatchWith<
     "reference with mutability removed", lhs, rhs,
-    "llvm::cast<RefType>($_self).getWithMutability(false)">;
+    "llvm::isa<RefType>($_self) ? "
+    "llvm::cast<RefType>($_self).getWithMutability(false) : Type()">;
 
 def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
   let summary = "Drop mutability from a reference";
@@ -1732,7 +1747,8 @@ def LIT_RefUpcastOp : LITOp<"ref.upcast", [Pure]> {
 // Given a `!lit.ref<X, life>`, return `!kgen.pointer<X>`.
 class RefPointerType<string lhs, string rhs> : TypesMatchWith<
     "reference as pointer type", lhs, rhs,
-    "llvm::cast<RefType>($_self).getAsPointerType()">;
+    "llvm::isa<RefType>($_self) ? "
+    "llvm::cast<RefType>($_self).getAsPointerType() : Type()">;
 
 def LIT_RefToPointerOp : LITOp<"ref.to_pointer",
                               [RefPointerType<"ref", "ptr">]> {
@@ -1760,16 +1776,18 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   let summary = "Create an immortal reference from a pointer value";
   let description = [{
     This op converts a raw pointer to a reference with specified mutability and
-    origin.  When `startsUninit` is true, the reference is assumed to be
-    uninitialized but needs to be initialized before exit.  When false it is
-    assumed to be initialized and must be initialized on exit.
+    origin. `startUninit` and `endUninit` describe the referent's liveness
+    immediately before and after the operation, respectively. This represents
+    all four transitions: initialization, ownership transfer, and the two
+    no-op liveness states. The parser uses this for
+    `__get_address_as_uninit_lvalue` and `__get_address_as_owned_value`.
 
     ```mlir
     lit.ref.from_pointer %0, startUninit=true : !lit.ref<mut @Foo, life>
     ```
   }];
 
-  let arguments = (ins PointerType:$ptr, UnitAttr:$startUninit,
+  let arguments = (ins PointerType:$ptr, StrAttr:$name, UnitAttr:$startUninit,
                        UnitAttr:$endUninit);
   let results = (outs LIT_RefType:$ref);
   let assemblyFormat = [{
@@ -1780,7 +1798,8 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   let builders = [
     // Create with a pointer and origin, to infer result type.
     OpBuilder<(ins "Value":$pointer, "TypedAttr":$origin,
-                   "bool":$startsUninit, "bool":$endsUninit)>,
+                   "StringAttr":$name, "bool":$startsUninit,
+                   "bool":$endsUninit)>,
   ];
 }
 

@@ -13,7 +13,7 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s | FileCheck %s
 
-# CHECK: module {
+# CHECK: module attributes {kgen.env
 
 def noop(): pass
 
@@ -185,10 +185,10 @@ def implicit_func_conversion():
         pass
 
     # CHECK: %f = lit.var.decl "f"
-    # CHECK: [[CLOSURE:%.*]] = kgen.create_closure
+    # CHECK: [[CLOSURE:%.*]] = kgen.create_func_ptr
     # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}([[CLOSURE]], %f)
     var f: DummyFunc = take_int
-    # CHECK: [[CLOSURE:%.*]] = kgen.create_closure
+    # CHECK: [[CLOSURE:%.*]] = kgen.create_func_ptr
     # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}([[CLOSURE]], %__call_result_tmp__)
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %__call_result_tmp__
     # CHECK: call {{.*}}func_arg_conversion{{.*}}([[IMMREF]])

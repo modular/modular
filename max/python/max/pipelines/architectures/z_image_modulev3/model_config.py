@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Z-Image configuration."""
 
 from typing import Any
 
@@ -23,6 +24,8 @@ from typing_extensions import Self
 
 
 class ZImageConfig(MAXModelConfigBase):
+    """Z-Image configuration."""
+
     all_patch_size: tuple[int, ...] = (2,)
     all_f_patch_size: tuple[int, ...] = (1,)
     in_channels: int = 16
@@ -48,6 +51,7 @@ class ZImageConfig(MAXModelConfigBase):
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> Self:
+        """Builds the config from the checkpoint's transformer section."""
         init_dict = {
             key: value
             for key, value in config_dict.items()

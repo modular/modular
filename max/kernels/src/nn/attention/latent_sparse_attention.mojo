@@ -59,6 +59,11 @@ from max.gpu import WARP_SIZE, block_idx, lane_id, warp_id
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu, is_cpu
 import max.gpu.primitives.warp as warp
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -166,11 +171,10 @@ def _latent_sparse_attention_gpu_kernel[
     var lane = Int(lane_id())
     var h0 = (block_idx.y * warps_per_block + Int(warp_id())) * heads_per_warp
     var nh = Int(num_heads)
+
     if h0 >= nh:
         return
 
-    var b = _batch_of_row(t, row_offsets, Int(num_batches))
-    var pos = swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
     var d0 = lane * lane_width
 
     var q = Array[SIMD[.float32, lane_width], heads_per_warp](
@@ -181,44 +185,50 @@ def _latent_sparse_attention_gpu_kernel[
     var acc = Array[SIMD[.float32, lane_width], heads_per_warp](
         fill=SIMD[.float32, lane_width](0)
     )
-    comptime for i in range(heads_per_warp):
-        var h = h0 + i
-        if h < nh:
-            q[i] = (
-                q_ptr.unsafe_load[width=lane_width](
-                    t * Int(q_stride0) + h * Int(q_stride1) + d0
-                ).cast[.float32]()
-                * scale
+
+    with PDL():
+        var b = _batch_of_row(t, row_offsets, Int(num_batches))
+        var pos = (
+            swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
+        )
+        comptime for i in range(heads_per_warp):
+            var h = h0 + i
+            if h < nh:
+                q[i] = (
+                    q_ptr.unsafe_load[width=lane_width](
+                        t * Int(q_stride0) + h * Int(q_stride1) + d0
+                    ).cast[.float32]()
+                    * scale
+                )
+
+        var start = max(pos - window + 1, 0)
+        for p in range(start, pos + 1):
+            var k = swa_cache.load[width=lane_width, output_dtype=.float32](
+                b, 0, p, d0
             )
+            _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
 
-    var start = max(pos - window + 1, 0)
-    for p in range(start, pos + 1):
-        var k = swa_cache.load[width=lane_width, output_dtype=.float32](
-            b, 0, p, d0
-        )
-        _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
-
-    for j in range(Int(num_comp)):
-        var e = Int(
-            comp_indices[
-                unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
-            ]
-        )
-        if e < 0:
-            continue
-        var k = comp_cache.load[width=lane_width, output_dtype=.float32](
-            b, 0, e, d0
-        )
-        _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
-
-    comptime for i in range(heads_per_warp):
-        var h = h0 + i
-        if h < nh:
-            var den = l[i] + exp(attn_sink[unsafe_offset=h] - m[i])
-            out_ptr.unsafe_store(
-                t * Int(out_stride0) + h * Int(out_stride1) + d0,
-                (acc[i] / den).cast[out_type](),
+        for j in range(Int(num_comp)):
+            var e = Int(
+                comp_indices[
+                    unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
+                ]
             )
+            if e < 0:
+                continue
+            var k = comp_cache.load[width=lane_width, output_dtype=.float32](
+                b, 0, e, d0
+            )
+            _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
+
+        comptime for i in range(heads_per_warp):
+            var h = h0 + i
+            if h < nh:
+                var den = l[i] + exp(attn_sink[unsafe_offset=h] - m[i])
+                out_ptr.unsafe_store(
+                    t * Int(out_stride0) + h * Int(out_stride1) + d0,
+                    (acc[i] / den).cast[out_type](),
+                )
 
 
 @inline(.always)
@@ -360,47 +370,51 @@ def _sm100_decode_plan_kernel[
     """
     var t = block_idx.x
     var lane = Int(lane_id())
-    var b = _batch_of_row(t, row_offsets, Int(num_batches))
-    var pos = swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
     var nc = Int(num_comp)
     var out_base = t * Int(comp_stride)
-
     var count = 0
-    for c0 in range(0, nc, WARP_SIZE):
-        var j = c0 + lane
-        var e = Int32(-1)
-        if j < nc:
-            e = comp_indices[
-                unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
-            ]
-        var valid = Int32(1) if e >= 0 else Int32(0)
-        var slot = count + Int(warp.prefix_sum[exclusive=True](valid))
-        if e >= 0:
-            comp_rows[unsafe_offset=out_base + slot] = Int32(
-                comp_cache.row_idx(UInt32(b), UInt32(e))
-            )
-        count += Int(warp.sum(valid))
-    for j in range(count + lane, Int(comp_stride), WARP_SIZE):
-        comp_rows[unsafe_offset=out_base + j] = -1
 
-    var start = max(pos - window + 1, 0)
-    for i in range(lane, window, WARP_SIZE):
-        var p = start + i
-        var r = Int32(-1)
-        if p <= pos:
-            r = Int32(swa_cache.row_idx(UInt32(b), UInt32(p)))
-        win_rows[unsafe_offset=t * window + i] = r
+    with PDL():
+        var b = _batch_of_row(t, row_offsets, Int(num_batches))
+        var pos = (
+            swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
+        )
 
-    if lane == 0:
-        comp_len[unsafe_offset=t] = Int32(count)
-        win_len[unsafe_offset=t] = Int32(pos - start + 1)
-        row_batches[unsafe_offset=t] = UInt32(t)
-        row_lengths[unsafe_offset=t] = UInt32(count)
-        if t == 0:
-            row_batches[unsafe_offset=Int(num_rows)] = UInt32(num_rows)
-            scalar_args[unsafe_offset=0] = Int64(num_rows)
-            scalar_args[unsafe_offset=1] = 1
-            scalar_args[unsafe_offset=2] = 0
+        for c0 in range(0, nc, WARP_SIZE):
+            var j = c0 + lane
+            var e = Int32(-1)
+            if j < nc:
+                e = comp_indices[
+                    unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
+                ]
+            var valid = Int32(1) if e >= 0 else Int32(0)
+            var slot = count + Int(warp.prefix_sum[exclusive=True](valid))
+            if e >= 0:
+                comp_rows[unsafe_offset=out_base + slot] = Int32(
+                    comp_cache.row_idx(UInt32(b), UInt32(e))
+                )
+            count += Int(warp.sum(valid))
+        for j in range(count + lane, Int(comp_stride), WARP_SIZE):
+            comp_rows[unsafe_offset=out_base + j] = -1
+
+        var start = max(pos - window + 1, 0)
+        for i in range(lane, window, WARP_SIZE):
+            var p = start + i
+            var r = Int32(-1)
+            if p <= pos:
+                r = Int32(swa_cache.row_idx(UInt32(b), UInt32(p)))
+            win_rows[unsafe_offset=t * window + i] = r
+
+        if lane == 0:
+            comp_len[unsafe_offset=t] = Int32(count)
+            win_len[unsafe_offset=t] = Int32(pos - start + 1)
+            row_batches[unsafe_offset=t] = UInt32(t)
+            row_lengths[unsafe_offset=t] = UInt32(count)
+            if t == 0:
+                row_batches[unsafe_offset=Int(num_rows)] = UInt32(num_rows)
+                scalar_args[unsafe_offset=0] = Int64(num_rows)
+                scalar_args[unsafe_offset=1] = 1
+                scalar_args[unsafe_offset=2] = 0
 
 
 def _flat_row_view[
@@ -409,15 +423,15 @@ def _flat_row_view[
     //,
 ](
     cache: PagedKVCache[dtype, kv_params, ...],
-    row_lengths: Pointer[UInt32, MutAnyOrigin],
+    row_lengths: MutPointer[UInt32, _],
     num_rows: Int,
 ) -> PagedKVCacheCollection[
     dtype,
     kv_params,
     _VIEW_PAGE,
-    MutAnyOrigin,
-    ImmutAnyOrigin,
-    ImmutAnyOrigin,
+    type_of(cache).blocks_origin,
+    ImmOrigin(row_lengths.origin),
+    type_of(cache).lookup_table_origin,
     MutUntrackedOrigin,
 ]:
     """Views one layer of a leaf as a single-layer cache whose rows are flat.
@@ -430,17 +444,9 @@ def _flat_row_view[
     index and never reads it.
     """
     var num_pages = ceildiv(cache.num_kv_rows(), _VIEW_PAGE)
-    return PagedKVCacheCollection[
-        dtype,
-        kv_params,
-        _VIEW_PAGE,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutUntrackedOrigin,
-    ](
+    return {
         TileTensor(
-            rebind[Pointer[Scalar[dtype], MutAnyOrigin]](cache.blocks.ptr),
+            cache.blocks.ptr,
             row_major(
                 Int64(num_pages),
                 Idx[1],
@@ -450,12 +456,9 @@ def _flat_row_view[
                 Idx[kv_params.head_size],
             ),
         ),
+        TileTensor(row_lengths.as_imm(), row_major(Int64(num_rows))),
         TileTensor(
-            rebind[Pointer[UInt32, ImmutAnyOrigin]](row_lengths),
-            row_major(Int64(num_rows)),
-        ),
-        TileTensor(
-            rebind[Pointer[UInt32, ImmutAnyOrigin]](cache.lookup_table.ptr),
+            cache.lookup_table.ptr,
             row_major(
                 Int64(cache.lookup_table.dim[0]()),
                 Int64(cache.lookup_table.dim[1]()),
@@ -463,7 +466,7 @@ def _flat_row_view[
         ),
         UInt32(1),
         cache.max_context_length(),
-    )
+    }
 
 
 def _latent_sparse_attention_sm100[
@@ -554,6 +557,7 @@ def _latent_sparse_attention_sm100[
         Int32(idx_stride1),
         grid_dim=num_rows,
         block_dim=ctx.default_device_info.warp_size,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     var comp_view = _flat_row_view(
@@ -583,8 +587,9 @@ def _latent_sparse_attention_sm100[
         indices_stride=comp_stride,
         topk_lengths=NonNullPointer[DType.int32](comp_len),
         attn_sink_ptr=NonNullPointer[DType.float32](attn_sink),
-        # Equal by the assert above; the compiler compares the two views'
-        # parameters symbolically and can't see it.
+        # Equal by the assert above up to the leaves' origins, which the
+        # compiler compares symbolically. Both leaves are arguments, so
+        # either origin outlives this call.
         extra_k=rebind[type_of(comp_view)](swa_view),
         extra_d_indices=win_rows_ptr,
         extra_indices_stride=window,
@@ -806,4 +811,5 @@ def latent_sparse_attention_ragged_paged[
             scale,
             grid_dim=(num_rows, ceildiv(num_heads, heads_per_block)),
             block_dim=warp_size * warps_per_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

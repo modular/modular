@@ -28,7 +28,7 @@ from max._entrypoints.cli.config import config_to_flag, pipeline_config_options
 from max.config import ConfigFileModel
 from max.config.config_file_model import _resolve_config_file
 from max.driver import DeviceSpec
-from max.nn.kv_cache.cache_params import KVConnectorType
+from max.nn.legacy.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib import PipelineArgs, PipelineConfig
 from pydantic import Field
 from pytest import MonkeyPatch

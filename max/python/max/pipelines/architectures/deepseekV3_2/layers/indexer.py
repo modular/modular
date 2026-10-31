@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Iterable, Sequence
+from typing import NamedTuple
 
 from max.dtype import DType
 from max.graph import (
@@ -26,14 +27,14 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn import (
+from max.nn.legacy import (
     LayerNorm,
     Linear,
     Module,
     QuantConfig,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import (
     mla_fp8_index_top_k,
     mla_fp8_index_top_k_physical,
     mla_fp8_index_top_k_with_physical,
@@ -47,9 +48,9 @@ from max.nn.kernels import (
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Shardable
-from max.nn.quant_config import QuantFormat
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Shardable
+from max.nn.legacy.quant_config import QuantFormat
 
 from .transforms import HadamardTransform
 
@@ -67,6 +68,27 @@ def indexer_selection_width(
     return index_topk + index_kpool - 1
 
 
+class KpoolTailReplayInputs(NamedTuple):
+    """One pooled indexer call's inputs to the tail-ring seed.
+
+    A speculative verify keeps the ring at its pre-verify members and re-runs
+    :func:`~max.nn.legacy.kernels.mla_kpool_seed_tail` over the accepted rows once
+    acceptance is known. The ring is slot-indexed modulo ``kpool``, so a seed
+    of a rejected draft can overwrite a pending member the next step closes
+    its pool with, and no length pointer undoes that.
+    """
+
+    k: TensorValue
+    """``[total_tokens, index_head_dim]`` layer-normed keys."""
+    gate: TensorValue
+    """``[total_tokens, index_head_dim]`` compression-gate scores."""
+    tail: BufferValue
+    slot_idx: TensorValue
+    cache_lengths: TensorValue
+    """``[batch]`` cached-prefix length the call ran at."""
+    kpool: int
+
+
 def exclusive_prefix_sum(x: TensorValue) -> TensorValue:
     """Returns ``[0, x[0], x[0] + x[1], ...]``, one entry longer than ``x``."""
     zero = ops.constant(0, x.dtype, device=x.device).reshape([1])
@@ -76,6 +98,7 @@ def exclusive_prefix_sum(x: TensorValue) -> TensorValue:
 def act_quant(
     x: TensorValue, quant_config: QuantConfig, block_size: int = 128
 ) -> tuple[TensorValue, TensorValue]:
+    """Quantizes the activation's last axis and returns its scales."""
     *x_dims, head_dim = x.shape
     x = x.reshape((-1, head_dim))
     assert int(head_dim) % block_size == 0
@@ -129,6 +152,8 @@ def _indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
 
 
 class Indexer(Module, Shardable):
+    """Indexer that scores the candidate blocks sparse attention reads."""
+
     def __init__(
         self,
         dim: int,
@@ -362,7 +387,7 @@ class Indexer(Module, Shardable):
         things follow.
 
         The rows have to be **compacted**, because
-        :func:`~max.nn.kernels.store_k_cache_ragged` writes a request's rows
+        :func:`~max.nn.legacy.kernels.store_k_cache_ragged` writes a request's rows
         contiguously; a non-closing row left in place would be written as if it
         were a pooled key.
 
@@ -446,6 +471,8 @@ class Indexer(Module, Shardable):
         mask_variant: MHAMaskVariant,
         tail: BufferValue,
         slot_idx: TensorValue,
+        seed_row_offsets: TensorValue | None = None,
+        tail_capture: list[KpoolTailReplayInputs] | None = None,
     ) -> TensorValue:
         """Compresses, caches and scores k-pools, then expands the selection.
 
@@ -474,15 +501,15 @@ class Indexer(Module, Shardable):
         request's ragged, multi-token chunk in the same call read and wrote
         out of bounds):
 
-        - :func:`~max.nn.kernels.mla_kpool_ring_close` closes each request's
+        - :func:`~max.nn.legacy.kernels.mla_kpool_ring_close` closes each request's
           *pending* pool -- the one the ring already partly holds -- using
           the ring's members plus this call's leading new tokens, whenever
           this call brings enough of them. A request with nothing pending,
           or not yet enough new tokens to finish it, closes nothing.
-        - :func:`~max.nn.kernels.mla_kpool_compress` builds every pool that is
+        - :func:`~max.nn.legacy.kernels.mla_kpool_compress` builds every pool that is
           entirely new tokens, skipping the leading tokens the ring-close
           writer above just consumed (or none, when nothing was pending).
-        - :func:`~max.nn.kernels.mla_kpool_seed_tail` stashes whatever remains
+        - :func:`~max.nn.legacy.kernels.mla_kpool_seed_tail` stashes whatever remains
           incomplete after this call into the ring, for a later call to
           close.
 
@@ -498,6 +525,10 @@ class Indexer(Module, Shardable):
             tail: This layer's ``[max_slots, 2, index_kpool, index_head_dim]``
                 in-progress-pool ring, mutated in place.
             slot_idx: ``[batch]`` ring slot per request.
+            seed_row_offsets: Row offsets the tail seed reads in place of
+                ``input_row_offsets``. All zeros seeds nothing.
+            tail_capture: When given, this call's
+                :class:`KpoolTailReplayInputs` are appended to it.
 
         Returns:
             ``[total_tokens, index_topk + index_kpool - 1]`` token positions.
@@ -592,8 +623,25 @@ class Indexer(Module, Shardable):
         # `mla_kpool_ring_close` just closed and every whole pool `compress`
         # just built are both already accounted for.
         mla_kpool_seed_tail(
-            tail, k, gate, input_row_offsets, cache_lengths, slot_idx, kpool
+            tail,
+            k,
+            gate,
+            input_row_offsets if seed_row_offsets is None else seed_row_offsets,
+            cache_lengths,
+            slot_idx,
+            kpool,
         )
+        if tail_capture is not None:
+            tail_capture.append(
+                KpoolTailReplayInputs(
+                    k=k,
+                    gate=gate,
+                    tail=tail,
+                    slot_idx=slot_idx,
+                    cache_lengths=cache_lengths,
+                    kpool=kpool,
+                )
+            )
 
         # `compress`'s output is dense per request (no scatter needed, unlike
         # `mla_kpool_ring_close`'s sparse one), so it stores directly at each
@@ -663,8 +711,11 @@ class Indexer(Module, Shardable):
         slot_idx: TensorValue | None = None,
         mla_collection: PagedCacheValues | None = None,
         write_logical: bool,
+        seed_row_offsets: TensorValue | None = None,
+        tail_capture: list[KpoolTailReplayInputs] | None = None,
     ) -> tuple[TensorValue | None, TensorValue | None]:
-        """
+        """Runs the indexer over the activations and the normed queries.
+
         Args:
             x: Tensor of shape (total_seq_len, dim) Input activations.
             qr: Tensor of shape (total_seq_len, q_lora_rank) Pre-normed queries.
@@ -687,6 +738,11 @@ class Indexer(Module, Shardable):
                 read them only under the shared-index fold. ``False`` returns
                 only the physical rows, which the top-k then writes alone; it
                 requires ``mla_collection`` and ``index_kpool == 1``.
+            seed_row_offsets: Row offsets the k-pool tail seed reads in place
+                of ``input_row_offsets``; all zeros leaves the ring as it was.
+            tail_capture: When given, the pooled call's
+                :class:`KpoolTailReplayInputs` are appended to it.
+
         Returns:
             topk_indices, tTensor of shape (total_seq_len, index_topk) indices
                 of the top k Keys selected by the Indexer for MLA to attend to
@@ -770,6 +826,8 @@ class Indexer(Module, Shardable):
                 mask_variant,
                 tail,
                 slot_idx,
+                seed_row_offsets=seed_row_offsets,
+                tail_capture=tail_capture,
             )
             return pooled_indices, None
 
@@ -832,8 +890,11 @@ class Indexer(Module, Shardable):
 
     @property
     def selection_width(self) -> int:
-        """Output width: ``index_topk + index_kpool - 1`` = 2051 with the
-        tail, ``index_topk`` without."""
+        """Width of the selection the indexer emits.
+
+        ``index_topk + index_kpool - 1`` = 2051 with the tail, ``index_topk``
+        without.
+        """
         return indexer_selection_width(
             self.index_topk, self.index_kpool, self.always_select_tail
         )
@@ -843,7 +904,7 @@ class Indexer(Module, Shardable):
         """Declared ``head_dim`` of the pooled-key cache: 128 / 4 = 32.
 
         The paged cache manager indexes one row per *token* and every leaf of a
-        :class:`~max.nn.kv_cache.MultiKVCacheParams` shares one page table, so a
+        :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams` shares one page table, so a
         cache holding one key per ``index_kpool`` tokens cannot be declared four
         times shorter. Declaring it ``index_head_dim / index_kpool`` wide
         instead spreads one 128-value pooled key across the ``index_kpool``

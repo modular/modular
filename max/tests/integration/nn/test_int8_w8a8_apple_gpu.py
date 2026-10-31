@@ -43,8 +43,8 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import _apple_int8_w8a8_matmul
-from max.nn.quant_config import (
+from max.nn.legacy.kernels import _apple_int8_w8a8_matmul
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -52,7 +52,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.quant_ops import quantized_matmul
+from max.nn.legacy.quant_ops import quantized_matmul
 
 
 def _int8_w8a8_quant_config() -> QuantConfig:

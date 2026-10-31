@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 
 from .model_config import Qwen2_5VLConfig
@@ -31,6 +31,7 @@ class Qwen2_5VL(Module):
         self.language_model = self.build_language_model()
 
     def build_vision_encoder(self) -> VisionTransformer:
+        """Builds the vision tower from the vision config."""
         return VisionTransformer(
             config=self.config.vision_config,
         )

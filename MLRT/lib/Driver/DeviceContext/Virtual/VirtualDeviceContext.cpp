@@ -35,7 +35,7 @@ VirtualDevice::VirtualDevice(
     int id, std::string name,
     std::unique_ptr<CompilationDevice> compilationDevice)
     : Device(compilationDevice->api(), std::move(name), id, Device::MemInfo(),
-             M::kPreferredMemoryAlignment),
+             M::kPreferredMemoryAlignment, /*useMemoryManager=*/false),
       compilationDevice_(std::move(compilationDevice)) {
   assert(compilationDevice_ &&
          "VirtualDevice requires a non-null compilation device");

@@ -121,6 +121,227 @@ struct ConvertPOPFloor : public ConvertPOPToLLVMPattern<FloorOp> {
 // ConvertPOPFloorDiv
 //===----------------------------------------------------------------------===//
 
+/// Returns the divisor of `op`, at `bitWidth` bits, when every lane is the same
+/// integer constant. The divisor is still a `kgen.param.constant` if it has not
+/// been lowered yet, and an `llvm.mlir.constant` if it has.
+static std::optional<APInt>
+getSplatConstantDivisor(FloorDivOp op, Value llvmRhs, unsigned bitWidth) {
+  auto getSplat = [&](auto &&values) -> std::optional<APInt> {
+    std::optional<APInt> result;
+    for (APInt value : values) {
+      value = value.sextOrTrunc(bitWidth);
+      if (result && *result != value)
+        return std::nullopt;
+      result = value;
+    }
+    return result;
+  };
+
+  if (auto cst = op.getRhs().getDefiningOp<ParamConstantOp>())
+    if (auto simd = dyn_cast<SIMDAttr>(cst.getValue()))
+      return getSplat(llvm::map_range(
+          simd.getValues(),
+          [](const DTypeValue &value) -> APInt { return value.getData(); }));
+
+  auto cst = llvmRhs.getDefiningOp<LLVM::ConstantOp>();
+  if (!cst)
+    return std::nullopt;
+  if (auto intAttr = dyn_cast<IntegerAttr>(cst.getValue()))
+    return intAttr.getValue().sextOrTrunc(bitWidth);
+  if (auto array = dyn_cast<IntArrayElementsAttr>(cst.getValue()))
+    return getSplat(array.getValues());
+  if (auto dense = dyn_cast<DenseIntElementsAttr>(cst.getValue()))
+    return getSplat(dense.getValues<APInt>());
+  return std::nullopt;
+}
+
+/// Constants for Ben Joffe's signed floor division by a constant, from
+/// https://www.benjoffe.com/fast-floordiv and the reference implementation at
+/// https://github.com/benjoffe/fastdiv/blob/main/algorithms/benjoffe.hpp.
+/// For a W-bit dividend x, every mode computes `(t * m) >> shift` on the 2W-bit
+/// product, which is exact over the whole signed range:
+///
+///   SignSelected  t = x,  m = multiplier + (x >> (W - 1))
+///   RoundUp       t = x + (x < -1)                    (d > 0)
+///                 t = x - (x > 1)                     (d < 0)
+///   RoundDown     t = x + (uint(x) < 2^(W-1) - 1)     (d > 0)
+///                 t = x - (uint(x) > 2^(W-1))         (d < 0)
+struct FloorDivMagic {
+  enum class Mode { SignSelected, RoundUp, RoundDown };
+  Mode mode;
+  /// In [W, 2W).
+  unsigned shift;
+  /// Signed W-bit multiplier carrying the divisor's sign.
+  APInt multiplier;
+};
+
+/// Returns the constants for dividing by `divisor`, or std::nullopt for zero
+/// and for +-2^k, which the generic sequence already handles with shifts.
+static std::optional<FloorDivMagic> computeFloorDivMagic(const APInt &divisor) {
+  if (divisor.isZero())
+    return std::nullopt;
+  unsigned width = divisor.getBitWidth();
+  // Twice the width keeps |INT_MIN|, 2^shift and bound * err exact.
+  unsigned wideWidth = 2 * width;
+  bool isNeg = divisor.isNegative();
+  APInt absDivisor = divisor.sext(wideWidth).abs();
+  if (absDivisor.isPowerOf2())
+    return std::nullopt;
+
+  // A rounding direction works at shift S when 2^S > bound * err and the
+  // multiplier fits, where err is the multiplier's rounding error at 2^S and
+  // bound is the largest dividend magnitude, snapped to a multiple of |d|, at
+  // which that error could flip the quotient.
+  APInt intMinMagnitude = APInt::getOneBitSet(wideWidth, width - 1);
+  APInt top = intMinMagnitude + (isNeg ? 1 : 0);
+  APInt boundUp = top.udiv(absDivisor) * absDivisor - 1;
+  APInt downMultiple = intMinMagnitude.udiv(absDivisor) * absDivisor + 1;
+  APInt boundDown = (isNeg && downMultiple == intMinMagnitude)
+                        ? downMultiple - 1
+                        : downMultiple;
+
+  auto getMultiplier = [&](unsigned shift, bool roundUp) {
+    return APInt::getOneBitSet(wideWidth, shift).udiv(absDivisor) +
+           (roundUp ? 1 : 0);
+  };
+  auto findShift = [&](bool roundUp) -> std::optional<unsigned> {
+    for (unsigned shift = width; shift < wideWidth; ++shift) {
+      APInt pow = APInt::getOneBitSet(wideWidth, shift);
+      APInt rem = pow.urem(absDivisor);
+      APInt err = roundUp ? absDivisor - rem : rem;
+      if (pow.ugt((roundUp ? boundUp : boundDown) * err) &&
+          getMultiplier(shift, roundUp).ult(intMinMagnitude))
+        return shift;
+    }
+    return std::nullopt;
+  };
+  std::optional<unsigned> upShift = findShift(/*roundUp=*/true);
+  std::optional<unsigned> downShift = findShift(/*roundUp=*/false);
+
+  // The reference favors a round-down shift of exactly W, whose result is the
+  // high half of the product, as it wins on every machine it measured. It also
+  // favors a round-up shift of exactly W off x86; this lowering does not know
+  // the target, so it takes the sign-selected form there, which the reference
+  // found ties or wins on x86.
+  FloorDivMagic magic;
+  bool roundUp;
+  if (downShift &&
+      (!upShift || (width > 8 && *upShift != width && *downShift == width))) {
+    magic.mode = FloorDivMagic::Mode::RoundDown;
+    magic.shift = *downShift;
+    roundUp = false;
+  } else if (upShift && !downShift) {
+    magic.mode = FloorDivMagic::Mode::RoundUp;
+    magic.shift = *upShift;
+    roundUp = true;
+  } else if (upShift && downShift) {
+    magic.mode = FloorDivMagic::Mode::SignSelected;
+    magic.shift = std::max(*upShift, *downShift);
+    // Positive divisors round up and negative ones round down, so that adding
+    // the dividend's sign mask selects the other direction for x < 0.
+    roundUp = !isNeg;
+  } else {
+    return std::nullopt;
+  }
+
+  APInt multiplier = getMultiplier(magic.shift, roundUp);
+  if (magic.mode == FloorDivMagic::Mode::SignSelected &&
+      multiplier.uge(intMinMagnitude))
+    return std::nullopt;
+  magic.multiplier = multiplier.trunc(width);
+  if (isNeg)
+    magic.multiplier.negate();
+  return magic;
+}
+
+/// Creates an integer constant of `type`, splatted if `type` is a vector.
+static Value createIntConstant(DirectRewriter &rewriter, Location loc,
+                               Type type, const APInt &value) {
+  if (auto vecType = dyn_cast<VectorType>(type)) {
+    SmallVector<APInt> values(vecType.getNumElements(), value);
+    return LLVM::ConstantOp::create(
+        rewriter, loc,
+        cast<TypedAttr>(IntArrayElementsAttr::get(vecType, values)));
+  }
+  return LLVM::ConstantOp::create(rewriter, loc,
+                                  rewriter.getIntegerAttr(type, value));
+}
+
+/// Emits `floor(lhs / d)` for the constant divisor described by `magic`. For
+/// iW, with M the multiplier and S the shift, the emitted LLVM is:
+///
+///   ; SignSelected
+///   %sign = ashr iW %x, W-1
+///   %m    = add iW M, %sign
+///   %t    = %x
+///   ; RoundUp (d > 0: slt -1, add; d < 0: sgt 1, sub)
+///   ; RoundDown (d > 0: ult INT_MIN-1, add; d < 0: ugt INT_MIN, sub)
+///   %c    = icmp <pred> iW %x, <threshold>
+///   %bias = zext i1 %c to iW
+///   %t    = add/sub iW %x, %bias
+///   %m    = M
+///   ; All modes
+///   %tw   = sext iW %t to i2W
+///   %mw   = sext iW %m to i2W
+///   %p    = mul i2W %tw, %mw
+///   %hi   = ashr i2W %p, W
+///   %q    = trunc i2W %hi to iW
+///   %q    = ashr iW %q, S-W          ; only when S > W
+static Value emitFloorDivByConstant(DirectRewriter &rewriter, Location loc,
+                                    Type type, Value lhs,
+                                    const FloorDivMagic &magic) {
+  unsigned width = magic.multiplier.getBitWidth();
+  bool isNeg = magic.multiplier.isNegative();
+  auto getConstant = [&](const APInt &value) {
+    return createIntConstant(rewriter, loc, type, value);
+  };
+
+  Value factor = lhs;
+  Value multiplier = getConstant(magic.multiplier);
+  if (magic.mode == FloorDivMagic::Mode::SignSelected) {
+    Value signMask = LLVM::AShrOp::create(rewriter, loc, type, lhs,
+                                          getConstant(APInt(width, width - 1)));
+    multiplier = LLVM::AddOp::create(rewriter, loc, type, multiplier, signMask);
+  } else {
+    APInt intMin = APInt::getSignedMinValue(width);
+    LLVM::ICmpPredicate predicate;
+    APInt threshold;
+    if (magic.mode == FloorDivMagic::Mode::RoundUp) {
+      predicate = isNeg ? LLVM::ICmpPredicate::sgt : LLVM::ICmpPredicate::slt;
+      threshold = isNeg ? APInt(width, 1) : APInt::getAllOnes(width);
+    } else {
+      predicate = isNeg ? LLVM::ICmpPredicate::ugt : LLVM::ICmpPredicate::ult;
+      threshold = isNeg ? intMin : intMin - 1;
+    }
+    Value bias = LLVM::ICmpOp::create(rewriter, loc, predicate, lhs,
+                                      getConstant(threshold));
+    bias = LLVM::ZExtOp::create(rewriter, loc, type, bias);
+    if (isNeg)
+      factor = LLVM::SubOp::create(rewriter, loc, type, lhs, bias);
+    else
+      factor = LLVM::AddOp::create(rewriter, loc, type, lhs, bias);
+  }
+
+  // Take the high half before the remaining shift so the backend sees the
+  // signed multiply-high idiom.
+  Type wideType = IntegerType::get(rewriter.getContext(), 2 * width);
+  if (auto vecType = dyn_cast<VectorType>(type))
+    wideType = vecType.clone(wideType);
+  Value product = LLVM::MulOp::create(
+      rewriter, loc, wideType,
+      LLVM::SExtOp::create(rewriter, loc, wideType, factor),
+      LLVM::SExtOp::create(rewriter, loc, wideType, multiplier));
+  Value high = LLVM::AShrOp::create(
+      rewriter, loc, wideType, product,
+      createIntConstant(rewriter, loc, wideType, APInt(2 * width, width)));
+  Value result = LLVM::TruncOp::create(rewriter, loc, type, high);
+  if (magic.shift > width)
+    result =
+        LLVM::AShrOp::create(rewriter, loc, type, result,
+                             getConstant(APInt(width, magic.shift - width)));
+  return result;
+}
+
 struct ConvertPOPFloorDiv : public ConvertPOPToLLVMPattern<FloorDivOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
@@ -142,6 +363,23 @@ struct ConvertPOPFloorDiv : public ConvertPOPToLLVMPattern<FloorDivOp> {
       rewriter.replaceOpWithNewOp<LLVM::UDivOp>(
           op, type, SmallVector<Value>{adaptor.getLhs(), adaptor.getRhs()});
       return success();
+    }
+
+    // The reference implementation covers 8- to 64-bit integers; wider ones
+    // would need a multiply wider than 128 bits.
+    auto intType = dyn_cast<IntegerType>(getElementTypeOrSelf(type));
+    if (intType && intType.getWidth() >= 8 && intType.getWidth() <= 64 &&
+        llvm::isPowerOf2_32(intType.getWidth())) {
+      if (std::optional<APInt> divisor = getSplatConstantDivisor(
+              op, adaptor.getRhs(), intType.getWidth())) {
+        if (std::optional<FloorDivMagic> magic =
+                computeFloorDivMagic(*divisor)) {
+          rewriter.replaceOp(op,
+                             emitFloorDivByConstant(rewriter, loc, type,
+                                                    adaptor.getLhs(), *magic));
+          return success();
+        }
+      }
     }
 
     // For signed integers, emit the LLVM IR corresponding to:

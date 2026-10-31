@@ -17,6 +17,7 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/SmallVector.h"
 
 #define DEBUG_TYPE "hlcf-canonicalize"
@@ -146,7 +147,8 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
     SmallVector<Region *, 4> bodies;
     getIfBodyRegions(op, bodies);
 
-    // See if all the "then" blocks only contain a yield without other logic.
+    // Check that each branch body contains only a yield. The elif condition
+    // regions are checked separately later on before the if is erased.
     SmallVector<YieldOp, 4> yields;
     yields.reserve(bodies.size());
     for (Region *body : bodies) {
@@ -159,6 +161,9 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
     bool changed = false;
     for (size_t resIdx = 0, e = op.getNumResults(); resIdx != e; ++resIdx) {
       Value res = op.getResult(resIdx);
+      if (res.use_empty())
+        continue;
+
       Value first = yields.front()->getOperand(resIdx);
       bool allSame = llvm::all_of(
           yields, [&](YieldOp y) { return y->getOperand(resIdx) == first; });
@@ -184,13 +189,27 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
       }
     }
 
-    // If we removed all the results we can nuke the entire if.  This is safe
-    // because every body arm is only a yield.
-    if (op.use_empty()) {
-      rewriter.eraseOp(op);
-      return success();
+    if (!op.use_empty())
+      return changed ? success() : failure();
+
+    // Only erase the if when its elif conditions have no side effects.
+    if (!op.getElifRegions().empty()) {
+      WalkResult effects =
+          op->walk<mlir::WalkOrder::PreOrder>([&](Operation *operation) {
+            if (operation == op.getOperation() ||
+                isa<YieldOp, IfElifCondYieldOp>(operation))
+              return WalkResult::advance();
+            if (operation->hasTrait<mlir::OpTrait::IsTerminator>())
+              return WalkResult::interrupt();
+            return isMemoryEffectFree(operation) ? WalkResult::skip()
+                                                 : WalkResult::interrupt();
+          });
+      if (effects.wasInterrupted())
+        return changed ? success() : failure();
     }
-    return changed ? success() : failure();
+
+    rewriter.eraseOp(op);
+    return success();
   }
 };
 

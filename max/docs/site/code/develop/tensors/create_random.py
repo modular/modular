@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/tensors.mdx
 
-import max.experimental.functional as F
+import max.functional as F
 
 # Random values from a normal distribution
 random_tensor = F.normal([3, 3])

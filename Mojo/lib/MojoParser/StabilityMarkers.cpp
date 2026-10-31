@@ -104,7 +104,7 @@ void M::KGEN::LIT::checkStabilityAndWarn(ASTDecl &decl, SMLoc useLoc,
                                          SharedState &shared,
                                          SourceRange range) {
   // Check if the warning flag is enabled.
-  if (!shared.options.warnOnUnstableAPIs)
+  if (!shared.frontendOptions.warnOnUnstableAPIs)
     return;
 
   // Check if the declaration is unstable (from opted-in package and not marked
@@ -143,8 +143,8 @@ void M::KGEN::LIT::checkDeprecationAndWarn(ASTDecl &decl, SMLoc useLoc,
 
   // Skip declarations explicitly suppressed via --ignore-deprecated. All
   // other deprecation warnings still fire.
-  if (!shared.options.ignoredDeprecations.empty() &&
-      llvm::is_contained(shared.options.ignoredDeprecations,
+  if (!shared.frontendOptions.ignoredDeprecations.empty() &&
+      llvm::is_contained(shared.frontendOptions.ignoredDeprecations,
                          getIgnoreDeprecatedName(decl, shared)))
     return;
 
@@ -395,7 +395,7 @@ void M::KGEN::LIT::checkMagicFunctionAndWarn(StringRef spelling, SMLoc useLoc,
                                              SharedState &shared,
                                              SourceRange range) {
   // Check if the warning flag is enabled.
-  if (!shared.options.warnOnUnstableAPIs)
+  if (!shared.frontendOptions.warnOnUnstableAPIs)
     return;
 
   // Check if the use site is in an opted-in package (no warning for

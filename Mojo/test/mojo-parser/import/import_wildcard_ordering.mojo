@@ -17,7 +17,7 @@
 # `wildcard_shadow_a` import moves it after `wildcard_shadow_b`, so `a` wins
 # the collision on shadowed_fn even though `b` was written after it once.
 
-# RUN: %parse-mojo-isolated -I=%S/inputs %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I%S/inputs %s | FileCheck %s
 
 from wildcard_shadow_a import *
 from wildcard_shadow_b import *

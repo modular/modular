@@ -83,7 +83,7 @@ across every row in the batch. The following example adds an `(8,)` bias to
 `(4, 8)` activations:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 activations = Tensor.zeros([4, 8])  # (batch=4, features=8)
 bias = Tensor.ones([8])  # (features=8,)
@@ -109,7 +109,7 @@ dimension automatically, applying the same mask to every sequence in the batch.
 The following example adds an `(8, 8)` mask to `(2, 8, 8)` scores:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 mask = Tensor.zeros([8, 8])  # (seq_len=8, seq_len=8)
 scores = Tensor.zeros([2, 8, 8])  # (batch=2, seq_len, seq_len)
@@ -131,7 +131,7 @@ rather than let the operation infer it, `F.broadcast_to` provides that control.
 
 When you need the target shape explicit in code rather than inferred from an
 operation,
-[`F.broadcast_to(x, shape)`](/api/python/experimental.functional/#max.experimental.functional.broadcast_to)
+[`F.broadcast_to(x, shape)`](/api/python/functional/#max.functional.broadcast_to)
 expands a tensor directly to a target shape without running an elementwise
 operation.
 
@@ -139,8 +139,8 @@ The following example uses `F.broadcast_to` to expand a `(1, features)` weight
 vector to `(batch, features)`:
 
 ```python
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
 
 weight = Tensor.ones([1, 8])  # (1, features=8)
 expanded = F.broadcast_to(weight, [4, 8])  # (batch=4, features=8)
@@ -175,13 +175,13 @@ dimensions.
 Multiplying a `(batch, features)` tensor by a per-row `(batch,)` vector fails
 because right-alignment places the vector's `batch` against `features`. The
 solution is to add the missing trailing dimension with
-[`Tensor.unsqueeze(axis)`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.unsqueeze)
+[`Tensor.unsqueeze(axis)`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.unsqueeze)
 before the operation. The following example turns a `(batch,)` vector into a
 `(batch, 1)` column so it broadcasts across the features of a
 `(batch, features)` tensor:
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 x = Tensor.ones([4, 8])  # (batch=4, features=8)
 scale = Tensor([1.0, 2.0, 3.0, 4.0])  # (batch=4,)

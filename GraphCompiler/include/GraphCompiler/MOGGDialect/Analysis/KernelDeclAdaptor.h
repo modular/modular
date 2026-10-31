@@ -19,6 +19,7 @@
 #ifndef GENERICML_GRAPHCOMPILER_MOGGDIALECT_ANALYSIS_KERNELDECLADAPTOR_H
 #define GENERICML_GRAPHCOMPILER_MOGGDIALECT_ANALYSIS_KERNELDECLADAPTOR_H
 
+#include "GraphCompiler/MOGGDialect/MOGGEnums.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -281,6 +282,11 @@ struct KernelDeclTileTensorAdaptor {
 };
 
 struct KernelDeclContextPtrAdaptor {
+  /// The context's target is a parameter of the signature, as in
+  /// `DeviceContext.Generic`, so the caller picks it by the static type of the
+  /// context it passes. Otherwise the context is the default accelerator's.
+  bool genericTarget = false;
+
   bool operator==(const KernelDeclContextPtrAdaptor &) const { return true; }
 };
 
@@ -386,6 +392,16 @@ struct KernelDeclOperandAdaptor {
 
   bool isTraitTensorType() const { return getTraitContract().has_value(); }
 
+  /// nullopt for a non-tensor argument.
+  std::optional<IOSpec> getIoSpec() const {
+    if (const auto *t = std::get_if<KernelDeclTensorAdaptor>(&underlyingType))
+      return t->ioSpec;
+    if (const auto *t =
+            std::get_if<KernelDeclVariadicTensorAdaptor>(&underlyingType))
+      return t->ioSpec;
+    return std::nullopt;
+  }
+
   /// A trait-lane `TensorTuple` (`xs: TensorTuple[*Ts]`), whose elements are
   /// gathered into one argument.
   bool isTraitTensorTupleType() const {
@@ -409,6 +425,12 @@ struct KernelDeclOperandAdaptor {
                underlyingType) ||
            std::holds_alternative<KernelDeclContextPtrListAdaptor>(
                underlyingType);
+  }
+
+  /// A single `DeviceContext` whose target the callee leaves generic.
+  bool isGenericTargetContextType() const {
+    const auto *t = std::get_if<KernelDeclContextPtrAdaptor>(&underlyingType);
+    return t && t->genericTarget;
   }
 
   bool isVariadicContextType() const {
@@ -532,10 +554,9 @@ struct KernelDeclAdaptor {
   bool isTileElementwise() const { return tileElementwiseFunction.has_value(); }
   bool isReduction() const { return reduction.has_value(); }
 
-  /// `label` is e.g. `kMoggExecuteFunctionLabel`. Returns nullptr if the label
-  /// is unrecognised or the function is absent.
-  const KernelDeclFunctionAdaptor *
-  getFunctionByLabel(llvm::StringRef label) const;
+  /// Returns the kernel's `kind` function, or nullptr if it has none. A shape
+  /// function lives in its own decl, so `Shape` is always nullptr here.
+  const KernelDeclFunctionAdaptor *getFunction(KernelFunctionKind kind) const;
 };
 
 /// Adaptor for a mogg.primitive.decl: a standalone @register_internal Mojo

@@ -22,11 +22,11 @@ Weight key naming follows HuggingFace diffusers conventions:
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from .embeddings import apply_rotary_emb
 from .normalizations import LayerNormNoAffine
@@ -116,6 +116,7 @@ class QwenImageFeedForward(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the feed-forward over ``x``."""
         x = self.net[0](x)  # GELU projection
         # net[1] is dropout (no-op at inference)
         x = self.net[2](x)  # output linear
@@ -250,6 +251,7 @@ class QwenImageAttention(Module):
         encoder_hidden_states: TensorValue | None = None,
         image_rotary_emb: tuple[TensorValue, TensorValue] | None = None,
     ) -> TensorValue | tuple[TensorValue, TensorValue]:
+        """Runs the attention over the image and text hidden states."""
         batch_size = hidden_states.shape[0]
         query = self.to_q(hidden_states)
         key = self.to_k(hidden_states)
@@ -523,6 +525,7 @@ class QwenImageTransformerBlock(Module):
         temb_zero: TensorValue | None = None,
         num_noise_tokens: int | None = None,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs the block over ``hidden_states``."""
         # Compute per-block modulation params from temb
         # Compute silu once and reuse for both modulation projections.
         temb_activated = ops.silu(temb)

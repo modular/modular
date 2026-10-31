@@ -50,7 +50,6 @@ and head=128 (cta_group=2, 2-CTA f8f6f4) are follow-ups.
 """
 
 from std.sys import size_of
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -80,6 +79,11 @@ from max.gpu.sync import (
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
@@ -808,10 +812,12 @@ struct MLAPrefillSparseQKVFP8[
         """
         if slot >= top_k_length:
             return -1
-        var row = indices.load[width=1](Coord(scale_rows_base + slot)).cast[
-            DType.int32
-        ]()
-        return Int(row[0])
+        # Unsigned: an NVFP4 scale pool's rows pass 2**31. All ones marks an
+        # unused slot; see `_remap_scale_one`.
+        var row = indices.load[width=1](Coord(scale_rows_base + slot))[0]
+        if row == UInt32(0xFFFFFFFF):
+            return -1
+        return Int(row)
 
     @inline(.always)
     @staticmethod
@@ -820,18 +826,18 @@ struct MLAPrefillSparseQKVFP8[
         scale_rows_base: UInt32,
         slot0: UInt32,
         top_k_length: UInt32,
-    ) -> SIMD[DType.int32, 2]:
+    ) -> SIMD[DType.int64, 2]:
         """The scale-pool rows of the K rows this thread expands.
 
         A thread expands chunks of two rows (see `_dequant_k_nvfp4`).
         Needs only the indices, so a producer issues it ahead of the tile's
         wait and hides its latency.
         """
-        var tid = Int(thread_idx.x) % WARPGROUP_SIZE
+        var tid = thread_idx.x % WARPGROUP_SIZE
         var row0 = 16 * (tid // WARP_SIZE) + (tid % WARP_SIZE) // 4
-        var rows = SIMD[DType.int32, 2](-1)
+        var rows = SIMD[DType.int64, 2](-1)
         comptime for m in range(2):
-            rows[m] = Int32(
+            rows[m] = Int64(
                 Self._live_scale_row(
                     indices,
                     scale_rows_base,
@@ -844,7 +850,7 @@ struct MLAPrefillSparseQKVFP8[
     @inline(.always)
     @staticmethod
     def _load_k_scales(
-        live_rows: SIMD[DType.int32, 2],
+        live_rows: SIMD[DType.int64, 2],
         kv_lut: Self.KVLUTType,
     ) -> SIMD[DType.uint16, 8]:
         """Loads the scales of the chunks this thread expands.
@@ -853,7 +859,7 @@ struct MLAPrefillSparseQKVFP8[
         of chunk `qc` of the row item `i` expands, as `_dequant_k_nvfp4` maps
         its items.
         """
-        var qc0 = (Int(thread_idx.x) % WARPGROUP_SIZE) % 4
+        var qc0 = (thread_idx.x % WARPGROUP_SIZE) % 4
         var src = kv_lut.scales_raw_ptr().unsafe_bitcast[UInt16]()
         var sf = SIMD[DType.uint16, 8](0)
         comptime for m in range(2):
@@ -888,7 +894,7 @@ struct MLAPrefillSparseQKVFP8[
         comptime P_SW = make_ldmatrix_swizzle[
             FP8_TYPE, row_size=64, log2_vector_width=4
         ]()
-        var tid = Int(thread_idx.x) % WARPGROUP_SIZE
+        var tid = thread_idx.x % WARPGROUP_SIZE
         var w = tid // WARP_SIZE
         var l = tid % WARP_SIZE
         var j = l % 8
@@ -963,7 +969,7 @@ struct MLAPrefillSparseQKVFP8[
         top_k_length: UInt32,
     ) -> Int:
         """The scale-pool row of the V row this thread dequantizes."""
-        var tid = Int(thread_idx.x) % WARPGROUP_SIZE
+        var tid = thread_idx.x % WARPGROUP_SIZE
         return Self._live_scale_row(
             indices, scale_rows_base, slot0 + UInt32(tid), top_k_length
         )
@@ -1012,7 +1018,7 @@ struct MLAPrefillSparseQKVFP8[
         comptime P_SW = make_ldmatrix_swizzle[
             FP8_TYPE, row_size=64, log2_vector_width=4
         ]()
-        var row = Int(thread_idx.x) % WARPGROUP_SIZE
+        var row = thread_idx.x % WARPGROUP_SIZE
         var src = v_smem_buf.unsafe_bitcast[UInt8]().unsafe_offset(
             Self.NVFP4_V_ZONE_OFF + row * Self.NVFP4_V_ATOM_BYTES
         )
@@ -1103,7 +1109,7 @@ struct MLAPrefillSparseQKVFP8[
                             NoneType
                         ](),
                         prologue_q[].unsafe_ptr(),
-                        Index(
+                        (
                             j * Self.Q_SWIZZLE_COLS,
                             Int(head_coord),
                             Int(seq_idx),
@@ -1175,385 +1181,403 @@ struct MLAPrefillSparseQKVFP8[
         var warp_idx = warp_id()
         var lane_idx = lane_id()
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = topk_lengths.load[width=1]((seq_idx,))
-        var num_k_blocks = max(
-            ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
-        )
-        var num_kv_rows = kv_lut.num_kv_rows()
-        var indices_base = seq_idx * UInt32(indices_stride)
-        # An NVFP4 index row is the value rows, then the scale rows.
-        var scale_rows_base = indices_base + UInt32(indices_stride) // 2
 
-        if thread_idx.x == 0:
-            q_tma_op.prefetch_descriptor()
-            kv_tma_op.prefetch_descriptor()
-
-        ref smem = external_memory[
-            UInt8, address_space=.SHARED, alignment=128
-        ]().unsafe_bitcast[Self.SMemType]()[]
-
-        var q_ptr = smem.q.unsafe_ptr()
-        var kv_ptr: MutPointer[
-            Scalar[FP8_TYPE], origin_of(smem.kv), address_space=.SHARED
-        ] = smem.kv.unsafe_ptr()
-        var v_ptr: MutPointer[
-            Scalar[FP8_TYPE], origin_of(smem.v), address_space=.SHARED
-        ] = smem.v.unsafe_ptr()
-        var p_ptr: MutPointer[
-            Scalar[FP8_TYPE], origin_of(smem.p), address_space=.SHARED
-        ] = smem.p.unsafe_ptr()
-        var d_indices_ptr: MutPointer[
-            Int32, origin_of(smem.d_indices), address_space=.SHARED
-        ] = smem.d_indices.unsafe_ptr()
-        var d_indices_v_ptr: MutPointer[
-            Int32, origin_of(smem.d_indices_v), address_space=.SHARED
-        ] = smem.d_indices_v.unsafe_ptr()
-        var rowwise_max_ptr: MutPointer[
-            Float32, origin_of(smem.rowwise_max), address_space=.SHARED
-        ] = smem.rowwise_max.unsafe_ptr()
-        var rowwise_sum_ptr: MutPointer[
-            Float32, origin_of(smem.rowwise_sum), address_space=.SHARED
-        ] = smem.rowwise_sum.unsafe_ptr()
-        var is_k_valid_ptr: MutPointer[
-            UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
-        ] = smem.is_k_valid.unsafe_ptr()
-        var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
-        var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
-        var qk_done_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.qk_done), address_space=.SHARED
-        ] = smem.qk_done.unsafe_ptr()
-        var sv_done_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.sv_done), address_space=.SHARED
-        ] = smem.sv_done.unsafe_ptr()
-        var kv_ready_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.kv_ready), address_space=.SHARED
-        ] = smem.kv_ready.unsafe_ptr()
-        var p_free_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.p_free), address_space=.SHARED
-        ] = smem.p_free.unsafe_ptr()
-        var so_ready_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.so_ready), address_space=.SHARED
-        ] = smem.so_ready.unsafe_ptr()
-        var k_valid_ready_ptr: MutPointer[
-            SharedMemBarrier,
-            origin_of(smem.k_valid_ready),
-            address_space=.SHARED,
-        ] = smem.k_valid_ready.unsafe_ptr()
-        var k_valid_free_ptr: MutPointer[
-            SharedMemBarrier,
-            origin_of(smem.k_valid_free),
-            address_space=.SHARED,
-        ] = smem.k_valid_free.unsafe_ptr()
-        var k_ready_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.k_ready), address_space=.SHARED
-        ] = smem.k_ready.unsafe_ptr()
-        var v_ready_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.v_ready), address_space=.SHARED
-        ] = smem.v_ready.unsafe_ptr()
-        var v_tma_done_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.v_tma_done), address_space=.SHARED
-        ] = smem.v_tma_done.unsafe_ptr()
-
-        if warp_idx == 0:
-            if elect_one_sync():
-                prologue_q_ptr[].init(1)
-                comptime for i in range(Self.config.num_mbars):
-                    sv_done_ptr[i].init(1)
-                    # Local K TMA transaction barrier.
-                    kv_ready_ptr[i].init(1)
-                    so_ready_ptr[i].init(
-                        Int32(WARPGROUP_SIZE * Self.config.cta_group)
-                    )
-                    k_valid_ready_ptr[i].init(
-                        Int32(Self.SMemType.NUM_KV_VALID_LANES)
-                    )
-                    k_valid_free_ptr[i].init(Int32(WARPGROUP_SIZE))
-                # S-TMEM ring barriers: sized/indexed by NUM_S_SLOTS, not
-                # num_mbars (see the SMemType field comments).  p_free is
-                # consumed by the MMA leader from BOTH CTAs' WG0 at cg2 ->
-                # init WARPGROUP_SIZE*cta_group and arrive_cluster;
-                # single-CTA count at cg1.
-                comptime for i in range(Self.SMemType.NUM_S_SLOTS):
-                    qk_done_ptr[i].init(1)
-                    p_free_ptr[i].init(
-                        Int32(WARPGROUP_SIZE * Self.config.cta_group)
-                    )
-                comptime if Self.is_cg2 or Self.is_nvfp4:
-                    comptime for i in range(Self.SMemType.K_READY_MBARS):
-                        # cg2: each CTA's producer arrives once (the 2SM MMA
-                        # reads both CTAs' K/V), so init count = cta_group.
-                        # An NVFP4 cache also arrives it at cg1, once the
-                        # producer has expanded K (cta_group == 1).
-                        k_ready_ptr[i].init(Int32(Self.config.cta_group))
-                comptime if Self.is_cg2:
-                    comptime for i in range(Self.SMemType.CG2_MBARS):
-                        v_ready_ptr[i].init(Int32(Self.config.cta_group))
-                        # Local V TMA transaction barrier.
-                        v_tma_done_ptr[i].init(1)
-                fence_mbarrier_init()
-
-        # Zero the NoPE tail (Q and each KV buffer). `p` is its own buffer and V
-        # occupies only the leading v_depth columns, so nothing rewrites the tail
-        # afterwards. The fence publishes the stores to the async proxy for the
-        # tcgen05 read.
-        comptime if Self.config.input_qk_depth < Self.config.qk_depth:
-            comptime _q_kept = (
-                Self.SMemType.PADDED_HEADS_PER_CTA * Self.config.input_qk_depth
+        with PDL():
+            var top_k_length = topk_lengths.load[width=1]((seq_idx,))
+            var num_k_blocks = max(
+                ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
             )
-            comptime _kv_kept = (
-                Self.SMemType.B_TOPK_PER_CTA * Self.config.input_qk_depth
-            )
-            var _tid = thread_idx.x
-            for i in range(
-                _q_kept + _tid,
-                Self.SMemType.Q_SIZE,
-                Self.config.num_threads,
-            ):
-                q_ptr[i] = Scalar[FP8_TYPE](0)
-            comptime for _st in range(Self.SMemType.num_mbars):
-                var _base = _st * Self.SMemType.KV_STAGE_SIZE
+            var num_kv_rows = kv_lut.num_kv_rows()
+            var indices_base = seq_idx * UInt32(indices_stride)
+            # An NVFP4 index row is the value rows, then the scale rows.
+            var scale_rows_base = indices_base + UInt32(indices_stride) // 2
+
+            if thread_idx.x == 0:
+                q_tma_op.prefetch_descriptor()
+                kv_tma_op.prefetch_descriptor()
+
+            ref smem = external_memory[
+                UInt8, address_space=.SHARED, alignment=128
+            ]().unsafe_bitcast[Self.SMemType]()[]
+
+            var q_ptr = smem.q.unsafe_ptr()
+            var kv_ptr: MutPointer[
+                Scalar[FP8_TYPE], origin_of(smem.kv), address_space=.SHARED
+            ] = smem.kv.unsafe_ptr()
+            var v_ptr: MutPointer[
+                Scalar[FP8_TYPE], origin_of(smem.v), address_space=.SHARED
+            ] = smem.v.unsafe_ptr()
+            var p_ptr: MutPointer[
+                Scalar[FP8_TYPE], origin_of(smem.p), address_space=.SHARED
+            ] = smem.p.unsafe_ptr()
+            var d_indices_ptr: MutPointer[
+                Int32, origin_of(smem.d_indices), address_space=.SHARED
+            ] = smem.d_indices.unsafe_ptr()
+            var d_indices_v_ptr: MutPointer[
+                Int32, origin_of(smem.d_indices_v), address_space=.SHARED
+            ] = smem.d_indices_v.unsafe_ptr()
+            var rowwise_max_ptr: MutPointer[
+                Float32, origin_of(smem.rowwise_max), address_space=.SHARED
+            ] = smem.rowwise_max.unsafe_ptr()
+            var rowwise_sum_ptr: MutPointer[
+                Float32, origin_of(smem.rowwise_sum), address_space=.SHARED
+            ] = smem.rowwise_sum.unsafe_ptr()
+            var is_k_valid_ptr: MutPointer[
+                UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
+            ] = smem.is_k_valid.unsafe_ptr()
+            var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
+            var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
+            var qk_done_ptr: MutPointer[
+                SharedMemBarrier, origin_of(smem.qk_done), address_space=.SHARED
+            ] = smem.qk_done.unsafe_ptr()
+            var sv_done_ptr: MutPointer[
+                SharedMemBarrier, origin_of(smem.sv_done), address_space=.SHARED
+            ] = smem.sv_done.unsafe_ptr()
+            var kv_ready_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.kv_ready),
+                address_space=.SHARED,
+            ] = smem.kv_ready.unsafe_ptr()
+            var p_free_ptr: MutPointer[
+                SharedMemBarrier, origin_of(smem.p_free), address_space=.SHARED
+            ] = smem.p_free.unsafe_ptr()
+            var so_ready_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.so_ready),
+                address_space=.SHARED,
+            ] = smem.so_ready.unsafe_ptr()
+            var k_valid_ready_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.k_valid_ready),
+                address_space=.SHARED,
+            ] = smem.k_valid_ready.unsafe_ptr()
+            var k_valid_free_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.k_valid_free),
+                address_space=.SHARED,
+            ] = smem.k_valid_free.unsafe_ptr()
+            var k_ready_ptr: MutPointer[
+                SharedMemBarrier, origin_of(smem.k_ready), address_space=.SHARED
+            ] = smem.k_ready.unsafe_ptr()
+            var v_ready_ptr: MutPointer[
+                SharedMemBarrier, origin_of(smem.v_ready), address_space=.SHARED
+            ] = smem.v_ready.unsafe_ptr()
+            var v_tma_done_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.v_tma_done),
+                address_space=.SHARED,
+            ] = smem.v_tma_done.unsafe_ptr()
+
+            if warp_idx == 0:
+                if elect_one_sync():
+                    prologue_q_ptr[].init(1)
+                    comptime for i in range(Self.config.num_mbars):
+                        sv_done_ptr[i].init(1)
+                        # Local K TMA transaction barrier.
+                        kv_ready_ptr[i].init(1)
+                        so_ready_ptr[i].init(
+                            Int32(WARPGROUP_SIZE * Self.config.cta_group)
+                        )
+                        k_valid_ready_ptr[i].init(
+                            Int32(Self.SMemType.NUM_KV_VALID_LANES)
+                        )
+                        k_valid_free_ptr[i].init(Int32(WARPGROUP_SIZE))
+                    # S-TMEM ring barriers: sized/indexed by NUM_S_SLOTS, not
+                    # num_mbars (see the SMemType field comments).  p_free is
+                    # consumed by the MMA leader from BOTH CTAs' WG0 at cg2 ->
+                    # init WARPGROUP_SIZE*cta_group and arrive_cluster;
+                    # single-CTA count at cg1.
+                    comptime for i in range(Self.SMemType.NUM_S_SLOTS):
+                        qk_done_ptr[i].init(1)
+                        p_free_ptr[i].init(
+                            Int32(WARPGROUP_SIZE * Self.config.cta_group)
+                        )
+                    comptime if Self.is_cg2 or Self.is_nvfp4:
+                        comptime for i in range(Self.SMemType.K_READY_MBARS):
+                            # cg2: each CTA's producer arrives once (the 2SM MMA
+                            # reads both CTAs' K/V), so init count = cta_group.
+                            # An NVFP4 cache also arrives it at cg1, once the
+                            # producer has expanded K (cta_group == 1).
+                            k_ready_ptr[i].init(Int32(Self.config.cta_group))
+                    comptime if Self.is_cg2:
+                        comptime for i in range(Self.SMemType.CG2_MBARS):
+                            v_ready_ptr[i].init(Int32(Self.config.cta_group))
+                            # Local V TMA transaction barrier.
+                            v_tma_done_ptr[i].init(1)
+                    fence_mbarrier_init()
+
+            # Zero the NoPE tail (Q and each KV buffer). `p` is its own buffer and V
+            # occupies only the leading v_depth columns, so nothing rewrites the tail
+            # afterwards. The fence publishes the stores to the async proxy for the
+            # tcgen05 read.
+            comptime if Self.config.input_qk_depth < Self.config.qk_depth:
+                comptime _q_kept = (
+                    Self.SMemType.PADDED_HEADS_PER_CTA
+                    * Self.config.input_qk_depth
+                )
+                comptime _kv_kept = (
+                    Self.SMemType.B_TOPK_PER_CTA * Self.config.input_qk_depth
+                )
+                var _tid = thread_idx.x
                 for i in range(
-                    _kv_kept + _tid,
-                    Self.SMemType.KV_STAGE_SIZE,
+                    _q_kept + _tid,
+                    Self.SMemType.Q_SIZE,
                     Self.config.num_threads,
                 ):
-                    kv_ptr[_base + i] = Scalar[FP8_TYPE](0)
-            fence_async_view_proxy()
-        cluster_sync()
+                    q_ptr[i] = Scalar[FP8_TYPE](0)
+                comptime for _st in range(Self.SMemType.num_mbars):
+                    var _base = _st * Self.SMemType.KV_STAGE_SIZE
+                    for i in range(
+                        _kv_kept + _tid,
+                        Self.SMemType.KV_STAGE_SIZE,
+                        Self.config.num_threads,
+                    ):
+                        kv_ptr[_base + i] = Scalar[FP8_TYPE](0)
+                fence_async_view_proxy()
+            cluster_sync()
 
-        Self._load_q_fp8(q_ptr, q_tma_op, prologue_q_ptr, seq_idx, cta_id)
+            Self._load_q_fp8(q_ptr, q_tma_op, prologue_q_ptr, seq_idx, cta_id)
 
-        if warp_idx == 0:
-            tcgen05_alloc[Int32(Self.config.cta_group)](
-                tmem_addr_ptr, Self.config.sm100_tmem_cols
-            )
-            tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
-        barrier()
-
-        if warpgroup_idx == 0:
-            comptime if Self.is_cg2:
-                warpgroup_reg_alloc[240]()
-            else:
-                warpgroup_reg_alloc[168]()
-            Self._softmax_epilogue(
-                p_ptr,
-                kv_ptr,
-                rowwise_max_ptr,
-                rowwise_sum_ptr,
-                is_k_valid_ptr,
-                sv_done_ptr,
-                qk_done_ptr,
-                p_free_ptr,
-                so_ready_ptr,
-                k_valid_ready_ptr,
-                k_valid_free_ptr,
-                tmem_addr_ptr,
-                o_tma_op,
-                scale,
-                attn_sink_ptr,
-                num_k_blocks,
-                seq_idx,
-                cta_id,
-            )
-        elif warpgroup_idx == 1 or (
-            Self.dual_k_producers and warpgroup_idx == 2
-        ):
-            # K producer.  cg2 frees WG2 to be the V producer; both cg2
-            # producers dealloc to 64 (fp8 gather is light -- no dequant
-            # staging) so WG0's softmax epilogue can absorb the freed regs,
-            # mirroring cg1's WG2/WG3 dealloc[88] idle/mma pattern.
-            # An NVFP4 cg1 cache has no V producer, so WG2 expands every other
-            # K block alongside WG1: one warp per scheduler cannot hide the
-            # expansion's latency.
-            comptime if Self.is_cg2:
-                # An NVFP4 producer holds a row-half of packed K in registers.
-                warpgroup_reg_dealloc[80 if Self.is_nvfp4 else 64]()
-            elif Self.dual_k_producers:
-                warpgroup_reg_dealloc[112]()
-            else:
-                warpgroup_reg_alloc[168]()
-            # Only the dual-producer path needs a per-producer barrier id; a
-            # runtime id on the single cg2 producer costs h128 about 6%.
-            var producer = UInt32(0)
-            comptime if Self.dual_k_producers:
-                producer = UInt32(warpgroup_idx - 1)
-            var bar_slot = Int32(producer)
-            var local_warp_idx = UInt32(warp_id() - 4) - producer * 4
-            comptime k_stride = UInt32(2 if Self.dual_k_producers else 1)
-            for k in range(
-                producer if Self.dual_k_producers else UInt32(0),
-                num_k_blocks,
-                k_stride,
-            ):
-                var buf = k % UInt32(Self.config.num_mbars)
-                var phase = (k / UInt32(Self.config.num_mbars)) & 1
-                # An NVFP4 scale row comes from the indices alone, so its
-                # load overlaps the buffer-free wait below.
-                var scale_rows = SIMD[DType.int32, 2](-1)
-                comptime if Self.is_nvfp4:
-                    scale_rows = Self._k_scale_rows(
-                        indices,
-                        scale_rows_base,
-                        k * UInt32(Self.config.B_TOPK)
-                        + cta_id * UInt32(Self.B_TOPK_PER_CTA),
-                        UInt32(top_k_length),
-                    )
-                # Free the previous occupant (block k-num_mbars): cg1's shared
-                # buffer frees after PV (sv_done); cg2's K-only buffer frees
-                # after QK consumes it (qk_done).  qk_done is indexed by
-                # NUM_S_SLOTS (the S-ring modulus), NOT num_mbars -- the K
-                # SMEM buffer-free gating condition (k >= num_mbars) and the
-                # specific block being freed (free_k) are unchanged, only the
-                # array we query for "has QK(free_k) fired" uses its own
-                # (decoupled) modulus.
-                if k >= UInt32(Self.config.num_mbars):
-                    var free_k = k - UInt32(Self.config.num_mbars)
-                    comptime if Self.is_cg2:
-                        var free_buf_s = free_k % UInt32(
-                            Self.SMemType.NUM_S_SLOTS
-                        )
-                        var free_phase_s = (
-                            free_k / UInt32(Self.SMemType.NUM_S_SLOTS)
-                        ) & 1
-                        qk_done_ptr[free_buf_s].wait(free_phase_s)
-                    else:
-                        var free_buf = free_k % UInt32(Self.config.num_mbars)
-                        var free_phase = (
-                            free_k / UInt32(Self.config.num_mbars)
-                        ) & 1
-                        sv_done_ptr[free_buf].wait(free_phase)
-                Self._load_kv_fp8(
-                    kv_tma_op,
-                    indices,
-                    kv_lut,
-                    kv_ptr.unsafe_offset(
-                        buf * UInt32(Self.SMemType.KV_STAGE_SIZE)
-                    ),
-                    d_indices_ptr.unsafe_offset(
-                        buf * UInt32(Self.config.B_TOPK)
-                    ),
-                    kv_ready_ptr.unsafe_offset(buf),
-                    k,
-                    indices_base,
-                    local_warp_idx,
-                    cta_id,
-                    bar_slot,
+            if warp_idx == 0:
+                tcgen05_alloc[Int32(Self.config.cta_group)](
+                    tmem_addr_ptr, Self.config.sm100_tmem_cols
                 )
-                comptime if Self.is_nvfp4:
-                    # Scales are fetched while the gather is in flight; once
-                    # it lands, expand K in place and hand it to the MMA.
-                    var sf = Self._load_k_scales(scale_rows, kv_lut)
-                    kv_ready_ptr[buf].wait(phase)
-                    Self._dequant_k_nvfp4(
+                tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
+            barrier()
+
+            if warpgroup_idx == 0:
+                comptime if Self.is_cg2:
+                    warpgroup_reg_alloc[240]()
+                else:
+                    warpgroup_reg_alloc[168]()
+                Self._softmax_epilogue(
+                    p_ptr,
+                    kv_ptr,
+                    rowwise_max_ptr,
+                    rowwise_sum_ptr,
+                    is_k_valid_ptr,
+                    sv_done_ptr,
+                    qk_done_ptr,
+                    p_free_ptr,
+                    so_ready_ptr,
+                    k_valid_ready_ptr,
+                    k_valid_free_ptr,
+                    tmem_addr_ptr,
+                    o_tma_op,
+                    scale,
+                    attn_sink_ptr,
+                    num_k_blocks,
+                    seq_idx,
+                    cta_id,
+                )
+            elif warpgroup_idx == 1 or (
+                Self.dual_k_producers and warpgroup_idx == 2
+            ):
+                # K producer.  cg2 frees WG2 to be the V producer; both cg2
+                # producers dealloc to 64 (fp8 gather is light -- no dequant
+                # staging) so WG0's softmax epilogue can absorb the freed regs,
+                # mirroring cg1's WG2/WG3 dealloc[88] idle/mma pattern.
+                # An NVFP4 cg1 cache has no V producer, so WG2 expands every other
+                # K block alongside WG1: one warp per scheduler cannot hide the
+                # expansion's latency.
+                comptime if Self.is_cg2:
+                    # An NVFP4 producer holds a row-half of packed K in registers.
+                    warpgroup_reg_dealloc[80 if Self.is_nvfp4 else 64]()
+                elif Self.dual_k_producers:
+                    warpgroup_reg_dealloc[112]()
+                else:
+                    warpgroup_reg_alloc[168]()
+                # Only the dual-producer path needs a per-producer barrier id; a
+                # runtime id on the single cg2 producer costs h128 about 6%.
+                var producer = UInt32(0)
+                comptime if Self.dual_k_producers:
+                    producer = UInt32(warpgroup_idx - 1)
+                var bar_slot = Int32(producer)
+                var local_warp_idx = UInt32(warp_id() - 4) - producer * 4
+                comptime k_stride = UInt32(2 if Self.dual_k_producers else 1)
+                for k in range(
+                    producer if Self.dual_k_producers else UInt32(0),
+                    num_k_blocks,
+                    k_stride,
+                ):
+                    var buf = k % UInt32(Self.config.num_mbars)
+                    var phase = (k / UInt32(Self.config.num_mbars)) & 1
+                    # An NVFP4 scale row comes from the indices alone, so its
+                    # load overlaps the buffer-free wait below.
+                    var scale_rows = SIMD[DType.int64, 2](-1)
+                    comptime if Self.is_nvfp4:
+                        scale_rows = Self._k_scale_rows(
+                            indices,
+                            scale_rows_base,
+                            k * UInt32(Self.config.B_TOPK)
+                            + cta_id * UInt32(Self.B_TOPK_PER_CTA),
+                            UInt32(top_k_length),
+                        )
+                    # Free the previous occupant (block k-num_mbars): cg1's shared
+                    # buffer frees after PV (sv_done); cg2's K-only buffer frees
+                    # after QK consumes it (qk_done).  qk_done is indexed by
+                    # NUM_S_SLOTS (the S-ring modulus), NOT num_mbars -- the K
+                    # SMEM buffer-free gating condition (k >= num_mbars) and the
+                    # specific block being freed (free_k) are unchanged, only the
+                    # array we query for "has QK(free_k) fired" uses its own
+                    # (decoupled) modulus.
+                    if k >= UInt32(Self.config.num_mbars):
+                        var free_k = k - UInt32(Self.config.num_mbars)
+                        comptime if Self.is_cg2:
+                            var free_buf_s = free_k % UInt32(
+                                Self.SMemType.NUM_S_SLOTS
+                            )
+                            var free_phase_s = (
+                                free_k / UInt32(Self.SMemType.NUM_S_SLOTS)
+                            ) & 1
+                            qk_done_ptr[free_buf_s].wait(free_phase_s)
+                        else:
+                            var free_buf = free_k % UInt32(
+                                Self.config.num_mbars
+                            )
+                            var free_phase = (
+                                free_k / UInt32(Self.config.num_mbars)
+                            ) & 1
+                            sv_done_ptr[free_buf].wait(free_phase)
+                    Self._load_kv_fp8(
+                        kv_tma_op,
+                        indices,
+                        kv_lut,
                         kv_ptr.unsafe_offset(
                             buf * UInt32(Self.SMemType.KV_STAGE_SIZE)
                         ),
-                        sf,
-                        bar_slot,
-                    )
-                    if local_warp_idx == 0 and elect_one_sync():
-                        comptime if Self.is_cg2:
-                            k_ready_ptr[buf].arrive_cluster(UInt32(0))
-                        else:
-                            _ = k_ready_ptr[buf].arrive()
-                else:
-                    # cg2: wait the local K TMA, then arrive the leader's
-                    # cross-CTA k_ready (the 2SM MMA on CTA0 reads BOTH CTAs'
-                    # K).
-                    comptime if Self.is_cg2:
-                        kv_ready_ptr[buf].wait(phase)
-                        if local_warp_idx == 0 and elect_one_sync():
-                            k_ready_ptr[buf].arrive_cluster(UInt32(0))
-        elif warpgroup_idx == 2:
-            comptime if Self.is_cg2:
-                # V producer (cg2): gather all B_TOPK keys' per-CTA depth
-                # slice.  Dealloc to 64, same rationale as WG1 above -- this
-                # WG previously had no setmaxnreg call at all and fell
-                # through to the 128-reg launch default.
-                warpgroup_reg_dealloc[80 if Self.is_nvfp4 else 64]()
-                var local_warp_idx = UInt32(warp_id() - 8)
-                for k in range(num_k_blocks):
-                    var buf = k % UInt32(Self.config.num_mbars)
-                    var phase = (k / UInt32(Self.config.num_mbars)) & 1
-                    var scale_row = -1
-                    comptime if Self.is_nvfp4:
-                        scale_row = Self._v_scale_row(
-                            indices,
-                            scale_rows_base,
-                            k * UInt32(Self.config.B_TOPK),
-                            UInt32(top_k_length),
-                        )
-                    # Free the V buffer's previous occupant after PV consumed it.
-                    if k >= UInt32(Self.config.num_mbars):
-                        var free_k = k - UInt32(Self.config.num_mbars)
-                        var free_buf = free_k % UInt32(Self.config.num_mbars)
-                        var free_phase = (
-                            free_k / UInt32(Self.config.num_mbars)
-                        ) & 1
-                        sv_done_ptr[free_buf].wait(free_phase)
-                    Self._load_v_fp8(
-                        v_tma_op,
-                        indices,
-                        kv_lut,
-                        v_ptr.unsafe_offset(
-                            buf * UInt32(Self.SMemType.V_STAGE_SIZE)
-                        ),
-                        d_indices_v_ptr.unsafe_offset(
+                        d_indices_ptr.unsafe_offset(
                             buf * UInt32(Self.config.B_TOPK)
                         ),
-                        v_tma_done_ptr.unsafe_offset(buf),
+                        kv_ready_ptr.unsafe_offset(buf),
                         k,
                         indices_base,
                         local_warp_idx,
                         cta_id,
+                        bar_slot,
                     )
                     comptime if Self.is_nvfp4:
-                        var sf = Self._load_v_scales(scale_row, kv_lut, cta_id)
-                        v_tma_done_ptr[buf].wait(phase)
-                        Self._dequant_v_nvfp4(
+                        # Scales are fetched while the gather is in flight; once
+                        # it lands, expand K in place and hand it to the MMA.
+                        var sf = Self._load_k_scales(scale_rows, kv_lut)
+                        kv_ready_ptr[buf].wait(phase)
+                        Self._dequant_k_nvfp4(
+                            kv_ptr.unsafe_offset(
+                                buf * UInt32(Self.SMemType.KV_STAGE_SIZE)
+                            ),
+                            sf,
+                            bar_slot,
+                        )
+                        if local_warp_idx == 0 and elect_one_sync():
+                            comptime if Self.is_cg2:
+                                k_ready_ptr[buf].arrive_cluster(UInt32(0))
+                            else:
+                                _ = k_ready_ptr[buf].arrive()
+                    else:
+                        # cg2: wait the local K TMA, then arrive the leader's
+                        # cross-CTA k_ready (the 2SM MMA on CTA0 reads BOTH CTAs'
+                        # K).
+                        comptime if Self.is_cg2:
+                            kv_ready_ptr[buf].wait(phase)
+                            if local_warp_idx == 0 and elect_one_sync():
+                                k_ready_ptr[buf].arrive_cluster(UInt32(0))
+            elif warpgroup_idx == 2:
+                comptime if Self.is_cg2:
+                    # V producer (cg2): gather all B_TOPK keys' per-CTA depth
+                    # slice.  Dealloc to 64, same rationale as WG1 above -- this
+                    # WG previously had no setmaxnreg call at all and fell
+                    # through to the 128-reg launch default.
+                    warpgroup_reg_dealloc[80 if Self.is_nvfp4 else 64]()
+                    var local_warp_idx = UInt32(warp_id() - 8)
+                    for k in range(num_k_blocks):
+                        var buf = k % UInt32(Self.config.num_mbars)
+                        var phase = (k / UInt32(Self.config.num_mbars)) & 1
+                        var scale_row = -1
+                        comptime if Self.is_nvfp4:
+                            scale_row = Self._v_scale_row(
+                                indices,
+                                scale_rows_base,
+                                k * UInt32(Self.config.B_TOPK),
+                                UInt32(top_k_length),
+                            )
+                        # Free the V buffer's previous occupant after PV consumed it.
+                        if k >= UInt32(Self.config.num_mbars):
+                            var free_k = k - UInt32(Self.config.num_mbars)
+                            var free_buf = free_k % UInt32(
+                                Self.config.num_mbars
+                            )
+                            var free_phase = (
+                                free_k / UInt32(Self.config.num_mbars)
+                            ) & 1
+                            sv_done_ptr[free_buf].wait(free_phase)
+                        Self._load_v_fp8(
+                            v_tma_op,
+                            indices,
+                            kv_lut,
                             v_ptr.unsafe_offset(
                                 buf * UInt32(Self.SMemType.V_STAGE_SIZE)
                             ),
-                            sf,
+                            d_indices_v_ptr.unsafe_offset(
+                                buf * UInt32(Self.config.B_TOPK)
+                            ),
+                            v_tma_done_ptr.unsafe_offset(buf),
+                            k,
+                            indices_base,
+                            local_warp_idx,
+                            cta_id,
                         )
-                    else:
-                        v_tma_done_ptr[buf].wait(phase)
-                    if local_warp_idx == 0 and elect_one_sync():
-                        v_ready_ptr[buf].arrive_cluster(UInt32(0))
+                        comptime if Self.is_nvfp4:
+                            var sf = Self._load_v_scales(
+                                scale_row, kv_lut, cta_id
+                            )
+                            v_tma_done_ptr[buf].wait(phase)
+                            Self._dequant_v_nvfp4(
+                                v_ptr.unsafe_offset(
+                                    buf * UInt32(Self.SMemType.V_STAGE_SIZE)
+                                ),
+                                sf,
+                            )
+                        else:
+                            v_tma_done_ptr[buf].wait(phase)
+                        if local_warp_idx == 0 and elect_one_sync():
+                            v_ready_ptr[buf].arrive_cluster(UInt32(0))
+                else:
+                    # V shares the KV buffer -> no separate V producer. Idle.
+                    warpgroup_reg_dealloc[88]()
             else:
-                # V shares the KV buffer -> no separate V producer. Idle.
                 warpgroup_reg_dealloc[88]()
-        else:
-            warpgroup_reg_dealloc[88]()
-            # Only the leader CTA issues the 2SM MMA; it drives both CTAs' TMEM.
-            if cta_id == 0 and warp_idx == 12 and elect_one_sync():
-                Self._mma(
-                    q_ptr,
-                    kv_ptr,
-                    p_ptr,
-                    prologue_q_ptr,
-                    kv_ready_ptr,
-                    v_ptr,
-                    k_ready_ptr,
-                    v_ready_ptr,
-                    qk_done_ptr,
-                    sv_done_ptr,
-                    so_ready_ptr,
-                    p_free_ptr,
-                    num_k_blocks,
-                )
-            elif warp_idx == 13 and lane_idx < Self.SMemType.NUM_KV_VALID_LANES:
-                Self.Common.kv_valid_producer(
-                    indices,
-                    is_k_valid_ptr,
-                    k_valid_ready_ptr,
-                    k_valid_free_ptr,
-                    UInt32(lane_idx),
-                    indices_base,
-                    Int32(num_kv_rows),
-                    Int32(top_k_length),
-                    Int(num_k_blocks),
-                )
+                # Only the leader CTA issues the 2SM MMA; it drives both CTAs' TMEM.
+                if cta_id == 0 and warp_idx == 12 and elect_one_sync():
+                    Self._mma(
+                        q_ptr,
+                        kv_ptr,
+                        p_ptr,
+                        prologue_q_ptr,
+                        kv_ready_ptr,
+                        v_ptr,
+                        k_ready_ptr,
+                        v_ready_ptr,
+                        qk_done_ptr,
+                        sv_done_ptr,
+                        so_ready_ptr,
+                        p_free_ptr,
+                        num_k_blocks,
+                    )
+                elif (
+                    warp_idx == 13
+                    and lane_idx < Self.SMemType.NUM_KV_VALID_LANES
+                ):
+                    Self.Common.kv_valid_producer(
+                        indices,
+                        is_k_valid_ptr,
+                        k_valid_ready_ptr,
+                        k_valid_free_ptr,
+                        UInt32(lane_idx),
+                        indices_base,
+                        Int32(num_kv_rows),
+                        Int32(top_k_length),
+                        Int(num_k_blocks),
+                    )
 
     # ------------------------------------------------------------------
     # MMA warp (WG3 warp 12, single elected lane): QK^T(k) then PV(k-1).
@@ -2012,9 +2036,18 @@ struct MLAPrefillSparseQKVFP8[
                     var pad_row = Int(
                         head_local >= UInt32(Self.NUM_Q_HEADS_PER_CTA)
                     )
+                    # Each pad thread gets its own dump slot: the two depth-column
+                    # warps of a head row share head_local.
+                    var dump_slot = Int(
+                        depth_col_block
+                    ) * Self.PADDED_HEADS_PER_CTA + Int(head_local)
                     var store_off = (
                         smem_offset * (1 - pad_row)
-                        + (Self.SMemType.O_SIZE - 2) * pad_row
+                        + (
+                            Self.SMemType.O_SIZE
+                            - 2 * (2 * Self.PADDED_HEADS_PER_CTA - dump_slot)
+                        )
+                        * pad_row
                     )
                     (o_ptr.unsafe_offset(store_off)).unsafe_store[width=2](v)
 
@@ -2188,4 +2221,5 @@ def mla_prefill_sparse_qkv_fp8[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_size)
         ),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

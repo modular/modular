@@ -17,15 +17,12 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import ImageMetadata, TextAndVisionContext
 from max.pipelines.lib import (
     GraphSpec,
@@ -42,6 +39,9 @@ from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_batching import create_empty_image_embeddings
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
+from max.tensor import Tensor, default_dtype
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 
 from .batch_processor import MuseGlimmerBatchProcessor
@@ -125,6 +125,7 @@ class MuseGlimmerModel(
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """The text config's hidden layer count."""
         return huggingface_config.text_config.num_hidden_layers
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -226,8 +227,7 @@ class MuseGlimmerModel(
         devices: list[Device],
         packed: list[Buffer] | None,
     ) -> VisionEncodeResult:
-        """Runs the vision tower on the images :meth:`pack_vision_inputs`
-        packed."""
+        """Runs the vision tower on the images :meth:`pack_vision_inputs` packed."""
         if packed is None:
             return VisionEncodeResult(
                 embeddings=self.empty_vision_embeddings(devices)

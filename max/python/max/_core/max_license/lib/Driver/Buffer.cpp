@@ -939,6 +939,87 @@ void Python::Buffer::batchInplaceCopy(const std::vector<Buffer *> &dsts,
   }
 }
 
+void Python::Buffer::batchCopyRows(const std::vector<Buffer *> &dsts,
+                                   const std::vector<Buffer *> &srcs,
+                                   const std::vector<int> &dstRows,
+                                   const std::vector<int> &srcRows) {
+  size_t n = dsts.size();
+  if (srcs.size() != n || dstRows.size() != n || srcRows.size() != n)
+    throw std::invalid_argument("batch_copy_rows: dsts, srcs, dst_rows and "
+                                "src_rows must have the same length");
+
+  // Rows are storage views, not `Buffer`s: every `~Buffer` hands the GIL
+  // away, which under contention costs far more than the copy itself.
+  struct Row {
+    const Buffer *buf;
+    size_t byteOffset;
+  };
+  auto rowOf = [](const Buffer *buf, int row) {
+    if (!buf || buf->getRank() == 0 || !buf->isContiguousSlice() ||
+        buf->isHostHazardTracked())
+      throw std::invalid_argument("batch_copy_rows: buffers must be "
+                                  "contiguous, untracked and of rank > 0");
+    size_t idx = canonicalizeIndex(row, buf->spec[0]);
+    size_t elementOffset = buf->startOffset + idx * buf->strides[0];
+    return Row{buf, static_cast<size_t>(
+                        buf->spec.getEltType().getSizeInBytes(elementOffset))};
+  };
+  std::vector<Row> rows;
+  rows.reserve(2 * n);
+  for (size_t i = 0; i < n; ++i) {
+    rows.push_back(rowOf(dsts[i], dstRows[i]));
+    rows.push_back(rowOf(srcs[i], srcRows[i]));
+    if (dsts[i]->spec.getSizeInBytes() / dsts[i]->spec[0] !=
+        srcs[i]->spec.getSizeInBytes() / srcs[i]->spec[0])
+      throw std::invalid_argument("batch_copy_rows: row size mismatch at "
+                                  "index " +
+                                  std::to_string(i));
+  }
+
+  nb::gil_scoped_release release;
+
+  std::vector<std::shared_ptr<BufferStorage>> views;
+  views.reserve(2 * n);
+  auto viewOf = [&](const Row &row) {
+    const TensorSpec &spec = row.buf->spec;
+    TensorSpec rowSpec(std::vector<ssize_t>(spec.begin() + 1, spec.end()),
+                       spec.getEltType());
+    auto viewOr = createStorageView(*row.buf->storage, rowSpec, row.byteOffset);
+    if (viewOr.isError())
+      throw std::runtime_error(viewOr.takeError().get());
+    views.push_back(viewOr.takeValue());
+    return views.back()->buf.getPointer();
+  };
+
+  // One submit per destination context, as in `batchInplaceCopy`.
+  struct Group {
+    M::Driver::DeviceContext *ctx;
+    std::vector<M::Driver::DeviceBuffer *> dsts, srcs;
+  };
+  std::vector<Group> groups;
+  for (size_t i = 0; i < n; ++i) {
+    const Row &dst = rows[2 * i], &src = rows[2 * i + 1];
+    if (dst.buf->spec.getSizeInBytes() == 0 ||
+        (dst.buf->storage == src.buf->storage &&
+         dst.byteOffset == src.byteOffset))
+      continue;
+    M::Driver::DeviceBuffer *dstBuf = viewOf(dst);
+    M::Driver::DeviceBuffer *srcBuf = viewOf(src);
+    M::Driver::DeviceContext *ctx = &dstBuf->context();
+    auto it = std::find_if(groups.begin(), groups.end(),
+                           [&](const Group &g) { return g.ctx == ctx; });
+    Group &group =
+        it != groups.end() ? *it : groups.emplace_back(Group{ctx, {}, {}});
+    group.dsts.push_back(dstBuf);
+    group.srcs.push_back(srcBuf);
+  }
+  for (Group &group : groups)
+    if (ErrorOrSuccess err =
+            group.ctx->enqueueBatchCopy(group.dsts, group.srcs);
+        err.isError())
+      throw std::runtime_error(err.getError());
+}
+
 std::vector<Python::Buffer>
 Python::Buffer::releaseAllToBorrowed(const std::vector<Buffer *> &buffers) {
   llvm::DenseMap<Python::BufferStorage *,

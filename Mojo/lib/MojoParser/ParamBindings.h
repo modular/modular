@@ -147,7 +147,7 @@ void emitUnprovableConstraintsFromFitness(
 
 /// Utility function to perform substitutions of the bindings into the symbol
 /// for the given function declaration. It returns the resultant
-/// SymbolConstantAttr or produces an error message and returns null.
+/// function reference or produces an error message and returns null.
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl,
                                  const ParamBindings &unverifiedBindings);
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,

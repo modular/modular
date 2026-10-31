@@ -59,7 +59,7 @@ def repro_struct_attr():
     struct_callee[2, type_of(my_fn)](my_fn)
 
 
-# COM: Verify SymbolConstantAttr matching: closure returning a type
+# COM: Verify FuncSymbolAttr matching: closure returning a type
 # COM: parameterized by a function reference (exercises symbol recursion).
 # S1-LABEL: lit.fn @"repro_symbol_attr()"
 # S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}}storage{{.*}}
@@ -280,7 +280,7 @@ def s8_call_inner[
 
 # S9: kgen.conformance @"##__mojo_closure__##"{{.*}}#kgen.param_list.get<:param_list<{{.*}}> [!String, !Int]
 # S9-NEXT: kgen.witness "__call__"
-# S9-SAME: capturing -> !kgen.none>
+# S9-SAME: -> !kgen.none>
 
 
 struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):

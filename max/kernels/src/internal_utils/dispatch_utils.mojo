@@ -16,8 +16,7 @@ from std.os import abort
 from std.builtin.sort import _quicksort
 
 
-# DO NOT CHANGE
-trait TuningConfig(TrivialRegisterPassable, Writable):
+trait TuningConfig(Deinitable, ImplicitlyCopyable, RegisterPassable, Writable):
     ...
 
 

@@ -29,7 +29,6 @@ from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import 
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from std.math import ceildiv, align_up
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
@@ -39,6 +38,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.utils.coord import Coord
 
 
 def simple_init() -> Bool:
@@ -57,9 +57,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -80,8 +80,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type}, {scales_dtype})  problem"
         t" shape=({Int(m)}, {Int(n)}, {Int(k)})"
-        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
-        t" {cluster_shape[1]}, {cluster_shape[2]})"
+        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=(Int({cluster_shape[0]}),"
+        t" Int("
+        t" {cluster_shape[1]}), Int({cluster_shape[2]}))"
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE} alpha={alpha}"
     )
 
@@ -198,8 +199,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF4NVF4,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -270,8 +273,8 @@ def main() raises:
 
         comptime for bm in [128]:
             comptime for bn in [128, 256]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(bm, bn, MMA_K)
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (bm, bn, MMA_K)
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     dtype,
@@ -280,7 +283,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -300,7 +303,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -320,7 +323,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                    cluster_shape=(4, 2, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -341,7 +344,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                    cluster_shape=(8, 2, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -361,7 +364,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -382,7 +385,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -404,7 +407,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -424,7 +427,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,

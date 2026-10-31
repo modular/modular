@@ -37,8 +37,8 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.float8_scale_stacking import can_use_fused_mlp
-from max.nn.quant_config import (
+from max.nn.legacy.float8_scale_stacking import can_use_fused_mlp
+from max.nn.legacy.quant_config import (
     NVFP4_BLOCK_SIZE,
     InputScaleSpec,
     QuantConfig,
@@ -282,7 +282,7 @@ def _nvfp4_config(
     compute_dtype: DType,
     state_dict: Mapping[str, WeightData],
 ) -> QuantConfig:
-    """modelopt NVFP4: E4M3 block scales over 16 elements, fp32 global scales.
+    """Modelopt NVFP4: E4M3 block scales over 16 elements, fp32 global scales.
 
     The activation scale is static because the checkpoint calibrated it -- the
     per-block activation scales are still computed at runtime, but against

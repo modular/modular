@@ -71,16 +71,8 @@ def test_mxfp4_grouped_matmul[
         max_tokens = max(max_tokens, num_tokens_by_expert[i])
 
     print(
-        "  grouped matmul: num_experts=",
-        num_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " num_active=",
-        num_active_experts,
-        " total_tokens=",
-        total_tokens,
+        t"  grouped matmul: num_experts= {num_experts}  N= {N}  K= {K} "
+        t" num_active= {num_active_experts}  total_tokens= {total_tokens}"
     )
 
     # --- Host allocations ---

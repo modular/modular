@@ -18,14 +18,17 @@
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "IREmitter.h"
 #include "Mojo/MojoParser/ASTDecl.h"
+#include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/MojoParser/ModuleLoader.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
+#include "ParserEvaluationContext.h"
 #include "Traits.h"
 
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/LITDialect/LITOps.h"
 
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -2158,24 +2161,10 @@ void DeclResolver::exportMain(DefASTDecl &funcDecl) {
 
   // Generate a reference to the main wrapper function, which expects the user
   // main to be provided via an parameter.
-  FuncType mainWrapperSig = mainWrapperSigGen.getBody();
-  FnMetaOriginDataAttr mainWrapperFnMeta =
-      cast<FnMetaOriginDataAttr>(mainWrapperSig.getMetadata());
-  auto strippedMainWrapperFnMeta = FnMetaOriginDataAttr::get(
-      getContext(), mainWrapperFnMeta.getNumImplicitOriginDecls(),
-      mainWrapperFnMeta.getCaptureOrigins(),
-      mainWrapperFnMeta.getIsNestedOriginsReadOnly(),
-      mainWrapperFnMeta.getDefinesInteriorOrigins());
-  auto strippedMainWrapperSig = FuncType::get(
-      mainWrapperSig.getValues(), mainWrapperSig.getArgConventions(),
-      mainWrapperSig.getFnEffects(), strippedMainWrapperFnMeta,
-      mainWrapperSig.getArgListAttrs());
-  SymbolConstantAttr wrapperFnRef = SymbolConstantAttr::get(
-      getFullyResolvedSymbolRef(mainWrapperFn),
-      GeneratorType::get(/*inputParamTypes=*/{}, strippedMainWrapperSig,
-                         /*metadata=*/PogListAttr::get(getContext())),
-      {SymbolConstantAttr::get(getFullyResolvedSymbolRef(userMainFn),
-                               userMainSignature)});
+  ParameterEvaluationContext &evalCtx = shared.getEvaluationContext();
+  TypedAttr userMainFnRef = userMainFn.getBoundSymbolRef(evalCtx);
+  FuncSymbolGenerator wrapperFnRef =
+      mainWrapperFn.getBoundSymbolRef(evalCtx, ArrayRef(userMainFnRef));
 
   auto shimBodyBuilder = ImplicitLocOpBuilder::atBlockBegin(
       shimMainFn->getLoc(), shimMainFn.getBody());
@@ -2204,14 +2193,15 @@ void DeclResolver::exportMain(DefASTDecl &funcDecl) {
 // Decl Helpers
 
 static void printConstraints(llvm::raw_ostream &os,
-                             ArrayRef<ConstraintAttr> constraints) {
+                             ArrayRef<ConstraintAttr> constraints,
+                             ASTTypePrinterContext ctx) {
   if (constraints.empty())
     return;
   os << '{';
   llvm::interleave(
       constraints, os,
       [&](ConstraintAttr constraint) {
-        ASTType::printParam(os, constraint.getProposition(), /*diags=*/{});
+        ASTType::printParam(os, constraint.getProposition(), ctx);
       },
       ",");
   os << '}';
@@ -2219,6 +2209,13 @@ static void printConstraints(llvm::raw_ostream &os,
 
 StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
                                         FnTypeGeneratorType signatureGen) {
+  // Mangled names are opaque symbol names, so repeated subexpressions in a
+  // shared DAG of parameter expressions can be deduplicated to keep the name
+  // (and the time to build it) linear rather than exponential in DAG depth.
+  DedupContext dedup;
+  ASTTypePrinterContext mangleCtx;
+  mangleCtx.dedup = &dedup;
+
   // Compute the full signature of the decl to ensure dependent parameters from
   // a parent decl are name-erased in the mangled name.
   FnTypeGeneratorType fullSig =
@@ -2242,7 +2239,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
             os << "*";
             type = type.getParameterListInfo().elementType;
           }
-          os << type.getAsString(/*diags=*/{});
+          os << type.getAsString(mangleCtx);
         },
         ",");
     os << ']';
@@ -2280,7 +2277,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
                                    .getVariadicPackInfo()
                                    .typeList;
       mangledName += '*';
-      ASTType::printParam(os, packVariadic, /*diags=*/{});
+      ASTType::printParam(os, packVariadic, mangleCtx);
       continue;
     } else if (fullSig.isKwVarArg(argNo)) {
       // TODO: Propagate convention correctly.
@@ -2290,7 +2287,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     } else {
       argType = RefType::stripRefConvention(argType, convention);
     }
-    mangledName += argType.getAsString(/*ctx=*/{nullptr});
+    mangledName += argType.getAsString(mangleCtx);
 
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {
@@ -2319,10 +2316,12 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   mangledName += ')';
 
   // Add def constraints to the mangled name.
-  printConstraints(os, fullSig.getParamListAttrs().getBodyConstraints());
+  printConstraints(os, fullSig.getParamListAttrs().getBodyConstraints(),
+                   mangleCtx);
 
+  std::string finalName = dedup.finalize(mangledName);
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".
-  std::replace(mangledName.begin(), mangledName.end(), '@', '_');
-  return StringAttr::get(baseName.getContext(), mangledName);
+  std::replace(finalName.begin(), finalName.end(), '@', '_');
+  return StringAttr::get(baseName.getContext(), finalName);
 }

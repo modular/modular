@@ -30,7 +30,7 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.lib.config import (
     KVCacheConfig,
     MAXModelConfig,
@@ -134,8 +134,10 @@ class DSparkSpeculatorsDraftConfig:
 
     @property
     def num_speculative_tokens(self) -> int:
-        """Drafted tokens per step: the anchor slot never predicts unless
-        ``sample_from_anchor`` is set."""
+        """Drafted tokens per step.
+
+        The anchor slot never predicts unless ``sample_from_anchor`` is set.
+        """
         return self.block_size - (0 if self.sample_from_anchor else 1)
 
     def checkpoint_draft_width(
@@ -196,6 +198,7 @@ class DSparkSpeculatorsDraftConfig:
 
     @property
     def num_context_features(self) -> int:
+        """The number of target layers the draft reads taps from."""
         return len(self.aux_hidden_state_layer_ids)
 
     @property
@@ -421,6 +424,7 @@ class DSparkSpeculatorsDraftArchConfig:
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the checkpoint's position bound."""
         del pipeline_config
         assert model_config is not None
         huggingface_config = model_config.huggingface_config
@@ -439,6 +443,7 @@ class DSparkSpeculatorsDraftArchConfig:
         return cls(max_position_embeddings=int(max_pos))
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_position_embeddings
 
     @classmethod
@@ -447,6 +452,7 @@ class DSparkSpeculatorsDraftArchConfig:
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """Returns the checkpoint's ``max_position_embeddings``."""
         del model_config
         layer_cfg = _get(huggingface_config, "transformer_layer_config")
         max_pos = (

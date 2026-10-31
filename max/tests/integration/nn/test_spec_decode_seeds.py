@@ -40,7 +40,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType
-from max.nn.sampling.rejection_sampler import (
+from max.nn.legacy.sampling.rejection_sampler import (
     _SEED_DOMAIN_BONUS,
     _SEED_DOMAIN_COIN,
     _SEED_DOMAIN_RECOVERY,

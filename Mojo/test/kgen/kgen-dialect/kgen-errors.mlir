@@ -274,13 +274,6 @@ kgen.generator @duplicate_decl() {
   hlcf.return
 }
 
-// -----
-
-kgen.func @stage_closure() {
-  // expected-error @below {{staged closures cannot have parameters}}
-  %0 = kgen.stage_closure = <n : ui32>() capturing -> index {
-  } { name = "k" }
-}
 
 // -----
 

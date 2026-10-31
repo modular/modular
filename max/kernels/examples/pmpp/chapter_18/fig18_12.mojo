@@ -40,13 +40,13 @@ comptime BLOCK_SIZE = 256
 
 
 def bfs_kernel(
-    src_ptrs: MutPointer[UInt32, MutAnyOrigin],
-    dst: MutPointer[UInt32, MutAnyOrigin],
-    level: MutPointer[UInt32, MutAnyOrigin],
-    prev_frontier: MutPointer[UInt32, MutAnyOrigin],
-    curr_frontier: MutPointer[UInt32, MutAnyOrigin],
+    src_ptrs: ImmPointer[UInt32, ImmUntrackedOrigin],
+    dst: ImmPointer[UInt32, ImmUntrackedOrigin],
+    level: MutPointer[UInt32, MutUntrackedOrigin],
+    prev_frontier: ImmPointer[UInt32, ImmUntrackedOrigin],
+    curr_frontier: MutPointer[UInt32, MutUntrackedOrigin],
     num_prev_frontier_dev: Int32,
-    num_curr_frontier: MutPointer[UInt32, MutAnyOrigin],
+    num_curr_frontier: MutPointer[UInt32, MutUntrackedOrigin],
     curr_level: UInt32,
 ):
     """BFS kernel: frontier-based traversal with atomic operations."""

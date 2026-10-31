@@ -14,8 +14,8 @@ modular_py_test(
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )

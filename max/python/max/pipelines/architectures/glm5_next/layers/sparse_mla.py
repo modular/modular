@@ -58,15 +58,16 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.comm import Allreduce
-from max.nn.kernels import mla_decode_graph
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.quant_ops import quantized_matmul
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.kernels import mla_decode_graph
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.quant_ops import quantized_matmul
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     Indexer,
+    KpoolTailReplayInputs,
 )
 from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
     SparseLatentAttentionWithRopeFp8,
@@ -138,10 +139,10 @@ class SparseMLASublayerInputs:
     layer set -- the indexer cache's -- so a model index would bind one
     layer's ring to another and pass every shape check."""
 
-    prev_selection: TensorValue | None = None
-    """``[total_tokens, 2051]`` int32 selection to reuse instead of running the
-    indexer, for ``index_share_for_mtp_iteration``. The shared value is the
-    *expanded token* selection, not the 512 pool ids."""
+    prev_selection: list[TensorValue] = field(default_factory=list)
+    """Per-device ``[total_tokens, 2051]`` int32 selection to reuse instead of
+    running the indexer, for ``index_share_for_mtp_iteration``, or empty. The
+    shared value is the *expanded token* selection, not the 512 pool ids."""
 
     selection: list[TensorValue] = field(default_factory=list)
     """Per-device sink for this layer's selection. Appended to the model's
@@ -225,6 +226,26 @@ class Glm5NextSparseMLASublayer(Module):
             across every sparse layer.
     """
 
+    tail_seed_offsets: list[TensorValue] | None = None
+    """Per-device row offsets the indexer's tail seed reads, or ``None``.
+
+    Set by the speculative graph around a verify: all zeros at a nonzero
+    verify width, so the ring keeps its pre-verify members until the rollback
+    seeds the accepted rows. ``None`` in the base graph, which seeds every
+    call's own rows.
+    """
+
+    tail_capture: list[list[KpoolTailReplayInputs]] | None = None
+    """Per-device sink for this layer's tail-seed inputs, or ``None``.
+
+    Set alongside :attr:`tail_seed_offsets`.
+    """
+
+    selection_lag: int = 0
+    """Positions between the token a reused selection was computed for and
+    the token reading it. Nonzero only on an MTP draft step that reuses an
+    earlier step's selection, which never runs inside a subgraph."""
+
     def __init__(
         self,
         config: Glm5NextConfig,
@@ -301,7 +322,7 @@ class Glm5NextSparseMLASublayer(Module):
             norm_dtype=config.compute_dtype,
             # TODO(GLM53-PREFILLSCALE): "auto" would route prefill through
             # `mla_prefill_decode_graph`, which asserts the absorbed scales are
-            # present (`max/python/max/nn/kernels.py:4580`) and so cannot serve
+            # present (`max/python/max/nn/legacy/kernels.py:4580`) and so cannot serve
             # a checkpoint that ships `kv_b_proj` unquantized --- the very
             # split this model needs. `mla_decode_graph` already takes them as
             # `TensorValue | None`, so the decode route is correct today and
@@ -405,8 +426,8 @@ class Glm5NextSparseMLASublayer(Module):
         otherwise runs the pooled indexer: compress, cache, score pools, expand
         back to token positions.
         """
-        if inputs.prev_selection is not None:
-            return inputs.prev_selection.to(x.device)
+        if inputs.prev_selection:
+            return inputs.prev_selection[device_idx]
         selection, _ = self.indexer_shards[device_idx](
             x,
             q_a_normed,
@@ -416,9 +437,23 @@ class Glm5NextSparseMLASublayer(Module):
             inputs.input_row_offsets[device_idx],
             inputs.indexer_kv_collections[device_idx],
             inputs.layer_idx,
+            # The indexer's default is no mask, under which a prefill query
+            # spends its pool budget on pools after it that `_attend`'s causal
+            # mask then discards.
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
             tail=inputs.tail_pools[device_idx],
             slot_idx=inputs.tail_row_ids[device_idx],
             write_logical=True,
+            seed_row_offsets=(
+                None
+                if self.tail_seed_offsets is None
+                else self.tail_seed_offsets[device_idx]
+            ),
+            tail_capture=(
+                None
+                if self.tail_capture is None
+                else self.tail_capture[device_idx]
+            ),
         )
         assert selection is not None
         return selection
@@ -467,7 +502,7 @@ class Glm5NextSparseMLASublayer(Module):
             raise ValueError(
                 "An FP8 latent cache with a BF16 kv_b_proj is not reachable: "
                 "the FP8 MLA op requires absorbed weight scales this "
-                "checkpoint does not ship (max/python/max/nn/kernels.py:4410). "
+                "checkpoint does not ship (max/python/max/nn/legacy/kernels.py:4410). "
                 "Run the BF16 latent cache, which is what the accuracy gates "
                 "use, until that pairing is supported."
             )
@@ -520,10 +555,7 @@ class Glm5NextSparseMLASublayer(Module):
             index_kpool=self.indexer.index_kpool,
             index_pool_topk=self.indexer.pools_selected,
             index_kpool_select_tail=self.indexer.always_select_tail,
-            # TODO(GLM53-MTP): a draft step that reuses an earlier token's
-            # selection must pass its lag here. It cannot ride in
-            # `SparseMLASublayerInputs`: every field there becomes a subgraph
-            # input, which a Python int is not.
+            selection_lag=self.selection_lag,
         ).reshape((-1, shard.n_heads * shard.v_head_dim))
         return shard.o_proj(attn_out)
 

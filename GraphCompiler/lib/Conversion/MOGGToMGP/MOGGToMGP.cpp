@@ -1774,7 +1774,10 @@ LogicalResult MOGraphLowering::lower(MO::SequenceOp seq) {
   // tensor guard chains -- never the running execute chain: the fork gates on
   // the guard chains of the body's inputs (chain-guarded captures are promoted
   // to inputs first), and the body's outputs are re-guarded on the join chain
-  // so downstream consumers wait for the side stream.
+  // so downstream consumers wait for the side stream. Every body op starts
+  // after the fork, including one ordered only by a captured `!mo.chain` or by
+  // nothing: enqueued earlier, it would run on the side stream outside any
+  // device graph capture the fork brings that stream into.
   OpBuilder &b = loweringState.getExecuteOpBuilder();
   Location loc = seq.getLoc();
   Block &body = seq.getBodyRegion().front();
@@ -1829,12 +1832,13 @@ LogicalResult MOGraphLowering::lower(MO::SequenceOp seq) {
 
   // mo.sequence is not IsolatedFromAbove so the body can read constants and
   // weights directly. A capture with a producer chain is promoted to a block
-  // argument so it is fork-guarded like a listed input.
+  // argument so it is fork-guarded like a listed input, and so is a captured
+  // chain, which orders the body's side effects (a buffer write, a host wait).
   SmallVector<Value> inputs(seq.getInputs());
   llvm::SetVector<Value> captured;
   mlir::getUsedValuesDefinedAbove(seq.getBodyRegion(), captured);
   for (Value cap : captured) {
-    if (!guardOf(cap))
+    if (!guardOf(cap) && !(bindStream && isa<MO::ChainType>(cap.getType())))
       continue;
     BlockArgument arg = body.addArgument(cap.getType(), cap.getLoc());
     cap.replaceUsesWithIf(arg, [&](OpOperand &use) {
@@ -1859,27 +1863,50 @@ LogicalResult MOGraphLowering::lower(MO::SequenceOp seq) {
       for (Value in : inputs)
         if (deviceOf(in) == dev)
           inGuards.push_back(guardOf(in));
-      forkChainFor[dev] =
-          MGP::DeviceWaitOp::create(b, loc, /*inChain=*/combineChains(inGuards),
-                                    execContext, /*waitingDeviceContext=*/view,
-                                    /*signalingDeviceContext=*/base,
-                                    /*bDevice=*/dev)
-              .getResult();
+      auto fork = MGP::DeviceWaitOp::create(
+          b, loc, /*inChain=*/combineChains(inGuards), execContext,
+          /*waitingDeviceContext=*/view,
+          /*signalingDeviceContext=*/base, /*bDevice=*/dev);
+      fork.setIsSideStreamFork(true);
+      forkChainFor[dev] = fork.getResult();
       loweringState.setExecuteDeviceOverride(dev, view);
     }
   }
+  SmallVector<Value> forks;
+  for (DeviceRefAttr dev : devices)
+    if (Value fork = forkChainFor.lookup(dev))
+      forks.push_back(fork);
+  Value allForks = forks.empty() ? Value() : combineChains(forks);
 
   // Guard each body block argument (not the shared input, so unrelated
   // main-stream consumers are not serialized) on its device's fork chain. A
-  // device with no fork keeps producer ordering.
+  // device with no fork keeps producer ordering. A chain has no device, so it
+  // waits for every fork.
   for (auto [arg, operand] : llvm::zip_equal(body.getArguments(), inputs)) {
-    loweringState.emplaceExecuteLoweredValue(
-        arg, loweringState.lookupExecuteLoweredValue(operand));
+    Value lowered = loweringState.lookupExecuteLoweredValue(operand);
+    if (allForks && isa<MO::ChainType>(operand.getType())) {
+      loweringState.emplaceExecuteLoweredValue(
+          arg, combineChains({lowered, allForks}));
+      continue;
+    }
+    loweringState.emplaceExecuteLoweredValue(arg, lowered);
     Value guard = bindStream ? forkChainFor.lookup(deviceOf(operand)) : Value();
     if (!guard)
       guard = guardOf(operand);
     if (guard)
       loweringState.replaceChainGuard(arg, guard);
+  }
+
+  // An op with no chain or guarded operand starts on the root or the current
+  // execute chain; inside the body both wait for the fork.
+  Value outerChain = loweringState.getCurrentExecuteChain();
+  Value bodyEntryChain;
+  if (allForks) {
+    bodyEntryChain = outerChain == rootChain
+                         ? allForks
+                         : combineChains({outerChain, allForks});
+    loweringState.setRootExecuteChain(allForks);
+    loweringState.setCurrentExecuteChain(bodyEntryChain);
   }
 
   // Lower the body ops (excluding the yield terminator) in place; with the
@@ -1890,9 +1917,19 @@ LogicalResult MOGraphLowering::lower(MO::SequenceOp seq) {
     if (failed(lowerOp(op, &seq.getBodyRegion())))
       return failure();
 
+  // A body side effect stays ordered before later ones; otherwise the outer
+  // chains resume.
+  if (allForks) {
+    loweringState.setRootExecuteChain(rootChain);
+    if (loweringState.getCurrentExecuteChain() == bodyEntryChain)
+      loweringState.setCurrentExecuteChain(outerChain);
+  }
+
   // Join: per device, a device_wait that makes the base stream wait for the
-  // side stream, gated on the guard chains of that device's body outputs.
-  // deferSideStreamJoins later moves it to the first consumer of the results.
+  // side stream, gated on the fork and the guard chains of that device's body
+  // outputs. The fork keeps a join from waiting on a side stream that never
+  // joined the base stream's capture. deferSideStreamJoins later moves it to
+  // the first consumer of the results.
   auto yieldOp = cast<MO::YieldOp>(body.getTerminator());
   llvm::SmallDenseMap<DeviceRefAttr, Value> joinChainFor;
   if (bindStream) {
@@ -1901,7 +1938,7 @@ LogicalResult MOGraphLowering::lower(MO::SequenceOp seq) {
     for (DeviceRefAttr dev : devices) {
       TypedValue<MGP::DeviceContextType> base =
           loweringState.getExecuteDevice(dev);
-      SmallVector<Value> outGuards;
+      SmallVector<Value> outGuards{forkChainFor[dev]};
       for (Value out : yieldOp.getOperands())
         if (deviceOf(out) == dev)
           outGuards.push_back(guardOf(out));

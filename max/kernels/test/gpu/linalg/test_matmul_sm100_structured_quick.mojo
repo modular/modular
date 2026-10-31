@@ -45,7 +45,7 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def test_structured[
@@ -56,9 +56,9 @@ def test_structured[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     swapAB: Bool = False,
@@ -73,24 +73,10 @@ def test_structured[
     var K = Int(k)
 
     print(
-        "[",
-        test_name,
-        "] M=",
-        M,
-        " N=",
-        N,
-        " K=",
-        K,
-        " cta_group=",
-        cta_group,
-        " swapAB=",
-        swapAB,
-        " split_k=",
-        num_split_k,
-        " lambda=",
-        test_lambda,
-        " reg_epi=",
-        register_based_epilogue,
+        (
+            t"[{test_name}]"
+            t" M={M} N={N} K={K} cta_group={cta_group} swapAB={swapAB} split_k={num_split_k} lambda={test_lambda} reg_epi={register_based_epilogue}"
+        ),
         sep="",
     )
 
@@ -134,8 +120,10 @@ def test_structured[
     ctx.enqueue_copy(b_device, b_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         cta_group=cta_group,
@@ -205,9 +193,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            block_tile_shape=Index(64, 32, BK),
-            mma_shape=Index(64, 32, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            block_tile_shape=(Int(64), Int(32), Int(BK)),
+            mma_shape=(Int(64), Int(32), Int(MMA_K)),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
         ](ctx, Int(256), Idx[256], Idx[256], "1SM-basic")
 
@@ -217,9 +205,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            block_tile_shape=Index(128, 64, BK),
-            mma_shape=Index(256, 128, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            block_tile_shape=(Int(128), Int(64), Int(BK)),
+            mma_shape=(Int(256), Int(128), Int(MMA_K)),
+            cluster_shape=(4, 4, 1),
             cta_group=2,
         ](ctx, Int(512), Idx[512], Idx[512], "2SM-basic")
 
@@ -229,9 +217,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            block_tile_shape=Index(128, 64, BK),
-            mma_shape=Index(128, 64, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            block_tile_shape=(Int(128), Int(64), Int(BK)),
+            mma_shape=(Int(128), Int(64), Int(MMA_K)),
+            cluster_shape=(4, 4, 1),
             cta_group=1,
             swapAB=True,
         ](ctx, Int(256), Idx[512], Idx[512], "swapAB")
@@ -242,9 +230,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            block_tile_shape=Index(64, 32, BK),
-            mma_shape=Index(128, 64, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            block_tile_shape=(Int(64), Int(32), Int(BK)),
+            mma_shape=(Int(128), Int(64), Int(MMA_K)),
+            cluster_shape=(4, 4, 1),
             cta_group=2,
             num_split_k=2,
         ](ctx, Int(256), Idx[256], Idx[512], "split-K")
@@ -255,9 +243,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            block_tile_shape=Index(64, 32, BK),
-            mma_shape=Index(64, 32, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+            block_tile_shape=(Int(64), Int(32), Int(BK)),
+            mma_shape=(Int(64), Int(32), Int(MMA_K)),
+            cluster_shape=(4, 2, 1),
             cta_group=1,
             k_group_size=2,
         ](ctx, Int(256), Idx[512], Idx[1024], "k_group=2")
@@ -268,9 +256,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            block_tile_shape=Index(128, 64, BK),
-            mma_shape=Index(256, 128, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            block_tile_shape=(Int(128), Int(64), Int(BK)),
+            mma_shape=(Int(256), Int(128), Int(MMA_K)),
+            cluster_shape=(4, 4, 1),
             cta_group=2,
             swapAB=True,
         ](ctx, Int(256), Idx[512], Idx[512], "2SM+swapAB")

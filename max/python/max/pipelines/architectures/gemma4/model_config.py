@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 4 configuration."""
 
 from __future__ import annotations
 
@@ -19,8 +20,8 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
     Gemma3Config,
@@ -77,6 +78,52 @@ def _resolve_num_global_kv_heads(text_config: PretrainedConfig) -> int:
     return num_global_kv_heads
 
 
+def _resolve_head_dims(huggingface_config: PretrainedConfig) -> tuple[int, int]:
+    """Resolves the (sliding, full-attention) head widths of a Gemma 4 config.
+
+    transformers >= 5.20 makes ``head_dim`` a per-layer attribute: the global
+    read raises and ``global_head_dim`` is folded into the per-layer
+    overrides. The HF modeling code reads the width off the layer's own
+    config, so read it the same way. Older transformers keep the config
+    homogeneous and expose both widths as plain attributes.
+    """
+    layer_types = getattr(huggingface_config, "layer_types", None) or []
+    per_layer = getattr(huggingface_config, "per_layer_config", None)
+    if per_layer is None or not layer_types:
+        return (
+            int(huggingface_config.head_dim),
+            int(huggingface_config.global_head_dim),
+        )
+
+    widths: dict[str, int] = {}
+    for idx, layer_type in enumerate(layer_types):
+        try:
+            width = int(per_layer[idx].head_dim)
+        except (AttributeError, IndexError, KeyError, TypeError) as exc:
+            raise ValueError(
+                "cannot resolve the head width of the Gemma 4 config "
+                f"(layer {idx}, type {layer_type!r})"
+            ) from exc
+        kind = "full" if "full" in str(layer_type) else "local"
+        widths.setdefault(kind, width)
+
+    local = widths.get("local")
+    if local is None:
+        raise ValueError(
+            "cannot resolve the sliding-window head width of the Gemma 4 "
+            "config: no sliding-attention layer"
+        )
+    return local, widths.get("full", local)
+
+
+def video_token_id(huggingface_config: AutoConfig) -> int:
+    """Returns the video placeholder id a Gemma 4 config states.
+
+    Returns 262144 for a config that predates the field.
+    """
+    return getattr(huggingface_config, "video_token_id", 262_144)
+
+
 @dataclass(kw_only=True)
 class Gemma4TextConfig(Gemma3Config):
     """Text configuration for Gemma 4 models.
@@ -94,6 +141,10 @@ class Gemma4TextConfig(Gemma3Config):
     hidden_size_per_layer_input: int = 0
     """Hidden size output of the per-layer input embedding. When this is 0, the
     per-layer input embedding is not used."""
+
+    pad_token_id: int = 0
+    """The pad token id. The per-layer embedding looks up this id in place of
+    every image, video, and audio placeholder token."""
 
     num_global_key_value_heads: int = 4
     """Number of key value heads used in full attention layers."""
@@ -153,6 +204,7 @@ class Gemma4TextConfig(Gemma3Config):
 
     @property  # type: ignore[misc]
     def rope_theta(self) -> float:
+        """Unsupported: the text config carries a global and a local theta."""
         raise ValueError(
             "rope_theta is not supported for Gemma4TextConfig. Use"
             " global_rope_theta or sliding_window_rope_theta instead."
@@ -164,6 +216,7 @@ class Gemma4TextConfig(Gemma3Config):
 
     @property  # type: ignore[misc, override]
     def rope_scaling(self) -> ProportionalScalingParams | None:
+        """Unsupported: the text config carries a global and a local scaling."""
         raise ValueError(
             "rope_scaling is not supported for Gemma4TextConfig. Use"
             " global_rope_scaling or sliding_window_rope_scaling instead."
@@ -174,6 +227,7 @@ class Gemma4TextConfig(Gemma3Config):
         pass
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @classmethod
@@ -182,6 +236,7 @@ class Gemma4TextConfig(Gemma3Config):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The checkpoint's ``max_position_embeddings``."""
         # Gemma3Config (parent) is permissive; Gemma4 text uses upper-bounded
         # max_length semantics instead.
         return ArchConfigWithStoredKVParams.calculate_max_seq_len(
@@ -222,6 +277,7 @@ class Gemma4TextConfig(Gemma3Config):
                 f"Gemma4 layers {layers.start} to {layers.stop - 1} need both"
                 " sliding and full attention to run as a pipeline stage."
             )
+        local_head_dim, full_head_dim = _resolve_head_dims(huggingface_config)
         return hybrid_swa_full_kv_params(
             layer_types=layer_types,
             sliding_window=huggingface_config.sliding_window,
@@ -230,10 +286,10 @@ class Gemma4TextConfig(Gemma3Config):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
+            head_dim=local_head_dim,
             allow_kv_head_replication=allow_kv_head_replication,
             full_n_kv_heads=_resolve_num_global_kv_heads(huggingface_config),
-            full_head_dim=huggingface_config.global_head_dim,
+            full_head_dim=full_head_dim,
         )
 
     @classmethod
@@ -244,11 +300,12 @@ class Gemma4TextConfig(Gemma3Config):
         *,
         max_seq_len: int,
     ) -> Self:
-        """Initialize Gemma4TextConfig from pipeline and HuggingFace configs.
+        """Builds the text config from the pipeline and HuggingFace configs.
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace text model configuration.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized Gemma4TextConfig instance.
@@ -266,6 +323,7 @@ class Gemma4TextConfig(Gemma3Config):
         interleaved_rope_weights = _interleaved_rope_weights(
             pipeline_config.model
         )
+        local_head_dim, full_head_dim = _resolve_head_dims(huggingface_config)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model.device_specs
@@ -310,7 +368,7 @@ class Gemma4TextConfig(Gemma3Config):
             num_hidden_layers=huggingface_config.num_hidden_layers,
             num_attention_heads=huggingface_config.num_attention_heads,
             num_key_value_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
+            head_dim=local_head_dim,
             hidden_activation=hidden_activation,
             max_position_embeddings=huggingface_config.max_position_embeddings,
             max_seq_len=max_seq_len,
@@ -336,10 +394,11 @@ class Gemma4TextConfig(Gemma3Config):
             # Gemma4-specific fields
             vocab_size_per_layer_input=huggingface_config.vocab_size_per_layer_input,
             hidden_size_per_layer_input=huggingface_config.hidden_size_per_layer_input,
+            pad_token_id=getattr(huggingface_config, "pad_token_id", None) or 0,
             num_global_key_value_heads=_resolve_num_global_kv_heads(
                 huggingface_config
             ),
-            global_head_dim=huggingface_config.global_head_dim,
+            global_head_dim=full_head_dim,
             attention_k_eq_v=huggingface_config.attention_k_eq_v,
             num_kv_shared_layers=huggingface_config.num_kv_shared_layers,
             enable_moe_block=huggingface_config.enable_moe_block,
@@ -514,6 +573,10 @@ class Gemma4ForConditionalGenerationConfig(
     video_token_index: int = 262_144
     """The video token index to encode the video prompt."""
 
+    audio_token_index: int | None = None
+    """The audio token index to encode the audio prompt, or ``None`` for
+    checkpoints that declare no audio token (the text-only line)."""
+
     text_config: Gemma4TextConfig
     """The config object of the text backbone."""
 
@@ -544,8 +607,7 @@ class Gemma4ForConditionalGenerationConfig(
     def construct_partition_spec(
         cls, huggingface_config: AutoConfig
     ) -> PartitionSpec:
-        """Returns where the decoder, nested under ``text_config``, may be
-        cut.
+        """Returns where the decoder, nested under ``text_config``, may be cut.
 
         Every stage needs both a sliding and a full attention layer, which
         depends on both of its ends rather than on one cut, so building a
@@ -608,6 +670,7 @@ class Gemma4ForConditionalGenerationConfig(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             model_config: Optional model config override.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized config instance.
@@ -640,6 +703,7 @@ class Gemma4ForConditionalGenerationConfig(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: Top-level HuggingFace model configuration.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A config instance ready for finalization.
@@ -707,9 +771,15 @@ class Gemma4ForConditionalGenerationConfig(
             vision_config=vision_config,
             text_config=text_config,
             image_token_index=huggingface_config.image_token_id,
-            video_token_index=getattr(
-                huggingface_config, "video_token_id", 262_144
-            ),
+            video_token_index=video_token_id(huggingface_config),
+            # Checkpoints name the audio placeholder ``audio_token_id`` (the
+            # processor's spelling) or ``audio_token_index``; a checkpoint
+            # without an audio tower declares neither, which leaves the field
+            # ``None`` and the placeholder mask unchanged.
+            audio_token_index=getattr(
+                huggingface_config, "audio_token_id", None
+            )
+            or getattr(huggingface_config, "audio_token_index", None),
             quantization_encoding=quantization_encoding,
             layer_ids=stage_layers(
                 pipeline_config, int(hf_text_config.num_hidden_layers)
@@ -734,7 +804,6 @@ class Gemma4ForConditionalGenerationConfig(
             state_dict: Model weights dictionary.
             return_logits: Return logits configuration.
         """
-
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")

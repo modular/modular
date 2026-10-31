@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/basic-ops.mdx
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 # (batch=2, channels=3, length=4)
 x = Tensor(

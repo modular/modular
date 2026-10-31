@@ -17,7 +17,9 @@
 #include "Driver.h"
 #include "HAL/M_driver_context.h"
 #include "Memory.h"
+#include "Target/lib/Support/HostMemory.h"
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 
@@ -268,8 +270,15 @@ M_driver_context_memory_info(M_driver_context_t context, uint64_t *free,
   MTL::Device *dev = context->device->mDevice;
   uint64_t budget = dev->recommendedMaxWorkingSetSize();
   uint64_t used = dev->currentAllocatedSize();
+  // The working-set budget ignores other processes, which draw on the same
+  // unified memory.
+  auto host = M::Target::queryHostMemory();
+  if (!host)
+    return context->device->driver->status.create(
+        llvm::toString(host.takeError()));
   *total = budget;
-  *free = budget > used ? budget - used : 0;
+  *free =
+      std::min<uint64_t>(budget > used ? budget - used : 0, host->available);
   return M_DRIVER_STATUS_SUCCESS;
 }
 

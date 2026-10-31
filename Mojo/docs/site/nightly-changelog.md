@@ -16,6 +16,12 @@ This version is still a work in progress.
 - `__exit__(self, error: E)` now additionally supports `var self` and
   `deinit self`, similar to the non-error `__exit__`.
 
+- You can transfer ownership of a payload from an rvalue enum/tuple subject with
+  a `var` case binding, enabling `case .Some(var value):` and
+  `case (var x, var y):` without copies. This allows `match` and `if case`
+  statements work more conveniently with linear types, and reduces copies in
+  general.
+
 ## Language changes
 
 - `@explicit_destroy("<message>")` on a struct is deprecated and now emits a
@@ -84,6 +90,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
+
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
   `Movable` only when all of its elements are.
   `Tuple` has a new `init_with` initializer, which constructs each element in
@@ -106,15 +114,66 @@ This version is still a work in progress.
   dealloc(allocation^)
   ```
 
+- Raising an integral `SIMD` value (including `Int`) or a `SIMDLength` to a
+  negative power now aborts at run time instead of silently returning `0`. Use
+  a floating point base instead.
+
+- Raising an `IntLiteral` to a negative `IntLiteral` power now computes the
+  exact result as a float literal, the reciprocal of the positive power,
+  instead of evaluating to `0`. The result is a float literal even when the
+  base is `1` or `-1`, so `var x = (-1)**-3` is now a `Float64` holding
+  `-1.0`. Zero to a negative power evaluates to `nan`.
+
+  ```mojo
+  var a = 2**-1             # 0.5, same as 1 / 2
+  var b = Float64(2) ** -1  # 0.5
+  var n = 2
+  var c = n**-1             # aborts at run time
+  ```
+
 - Added `FileDescriptor` to `std.io`, an owning wrapper around
   `RawFileDescriptor`. It is a linear type: close it explicitly with
   `fd^.close()`, which raises if the close fails. It is movable but not
   copyable, and `Optional[FileDescriptor]` is the size of a single
   descriptor. `RawFileDescriptor` gains a raising `close()` method.
+  `FileDescriptor(copy_borrowed=)` duplicates a descriptor with
+  close-on-exec set, so child processes don't inherit the copy.
+
+- `RawFileDescriptor.read_bytes()`, `RawFileDescriptor.fchdir()`,
+  `RawFileDescriptor.close()`, `FileDescriptor.close()`, and
+  `FileDescriptor(copy_borrowed=)` now raise `IOError`, so callers can
+  match on the error's `kind()`. Code in a plain `raises` function still
+  compiles unchanged.
 
 - Added `BorrowedFileDescriptor` to `std.io`, a copyable, non-owning view
   of a `FileDescriptor` that carries the owner's origin, so it can be
   passed around without closing the descriptor or outliving its owner.
+
+- `ArcPointer` element types no longer need to be `Deinitable`. Destroy an
+  `ArcPointer` of a non-`Deinitable` type with the new `deinit_with()` method.
+
+- `FileHandle` now owns its descriptor through a `FileDescriptor` and always
+  refers to an open file. It is no longer `Defaultable`, and `close()`
+  consumes the handle (`f^.close()`) instead of leaving it in an invalid
+  state. It still raises if the close fails. Use `Optional[FileHandle]`,
+  which is the same size as `FileHandle`, for a file that may not be open.
+  `NamedTemporaryFile` follows the same rules: it always holds an open file,
+  `close()` consumes it, and `Optional[NamedTemporaryFile]` is the same size
+  as `NamedTemporaryFile`.
+
+- The `OptionalPointer`, `OptionalMutPointer`, and `OptionalImmPointer`
+  aliases are deprecated. Write `Optional[Pointer[T, origin]]`,
+  `Optional[MutPointer[T, origin]]`, or `Optional[ImmPointer[T, origin]]`
+  instead. An `_` origin nested inside the `Optional` makes the function
+  generic over it, as it did with the aliases:
+
+  ```mojo
+  # Before
+  def fill(buf: OptionalMutPointer[Byte, _]): ...
+
+  # After
+  def fill(buf: Optional[MutPointer[Byte, _]]): ...
+  ```
 
 ## GPU programming
 
@@ -122,6 +181,19 @@ This version is still a work in progress.
   `CompilationTarget.is_apple_m6()` to `std.sys`. Apple M6 GPUs are now
   detected automatically, so you no longer need to pass
   `--target-accelerator=apple-m5` on M6 hardware.
+
+- `Bool`, `Scalar` (including `Int`), `String`, `StringSpan`, and
+  `StringLiteral` now conform to `ConvertibleToPython`, so they can be passed
+  to generic code bounded on that trait. The dedicated `PythonObject`
+  constructors for these types are removed; implicit conversion still works
+  through the single `ConvertibleToPython` constructor.
+  `ConvertibleToPython` gains an associated `ConversionToPythonErrorType`
+  (default `Never`), so conversions that cannot fail, such as `Bool` and
+  `Scalar`, stay non-raising, while `String` conversions keep raising
+  `Error`. This is a breaking change. If a conversion is non-raising, the
+  `raises` effect can be removed from the `ConvertibleToPython` constructor.
+  If a conversion is raising, an error type must be assigned to
+  `ConversionToPythonErrorType`.
 
 ## Tooling changes
 
@@ -156,6 +228,11 @@ This version is still a work in progress.
   instead. `std.sys.intrinsics.ballot()` is removed; use
   `max.gpu.primitives.warp.vote()`, which works on every GPU vendor.
 
+- The `Powable` and `CeilDivableRaising` traits are removed. A type that
+  defines `__pow__()` still supports the `**` operator without conforming to a
+  trait, and `pow()` now takes `SIMD` values only. Nothing conformed to
+  `CeilDivableRaising`, so the raising `ceildiv()` overload is removed too.
+
 ## Fixed
 
 - `SIMD.slice()` no longer passes `llvm.vector.extract` an offset that is not
@@ -164,3 +241,6 @@ This version is still a work in progress.
   element-wise path, and aligned slices narrower than the target's native
   vector width, such as the halves `split()` returns for small vectors, now
   use the intrinsic.
+
+- Fixed rejection of negative integer and floating-point literals in `match`
+  patterns.

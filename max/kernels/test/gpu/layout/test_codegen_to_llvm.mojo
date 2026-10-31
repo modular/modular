@@ -21,8 +21,10 @@ from layout.tile_tensor import stack_allocation
 def test_no_alloca_fill():
     print("== test_no_alloca_fill")
 
-    def tile_tensor_kernel(
-        output: TileTensor[.float32, type_of(row_major((0, 0))), MutAnyOrigin],
+    def tile_tensor_kernel[
+        output_origin: MutOrigin
+    ](
+        output: TileTensor[.float32, type_of(row_major((0, 0))), output_origin],
         i: Int,
         j: Int,
     ):
@@ -33,7 +35,7 @@ def test_no_alloca_fill():
     # CHECK-NOT: alloca float, i64 16, align 4
     print(
         compile_info[
-            tile_tensor_kernel,
+            tile_tensor_kernel[output_origin=MutUntrackedOrigin],
             emission_kind="llvm",
             target=get_gpu_target(),
         ]()

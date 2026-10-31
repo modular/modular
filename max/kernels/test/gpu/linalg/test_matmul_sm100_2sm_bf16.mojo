@@ -27,7 +27,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 
 def is_benchmark() -> Bool:
@@ -52,9 +51,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -124,8 +123,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(b_device, b_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -204,8 +205,8 @@ def main() raises:
                     112,
                     128,
                 ]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
@@ -213,7 +214,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=8,
@@ -231,7 +232,7 @@ def main() raises:
                             .bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                            cluster_shape=(4, 4, 1),
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
                             block_swizzle_size=4,
@@ -249,7 +250,7 @@ def main() raises:
                             .bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                            cluster_shape=(4, 4, 1),
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
                             block_swizzle_size=0,
@@ -268,7 +269,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                        cluster_shape=(8, 2, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=2,
@@ -285,7 +286,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=1,
@@ -304,9 +305,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(64, 8, 64),
-            Index(128, 16, 16),
-            cluster_shape=StaticTuple[Int32, 3](2, 4, 1),
+            (64, 8, 64),
+            (128, 16, 16),
+            cluster_shape=(2, 4, 1),
             block_swizzle_size=0,
             swapAB=True,
         ](

@@ -67,7 +67,8 @@ def _produced_value(i: Int) -> Int32:
 def pingpong_kernel[
     num_stages: Int,
     Backend: PipelineBackend,
-](result: MutPointer[Scalar[DType.int32], MutAnyOrigin], n_items: Int32):
+    result_origin: MutOrigin,
+](result: MutPointer[Scalar[DType.int32], result_origin], n_items: Int32):
     """Hand `n_items` values from one producer warp to one consumer warp."""
     comptime n_bar = 2 * num_stages  # full[0..num_stages) then empty[0..)
 
@@ -121,7 +122,7 @@ def pingpong_kernel[
 
 
 def _run_config[num_stages: Int](ctx: DeviceContext, n_items: Int) raises:
-    print("  num_stages=", num_stages, ", n_items=", n_items, sep="")
+    print(t"  num_stages={num_stages}, n_items={n_items}")
 
     var result = ctx.enqueue_create_buffer[.int32](n_items)
     ctx.enqueue_memset[.int32](result, 0)
@@ -131,11 +132,15 @@ def _run_config[num_stages: Int](ctx: DeviceContext, n_items: Int) raises:
 
     comptime if ctx.target.is_amd_gpu():
         ctx.enqueue_function[
-            pingpong_kernel[num_stages, AmdCounterBackend[1, 1]]
+            pingpong_kernel[
+                num_stages, AmdCounterBackend[1, 1], origin_of(result)
+            ]
         ](result, Int32(n_items), grid_dim=1, block_dim=block_dim)
     else:
         ctx.enqueue_function[
-            pingpong_kernel[num_stages, NvidiaMbarBackend[num_stages]]
+            pingpong_kernel[
+                num_stages, NvidiaMbarBackend[num_stages], origin_of(result)
+            ]
         ](result, Int32(n_items), grid_dim=1, block_dim=block_dim)
 
     var host = ctx.enqueue_create_host_buffer[.int32](n_items)

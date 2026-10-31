@@ -19,12 +19,9 @@ from typing import Any
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-from max.driver import CPU, DeviceSpec, load_devices
-from max.dtype import DType
-from max.graph import DeviceRef
-from max.nn.comm import MulticastPool, Signals
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.kv_cache.cache_params import KVConnectorType
+from max.driver import CPU, Device, DeviceSpec, load_devices
+from max.nn.legacy.comm import MulticastPool, Signals
+from max.nn.legacy.kv_cache.cache_params import KVConnectorType
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -33,11 +30,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
 )
-from max.pipelines.lib.memory_estimation import (
-    MemoryPlan,
-    _kv_params_per_layer_depth,
-    _max_per_layer_buffer_count,
-)
+from max.pipelines.lib.memory_estimation import FreeMemory, MemoryPlan
 from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import (
     DUMMY_LLAMA_ARCH,
@@ -46,59 +39,6 @@ from test_common.pipeline_model_dummy import (
 
 GIB = 1024**3
 _CONFIG = "max.pipelines.lib.config.config"
-
-
-def _mha_params(num_layers: int, per_layer_buffers: bool) -> MHAKVCacheParams:
-    return MHAKVCacheParams(
-        dtype=DType.bfloat16,
-        n_kv_heads=8,
-        head_dim=128,
-        num_layers=num_layers,
-        devices=[DeviceRef.GPU()],
-        page_size=128,
-        per_layer_buffers=per_layer_buffers,
-    )
-
-
-def test_per_layer_depth_single_buffer_pool_is_one() -> None:
-    """A normal single-buffer pool contributes a multiplier of 1."""
-    assert _kv_params_per_layer_depth(_mha_params(50, False)) == 1
-
-
-def test_per_layer_depth_reports_num_layers() -> None:
-    """A per-layer pool contributes its layer count as the multiplier."""
-    assert _kv_params_per_layer_depth(_mha_params(50, True)) == 50
-
-
-def test_per_layer_depth_tree_takes_largest_flagged_child() -> None:
-    """In a tree, only per-layer children count; the largest wins."""
-    root = MultiKVCacheParams.from_params(
-        {
-            "sliding_attention": _mha_params(50, True),
-            "full_attention": _mha_params(10, False),
-        }
-    )
-    assert _kv_params_per_layer_depth(root) == 50
-
-
-def test_per_layer_depth_tree_all_single_buffer_is_one() -> None:
-    """A tree with no per-layer child keeps the multiplier at 1."""
-    root = MultiKVCacheParams.from_params(
-        {"a": _mha_params(50, False), "b": _mha_params(10, False)}
-    )
-    assert _kv_params_per_layer_depth(root) == 1
-
-
-def test_max_per_layer_buffer_count_non_kv_arch_is_one() -> None:
-    """A non-KV arch config leaves the allocation cap unchanged."""
-    assert _max_per_layer_buffer_count(object()) == 1  # type: ignore[arg-type]
-
-
-def test_max_per_layer_buffer_count_reads_arch_kv_params() -> None:
-    """The multiplier is read from the arch config's KV params."""
-    arch = MagicMock(spec=ArchConfigWithKVCache)
-    arch.get_kv_params.return_value = _mha_params(50, True)
-    assert _max_per_layer_buffer_count(arch) == 50
 
 
 def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memory() -> (
@@ -184,12 +124,16 @@ def _set_kv_connector(
     )
 
 
-def _estimate(config: DummyPipelineConfig, **kwargs: Any) -> MemoryPlan:
-    """Runs a successful estimate against ample mocked device memory."""
+def _estimate(
+    config: DummyPipelineConfig,
+    stats: dict[str, int | None] | None = None,
+    **kwargs: Any,
+) -> MemoryPlan:
+    """Runs an estimate against mocked device stats, ample by default."""
     with patch(
         "max.driver.Device.stats", new_callable=PropertyMock
     ) as device_mock:
-        device_mock.return_value = {"free_memory": 100 * GIB}
+        device_mock.return_value = stats or {"free_memory": 100 * GIB}
         arch_config = DUMMY_LLAMA_ARCH.config.initialize(
             config, max_seq_len=config.model.max_length or 4096
         )
@@ -399,6 +343,57 @@ def test_estimate__draft_bound_lowers_plan_max_length() -> None:
     estimate = _estimate(config, draft_max_seq_len=1500)
     assert estimate.planned_max_length == 1500
     assert config.model.max_length == 4096
+
+
+def test_plan__zero_free_memory_does_not_plan_against_total() -> None:
+    """A host reporting no free memory is full, not unmeasured."""
+    config = _dummy_llama_config(max_length=4096)
+    with pytest.raises(
+        RuntimeError, match="Model size exceeds available memory"
+    ):
+        _estimate(config, {"free_memory": 0, "total_memory": 100 * GIB})
+
+
+def test_plan__unmeasured_free_memory_rejects_above_upper_bound() -> None:
+    config = _dummy_llama_config(max_length=4096)
+    with pytest.raises(
+        RuntimeError, match="Model size exceeds available memory"
+    ):
+        _estimate(config, {"free_memory": None, "total_memory": GIB // 2})
+
+
+def test_plan__unmeasured_free_memory_plans_against_upper_bound(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    config = _dummy_llama_config(max_length=4096)
+    stats = {"free_memory": None, "total_memory": 100 * GIB}
+    with caplog.at_level(logging.WARNING):
+        plan = _estimate(config, stats)
+    assert plan.available_cache_memory
+    assert "couldn't be measured exactly" in caplog.text
+
+
+def _device_with_stats(**stats: int | None) -> Device:
+    device = MagicMock(spec=Device)
+    device.stats = stats
+    return device
+
+
+def test_free_memory__sums_exact_and_unmeasured_devices() -> None:
+    exact = _device_with_stats(free_memory=10 * GIB, total_memory=80 * GIB)
+    unmeasured = _device_with_stats(free_memory=None, total_memory=80 * GIB)
+    assert MemoryEstimator._free_memory([exact, unmeasured]) == FreeMemory(
+        lo=10 * GIB, hi=90 * GIB
+    )
+
+
+def test_free_memory__smallest_takes_each_bound_independently() -> None:
+    devices = [
+        _device_with_stats(free_memory=10 * GIB, total_memory=80 * GIB),
+        _device_with_stats(free_memory=None, total_memory=80 * GIB),
+    ]
+    assert FreeMemory.smallest(devices) == FreeMemory(lo=0, hi=10 * GIB)
+    assert FreeMemory.smallest([]) == FreeMemory(lo=0, hi=0)
 
 
 @pytest.mark.skip("TODO: AITLIB-238")
@@ -674,7 +669,7 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
     assert got == expected
 
 
-_ALLREDUCE = "max.nn.comm.allreduce"
+_ALLREDUCE = "max.nn.legacy.comm.allreduce"
 
 
 @pytest.mark.parametrize(

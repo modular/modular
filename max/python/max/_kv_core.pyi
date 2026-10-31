@@ -358,15 +358,23 @@ class JengaBlockPool:
     def alloc_block(self, cache_id: str) -> LittleKVCacheBlock:
         """Returns a fresh block of ``cache_id``, claiming huge blocks as needed.
 
-        Prefers free blocks in huge blocks a request already holds, so idle
-        huge blocks stay parked for any cache, and claiming a pristine huge
-        block over handing out a free little block that is still committed,
-        so a prefix is evicted only when nothing else is left. Handing out a
-        committed block evicts it: its bytes are about to be overwritten.
+        Prefers uncommitted free blocks in huge blocks a request already
+        holds, so idle huge blocks stay parked for any cache, then a pristine
+        huge block. Only when neither is left does it hand out a committed
+        block, the least recently used one, which evicts that commit.
 
         Raises:
             InsufficientBlocksError: If the pool has no bytes left to serve
                 this cache.
+        """
+
+    def alloc_block_with_retype(
+        self, cache_id: str
+    ) -> tuple[LittleKVCacheBlock, bool]:
+        """Returns an allocation and whether its huge block changed cache type.
+
+        The Python memory owner clears retyped bytes before exposing the block
+        to writes. Pristine and same-leaf allocations report ``False``.
         """
 
     def free_block(self, block: LittleKVCacheBlock) -> None:

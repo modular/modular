@@ -20,7 +20,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use kv_tier_connector::{
-    connector::{TieredConnector, TransferResult},
+    connector::{LeafRecency, TieredConnector, TransferResult},
     copy_engine::{CopyEngine, LeafMem, Unit},
     disk_tier::DiskTier,
     host_region::HostRegion,
@@ -166,6 +166,8 @@ impl TierConnector {
         num_disk_workers=DISK_WORKERS,
         num_h2d_onload_lanes=1,
         use_disk_direct_io=false,
+        *,
+        leaf_recency,
     ))]
     fn new(
         py: Python<'_>,
@@ -182,7 +184,20 @@ impl TierConnector {
         num_disk_workers: usize,
         num_h2d_onload_lanes: usize,
         use_disk_direct_io: bool,
+        leaf_recency: Vec<(String, usize)>,
     ) -> PyResult<Self> {
+        let recency = leaf_recency
+            .iter()
+            .map(|(kind, blocks)| match kind.as_str() {
+                "full_sequence" => Ok(LeafRecency::FullSequence),
+                "sliding_window" => Ok(LeafRecency::SlidingWindow { blocks: *blocks }),
+                "recurrent" => Ok(LeafRecency::Recurrent),
+                other => Err(PyValueError::new_err(format!(
+                    "unknown leaf recency {other:?}; expected full_sequence, \
+                     sliding_window or recurrent"
+                ))),
+            })
+            .collect::<PyResult<Vec<_>>>()?;
         if replica_kv_memory.is_empty() || replica_kv_memory[0].is_empty() {
             return Err(PyValueError::new_err(
                 "replica_kv_memory must have at least one replica, each with at least one leaf",
@@ -289,6 +304,7 @@ impl TierConnector {
                     bytes_per_leaf,
                     only_last_level,
                     num_h2d_onload_lanes,
+                    recency,
                 )
             })
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
@@ -375,6 +391,13 @@ impl TierConnector {
             g0_blocks_per_leaf,
             already_held,
         })
+    }
+
+    /// Refreshes each leaf's recency for the blocks of `block_hashes` it reads.
+    fn touch(&mut self, py: Python<'_>, block_hashes: Vec<Vec<u8>>) -> PyResult<()> {
+        let block_hashes = hashes_from(&block_hashes)?;
+        py.detach(|| self.inner.touch(&block_hashes));
+        Ok(())
     }
 
     fn reclaim(&mut self) {

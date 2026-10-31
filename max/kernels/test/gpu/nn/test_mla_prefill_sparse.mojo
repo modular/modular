@@ -276,18 +276,8 @@ def run_test_prefill_sparse[
     `valid_topk` keys to contribute.
     """
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_heads:",
-        num_heads,
-        " num_kv_tokens:",
-        num_kv_tokens,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  seq_len: {seq_len} "
+        t" num_heads: {num_heads}  num_kv_tokens: {num_kv_tokens}  topk: {topk}"
     )
 
     var scale = Float32(1.0) / sqrt(Float32(SOFTMAX_SCALE_BASE_DIM))
@@ -742,14 +732,8 @@ def run_test_prefill_sparse[
                             nonzero_high_head += 1
                     total_checked += 1
     print(
-        "  DIAG: max_err=",
-        max_err,
-        " max_abs_actual=",
-        max_actual,
-        " num_nonzero=",
-        num_nonzero,
-        "/",
-        total_checked,
+        t"  DIAG: max_err= {max_err}  max_abs_actual= {max_actual} "
+        t" num_nonzero= {num_nonzero} / {total_checked}"
     )
     print(
         "  max_err by depth: low(0..255)=",
@@ -771,14 +755,8 @@ def run_test_prefill_sparse[
         for d in [0, 64, 128, 192]:
             var idx = base + d
             print(
-                "    h=",
-                h,
-                " d=",
-                d,
-                " out=",
-                out_host[idx].cast[.float64](),
-                " ref=",
-                ref_host[idx].cast[.float64](),
+                t"    h= {h}  d= {d}  out= {out_host[idx].cast[.float64]()} "
+                t" ref= {ref_host[idx].cast[.float64]()}"
             )
 
     # Fail hard on ANY non-finite output/reference. This is the check the
@@ -861,17 +839,9 @@ def run_test_prefill_sparse[
             + String(atol)
         )
     print(
-        "  PASSED: max_err=",
-        max_err,
-        " mean_abs_err=",
-        mean_abs_err,
-        " cosine=",
-        cosine,
-        " n_err_gt_1e-2=",
-        n_err_gt_1em2,
-        " checked=",
-        total_checked,
-        " elements",
+        t"  PASSED: max_err= {max_err}  mean_abs_err= {mean_abs_err}  cosine="
+        t" {cosine}  n_err_gt_1e-2= {n_err_gt_1em2}  checked= {total_checked} "
+        t" elements"
     )
 
     # -----------------------------------------------------------------------

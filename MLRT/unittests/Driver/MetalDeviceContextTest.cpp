@@ -13,6 +13,7 @@
 
 #include "MLRT/lib/Driver/DeviceContext/Metal/MetalDeviceContext.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
+#include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 
 // Suppress warnings from metal-cpp headers
 #pragma clang diagnostic push
@@ -1241,17 +1242,24 @@ TEST_F(MetalDeviceContextTestBase, ChunkAlloc_ValidSize_SucceedsAndFrees) {
 }
 
 // getMemoryInfo reports recommendedMaxWorkingSetSize as total and
-// (total - currentAllocatedSize) as free.
+// (total - currentAllocatedSize) as free, capped at what the host has left,
+// since other processes share the unified memory.
 TEST_F(MetalDeviceContextTestBase, GetMemInfo_TotalAndFree) {
   const MetalDevice &metalDev = MetalDevice::cast(*device_);
   MTL::Device *mtlDev = metalDev.metalDevice();
   size_t expectedTotal = mtlDev->recommendedMaxWorkingSetSize();
   size_t used = mtlDev->currentAllocatedSize();
-  size_t expectedFree = expectedTotal > used ? expectedTotal - used : 0;
+  size_t budgetFree = expectedTotal > used ? expectedTotal - used : 0;
 
   ASSIGN_NO_ERR(Device::MemInfo, info, metalDev.getMemoryInfo());
+  ASSIGN_NO_ERR(Device::MemInfo, host, getHostMemoryInfo());
+  // The host figure is a separate system-wide read; other processes can move
+  // it in between.
+  constexpr size_t drift = 1024ull * 1024 * 1024;
   EXPECT_EQ(info.total, expectedTotal);
-  EXPECT_EQ(info.free, expectedFree);
+  EXPECT_LE(info.free.value(), budgetFree);
+  EXPECT_LE(info.free.value(), host.free.value() + drift);
+  EXPECT_GE(info.free.value() + drift, std::min(budgetFree, host.free.value()));
 }
 
 // maxSingleAllocationSize on Metal is maxBufferLength.

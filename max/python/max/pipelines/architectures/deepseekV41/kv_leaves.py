@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
@@ -104,13 +104,14 @@ class V41KVLeafSpec:
     """Bytes of the opaque ``uint8`` record each slot holds, or ``None`` for
     a row of ``head_dim`` elements."""
     stride_alignment: int | None = None
-    """See :attr:`~max.nn.kv_cache.KVLeafRegion.stride_alignment`."""
+    """See :attr:`~max.nn.legacy.kv_cache.KVLeafRegion.stride_alignment`."""
     ring_rows: int | None = None
     """Rows of a ``state`` leaf's per-request ring, or ``None`` for a leaf
     paged by token."""
 
     @property
     def num_layers(self) -> int:
+        """How many layers the spec covers."""
         return len(self.owning_layer_ids)
 
     def slots_per_page(self, page_size: int) -> int:

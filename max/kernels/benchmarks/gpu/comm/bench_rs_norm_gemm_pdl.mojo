@@ -122,18 +122,18 @@ def bench_rs_norm_gemm_pdl[
     comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime BK = swizzle.bytes() // size_of[in_dtype]()
     comptime MMA_K = 16
-    comptime block_tile_shape = Index(bm, bn, BK)
-    comptime mma_shape = Index(2 * bm, 2 * bn, MMA_K)
+    comptime block_tile_shape = (bm, bn, BK)
+    comptime mma_shape = (2 * bm, 2 * bn, MMA_K)
 
     comptime gemm_config_off = MatmulConfig[in_dtype, in_dtype, in_dtype, True](
-        cluster_shape=Index(2, 1, 1),
+        cluster_shape=(Int(2), Int(1), Int(1)),
         mma_shape=mma_shape,
         cta_group=2,
     )
     comptime gemm_config_prefetch = MatmulConfig[
         in_dtype, in_dtype, in_dtype, True
     ](
-        cluster_shape=Index(2, 1, 1),
+        cluster_shape=(Int(2), Int(1), Int(1)),
         mma_shape=mma_shape,
         cta_group=2,
         prefetch_tiles_n=prefetch_tiles_n,
@@ -196,12 +196,9 @@ def bench_rs_norm_gemm_pdl[
 
         if i == 0:
             print(
-                "cache-busting windows: inputs=",
-                cb_inputs[i].buffer_size // cb_inputs[i].stride,
-                " weights=",
-                cb_weights[i].buffer_size // cb_weights[i].stride,
-                " (1 means the buster COLLAPSED -- raise budget_bytes)",
-                sep="",
+                t"cache-busting windows:"
+                t" inputs={cb_inputs[i].buffer_size // cb_inputs[i].stride} weights={cb_weights[i].buffer_size // cb_weights[i].stride} (1"
+                t" means the buster COLLAPSED -- raise budget_bytes)"
             )
 
         var alloc_i = config.rank_num_elements(i)
@@ -523,17 +520,8 @@ def main() raises:
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "Paired fused reduce-scatter+RMSNorm -> GEMM, PDL: ",
-        num_gpus,
-        " GPUs, ",
-        in_dtype,
-        ", M=",
-        num_rows,
-        " H=",
-        num_cols,
-        " N=",
-        gemm_n,
-        sep="",
+        t"Paired fused reduce-scatter+RMSNorm -> GEMM, PDL: {num_gpus} GPUs,"
+        t" {in_dtype}, M={num_rows} H={num_cols} N={gemm_n}"
     )
 
     var m = Bench(BenchConfig(num_repetitions=num_reps))

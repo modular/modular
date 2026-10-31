@@ -29,8 +29,8 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 
 from max.driver import Buffer, batch_inplace_copy
-from max.nn.kv_cache.cache_params import KVCacheMemory
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced

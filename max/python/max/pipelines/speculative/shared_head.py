@@ -23,7 +23,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, Protocol, runtime_checkable
 
 from max.graph import BufferValue, DimLike, TensorValue, ops
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.transformer import ReturnHiddenStates
 
 from .driver import (
     CarryDimNames,

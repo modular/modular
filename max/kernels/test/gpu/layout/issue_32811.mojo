@@ -17,10 +17,12 @@ from max.gpu import block_idx, thread_idx
 from layout import *
 
 
-def gpu_kernel(
-    dst: MutPointer[Float32, MutAnyOrigin],
-    rhs: ImmPointer[Float32, ImmutAnyOrigin],
-    lhs: ImmPointer[Float32, ImmutAnyOrigin],
+def gpu_kernel[
+    dst_origin: MutOrigin, rhs_origin: ImmOrigin, lhs_origin: ImmOrigin
+](
+    dst: MutPointer[Float32, dst_origin],
+    rhs: ImmPointer[Float32, rhs_origin],
+    lhs: ImmPointer[Float32, lhs_origin],
 ):
     dst[block_idx.x * 4 + thread_idx.x] = (
         rhs[block_idx.x * 4 + thread_idx.x]
@@ -49,7 +51,13 @@ def main() raises:
         ctx.enqueue_copy(vec_b_dev, vec_b_ptr)
         ctx.enqueue_copy(vec_c_dev, vec_c_ptr)
 
-        ctx.enqueue_function[gpu_kernel](
+        ctx.enqueue_function[
+            gpu_kernel[
+                dst_origin=origin_of(vec_c_dev),
+                rhs_origin=origin_of(vec_a_dev),
+                lhs_origin=origin_of(vec_b_dev),
+            ]
+        ](
             vec_c_dev,
             vec_a_dev,
             vec_b_dev,

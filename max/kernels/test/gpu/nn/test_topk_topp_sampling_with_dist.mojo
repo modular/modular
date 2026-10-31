@@ -23,6 +23,7 @@ so the exact cases stay at moderate widths.
 """
 
 from std.math import exp, sqrt
+from std.utils.numerics import inf, isfinite, nan, neg_inf
 from max.gpu.host import DeviceContext, HostBuffer
 from layout import TileTensor, row_major
 from std.testing import assert_almost_equal, assert_equal, assert_true
@@ -316,6 +317,78 @@ def test_dist_matches_reference[
         )
 
 
+def test_degenerate_rows_emit_zero_dist[
+    dtype: DType = .float32
+](ctx: DeviceContext, *, single_block: Bool = False) raises:
+    """A row with no usable distribution emits zeros, never NaN.
+
+    Speculative decoding reads `q == 0` as "no distribution for this row" and
+    never divides by it, so a NaN row poisons its rejection residual instead.
+    Two shapes reach that contract: a row whose own max is non-finite (`+Inf`
+    or all-NaN -- every weight goes NaN, so nothing ever accepts) and, the
+    shape the kernel fuzzer found, a row holding a lone NaN. The row max
+    ignores a NaN logit, so only that weight goes NaN: the rest of the row
+    still accepts its draw and the row's total mass is NaN.
+    """
+    comptime rows = 4
+    comptime d = 64
+    comptime live_row = 3
+    var logits_host = ctx.enqueue_create_host_buffer[dtype](rows * d)
+    for row in range(rows):
+        for col in range(d):
+            logits_host[row * d + col] = scrambled_logit(row, col).cast[dtype]()
+    # Row 0: a lone NaN (finite max, NaN total mass).
+    logits_host[d // 2] = nan[dtype]()
+    # Row 1: all `-Inf` (every weight zero).
+    for col in range(d):
+        logits_host[1 * d + col] = neg_inf[dtype]()
+    # Row 2: a single `+Inf` (the row max goes `+Inf`: every weight NaN).
+    logits_host[2 * d + 3] = inf[dtype]()
+
+    var run = run_sampling[dtype](
+        ctx,
+        logits_host,
+        rows,
+        d,
+        k=0,
+        top_p=1.0,
+        temperature=1.0,
+        seed_base=7,
+        single_block=single_block,
+    )
+
+    for row in range(live_row):
+        for col in range(d):
+            assert_equal(
+                run.dist[row * d + col],
+                0.0,
+                msg=String(
+                    t"row={row} col={col}: a row with no distribution must"
+                    t" emit zeros"
+                ),
+            )
+        assert_true(
+            run.tokens[row] >= 0 and run.tokens[row] < d,
+            msg=String(t"row={row}: token {run.tokens[row]} is out of range"),
+        )
+
+    # The live row is untouched: the kernel still emits a full distribution.
+    var dist_sum = 0.0
+    for col in range(d):
+        var got = run.dist[live_row * d + col]
+        assert_true(
+            isfinite(got),
+            msg=String(t"live row col={col}: non-finite probability"),
+        )
+        dist_sum += got
+    assert_almost_equal(
+        dist_sum,
+        1.0,
+        rtol=1e-3,
+        msg=String("live row: dist must sum to 1"),
+    )
+
+
 def test_tokens_match_without_dist(
     ctx: DeviceContext, rows: Int, d: Int, *, k: Int, top_p: Float64
 ) raises:
@@ -588,6 +661,12 @@ def main() raises:
             min_p=0.02,
             single_block=True,
         )
+
+        # A row with no usable distribution must emit zeros, never NaN: spec
+        # decode reads `q == 0` as "no distribution for this row" and never
+        # divides by it. Both launch shapes own that contract.
+        test_degenerate_rows_emit_zero_dist(ctx)
+        test_degenerate_rows_emit_zero_dist(ctx, single_block=True)
 
         test_tokens_match_without_dist(ctx, rows=8, d=1024, k=32, top_p=0.9)
         # Real Llama-3.1-8B vocabulary width.

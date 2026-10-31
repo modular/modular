@@ -18,6 +18,6 @@
 # RUN: rm -rf %t.dir && mkdir -p %t.dir/one/foo/util %t.dir/two/foo
 # RUN: echo "def util_fn():" > %t.dir/two/foo/util.mojo
 # RUN: echo "    pass" >> %t.dir/two/foo/util.mojo
-# RUN: %parse-mojo-isolated -I=%t.dir/one -I=%t.dir/two %s
+# RUN: %parse-mojo-isolated -I%t.dir/one -I%t.dir/two %s
 
 from foo.util import util_fn

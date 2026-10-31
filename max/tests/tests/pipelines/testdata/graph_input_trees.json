@@ -2064,9 +2064,8 @@
   "gemma3": {
     "in_layouts": [
       {"buffer": false, "dtype": "int64", "shape": ["total_seq_len"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
-      {"buffer": false, "dtype": "int64", "shape": ["return_n_logits"], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
       {"buffer": false, "dtype": "uint32", "shape": ["input_row_offsets_len"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
-      {"buffer": false, "dtype": "uint32", "shape": ["input_row_offsets_len"], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["return_n_logits"], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
       {"buffer": true, "dtype": "uint8", "shape": [294387728], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
       {"buffer": true, "dtype": "uint8", "shape": [294387728], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
       {"buffer": true, "dtype": "bfloat16", "shape": ["total_num_pages", 2, 2, 128, 4, 16], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
@@ -2097,11 +2096,11 @@
                 {
                   "kind": "node",
                   "type": "ragged_batch",
-                  "keys": ["tokens", "return_n_logits", "row_offsets"],
+                  "keys": ["tokens", "row_offsets", "return_n_logits"],
                   "children": [
                     {"kind": "leaf"},
                     {"kind": "leaf"},
-                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}
+                    {"kind": "leaf"}
                   ]
                 },
                 {
@@ -2170,9 +2169,8 @@
   "gpt_oss": {
     "in_layouts": [
       {"buffer": false, "dtype": "int64", "shape": ["total_seq_len"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
-      {"buffer": false, "dtype": "int64", "shape": ["return_n_logits"], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
       {"buffer": false, "dtype": "uint32", "shape": ["input_row_offsets_len"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
-      {"buffer": false, "dtype": "uint32", "shape": ["input_row_offsets_len"], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["return_n_logits"], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
       {"buffer": true, "dtype": "uint8", "shape": [294387728], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
       {"buffer": true, "dtype": "uint8", "shape": [294387728], "mesh": {"devices": [{"type": "gpu", "id": 1}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
       {"buffer": true, "dtype": "bfloat16", "shape": ["total_num_pages", 2, 2, 128, 4, 16], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
@@ -2203,11 +2201,11 @@
                 {
                   "kind": "node",
                   "type": "ragged_batch",
-                  "keys": ["tokens", "return_n_logits", "row_offsets"],
+                  "keys": ["tokens", "row_offsets", "return_n_logits"],
                   "children": [
                     {"kind": "leaf"},
                     {"kind": "leaf"},
-                    {"kind": "tuple", "children": [{"kind": "leaf"}, {"kind": "leaf"}]}
+                    {"kind": "leaf"}
                   ]
                 },
                 {

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Merges Kimi K2.5's image patches into the text width."""
 
 from __future__ import annotations
 
@@ -17,10 +18,10 @@ from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import LayerNorm
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import LayerNorm
+from max.nn.legacy.quant_config import QuantConfig
 
 
 class PatchMergerMLP(Module, Shardable):
@@ -87,6 +88,7 @@ class PatchMergerMLP(Module, Shardable):
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Merges each group of patches and projects it into the text width."""
         # x: (total_patches, N_k, mm_hidden_size)
         x = self.pre_norm(x)
         # Use self.input_dim explicitly instead of -1: the symbolic shape engine
@@ -101,6 +103,7 @@ class PatchMergerMLP(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the merger's weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -123,6 +126,7 @@ class PatchMergerMLP(Module, Shardable):
             raise ValueError(f"Unsupported sharding strategy ({strategy})")
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[PatchMergerMLP]:
+        """Splits the merger across ``devices``."""
         if self._sharding_strategy is None:
             raise ValueError(
                 "A sharding strategy must be set prior to calling this method"

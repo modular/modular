@@ -55,8 +55,10 @@ TRACE_LEVEL_HEADER = "x-max-trace-level"
 
 @functools.total_ordering
 class RequestTraceLevel(Enum):
-    """GPU trace depth one request asks for with the ``x-max-trace-level``
-    header, honored only when ``kernel_trace_headers`` is on.
+    """The GPU trace depth one request asks for.
+
+    A request names it with the ``x-max-trace-level`` header, honored only
+    when ``kernel_trace_headers`` is on.
 
     Members compare in declaration order. A forward pass is traced at the
     highest level among its traced requests.

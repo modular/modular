@@ -20,12 +20,12 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import (
     flash_attention_padded_kv_cache,
     fused_qkv_padded_matmul,
 )
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 TOTAL_NUM_PAGES = 16
@@ -233,39 +233,3 @@ def test_flash_attention_padded_kv_cache_matches_reference() -> None:
         np.testing.assert_allclose(
             attn_out[b, :valid_length], expected, rtol=ATTN_TOL, atol=ATTN_TOL
         )
-
-
-def test_print_kv_cache_paged_gpu_executes() -> None:
-    device = Accelerator()
-    kv_params = _kv_params()
-    batch_size = len(VALID_LENGTHS)
-
-    with Graph(
-        "print_kv_cache_gpu",
-        input_types=[
-            TensorType(DType.uint32, [batch_size], device=DeviceRef.GPU()),
-            *kv_params.flattened_kv_inputs(),
-        ],
-    ) as graph:
-        valid_lengths_in, *_kv_rest = graph.inputs
-        kv_collection = kv_params.unflatten_kv_inputs(iter(graph.inputs[1:]))[0]
-        ops.inplace_custom(
-            "mo.print_kv_cache.paged",
-            device=DeviceRef.GPU(),
-            values=[
-                valid_lengths_in.tensor,
-                *kv_collection.flatten_without_attention_dispatch_metadata(),
-                ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
-                ops.constant(True, DType.bool, device=DeviceRef.CPU()),
-            ],
-        )
-        graph.output()
-
-    model = InferenceSession(devices=[device]).load(graph)
-    runtime_inputs = paged_kv_cache_inputs(
-        kv_params, VALID_LENGTHS, total_num_pages=TOTAL_NUM_PAGES
-    )
-    model(
-        Buffer.from_numpy(np.array(VALID_LENGTHS, dtype=np.uint32)).to(device),
-        *tree.leaves(runtime_inputs),
-    )

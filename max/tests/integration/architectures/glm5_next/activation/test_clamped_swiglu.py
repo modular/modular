@@ -26,8 +26,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.activation import GatedActivation
-from max.nn.moe.quant_strategy import _gated_activation_ops
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.moe.quant_strategy import _gated_activation_ops
 from max.pipelines.architectures.glm5_next.layers.clamped_swiglu import (
     clamped_swiglu,
 )

@@ -221,6 +221,15 @@ struct Buffer {
   static void batchInplaceCopy(const std::vector<Buffer *> &dsts,
                                const std::vector<Buffer *> &srcs);
 
+  /// `batchInplaceCopy` of row ``srcRows[i]`` of ``srcs[i]`` into row
+  /// ``dstRows[i]`` of ``dsts[i]``, where a row is one index of the leading
+  /// axis. Buffers must be contiguous and not host-hazard tracked. Saves the
+  /// caller a Python view per row.
+  static void batchCopyRows(const std::vector<Buffer *> &dsts,
+                            const std::vector<Buffer *> &srcs,
+                            const std::vector<int> &dstRows,
+                            const std::vector<int> &srcRows);
+
   /// Converts owning buffers into non-owning wrappers over the same storage.
   ///
   /// This is intended for internal graph-capture warmup paths that want to

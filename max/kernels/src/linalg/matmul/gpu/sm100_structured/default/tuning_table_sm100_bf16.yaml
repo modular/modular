@@ -609,3 +609,27 @@ params:
   NUM_CLC_PIPELINE_STAGES: 0
   NUM_SPLIT_K: 16
   NUM_PIPELINE_STAGES: 5
+# Compressor projections with fp32 output at decode M of 17-128. Vendor BLAS
+# breaks the programmatic dependent launch chain on both sides here; the
+# split-K row keeps the chain. Measured in a norm, two-GEMM and concat chain
+# it is 1.2-3.7 us faster per iteration at every M from 17 up except 32,
+# where it ties, but most of those gains are inside the measurement tie band
+# (max(2.5%, 2.05 us)), so treat the gain as small. Below 17 it ties too.
+- <<: *defaults
+  M: 17
+  M_END: 129
+  N: 512
+  K: 5120
+  MMA_M: 128
+  MMA_N: 64
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 16
+  NUM_PIPELINE_STAGES: 5

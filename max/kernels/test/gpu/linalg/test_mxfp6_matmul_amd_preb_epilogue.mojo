@@ -67,7 +67,7 @@ def _run_case[
     comptime scale_K = K_static // MXFP6_SF_VECTOR_SIZE
     comptime SENTINEL = Float32(-12345.0)
 
-    print("  ", name, " M=", M_static, " N=", N_static, " K=", K_static)
+    print(t"   {name}  M= {M_static}  N= {N_static}  K= {K_static}")
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
     var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
@@ -242,14 +242,8 @@ def _assert_matches_direct[
         if direct_h[i] != out_host[i]:
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N_static,
-                    ",",
-                    i % N_static,
-                    "] direct=",
-                    direct_h[i],
-                    " epilogue=",
-                    out_host[i],
+                    t"      [ {i // N_static} , {i % N_static} ] direct="
+                    t" {direct_h[i]}  epilogue= {out_host[i]}"
                 )
             mismatches += 1
     assert_equal(mismatches, 0)

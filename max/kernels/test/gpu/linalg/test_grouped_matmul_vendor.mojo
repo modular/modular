@@ -34,12 +34,8 @@ def test_vendor[
     ctx: DeviceContext,
 ) raises:
     print(
-        "Testing vendor grouped matmul:",
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts of shape",
-        expert_shape,
+        t"Testing vendor grouped matmul: {num_active_experts} active of"
+        t" {num_experts} experts of shape {expert_shape}"
     )
     print("tokens:", end="")
     for i in range(len(num_tokens_by_expert)):
@@ -228,12 +224,8 @@ def test_negative_lora_id_vendor[
     ctx: DeviceContext,
 ) raises:
     print(
-        "Testing vendor negative lora_id behavior:",
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts of shape",
-        expert_shape,
+        t"Testing vendor negative lora_id behavior: {num_active_experts} active"
+        t" of {num_experts} experts of shape {expert_shape}"
     )
     print("tokens:", end="")
     for i in range(len(num_tokens_by_expert)):
@@ -361,13 +353,7 @@ def test_negative_lora_id_vendor[
         var should_be_zero = expert_id < 0
 
         print(
-            "Expert",
-            expert_idx,
-            "has id",
-            expert_id,
-            "with",
-            num_tokens,
-            "tokens",
+            t"Expert {expert_idx} has id {expert_id} with {num_tokens} tokens"
         )
 
         # Check each token for this expert
@@ -504,14 +490,14 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](1, [128], [0], ctx)
 
         test_vendor[
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](1, [256], [0], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -519,7 +505,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(768, 1024),
+            expert_shape=(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -528,7 +514,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(1280, 1024),
+            expert_shape=(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -538,7 +524,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(192, 1024),
+            expert_shape=(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Test that expert id of -1 results in 0s in the output
@@ -546,7 +532,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=2,
-            expert_shape=Index(256, 512),
+            expert_shape=(256, 512),
         ](2, [64, 128], [0, -1], ctx)
 
         # Test negative lora_id behavior with vendor matmul
@@ -554,7 +540,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=2,
-            expert_shape=Index(256, 512),
+            expert_shape=(256, 512),
         ](2, [64, 128], [0, -1], ctx)
 
         # Additional test cases for different data types
@@ -562,7 +548,7 @@ def main() raises:
             .float32,
             .float32,
             num_experts=3,
-            expert_shape=Index(384, 768),
+            expert_shape=(384, 768),
         ](2, [100, 200], [1, 2], ctx)
 
         # Test with mixed valid and invalid expert ids
@@ -570,7 +556,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(512, 512),
+            expert_shape=(512, 512),
         ](3, [50, 100, 75], [0, -1, 2], ctx)
 
         test_vendor_expert_offset_past_int32(ctx)

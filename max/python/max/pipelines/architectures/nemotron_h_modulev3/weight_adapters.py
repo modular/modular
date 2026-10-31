@@ -68,8 +68,11 @@ def convert_nemotron_h_state_dict(
 def cast_router_gates(
     state_dict: dict[str, WeightData], dtype: DType
 ) -> dict[str, WeightData]:
-    """Returns ``state_dict`` with every MoE router gate weight in ``dtype``,
-    the router module's (:attr:`NemotronHConfig.router_gate_dtype`)."""
+    """Returns ``state_dict`` with every MoE router gate weight cast.
+
+    The cast goes to :attr:`NemotronHConfig.router_gate_dtype`, the router
+    module's own.
+    """
     return {
         name: (
             data.astype(dtype)

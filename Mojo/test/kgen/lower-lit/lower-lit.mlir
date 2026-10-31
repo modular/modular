@@ -246,7 +246,7 @@ lit.fn @removeGenMetadata() {
   // CHECK-NEXT: struct<() memoryOnly> = <{  }>
   kgen.param.declare test2: !lit.generator<<"t": !lit.struct<@EmptyStruct>> !lit.struct<@EmptyStruct>> = <#kgen.gen<*(0,0)>>
   // CHECK-NEXT: (index) -> () = <@empty_fn>
-  kgen.param.declare test3: !lit.generator<<"t": !lit.struct<@EmptyStruct>> ("arg0":index) -> ()> = <@empty_fn>
+  kgen.param.declare test3: !lit.generator<<"t": !lit.struct<@EmptyStruct>> ("arg0":index) -> ()> = <@empty_fn<:!lit.struct<@EmptyStruct> *(0,0)>>
   // CHECK-NEXT: <index>struct<(struct<() memoryOnly>, index)> = <#kgen.gen<{ { }, *(0,0) }>>
   kgen.param.declare test4: !lit.generator<<"x": !lit.struct<@EmptyStruct>, "y": index = 5> !kgen.struct<(!lit.struct<@EmptyStruct>, index)>> = <#kgen.gen<#kgen.struct<*(0,0), *(0,1)>>>
   hlcf.return
@@ -637,7 +637,7 @@ lit.file_module @struct_alignment {
   // result in a flattened struct.
   lit.struct.decl @AlignedStruct64<my_int: !MyInt> attributes {
       minAlignment = #kgen.param.expr<apply,
-                                      #kgen.symbol.constant<@struct_alignment::@calculate_alignment> : !lit.generator<("my_int": !MyInt) -> index>,
+                                      #kgen.gen<#kgen.func.symbol<@struct_alignment::@calculate_alignment>> : !lit.generator<("my_int": !MyInt) -> index>,
                                       #kgen.param.decl.ref<"my_int">: !MyInt> : index
   } {
     lit.struct.field value : index

@@ -26,10 +26,11 @@ Utilities:
   untuned shapes; dispatch falls back to its safety-net config in that case.
 """
 
+from std.hash.hasher import Hasher
 from std.sys import size_of
 from std.math import align_down, align_up, ceildiv
 from std.itertools.itertools import product
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -49,7 +50,9 @@ from .tuning_configs import TuningConfigSwiGLU, _get_tuning_list_swiglu_bf16
 
 def swiglu_extra_fixed_smem[
     c_type: DType,
-](mma_shape: IndexList[3], cta_group: Int, AB_swapped: Bool = False) -> Int:
+](
+    mma_shape: Tuple[Int, Int, Int], cta_group: Int, AB_swapped: Bool = False
+) -> Int:
     """Compute extra fixed SMEM bytes for the SwiGLU SMEM-path half tiles.
 
     Returns the bytes needed for double-buffered half-output SMEM tiles.
@@ -81,7 +84,7 @@ struct FusedSwiGLUMatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
+](Equatable, Hashable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Compile-time configuration for the SM100 fused GEMM+SwiGLU kernel.
 
     Encodes all parameters needed by the fused epilogue, including the path
@@ -104,8 +107,8 @@ struct FusedSwiGLUMatmulConfig[
 
     # Primary parameters
     var cta_group: Int
-    var mma_shape: IndexList[3]
-    var cluster_shape: IndexList[3]
+    var mma_shape: Tuple[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
     var AB_swapped: Bool
     var block_swizzle_size: Int
     var raster_order: RasterOrder
@@ -117,8 +120,8 @@ struct FusedSwiGLUMatmulConfig[
     var use_bias: Bool
 
     # Derived parameters (computed in __init__)
-    var block_tile_shape: IndexList[3]
-    var output_tile_shape: IndexList[2]
+    var block_tile_shape: Tuple[Int, Int, Int]
+    var output_tile_shape: Tuple[Int, Int]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
 
@@ -127,9 +130,9 @@ struct FusedSwiGLUMatmulConfig[
     def __init__(
         out self,
         *,
-        mma_shape: IndexList[3],
+        mma_shape: Tuple[Int, Int, Int],
         cta_group: Int = 2,
-        cluster_shape: IndexList[3] = (2, 1, 1),
+        cluster_shape: Tuple[Int, Int, Int] = (2, 1, 1),
         AB_swapped: Bool = False,
         block_swizzle_size: Int = 0,
         raster_order: RasterOrder = RasterOrder.AlongM,
@@ -168,8 +171,8 @@ struct FusedSwiGLUMatmulConfig[
         # For SMEM→TMA path subtract the SwiGLU half-tile overhead first.
         comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
         var output_smem = (
-            self.output_tile_shape[0]
-            * self.output_tile_shape[1]
+            Int(self.output_tile_shape[0])
+            * Int(self.output_tile_shape[1])
             * 2
             * size_of[Self.c_type]()
             + 12
@@ -177,11 +180,11 @@ struct FusedSwiGLUMatmulConfig[
         var clc_smem = 160 * num_clc_pipeline_stages
         var mma_output_smem = num_accum_pipeline_stages * 16
         var AB_smem_per_stage = (
-            self.block_tile_shape[0]
-            * self.block_tile_shape[2]
+            Int(self.block_tile_shape[0])
+            * Int(self.block_tile_shape[2])
             * size_of[Self.a_type]()
-            + self.block_tile_shape[1]
-            * self.block_tile_shape[2]
+            + Int(self.block_tile_shape[1])
+            * Int(self.block_tile_shape[2])
             * size_of[Self.b_type]()
             + 16
         )
@@ -191,9 +194,9 @@ struct FusedSwiGLUMatmulConfig[
                 mma_shape, cta_group, AB_swapped
             )
             if use_bias:
-                var bias_smem_dim = self.block_tile_shape[
-                    0
-                ] if AB_swapped else mma_shape[1]
+                var bias_smem_dim = Int(self.block_tile_shape[0]) if (
+                    AB_swapped
+                ) else Int(mma_shape[1])
                 extra += 2 * bias_smem_dim * size_of[Self.c_type]() + 32
         var max_stages = (
             b200_smem - output_smem - clc_smem - mma_output_smem - extra
@@ -215,17 +218,17 @@ struct FusedSwiGLUMatmulConfig[
             + "_"
             + String(self.cta_group)
             + "sm_"
-            + String(self.mma_shape[0] // self.cta_group)
+            + String(Int(self.mma_shape[0]) // self.cta_group)
             + "x"
-            + String(self.mma_shape[1] // self.cta_group)
+            + String(Int(self.mma_shape[1]) // self.cta_group)
             + "x"
-            + String(self.mma_shape[2])
+            + String(Int(self.mma_shape[2]))
             + "_"
-            + String(self.cluster_shape[0])
+            + String(Int(self.cluster_shape[0]))
             + "x"
-            + String(self.cluster_shape[1])
+            + String(Int(self.cluster_shape[1]))
             + "x"
-            + String(self.cluster_shape[2])
+            + String(Int(self.cluster_shape[2]))
             + "_"
             + String(self.num_pipeline_stages)
             + "stages_"
@@ -235,9 +238,9 @@ struct FusedSwiGLUMatmulConfig[
             + "clc_"
             + String(self.num_accum_pipeline_stages)
             + "acc_"
-            + String(self.output_tile_shape[0])
+            + String(Int(self.output_tile_shape[0]))
             + "x"
-            + String(self.output_tile_shape[1])
+            + String(Int(self.output_tile_shape[1]))
             + "_"
             + ("swap" if self.AB_swapped else "noswap")
             + "_"
@@ -260,6 +263,72 @@ struct FusedSwiGLUMatmulConfig[
     def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
+    def __eq__(self, other: Self) -> Bool:
+        """Check whether two FusedSwiGLUMatmulConfig values are identical.
+
+        Args:
+            other: The configuration to compare with.
+
+        Returns:
+            True if every field matches.
+        """
+        return (
+            self.cta_group == other.cta_group
+            and self.mma_shape == other.mma_shape
+            and self.cluster_shape == other.cluster_shape
+            and self.AB_swapped == other.AB_swapped
+            and self.block_swizzle_size == other.block_swizzle_size
+            and self.raster_order == other.raster_order
+            and self.register_swiglu == other.register_swiglu
+            and self.k_group_size == other.k_group_size
+            and self.num_pipeline_stages == other.num_pipeline_stages
+            and self.num_clc_pipeline_stages == other.num_clc_pipeline_stages
+            and self.num_accum_pipeline_stages
+            == other.num_accum_pipeline_stages
+            and self.use_bias == other.use_bias
+            and self.block_tile_shape == other.block_tile_shape
+            and self.output_tile_shape == other.output_tile_shape
+            and self.a_swizzle == other.a_swizzle
+            and self.b_swizzle == other.b_swizzle
+        )
+
+    def __ne__(self, other: Self) -> Bool:
+        """Check whether two FusedSwiGLUMatmulConfig values differ.
+
+        Args:
+            other: The configuration to compare with.
+
+        Returns:
+            True if any field differs.
+        """
+        return not self.__eq__(other)
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Updates hasher with the underlying bytes.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.cta_group.__hash__(hasher)
+        self.mma_shape.__hash__(hasher)
+        self.cluster_shape.__hash__(hasher)
+        self.AB_swapped.__hash__(hasher)
+        self.block_swizzle_size.__hash__(hasher)
+        self.raster_order.__hash__(hasher)
+        self.register_swiglu.__hash__(hasher)
+        self.k_group_size.__hash__(hasher)
+        self.num_pipeline_stages.__hash__(hasher)
+        self.num_clc_pipeline_stages.__hash__(hasher)
+        self.num_accum_pipeline_stages.__hash__(hasher)
+        self.use_bias.__hash__(hasher)
+        self.block_tile_shape.__hash__(hasher)
+        self.output_tile_shape.__hash__(hasher)
+        self.a_swizzle.__hash__(hasher)
+        self.b_swizzle.__hash__(hasher)
+
 
 def swiglu_matmul_config[
     a_type: DType,
@@ -268,9 +337,9 @@ def swiglu_matmul_config[
     transpose_b: Bool = True,
 ](
     *,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     cta_group: Int = 2,
-    cluster_shape: IndexList[3] = (2, 1, 1),
+    cluster_shape: Tuple[Int, Int, Int] = (2, 1, 1),
     AB_swapped: Bool = False,
     block_swizzle_size: Int = 0,
     raster_order: RasterOrder = RasterOrder.AlongM,
@@ -521,11 +590,9 @@ def choose_swiglu_config[
     var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
     return FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b](
-        mma_shape=IndexList[3](
-            mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()
-        ),
+        mma_shape=(mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()),
         cta_group=cta_group,
-        cluster_shape=Index(cta_group, 1, 1),
+        cluster_shape=(cta_group, 1, 1),
         AB_swapped=swapAB,
         block_swizzle_size=optimal_block_swizzle_size,
         num_accum_pipeline_stages=min(2, min_num_waves),

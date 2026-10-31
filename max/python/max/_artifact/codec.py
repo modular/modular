@@ -90,8 +90,9 @@ def encode(
 
 
 def prefix_files(value: ArtifactType, prefix: str) -> ArtifactType:
-    """Returns ``value`` with every file it references moved under
-    ``prefix``.
+    """Returns ``value`` with its referenced files moved.
+
+    Every file it references moves under ``prefix``.
 
     Use this to store several components' values side by side, each under
     its own directory, when their file names may coincide.

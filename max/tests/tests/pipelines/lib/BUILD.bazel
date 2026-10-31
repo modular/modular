@@ -17,6 +17,9 @@ modular_py_test(
             "test_chat_encoder.py",
             "test_reasoning.py",
             "test_graph_specs.py",
+            "test_hf_dynamic_modules.py",
+            "test_module_registration.py",
+            "test_registration_graph_api.py",
             "test_structured_output_backend.py",
         ],
     ),
@@ -31,6 +34,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/_entrypoints",
         "//max/python/max/_xgrammar",
@@ -38,10 +42,9 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines:graph_input_stager",
         "//max/python/max/pipelines:logging_utils",
         "//max/python/max/pipelines/architectures/deepseekV3",
@@ -55,10 +58,12 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/minimax_m2",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3_embedding_modulev3",
+        "//max/python/max/pipelines/architectures/wan",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/speculative",
         "//max/python/max/pipelines/weights",
@@ -75,12 +80,21 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_hf_dynamic_modules",
+    srcs = ["test_hf_dynamic_modules.py"],
+    deps = [requirement("transformers")],
+)
+
+modular_py_test(
     name = "test_artifact",
     srcs = ["test_artifact.py"],
     deps = [
         "//max/python/max:_core",
         "//max/python/max/_artifact",
         "//max/python/max/_artifact:model_artifact",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/lib",
         requirement("huggingface-hub"),
         requirement("typing-extensions"),
     ],
@@ -90,33 +104,93 @@ modular_py_test(
     name = "test_graph_specs",
     srcs = ["test_graph_specs.py"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_artifact",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
 
 modular_py_test(
+    name = "test_module_registration",
+    srcs = ["test_module_registration.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/lora",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_test(
+    name = "test_registration_graph_api",
+    srcs = ["test_registration_graph_api.py"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_test(
     name = "test_export",
     srcs = ["test_export.py"],
+    # The architectures ship the FormatSpec documents the test finds.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/laguna",
+        "//max/python/max/pipelines/architectures/lfm3",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/muse_glimmer",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+    ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_artifact",
         "//max/python/max/_artifact:export",
         "//max/python/max/_artifact:model_artifact",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/laguna",
+        "//max/python/max/pipelines/architectures/lfm3",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/muse_glimmer",
+        "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/sampling",
+        "//max/python/max/pipelines/speculative",
     ],
 )
 

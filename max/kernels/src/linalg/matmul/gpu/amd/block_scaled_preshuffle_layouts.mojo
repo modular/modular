@@ -493,9 +493,7 @@ struct Shuffler[E: Int]:
         comptime num_planes = Self.num_planes[lane_bytes]()
 
         var total = Int(num_frags)
-        for gid in range(
-            Int(global_idx.x), total, Int(grid_dim.x * block_dim.x)
-        ):
+        for gid in range(global_idx.x, total, Int(grid_dim.x * block_dim.x)):
             var e_n, frag = divmod(gid, frags_per_row)
             var e, n = divmod(e_n, N)
             var k_byte = frag * lane_bytes

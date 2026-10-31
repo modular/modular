@@ -28,9 +28,9 @@ from std.memory.alloc import unsafe_alloc
 
 
 def convolution_cached_tiled_2D_const_mem_kernel(
-    N: ImmPointer[Float32, ImmutAnyOrigin],
-    F: ImmPointer[Float32, ImmutAnyOrigin],
-    P: MutPointer[Float32, MutAnyOrigin],
+    N: ImmPointer[Float32, ImmUntrackedOrigin],
+    F: ImmPointer[Float32, ImmUntrackedOrigin],
+    P: MutPointer[Float32, MutUntrackedOrigin],
     width_dev: Int32,
     height_dev: Int32,
 ):

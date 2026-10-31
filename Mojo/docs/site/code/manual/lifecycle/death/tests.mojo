@@ -47,8 +47,20 @@
 #  10. An RAII guard is released too early without the extension, and neither
 #      case is a compiler error.
 #      -> test_guard_released_early, test_guard_held_to_discard
-#  11. Discarding a move-only value needs no transfer sigil.
+#  11. Discarding a move-only value needs no transfer sigil, and `_ = t^`
+#      keeps `t` alive exactly as `_ = t` does.
 #      -> test_discard_without_transfer_sigil
+#  12. A pointer whose origin ties back to the owner keeps the owner alive,
+#      including a pointer to one of its fields: the owner outlives its own
+#      last direct read and dies after the pointer's last use.
+#      -> test_origin_keeps_owner_alive,
+#         test_string_pointer_origin_keeps_string_alive
+#  13. Casting to an untracked origin severs that link, so a discard has to
+#      stand in for it to keep the storage valid across the read.
+#      -> test_severed_origin_needs_guard, test_origin_erased_pointer_needs_extension
+#
+# `Buf` and `use_ptr` below are mocks for the types the page presumes in its
+# origin examples.
 #
 # Not tested:
 #   - "In general, don't call `__deinit__()` directly" (advice, not a compiler
@@ -264,7 +276,7 @@ struct QuickLogger:
 
     def __deinit__(deinit self):
         try:
-            self.temporary_file.close()
+            self.temporary_file^.close()
         except:
             pass
 
@@ -375,6 +387,78 @@ def test_discard_without_transfer_sigil() raises:
     assert_equal(events[0], "released move-only")
 
 
+@fieldwise_init
+struct Buf(Movable):
+    var v: Int
+    var events: Recorder
+
+    def __deinit__(deinit self):
+        record(self.events, "Buf destroyed")
+
+
+def use_ptr[o: ImmOrigin](p: Pointer[Int, o], log: Recorder) -> Int:
+    record(log, "inside use_ptr")
+    return p[]
+
+
+def read_untracked(p: Pointer[Int, MutUntrackedOrigin], log: Recorder) -> Int:
+    record(log, "inside read_untracked")
+    return p[]
+
+
+# --- Keeping a value alive: origins ---
+
+
+def test_origin_keeps_owner_alive() raises:
+    # `b`'s last DIRECT read is the `Pointer(to=b.v)` line. Without the
+    # origin it would die there, before "midpoint". The origin carries it
+    # through to the pointer's last use instead.
+    var events = List[String]()
+    var log = recorder(events)
+
+    var b = Buf(42, log)
+    var p = Pointer(to=b.v)  # origin_of(b.v)
+    record(log, "midpoint")
+    var got = use_ptr(p, log)
+    record(log, String("got ", got))
+
+    assert_equal(got, 42)
+    assert_equal(events[0], "midpoint")
+    assert_equal(events[1], "inside use_ptr")
+    assert_equal(events[2], "Buf destroyed")  # after p's last use
+    assert_equal(events[3], "got 42")
+
+
+def test_severed_origin_needs_guard() raises:
+    # Erasing the origin removes the compiler's link to the owner, so the
+    # discard is what keeps the storage valid across the read.
+    var events = List[String]()
+    var log = recorder(events)
+
+    var b = Buf(7, log)
+    var p = Pointer(to=b.v).unsafe_origin_cast[MutUntrackedOrigin]()
+    record(log, "midpoint")
+    var got = read_untracked(p, log)
+    _ = b  # without this, the read above is a use-after-free
+    record(log, String("got ", got))
+
+    assert_equal(got, 7)
+    assert_equal(events[0], "midpoint")
+    assert_equal(events[1], "inside read_untracked")
+    assert_equal(events[2], "Buf destroyed")
+    assert_equal(events[3], "got 7")
+
+
+def test_string_pointer_origin_keeps_string_alive() raises:
+    # `foo`'s last DIRECT read is the `unsafe_ptr()` call. The origin on
+    # `bar` carries `foo` through the reads below, which would otherwise be
+    # reading freed memory.
+    var foo = String("some text")
+    var bar = foo.unsafe_ptr()  # Pointer[Byte, origin_of(foo)]
+    assert_equal(bar[], 115)  # 's'
+    assert_equal(bar.unsafe_offset(1)[], 111)  # 'o'
+
+
 def main() raises:
     test_documented_destruction_order()
     test_asap_within_expression()
@@ -389,3 +473,6 @@ def main() raises:
     test_lifetime_extension_orders_release()
     test_origin_erased_pointer_needs_extension()
     test_discard_without_transfer_sigil()
+    test_origin_keeps_owner_alive()
+    test_severed_origin_needs_guard()
+    test_string_pointer_origin_keeps_string_alive()

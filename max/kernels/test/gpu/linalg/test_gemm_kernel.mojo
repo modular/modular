@@ -383,16 +383,8 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
             abs(diff / c_host_ref[i]) if c_host_ref[i] != 0 else 0.0
         )
         print(
-            "  [",
-            i,
-            "] optimized:",
-            c_host[i],
-            " reference:",
-            c_host_ref[i],
-            " diff:",
-            diff,
-            " rel_err:",
-            rel_err,
+            t"  [ {i} ] optimized: {c_host[i]}  reference: {c_host_ref[i]} "
+            t" diff: {diff}  rel_err: {rel_err}"
         )
 
     # Check element at row boundary (element 64 = position [1,0])
@@ -403,16 +395,8 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
         abs(diff / c_host_ref[i]) if c_host_ref[i] != 0 else 0.0
     )
     print(
-        "  [",
-        i,
-        "] (row 1, col 0) optimized:",
-        c_host[i],
-        " reference:",
-        c_host_ref[i],
-        " diff:",
-        diff,
-        " rel_err:",
-        rel_err,
+        t"  [ {i} ] (row 1, col 0) optimized: {c_host[i]}  reference:"
+        t" {c_host_ref[i]}  diff: {diff}  rel_err: {rel_err}"
     )
 
     # Validate all elements
@@ -430,15 +414,8 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
         if not isclose(c_host[i], c_host_ref[i], rtol=3e-4):
             print(
-                "MISMATCH at",
-                i,
-                ":",
-                c_host[i],
-                "vs",
-                c_host_ref[i],
-                "(rel_err:",
-                rel_err,
-                ")",
+                t"MISMATCH at {i} : {c_host[i]} vs {c_host_ref[i]} (rel_err:"
+                t" {rel_err} )"
             )
 
     print("Max relative error:", max_rel_err, "at index", max_err_idx)

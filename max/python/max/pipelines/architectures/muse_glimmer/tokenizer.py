@@ -70,8 +70,11 @@ def _load_processor_config(
 
 
 def to_reasoning_strength(options: Mapping[str, Any]) -> dict[str, Any]:
-    """Maps OpenAI's ``reasoning_effort`` onto the template's
-    ``reasoning_strength`` and drops the thinking toggles it does not read.
+    """Maps ``reasoning_effort`` onto the template's strength.
+
+    The thinking toggles the template does not read are dropped. ``xhigh`` is
+    only reachable as ``reasoning_strength`` in ``chat_template_kwargs``; any
+    other effort falls back to the template's default (``high``).
 
     ``xhigh`` is only reachable as ``reasoning_strength`` in
     ``chat_template_kwargs``; any other effort falls back to the template's

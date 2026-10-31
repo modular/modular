@@ -50,13 +50,14 @@ from max.gpu.memory import CacheOperation
 from max.gpu.sync import s_waitcnt
 from std.sys.intrinsics import llvm_intrinsic
 
+from std.utils.coord import Coord
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
 from std.bit import log2_floor
 
-from std.utils import StaticTuple, IndexList, StaticTuple
+from std.utils import StaticTuple
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -199,8 +200,10 @@ def a_lds_swizzle[BK_BYTES: Int]() -> Swizzle:
 
 
 struct BlockScaledMmaOp_PreB[
-    mma_shape: IndexList[3],  # (16, 16, 128) for MXFP4 and MXFP8 alike
-    warp_tile: IndexList[3],  # (WM, WN, BK_ELEMS) in MFMA-native element units
+    mma_shape: Coord[Int, Int, Int],  # (16, 16, 128) for MXFP4 and MXFP8 alike
+    warp_tile: Coord[
+        Int, Int, Int
+    ],  # (WM, WN, BK_ELEMS) in MFMA-native element units
     num_b_slots: Int = 1,
     num_scale_slots: Int = 1,
     scale_group: Int = 1,
@@ -1020,7 +1023,7 @@ struct BlockScaledMatmulAMD_PreB[
     comptime num_a_load_slots = Self.pipeline_depth if Self.pipeline_depth > 2 else 1
 
     comptime MmaOpType = BlockScaledMmaOp_PreB[
-        mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
+        mma_shape=(Self.MMA_M, Self.MMA_N, Self.MMA_K),
         warp_tile=(Self.WM, Self.WN, Self.BK_ELEMS),
         num_b_slots=Self.num_b_slots,
         num_scale_slots=Self.num_scale_slots,

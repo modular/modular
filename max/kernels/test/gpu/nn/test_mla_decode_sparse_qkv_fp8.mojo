@@ -306,28 +306,10 @@ def verify_mla_output(
     var tail_frac = Float64(n_err_gt_1em2) / Float64(max(n_finite, 1))
 
     print(
-        "  DIAG:",
-        name,
-        " cosine=",
-        cosine,
-        " max_err=",
-        max_err,
-        " mean_abs_err=",
-        mean_abs_err,
-        " |err|>1e-2=",
-        n_err_gt_1em2,
-        " tail=",
-        tail_frac,
-        " nan_actual=",
-        nan_actual,
-        " inf_actual=",
-        inf_actual,
-        " nonzero=",
-        num_nonzero,
-        "/",
-        num_elems,
-        " max_abs_actual=",
-        max_actual,
+        t"  DIAG: {name}  cosine= {cosine}  max_err= {max_err}  mean_abs_err="
+        t" {mean_abs_err}  |err|>1e-2= {n_err_gt_1em2}  tail= {tail_frac} "
+        t" nan_actual= {nan_actual}  inf_actual= {inf_actual}  nonzero="
+        t" {num_nonzero} / {num_elems}  max_abs_actual= {max_actual}"
     )
 
     # Gates apply AFTER the DIAG print so metrics are always visible on failure.
@@ -387,15 +369,8 @@ def verify_mla_output(
         )
 
     print(
-        "  PASSED:",
-        name,
-        " cosine=",
-        cosine,
-        " max_err=",
-        max_err,
-        " checked=",
-        num_elems,
-        " elements",
+        t"  PASSED: {name}  cosine= {cosine}  max_err= {max_err}  checked="
+        t" {num_elems}  elements"
     )
 
 
@@ -440,14 +415,8 @@ def run_nope_native_512_fp8[
     comptime scale = Float32(0.125)
 
     print(
-        "NoPE native 512 (QKV FP8): ",
-        name,
-        " batch_size=",
-        batch_size,
-        " cache_len=",
-        cache_len,
-        " num_heads=",
-        num_heads,
+        t"NoPE native 512 (QKV FP8):  {name}  batch_size= {batch_size} "
+        t" cache_len= {cache_len}  num_heads= {num_heads}"
     )
     seed(0x5EED18)
 
@@ -465,11 +434,21 @@ def run_nope_native_512_fp8[
         total_pages * kv_dim2 * NUM_LAYERS * PAGE_SIZE * KV_NUM_HEADS
     )
 
-    var block_shape_576 = IndexList[6](
-        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, Q_DEPTH
+    var block_shape_576 = (
+        total_pages,
+        kv_dim2,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        KV_NUM_HEADS,
+        Q_DEPTH,
     )
-    var block_shape_512 = IndexList[6](
-        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, LATENT_DEPTH
+    var block_shape_512 = (
+        total_pages,
+        kv_dim2,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        KV_NUM_HEADS,
+        LATENT_DEPTH,
     )
 
     # One latent cache, quantized once, laid out at both widths so the two runs
@@ -714,15 +693,11 @@ def run_nope_native_512_fp8[
             mismatches += 1
             if mismatches <= 5:
                 print(
-                    "  mismatch idx=",
-                    i,
-                    " padded576=",
-                    h576[i],
-                    " native512=",
-                    h512[i],
+                    t"  mismatch idx= {i}  padded576= {h576[i]}  native512="
+                    t" {h512[i]}"
                 )
     if mismatches > 0:
-        print("  FAILED: ", mismatches, "of", out_size, "outputs differ")
+        print(t"  FAILED:  {mismatches} of {out_size} outputs differ")
         raise Error("native-512 QKV-FP8 decode does not match padded 576")
     print("  PASSED: native 512 is bit-identical to zero-padded 576")
 
@@ -769,20 +744,9 @@ def run_test_sparse_qkv_fp8[
     tail_max: Float64 = 0.0015,
 ) raises:
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " cache_len:",
-        cache_len,
-        " num_heads:",
-        num_heads,
-        " topk:",
-        topk,
-        " q_max_seq_len:",
-        q_max_seq_len,
-        " causal:",
-        use_causal,
+        t"test: {name}  batch_size: {batch_size}  cache_len: {cache_len} "
+        t" num_heads: {num_heads}  topk: {topk}  q_max_seq_len:"
+        t" {q_max_seq_len}  causal: {use_causal}"
     )
 
     var num_keys = cache_len + q_max_seq_len
@@ -797,7 +761,7 @@ def run_test_sparse_qkv_fp8[
     var total_pages = batch_size * ceildiv(num_keys, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -1183,11 +1147,8 @@ def run_test_sparse_qkv_fp8[
     ](batch_size, cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     var indices_stride = topk
@@ -1197,11 +1158,8 @@ def run_test_sparse_qkv_fp8[
     )
 
     print(
-        "  Launching MLA sparse QKV_FP8 decode kernel...",
-        " topk=",
-        topk,
-        " num_keys=",
-        num_keys,
+        t"  Launching MLA sparse QKV_FP8 decode kernel...  topk= {topk} "
+        t" num_keys= {num_keys}"
     )
 
     comptime if use_causal:
@@ -1317,15 +1275,11 @@ def run_test_sparse_qkv_fp8_variable_topk[
         if topk_per_batch[bi] > max_topk:
             max_topk = topk_per_batch[bi]
 
-    print("test:", name, " batch_size:", batch_size, " num_heads:", num_heads)
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}"
         )
     print("  indices_stride (max topk)=", max_topk)
 
@@ -1348,7 +1302,7 @@ def run_test_sparse_qkv_fp8_variable_topk[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -1569,11 +1523,8 @@ def run_test_sparse_qkv_fp8_variable_topk[
     ](batch_size, max_cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     print("  Launching MLA sparse QKV_FP8 (variable topk)...")
@@ -1646,16 +1597,8 @@ def run_test_sparse_qkv_fp8_attn_sink[
     attn_sink shape is [num_heads_q] per the MOGG fix.
     """
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " cache_len:",
-        cache_len,
-        " num_heads:",
-        num_heads,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  cache_len: {cache_len} "
+        t" num_heads: {num_heads}  topk: {topk}"
     )
 
     comptime q_max_seq_len = 1
@@ -1670,7 +1613,7 @@ def run_test_sparse_qkv_fp8_attn_sink[
     var total_pages = batch_size * ceildiv(num_keys, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -1888,11 +1831,8 @@ def run_test_sparse_qkv_fp8_attn_sink[
     ](batch_size, cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     print("  Launching MLA sparse QKV_FP8 (attn_sink)...")
@@ -1977,19 +1917,12 @@ def run_test_sparse_qkv_fp8_extra_kv[
         if extra_topk_per_batch[bi] > max_extra_topk:
             max_extra_topk = extra_topk_per_batch[bi]
 
-    print("test:", name, " batch_size:", batch_size, " num_heads:", num_heads)
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
-            " extra_cache_len=",
-            extra_cache_lengths[i],
-            " extra_topk=",
-            extra_topk_per_batch[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}  extra_cache_len= {extra_cache_lengths[i]} "
+            t" extra_topk= {extra_topk_per_batch[i]}"
         )
 
     comptime kv_params = KVCacheStaticParams(
@@ -2019,7 +1952,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
     var max_num_keys = max_cache_len + q_max_seq_len
     var max_pages_per_batch = ceildiv(max_num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -2097,7 +2030,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
     var max_extra_num_keys = max_extra_cache_len + q_max_seq_len
     var max_extra_pages_per_batch = ceildiv(max_extra_num_keys, PAGE_SIZE)
 
-    var extra_block_shape = IndexList[6](
+    var extra_block_shape = (
         extra_total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -2416,11 +2349,8 @@ def run_test_sparse_qkv_fp8_extra_kv[
     ](batch_size, max_topk + max_extra_topk, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     print("  Launching MLA sparse QKV_FP8 (extra KV)...")
@@ -2522,19 +2452,13 @@ def run_test_sparse_qkv_fp8_topk_clamping[
             eff_topk = actual_tokens
         effective_topk_list.append(eff_topk)
 
-    print("test:", name, " batch_size:", batch_size, " num_heads:", num_heads)
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
-            " actual_tokens=",
-            cache_lengths[i] + q_max_seq_len,
-            " effective_topk=",
-            effective_topk_list[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}  actual_tokens="
+            t" {cache_lengths[i] + q_max_seq_len}  effective_topk="
+            t" {effective_topk_list[i]}"
         )
 
     var max_cache_len = 0
@@ -2556,7 +2480,7 @@ def run_test_sparse_qkv_fp8_topk_clamping[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -2782,11 +2706,8 @@ def run_test_sparse_qkv_fp8_topk_clamping[
     ](batch_size, max_cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     print("  Launching MLA sparse QKV_FP8 (topk clamping)...")

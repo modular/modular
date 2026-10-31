@@ -12,12 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Inspect task for GPQA-Diamond as OpenRouter's benchmark harness runs it.
 
-Samples come from :mod:`exacto_gpqa_openrouter`. The scorer is openbench's MCQ
-scorer, which the harness's ``src/benchmarks/scorers/mcq/extract.ts`` ports
-pattern for pattern, so answers are extracted the same way on both sides.
+Samples come from :mod:`exacto_gpqa_openrouter` and answers are extracted by
+:mod:`exacto_mcq`, a port of the harness's own ``extract.ts``. openbench
+0.5.3's MCQ scorer, which this task used before, is what ``extract.ts``
+started from, but the two have drifted: the harness's English patterns also
+accept ``Answer: $C``, which openbench reads only through its lower-priority
+multilingual fallback, and its multilingual patterns read ``[A-J]`` rather
+than ``[A-D]``.
 
 Runs only inside the harness venv (``run_exacto_gpqa_local.sh``), which has
-inspect_ai, openbench and datasets; bazel never imports it.
+inspect_ai and datasets.
 """
 
 from __future__ import annotations
@@ -25,12 +29,23 @@ from __future__ import annotations
 import os
 
 import exacto_gpqa_openrouter as gpqa
+import exacto_mcq as mcq
 from datasets import load_dataset
 from inspect_ai import Epochs, Task, task
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import GenerateConfig
-from inspect_ai.solver import generate, system_message
-from openbench.scorers.mcq import create_mcq_scorer
+from inspect_ai.scorer import (
+    CORRECT,
+    INCORRECT,
+    Score,
+    Scorer,
+    Target,
+    accuracy,
+    scorer,
+    std,
+    stderr,
+)
+from inspect_ai.solver import TaskState, generate, system_message
 
 
 def load_samples() -> list[Sample]:
@@ -68,6 +83,23 @@ def load_samples() -> list[Sample]:
     return samples
 
 
+# Named as openbench's scorer was, so logs from before and after the switch
+# carry their score under the same key for the smoke runner and answer audit.
+@scorer(metrics=[accuracy(), stderr(), std()], name="mcq_scorer")
+def harness_mcq() -> Scorer:
+    """The harness's ``mcqScorer``."""
+
+    async def score(state: TaskState, target: Target) -> Score:
+        result = mcq.score_mcq(state.output.completion, target.text)
+        return Score(
+            value=CORRECT if result.correct else INCORRECT,
+            answer=result.answer,
+            explanation=result.explanation,
+        )
+
+    return score
+
+
 @task
 def gpqa_diamond() -> Task:
     """GPQA-Diamond with the harness's prompt, shuffle, sampling and epochs.
@@ -79,12 +111,13 @@ def gpqa_diamond() -> Task:
         name="gpqa_diamond",
         dataset=MemoryDataset(load_samples(), name=gpqa.DATASET),
         solver=[system_message(gpqa.SYSTEM_MESSAGE), generate()],
-        scorer=create_mcq_scorer()(),
+        scorer=harness_mcq(),
         config=GenerateConfig(temperature=gpqa.TEMPERATURE),
         epochs=Epochs(gpqa.EPOCHS),
         metadata={
             "harness": gpqa.HARNESS,
             "harness_commit": gpqa.HARNESS_COMMIT,
+            "mcq_extractor_commit": mcq.HARNESS_COMMIT,
             "dataset_revision": gpqa.DATASET_REVISION,
         },
     )

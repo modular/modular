@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Test-fixture custom ops for `max.experimental.custom.declare`.
+"""Test-fixture custom ops for `max.functional.custom_op.declare`.
 
 Only `mxf353_filter` registers a shape function: its output row count is
 data-dependent, so no dim of a declared `CustomOp` signature can size it.

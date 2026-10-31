@@ -8,7 +8,7 @@ description: >-
 This page lists the GPUs you can program with Mojo and MAX and the software
 each one requires. It covers writing and running your own GPU code, such as
 kernels and custom ops. For the GPUs supported for serving models, see the
-[MAX system requirements](/packages/#gpu-compatibility).
+[MAX system requirements](/system-requirements/#gpu-compatibility).
 
 ## NVIDIA GPUs
 
@@ -334,7 +334,7 @@ from max.gpu.host import DeviceContext
 
 def main() raises:
     var ctx = DeviceContext()
-    print("GPU:", ctx.name())
+    print("GPU:", ctx.device().get_name())
 ```
 
 ```bash

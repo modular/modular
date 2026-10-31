@@ -49,6 +49,7 @@ class WanTokenizer(PixelGenerationTokenizer):
         request: OpenResponsesRequest,
         input_image: PIL.Image.Image | None = None,
     ) -> WanContext:
+        """Opens a request context, holding the input image for an I2V run."""
         base = await super().new_context(request, input_image=input_image)
 
         video_options = request.body.provider_options.video

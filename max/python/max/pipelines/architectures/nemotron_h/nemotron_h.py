@@ -55,9 +55,9 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.attention import MHAMaskVariant
-from max.nn.embedding import Embedding
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     grouped_matmul_ragged,
     moe_create_indices,
@@ -65,23 +65,27 @@ from max.nn.kernels import (
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, Linear
-from max.nn.moe import GatedActivation, MoE, MoEGate
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
-from max.nn.state_space import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.moe import GatedActivation, MoE, MoEGate
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.state_space import (
     causal_conv1d_varlen_fwd,
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
-from max.nn.transformer import DecoderOutputs, ReturnLogits, logits_postprocess
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    ReturnLogits,
+    logits_postprocess,
+)
 
 from .model_config import NemotronHConfig
 
@@ -95,10 +99,12 @@ def _relu2(x: TensorValue) -> TensorValue:
 def _weight_dtype(
     model_dtype: DType, quant_config: QuantConfig | None
 ) -> DType:
-    """Linear weight storage dtype. FP8 (per-tensor static) stores the weight
-    as ``float8_e4m3fn``; the ``quantized_matmul`` kernel quantizes the bf16
-    activation with ``input_scale`` and dequantizes. Otherwise the weight is the
-    model dtype."""
+    """Linear weight storage dtype.
+
+    FP8 (per-tensor static) stores the weight as ``float8_e4m3fn``; the
+    ``quantized_matmul`` kernel quantizes the bf16 activation with
+    ``input_scale`` and dequantizes. Otherwise the weight is the model dtype.
+    """
     if quant_config is not None:
         return DType.float8_e4m3fn
     return model_dtype
@@ -152,6 +158,7 @@ class NemotronHMLP(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the MLP over ``x``."""
         return self.down_proj(_relu2(self.up_proj(x)))
 
 
@@ -160,7 +167,7 @@ class NemotronHExpertMLP(MLP):
 
     Serves two roles in :class:`NemotronHMoE`:
 
-    * routed experts (``mlp_cls``): the base :class:`~max.nn.moe.MoE` reads only
+    * routed experts (``mlp_cls``): the base :class:`~max.nn.legacy.moe.MoE` reads only
       ``.up_proj.weight`` / ``.down_proj.weight`` to build the grouped-matmul
       weight stacks and never calls ``__call__``, so the up/down Linears are all
       that is required;
@@ -216,6 +223,7 @@ class NemotronHExpertMLP(MLP):
         )
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Runs one expert's MLP over ``x``."""
         x = TensorValue(x)
         return self.down_proj(_relu2(self.up_proj(x)))
 
@@ -335,6 +343,7 @@ class NemotronHMoEGate(MoEGate):
     def __call__(
         self, hidden_states: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
+        """Scores each token's experts and returns the routing weights."""
         # Routing math in fp32 (matches the HF reference); the weights are cast
         # back to the activation dtype for the downstream combine matmul in
         # ``MoE.__call__``.
@@ -366,7 +375,7 @@ class NemotronHMoE(MoE):
     ``gate_proj``), so the routed-expert weight stack is the up-projection only,
     ``[num_experts, moe_intermediate_size, hidden]``.
 
-    bf16 (no ``quant_config``) reuses the base :class:`~max.nn.moe.MoE`
+    bf16 (no ``quant_config``) reuses the base :class:`~max.nn.legacy.moe.MoE`
     grouped-matmul routing verbatim.
 
     FP8 (per-tensor static ``quant_config``, the 30B-A3B) keeps the routed
@@ -382,6 +391,7 @@ class NemotronHMoE(MoE):
 
     @property
     def gate_up_proj(self) -> TensorValue:
+        """The gate and up projections, stacked for the grouped matmul."""
         # Non-gated experts: the base property interleaves gate+up and would
         # AttributeError on our gate-less experts. Stack the up projections
         # only -> [num_experts, moe_intermediate_size, hidden]. FP8 experts
@@ -407,6 +417,7 @@ class NemotronHMoE(MoE):
         return ops.stack(scales, axis=0)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the routed and shared experts over ``x``."""
         # bf16 MoE (no quant_config): the base grouped-matmul path is exact.
         if self.quant_config is None:
             return super().__call__(x)
@@ -581,6 +592,7 @@ class NemotronHAttention(Module):
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         total_seq_len = x.shape[0]
         if self.qkv_proj is None:
             q, k, v = self.q_proj(x), self.k_proj(x), self.v_proj(x)
@@ -730,6 +742,7 @@ class NemotronHMamba2Mixer(Module):
 
     @property
     def mamba_in_proj_out(self) -> int:
+        """The width the mixer's input projection produces."""
         return self.intermediate + self.conv_dim + self.nheads
 
     def _gated_group_rmsnorm(
@@ -931,6 +944,7 @@ class NemotronHBlock(Module):
             self.mixer = NemotronHMLP(config, quant_config=quant_config)
 
     def __call__(self, *args, **kwargs):
+        """Raises, because :class:`NemotronH` dispatches by layer kind instead."""
         raise RuntimeError(
             "NemotronHBlock dispatches per-kind in NemotronH.__call__; do not "
             "call the block directly."

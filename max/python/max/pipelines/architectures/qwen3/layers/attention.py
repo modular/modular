@@ -20,19 +20,19 @@ from collections.abc import Callable, Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.attention.attention_with_rope import _compute_shard_range
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.stacked_linear import StackedLinear
 
 
 class Qwen3Attention(Module, Shardable):
@@ -83,7 +83,6 @@ class Qwen3Attention(Module, Shardable):
                 non-FP8 type (such as bfloat16) for FP8 models where norms are not quantized.
             quant_config: Optional quantization config for dynamic quantized QKV matmul.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads

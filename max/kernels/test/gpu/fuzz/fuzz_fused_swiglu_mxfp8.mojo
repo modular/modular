@@ -324,12 +324,8 @@ def run_one_case(
         var rate = Float64(mismatch) / Float64(total)
         if rate > 0.005:
             print(
-                "FUZZ_NUMERIC_FAIL kind=swiglu_roundtrip mismatch=",
-                mismatch,
-                "total=",
-                total,
-                "rate=",
-                rate,
+                t"FUZZ_NUMERIC_FAIL kind=swiglu_roundtrip mismatch="
+                t" {mismatch} total= {total} rate= {rate}"
             )
             raise Error("fused swiglu MXFP8 round-trip mismatch")
 
@@ -353,12 +349,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "tok_seed=",
-                specs[i].tok_seed,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} tok_seed= {specs[i].tok_seed} dist="
+                t" {specs[i].dist}"
             )
         return
 
@@ -366,14 +358,8 @@ def main() raises:
         var ts = flag_int(args, "--tok_seed", 1)
         var dist = flag_int(args, "--dist", 0)
         print(
-            "FUZZ_SINGLE tok_seed=",
-            ts,
-            "dist=",
-            dist,
-            "num_active=",
-            NUM_ACTIVE,
-            "H=",
-            H,
+            t"FUZZ_SINGLE tok_seed= {ts} dist= {dist} num_active="
+            t" {NUM_ACTIVE} H= {H}"
         )
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(ts, dist), check, contract)
@@ -381,17 +367,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_fused_swiglu_mxfp8 seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "num_active=",
-        NUM_ACTIVE,
-        "H=",
-        H,
-        "clamp=",
-        CLAMP,
-        "===",
+        t"=== fuzz_fused_swiglu_mxfp8 seed= {the_seed} budget="
+        t" {the_budget} num_active= {NUM_ACTIVE} H= {H} clamp= {CLAMP} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

@@ -25,6 +25,7 @@
 #include "MLRT/GraphRT/MEFExecutor/MEFInvokable.h"
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveRegistry.h"
 #include "MLRT/GraphRT/Primitives.h"
+#include "Support/Buffer.h"
 #include "Support/CommandLine.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -204,7 +205,10 @@ int main(int argc, char **argv) {
     fflush(stdout);
   }
 
-  auto mefFileOrError = MEFFile::open(fileBuffer->getBuffer(), primitives);
+  auto diagnosticBuffer =
+      llvm::MemoryBuffer::getMemBuffer(fileBuffer->getMemBufferRef());
+  auto mefFileOrError =
+      MEFFile::open(Buffer::take(std::move(fileBuffer)), primitives);
   if (failed(mefFileOrError))
     return options.reportError(Twine("error opening '") +
                                options.inputFilename +
@@ -228,11 +232,10 @@ int main(int argc, char **argv) {
   // Run each test with a MLIRContext set up for the right kind of diagnostic
   // emission.
   LogicalResult hadError = options.configureMLIRContextAndExecute(
-      std::move(fileBuffer), [&](MLIRContext *context) -> LogicalResult {
+      std::move(diagnosticBuffer), [&](MLIRContext *context) -> LogicalResult {
         return runTestcases(testcasesToExecute, options, context);
       });
 
-  // We're done with the MEF, we can safely deallocate (see above).
   mefFile.reset();
 
   if constexpr (AsyncValue::isAllocationTrackingEnabled())

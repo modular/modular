@@ -193,6 +193,7 @@ def targets():
         actual = select({{
             "@@//:use_sglang_setting": ":apache-tvm-ffi@0.1.9",
             "@@//:use_vllm_setting": ":apache-tvm-ffi@0.1.11",
+            "@@//:use_bench_setting": ":apache-tvm-ffi@0.1.12",
             "//conditions:default": ":apache-tvm-ffi@0.1.9",
         }}),
     )
@@ -211,7 +212,31 @@ def targets():
         actual = select({{
             "@@//:use_sglang_setting": ":cuda-pathfinder@1.8.2",
             "@@//:use_vllm_setting": ":cuda-pathfinder@1.8.2",
+            "@@//:use_bench_setting": ":cuda-pathfinder@1.8.2",
             "//conditions:default": ":cuda-pathfinder@1.3.2",
+        }}),
+    )
+
+    native.alias(
+        name = "flash-attn-4@multiple",
+        testonly = True,
+        target_compatible_with = select({{
+            "@@//:use_sglang_setting": [],
+            "@@//:use_bench_setting": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }}),
+        actual = select({{
+            "@@//:use_sglang_setting": ":flash-attn-4@4.0.0b9",
+            "@@//:use_bench_setting": ":flash-attn-4@4.0.0b31",
+        }}),
+    )
+
+    native.alias(
+        name = "nvidia-cudnn-frontend@multiple",
+        actual = select({{
+            "@@//:use_bench_setting": ":nvidia-cudnn-frontend@1.31.0",
+            "@@//:use_vllm_setting": ":nvidia-cudnn-frontend@1.31.0",
+            "//conditions:default": ":nvidia-cudnn-frontend@1.26.0",
         }}),
     )
 
@@ -228,7 +253,8 @@ def targets():
         name = "flashinfer-python@multiple",
         actual = select({{
             "@@//:use_sglang_setting": ":flashinfer-python@0.6.11.post1",
-            "@@//:use_vllm_setting": ":flashinfer-python@0.6.18.post1",
+            "@@//:use_vllm_setting": ":flashinfer-python@0.7.0.post1",
+            "@@//:use_bench_setting": ":flashinfer-python@0.7.0",
             "//conditions:default": ":flashinfer-python@0.6.8.post1",
         }}),
     )
@@ -238,6 +264,7 @@ def targets():
         actual = select({{
             "@@//:use_sglang_setting": ":nvidia-cutlass-dsl@4.5.1",
             "@@//:use_vllm_setting": ":nvidia-cutlass-dsl@4.7.1",
+            "@@//:use_bench_setting": ":nvidia-cutlass-dsl@4.8.0",
             "//conditions:default": ":nvidia-cutlass-dsl@4.4.2",
         }}),
     )
@@ -247,6 +274,7 @@ def targets():
         actual = select({{
             "@@//:use_sglang_setting": ":nvidia-cutlass-dsl-libs-base@4.5.1",
             "@@//:use_vllm_setting": ":nvidia-cutlass-dsl-libs-base@4.7.1",
+            "@@//:use_bench_setting": ":nvidia-cutlass-dsl-libs-base@4.8.0",
             "//conditions:default": ":nvidia-cutlass-dsl-libs-base@4.4.2",
         }}),
     )
@@ -255,13 +283,13 @@ def targets():
         name = "nvidia-cutlass-dsl-libs-core@multiple",
         testonly = True,
         target_compatible_with = select({{
-            "@@//:use_sglang_setting": [],
             "@@//:use_vllm_setting": [],
+            "@@//:use_bench_setting": [],
             "//conditions:default": ["@platforms//:incompatible"],
         }}),
         actual = select({{
-            "@@//:use_sglang_setting": ":nvidia-cutlass-dsl-libs-core@4.6.2",
             "@@//:use_vllm_setting": ":nvidia-cutlass-dsl-libs-core@4.7.1",
+            "@@//:use_bench_setting": ":nvidia-cutlass-dsl-libs-core@4.8.0",
         }}),
     )
 
@@ -269,13 +297,13 @@ def targets():
         name = "nvidia-cutlass-dsl-libs-cu12@multiple",
         testonly = True,
         target_compatible_with = select({{
-            "@@//:use_sglang_setting": [],
             "@@//:use_vllm_setting": [],
+            "@@//:use_bench_setting": [],
             "//conditions:default": ["@platforms//:incompatible"],
         }}),
         actual = select({{
-            "@@//:use_sglang_setting": ":nvidia-cutlass-dsl-libs-cu12@4.6.2",
             "@@//:use_vllm_setting": ":nvidia-cutlass-dsl-libs-cu12@4.7.1",
+            "@@//:use_bench_setting": ":nvidia-cutlass-dsl-libs-cu12@4.8.0",
         }}),
     )
 
@@ -285,11 +313,13 @@ def targets():
         target_compatible_with = select({{
             "@@//:use_sglang_setting": [],
             "@@//:use_vllm_setting": [],
+            "@@//:use_bench_setting": [],
             "//conditions:default": ["@platforms//:incompatible"],
         }}),
         actual = select({{
             "@@//:use_sglang_setting": ":nvidia-cutlass-dsl-libs-cu13@4.5.1",
             "@@//:use_vllm_setting": ":nvidia-cutlass-dsl-libs-cu13@4.7.1",
+            "@@//:use_bench_setting": ":nvidia-cutlass-dsl-libs-cu13@4.8.0",
         }}),
     )
 
@@ -477,14 +507,6 @@ def targets():
     )
 
     native.alias(
-        name = "nvidia-nvshmem-cu12@multiple",
-        testonly = True,
-        actual = select({{
-            "//conditions:default": ":nvidia-nvshmem-cu12@3.4.5",
-        }}),
-    )
-
-    native.alias(
         name = "sglang@multiple",
         testonly = True,
         actual = ":sglang@0.5.12.post1",
@@ -497,11 +519,13 @@ def targets():
         target_compatible_with = select({{
             "@@//:use_sglang_setting": [],
             "@@//:use_vllm_setting": [],
+            "@@//:use_bench_setting": [],
             "//conditions:default": ["@platforms//:incompatible"],
         }}),
         actual = select({{
             "@@//:use_sglang_setting": ":quack-kernels@0.4.1",
             "@@//:use_vllm_setting": ":quack-kernels@0.6.5",
+            "@@//:use_bench_setting": ":quack-kernels@0.6.5",
         }}),
     )
 
@@ -516,6 +540,20 @@ def targets():
         actual = select({{
             "@@//:use_sglang_setting": ":tokenspeed-mla@0.1.1",
             "@@//:use_vllm_setting": ":tokenspeed-mla@0.1.8",
+        }}),
+    )
+
+    native.alias(
+        name = "xgrammar@multiple",
+        testonly = True,
+        target_compatible_with = select({{
+            "@@//:use_sglang_setting": [],
+            "@@//:use_vllm_setting": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }}),
+        actual = select({{
+            "@@//:use_sglang_setting": ":xgrammar@0.2.0",
+            "@@//:use_vllm_setting": ":xgrammar@0.2.7",
         }}),
     )
 
@@ -536,7 +574,7 @@ def targets():
     native.alias(
         name = "vllm@multiple",
         testonly = True,
-        actual = ":vllm@0.30.0",
+        actual = ":vllm@0.31.0",
         target_compatible_with = ["@@//:nvidia_gpu"],
     )
 

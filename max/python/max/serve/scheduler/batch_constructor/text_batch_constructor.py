@@ -11,14 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Assembles text requests into prefill and decode batches."""
+
 from __future__ import annotations
 
 import itertools
 import logging
+import math
 import os
 import time
 from collections import OrderedDict, deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -28,6 +31,11 @@ from max.pipelines.kv_cache import (
     InsufficientBlocksError,
     PagedKVCacheManagerInterface,
 )
+from max.pipelines.kv_cache.checkpoint import (
+    Checkpointer,
+    CheckpointEvent,
+    CheckpointEventKind,
+)
 from max.pipelines.kv_cache.kv_connector import KVLoadFailed, KVTransfer
 from max.pipelines.lora import LoRAManagerV3, get_lora_manager
 from max.pipelines.modeling.types import (
@@ -36,7 +44,7 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
 )
 from max.profiler import traced
-from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.metrics import METRICS, LookupAdmissionStop
 
 from ..config import TokenGenerationSchedulerConfig
 from ..dp_padding import DPBatchPadder, DPPaddingInfo
@@ -73,6 +81,22 @@ per queued request. 0 defers no lookup, so every one runs synchronously on
 the scheduler thread as it did before lookups were deferred.
 """
 
+LOOKUP_WAIT_ENV_VAR = "MAX_SERVE_CONNECTOR_LOOKUP_WAIT_MS"
+"""How long, in ms, a pass waits for the deferred lookups it started.
+
+Admission then runs again, so a request whose lookup settled in the wait can
+be admitted that pass once it reaches the head of its queue, if the budget
+left takes what it still has to compute after its answer loads. A hit then
+starts its load. Lookups still out after the wait stay cordoned. The wait
+runs on the scheduler thread and lengthens the step once it outlasts the
+GPU's, so it is off (0) by default.
+"""
+
+# How often the wait polls the lookups it covers. The connector's handles
+# only poll, so the wait sleeps between polls rather than spinning, and an
+# answer is seen at most this long after it lands.
+_LOOKUP_WAIT_POLL_S = 0.0005
+
 # How long a request out on a connector lookup keeps the prompts behind it
 # waiting, counted from its first cordon. Set to the 5 s the Jenga manager
 # waits on one lookup before serving it as a miss, so a lookup that never
@@ -89,12 +113,16 @@ class _PendingCERequest:
     tokens, per replica, from a read-only probe of the device and shared
     (host/disk) cache tiers at enqueue time. The shared tiers give the same
     answer on every replica; per-replica differences come from device-cache
-    residency only. ``entered_at`` is when this stay in the pool began, which
-    differs from the deferral deadline once a preempted request re-enters.
+    residency only. ``awaits_presence`` says the shared tiers' answer was
+    still out when ``weights`` was taken, so it counts the device tier
+    alone and the planner prices the request again until the answer lands.
+    ``entered_at`` is when this stay in the pool began, which differs from
+    the deferral deadline once a preempted request re-enters.
     """
 
     ctx: TextContext
     weights: list[int]
+    awaits_presence: bool = False
     entered_at: float = field(default_factory=time.monotonic)
 
 
@@ -110,12 +138,15 @@ class _BoundRequest:
     ``ce_weight`` is the request's estimated post-prefix-cache CE length on
     ``replica_idx``, carried so the planner prices bound work the way it
     prices the pool (see :meth:`TextBatchConstructor._ce_weight`). ``None``
-    for a request bound straight into the TG queue.
+    for a request bound straight into the TG queue. ``awaits_presence`` is
+    as on :class:`_PendingCERequest`: the planner prices the request again
+    until the shared tiers answer or the request is claimed.
     """
 
     ctx: TextContext
     replica_idx: int
     ce_weight: int | None = None
+    awaits_presence: bool = False
 
 
 @dataclass
@@ -168,6 +199,21 @@ class _LookupHold:
     replica_idx: int
     seq: int
     since: float
+
+
+@dataclass(frozen=True)
+class _CordonWait:
+    """When a request was first cordoned, on a connector lookup or an onload.
+
+    Kept until the request is admitted or released, through readmissions,
+    re-asks and a preemption back to the DP pool, so the wait recorded at
+    admission is measured the same way with or without DP balancing.
+    ``since`` is on ``time.monotonic`` and ``pass_idx`` counts
+    ``construct_batch`` calls.
+    """
+
+    since: float
+    pass_idx: int
 
 
 def _onload_settled(event: KVTransfer) -> bool:
@@ -260,15 +306,19 @@ class ReplicaBatch:
         return len(self.batch)
 
     def is_empty(self) -> bool:
+        """Whether the replica holds no batch."""
         return len(self.batch) == 0
 
 
 class PreemptionReason(str, Enum):
+    """Why a request was preempted."""
+
     KV_CACHE_MEMORY = "kv_cache_memory"
     MAX_NUM_LORAS = "max_num_loras"
 
     @property
     def error_message(self) -> str:
+        """The message reported for this preemption reason."""
         match self:
             case PreemptionReason.MAX_NUM_LORAS:
                 return "Preempted a request due to max-num-loras limit exceeded. This can affect the end-to-end performance. Consider increasing max-num-loras."
@@ -543,6 +593,7 @@ class TextBatchConstructor:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         self.kv_cache = kv_cache
+        self._checkpointer = Checkpointer.factory().disabled().build()
         self.batch_scheduling_strategy = batch_scheduling_strategy
         self._get_inflight_kv_transfer_count = get_inflight_kv_transfer_count
         self.tg_priority_kv_percentage = float(
@@ -555,6 +606,29 @@ class TextBatchConstructor:
             raise ValueError(
                 f"{MAX_PENDING_LOOKUPS_ENV_VAR} must be 0 or more, got "
                 f"{self.max_pending_lookups}"
+            )
+        lookup_wait_ms = float(os.getenv(LOOKUP_WAIT_ENV_VAR, "0"))
+        if not math.isfinite(lookup_wait_ms) or lookup_wait_ms < 0:
+            raise ValueError(
+                f"{LOOKUP_WAIT_ENV_VAR} must be a finite number of "
+                f"milliseconds, 0 or more, got {lookup_wait_ms}"
+            )
+        self.lookup_wait_s = lookup_wait_ms / 1000
+        # A pass that waits falls back to decode after every replica's
+        # admission, and a cross-replica prefix copy does not pin the peer
+        # pages it reads, so a replica could hand a page to a decode row while
+        # a later replica's copy still reads it.
+        # TODO(CLIN-2143): Lift once copy sources stay pinned until the copy
+        # drains.
+        if (
+            self.lookup_wait_s > 0
+            and self.scheduler_config.data_parallel_degree > 1
+            and self.kv_cache.params.enable_dp_cross_replica_prefix_copy
+        ):
+            raise ValueError(
+                f"{LOOKUP_WAIT_ENV_VAR} needs cross-replica prefix copy off "
+                "under data parallelism "
+                "(--no-enable-dp-cross-replica-prefix-copy)"
             )
 
         self._lora_manager: LoRAManagerV3 | None = get_lora_manager(pipeline)
@@ -600,6 +674,15 @@ class TextBatchConstructor:
         self._bind_seq: dict[RequestID, int] = {}
         self._next_bind_seq = itertools.count()
         self._lookup_holds: dict[RequestID, _LookupHold] = {}
+        self._cordon_waits: dict[RequestID, _CordonWait] = {}
+        self._pass_idx = 0
+        # Lookups this pass started, which the wait polls.
+        self._lookups_this_pass: list[_OnloadingRequest] = []
+        # Decode rows each replica's batch held when its admission first ran,
+        # so the rerun after the wait reads the batch the same way. A replica
+        # whose admission ran short of KV blocks is left out, so no rerun
+        # allocs there.
+        self._ce_admissions: dict[int, int] = {}
 
         # DP-balanced CE deferral state. New CE requests wait in
         # ``_ce_pending`` unbound to any replica (insertion order == arrival
@@ -715,14 +798,15 @@ class TextBatchConstructor:
 
     @property
     def structured_output_enabled(self) -> bool:
-        """Whether constrained decoding can fire at all for this process:
-        ``--enable-structured-output`` (user-supplied JSON schemas) or a
-        ``--tool-call-policy`` other than ``force_unconstrained`` with a
+        """Whether constrained decoding can fire at all for this process.
+
+        It can fire from ``--enable-structured-output`` (user-supplied JSON schemas)
+        or from a ``--tool-call-policy`` other than ``force_unconstrained`` with a
         grammar-capable tool parser (server-generated tool-call grammars).
 
-        Mirrors ``PipelineConfig.needs_bitmask_constraints`` -- the same
-        signal that gates whether the bitmask-aware sampler graph and
-        pinned D2H buffer were even compiled/allocated for this process.
+        Mirrors ``PipelineConfig.needs_bitmask_constraints`` -- the same signal that
+        gates whether the bitmask-aware sampler graph and pinned D2H buffer were even
+        compiled/allocated for this process.
         """
         pipeline_config = getattr(self.pipeline, "pipeline_config", None)
         return (
@@ -793,7 +877,9 @@ class TextBatchConstructor:
             and ctx.tokens.generated_length == 0
         ):
             self._ce_pending[ctx.request_id] = _PendingCERequest(
-                ctx=ctx, weights=self._post_cache_weights(ctx)
+                ctx=ctx,
+                weights=self._post_cache_weights(ctx),
+                awaits_presence=self.kv_cache.awaits_presence(ctx),
             )
             self._ce_arrival[ctx.request_id] = time.monotonic()
             return
@@ -809,6 +895,7 @@ class TextBatchConstructor:
         replica_idx: int,
         *,
         ce_weight: int | None = None,
+        awaits_presence: bool = False,
     ) -> None:
         """Binds a request to a replica and enqueues it in the right queue.
 
@@ -819,6 +906,9 @@ class TextBatchConstructor:
                 ``replica_idx``, when the caller already has it. Probed here
                 otherwise -- the probe hashes the whole prompt, so a caller
                 holding the answer should pass it.
+            awaits_presence: Whether ``ce_weight`` was taken while the
+                shared tiers' answer was still out, so the planner prices
+                the request again until it lands.
         """
         replica = self.replicas[replica_idx]
 
@@ -826,13 +916,15 @@ class TextBatchConstructor:
         if ctx.tokens.generated_length == 0:
             if self._dp_ce_balance_enabled and ce_weight is None:
                 ce_weight = self._post_cache_weights(ctx)[replica_idx]
+                awaits_presence = self.kv_cache.awaits_presence(ctx)
             replica.ce_reqs[ctx.request_id] = ctx
         else:
             ce_weight = None
+            awaits_presence = False
             replica.tg_reqs[ctx.request_id] = ctx
 
         self._bound_requests[ctx.request_id] = _BoundRequest(
-            ctx, replica_idx, ce_weight
+            ctx, replica_idx, ce_weight, awaits_presence
         )
         if ctx.request_id not in self._bind_seq:
             self._bind_seq[ctx.request_id] = next(self._next_bind_seq)
@@ -907,7 +999,10 @@ class TextBatchConstructor:
         # Only a preempted request returns to the pool with its bind seq.
         rebind = request_id in self._bind_seq
         self._bind_request(
-            pending.ctx, replica_idx, ce_weight=pending.weights[replica_idx]
+            pending.ctx,
+            replica_idx,
+            ce_weight=pending.weights[replica_idx],
+            awaits_presence=pending.awaits_presence,
         )
         if rebind:
             self._restore_bind_order(request_id, replica_idx)
@@ -928,12 +1023,42 @@ class TextBatchConstructor:
             return ctx.tokens.active_length
         return bound.ce_weight
 
+    def _price_again_once_presence_answers(self) -> None:
+        """Prices again the requests whose shared-tier answer was out.
+
+        A request priced while the cache's connector probe was still out
+        was weighted by its device tier alone, so each pass asks the cache
+        once whether the answer has landed, which takes nothing, and prices
+        the request once more when it has. A bound request stops being
+        priced once it is claimed, since its probe is then the allocation's
+        to read and a request that ran is priced by its live window.
+        """
+        for pending in self._ce_pending.values():
+            if pending.awaits_presence and not self.kv_cache.awaits_presence(
+                pending.ctx
+            ):
+                pending.weights = self._post_cache_weights(pending.ctx)
+                pending.awaits_presence = False
+        for bound in self._bound_requests.values():
+            if not bound.awaits_presence:
+                continue
+            if self.kv_cache.contains(bound.ctx):
+                bound.awaits_presence = False
+            elif not self.kv_cache.awaits_presence(bound.ctx):
+                bound.ce_weight = self._post_cache_weights(bound.ctx)[
+                    bound.replica_idx
+                ]
+                bound.awaits_presence = False
+
     def _post_cache_weights(self, ctx: TextContext) -> list[int]:
         """Estimates per-replica post-prefix-cache CE length for a new request.
 
         Probes the prefix caches read-only (device tier per replica, shared
         host/disk tiers once) and subtracts the contiguous cached prefix from
-        the request's unprocessed length. Fails open: on any probe error the
+        the request's unprocessed length. A cache whose connector probe is a
+        round trip starts it on the first call and counts the device tier
+        alone until it answers, which ``kv_cache.awaits_presence`` reports.
+        Never waits on the connector. Fails open: on any probe error the
         request is weighted at its full unprocessed length everywhere
         (pre-cache behavior), and the first failure is logged.
         """
@@ -957,6 +1082,11 @@ class TextBatchConstructor:
         return [
             max(1, active_length - page_size * h.total_blocks) for h in hits
         ]
+
+    def with_checkpointer(self, checkpointer: Checkpointer) -> None:
+        """Propagates the checkpointer."""
+        self._checkpointer = checkpointer
+        self.kv_cache.with_checkpointer(checkpointer)
 
     def advance_requests(
         self, inputs: TextGenerationInputs[TextContext]
@@ -987,6 +1117,19 @@ class TextBatchConstructor:
             for context in per_replica_batch:
                 if not self.contains(context.request_id):
                     continue
+                # A prefill request is out of the TG queue while it runs, and
+                # one that produced a token has finished its prompt.
+                if (
+                    context.request_id not in replica.tg_reqs
+                    and context.tokens.generated_length > 0
+                ):
+                    self._checkpointer.record(
+                        CheckpointEvent(
+                            context.request_id,
+                            CheckpointEventKind.END_OF_PROMPT,
+                            context.tokens.prompt_length,
+                        )
+                    )
                 replica.tg_reqs[context.request_id] = context
 
             # Move chunked requests back to the CE request queue. A request that
@@ -1064,8 +1207,7 @@ class TextBatchConstructor:
         return failed
 
     def release_request(self, request_id: RequestID) -> None:
-        """
-        Releases a request from the batch constructor for all replicas.
+        """Releases a request from the batch constructor for all replicas.
 
         This method searches for the given request_id in both context encoding (CE)
         and text generation (TG) request queues for each replica. If found, it removes
@@ -1089,9 +1231,11 @@ class TextBatchConstructor:
         # Pooled CE requests are not bound to a replica yet: nothing was
         # claimed in the KV cache and no replica queue holds them.
         if request_id in self._ce_pending:
-            del self._ce_pending[request_id]
+            pending = self._ce_pending.pop(request_id)
             self._ce_arrival.pop(request_id, None)
             self._bind_seq.pop(request_id, None)
+            self._cordon_waits.pop(request_id, None)
+            self.kv_cache.abandon_presence(pending.ctx)
             self.pipeline.release(request_id)
             return
 
@@ -1103,6 +1247,7 @@ class TextBatchConstructor:
         self._onloading_reqs.pop(request_id, None)
         self._readmitted_lookups.pop(request_id, None)
         self._lookup_holds.pop(request_id, None)
+        self._cordon_waits.pop(request_id, None)
         self._bind_seq.pop(request_id, None)
 
         bound = self._bound_requests[request_id]
@@ -1142,6 +1287,9 @@ class TextBatchConstructor:
         # not claimed".
         if self.kv_cache is not None and self.kv_cache.contains(bound.ctx):
             self.kv_cache.release(bound.ctx)
+        elif self.kv_cache is not None:
+            # Never claimed, so only the probe its pricing started is held.
+            self.kv_cache.abandon_presence(bound.ctx)
 
         # Pipeline release handles model-specific cleanup (e.g. vision encoder cache)
         self.pipeline.release(request_id)
@@ -1218,7 +1366,6 @@ class TextBatchConstructor:
                 whatever is queued there, turning the FIFO retry into a
                 rotation.
         """
-
         # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
         if self.kv_cache.contains(context):
             self.kv_cache.release(context)
@@ -1253,7 +1400,9 @@ class TextBatchConstructor:
             self._lookup_holds.pop(context.request_id, None)
             self._request_id_to_lora_name.pop(context.request_id, None)
             self._ce_pending[context.request_id] = _PendingCERequest(
-                ctx=context, weights=self._post_cache_weights(context)
+                ctx=context,
+                weights=self._post_cache_weights(context),
+                awaits_presence=self.kv_cache.awaits_presence(context),
             )
             self._ce_pending.move_to_end(context.request_id, last=False)
             return
@@ -1293,8 +1442,7 @@ class TextBatchConstructor:
     def _preempt_request(
         self, context: TextContext, replica_idx: int, reason: PreemptionReason
     ) -> None:
-        """Preempts the most recently received request from active batch"""
-
+        """Preempts the most recently received request from active batch."""
         # Return to the Request Queue
         self._return_to_request_queue(context, replica_idx, unbind=True)
 
@@ -1358,14 +1506,13 @@ class TextBatchConstructor:
         return RequestType.CE
 
     def _is_anything_inflight(self, replica_idx: int) -> bool:
-        """Whether anything that could still resolve into runnable work is
-        in flight on this replica -- existence, not magnitude, since the
-        fatal-vs-defer decision only needs to know whether anything at all
-        is happening, not how much. Checked across cordoned onloads (H2D
-        landing), any device-side pending transfer (e.g. a D2H offload),
-        and any external (DI prefill/decode) signal. Scoped to
-        replica_idx: a transfer on a different replica's device pool
-        can't free blocks on this one.
+        """Whether anything that could still resolve into runnable work is in flight.
+
+        Existence, not magnitude, since the fatal-vs-defer decision only needs to know
+        whether anything at all is happening, not how much. Checked across cordoned
+        onloads (H2D landing), any device-side pending transfer (e.g. a D2H offload),
+        and any external (DI prefill/decode) signal. Scoped to replica_idx: a transfer
+        on a different replica's device pool can't free blocks on this one.
         """
         if any(
             onloading.replica_idx == replica_idx
@@ -1401,11 +1548,12 @@ class TextBatchConstructor:
     def _is_insufficient_blocks_fatal(
         self, replica_idx: int, no_other_work: bool
     ) -> bool:
-        """Fatal only when there's no other runnable work and nothing at
-        all is in flight -- presence, not magnitude, since a deficit
-        sized against what's in flight now can't see a transfer that
-        starts next iteration. A wrong "fatal" verdict kills the worker;
-        a wrong "defer" verdict just costs a retry, so this errs toward
+        """Whether a block deficit is fatal rather than worth a retry.
+
+        Fatal only when there's no other runnable work and nothing at all is in flight
+        -- presence, not magnitude, since a deficit sized against what's in flight now
+        can't see a transfer that starts next iteration. A wrong "fatal" verdict kills
+        the worker; a wrong "defer" verdict just costs a retry, so this errs toward
         retrying whenever anything at all is in flight.
         """
         return no_other_work and not self._is_anything_inflight(replica_idx)
@@ -1439,6 +1587,16 @@ class TextBatchConstructor:
             and self.kv_cache.num_req_blocks(ctx) == 0
         )
 
+    def _record_cordon_wait(self, request_id: RequestID) -> None:
+        """Records how long an admitted request waited cordoned, if it did."""
+        wait = self._cordon_waits.pop(request_id, None)
+        if wait is None:
+            return
+        METRICS.connector_cordon_wait_time(
+            (time.monotonic() - wait.since) * 1000
+        )
+        METRICS.connector_cordon_passes(self._pass_idx - wait.pass_idx)
+
     def _ce_admission_seats(self, replica_idx: int) -> int:
         """How many CE requests ``_add_ce_requests`` can seat here this step.
 
@@ -1446,7 +1604,7 @@ class TextBatchConstructor:
         replica's queued decode work reach ``max_batch_size``, reserving
         batch slots for the generations those prefills turn into. A replica
         whose decode queue is already that deep therefore seats no prefill at
-        all, and ``_construct_replica_batch`` falls back to decode -- so the
+        all, and ``_finish_replica_batch`` falls back to decode -- so the
         planner has to price a replica by what admission will take, not by
         what is queued on it. An off-cadence step seats nothing anywhere.
         """
@@ -1458,7 +1616,44 @@ class TextBatchConstructor:
             - len(self.replicas[replica_idx].tg_reqs),
         )
 
-    def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
+    def _rerun_takes_head(
+        self, batch: ReplicaBatch, replica_idx: int, draft_width: int
+    ) -> bool:
+        """Returns whether the budget takes the replica's head whole.
+
+        Reads the head as its ``alloc`` will leave it, so a long prompt whose
+        answered lookup is a deep hit is taken for what it has left.
+
+        Args:
+            batch: The batch the rerun admits into.
+            replica_idx: The replica whose CE queue is read.
+            draft_width: Draft tokens to reserve beside the head.
+
+        Returns:
+            Whether the budget takes the head whole once its ``alloc`` runs.
+        """
+        head = next(iter(self.replicas[replica_idx].ce_reqs.values()))
+        return batch.token_budget.fits_whole(
+            head,
+            RequestType.CE,
+            reserve=draft_width,
+            active_length=self.kv_cache.active_length_after_alloc(head),
+        )
+
+    def _add_ce_requests(
+        self,
+        batch: ReplicaBatch,
+        replica_idx: int,
+        *,
+        tg_in_batch: int | None = None,
+        start_lookups: bool = True,
+    ) -> None:
+        """Admits the replica's queued prefill into ``batch``.
+
+        A pass calls this again after the lookup wait, passing the first
+        call's ``tg_in_batch`` and ``start_lookups=False``, so the rerun
+        reads the batch as the first call did and starts no lookups.
+        """
         # Deferred by the DP CE balancer this iteration (also covers paths
         # that bypass _identify_priority, e.g. in-flight batching).
         if replica_idx in self._ce_deferred_replicas:
@@ -1476,7 +1671,10 @@ class TextBatchConstructor:
 
         # If there is anything in the batch, we can assume its TG, and the requests
         # are also counted in the tg_reqs.
-        starting_tg_reqs_count = len(batch)
+        if tg_in_batch is None:
+            tg_in_batch = len(batch)
+            self._ce_admissions[replica_idx] = tg_in_batch
+        starting_tg_reqs_count = tg_in_batch
         # The in-flight backfill runs under a TG priority, so it also slips
         # past the KV-pressure check in _identify_priority. Above that
         # threshold a new prefill takes blocks the running generations need
@@ -1492,9 +1690,10 @@ class TextBatchConstructor:
 
         # A deferred lookup is charged the tokens its request would take from
         # the batch, so one pass starts no more lookups than it could have
-        # run. It is kept apart from the batch budget, which only work that
-        # runs this step draws on.
-        lookup_budget = batch.token_budget.remaining
+        # run. That is its post-cache weight, since before the lookup answers
+        # the request's window is still the whole prompt. It is kept apart
+        # from the batch budget, which only work that runs this step draws on.
+        lookup_budget = batch.token_budget.remaining if start_lookups else 0
         while (
             len(batch) < max_batch_size
             # At a high level, active ce requests + tg_requests should not exceed the total max batch size.
@@ -1503,6 +1702,18 @@ class TextBatchConstructor:
             - starting_tg_reqs_count
             < max_batch_size
             and len(replica_requests.ce_reqs) > 0
+            # The rerun after the lookup wait pops only a head the budget
+            # takes whole, drafts included, as its ``alloc`` will leave it.
+            # An ``alloc`` loads an answered hit and rolls a failed copy back
+            # to its whole prompt. A refusal after the pop would reset a
+            # request whose ``alloc`` already took its answer and pages,
+            # which only a load the connector refuses or fails, or one the
+            # pool has no room for, can still lead to, as in the first
+            # admission.
+            and (
+                start_lookups
+                or self._rerun_takes_head(batch, replica_idx, draft_width)
+            )
         ):
             # Pop new request off the queue.
             req_id, ctx = replica_requests.ce_reqs.popitem(last=False)
@@ -1513,8 +1724,14 @@ class TextBatchConstructor:
                 self.kv_cache.contains(ctx)
                 and self.kv_cache.num_req_blocks(ctx) > 0
             ):
-                if not self._requeue_lookup_holder(ctx, replica_idx):
+                if self._requeue_lookup_holder(ctx, replica_idx):
+                    pass
+                elif start_lookups:
                     self._return_to_request_queue(ctx, replica_idx)
+                else:
+                    # Unclaimed, so there is nothing to reset.
+                    replica_requests.ce_reqs[req_id] = ctx
+                    replica_requests.ce_reqs.move_to_end(req_id, last=False)
                 break
 
             # Check LoRA budget before resource allocation
@@ -1547,14 +1764,24 @@ class TextBatchConstructor:
                     ctx
                 )
                 held = self._held_behind_lookup(ctx, replica_idx)
-                if (
+                stop: LookupAdmissionStop | None = None
+                if starts_lookup and lookup_budget <= 0:
+                    stop = "budget"
+                elif (
                     starts_lookup
-                    and (
-                        lookup_budget <= 0
-                        or self._pending_lookup_count(replica_idx)
-                        >= self.max_pending_lookups
-                    )
-                ) or (held and not starts_lookup):
+                    and self._pending_lookup_count(replica_idx)
+                    >= self.max_pending_lookups
+                ):
+                    stop = "max_pending"
+                elif held and not starts_lookup:
+                    stop = "held"
+                if stop is not None:
+                    # Only the first admission counts a stop. The rerun after
+                    # the lookup wait starts no lookups, so a budget stop there
+                    # means nothing, and a request it stops on is counted when
+                    # a later pass reaches it.
+                    if start_lookups:
+                        METRICS.connector_lookup_admission_stop(stop)
                     replica_requests.ce_reqs[req_id] = ctx
                     replica_requests.ce_reqs.move_to_end(req_id, last=False)
                     break
@@ -1597,6 +1824,13 @@ class TextBatchConstructor:
                             f"{len(ctx.tokens)} tokens and already holds "
                             f"blocks per leaf {held_blocks}. {e}"
                         ) from e
+                    # Blocks ran short on this replica, so the rerun after the
+                    # lookup wait skips it. Its allocs would likely fail too,
+                    # and each failure resets a request that has just taken
+                    # its answer or holds a landed onload. A rerun can still
+                    # run short itself, and the request it fails on then
+                    # resets as it would on the next pass.
+                    self._ce_admissions.pop(replica_idx, None)
                     self._return_to_request_queue(ctx, replica_idx)
                     break
                 if held and not self.kv_cache.awaits_lookup(ctx):
@@ -1621,14 +1855,20 @@ class TextBatchConstructor:
                     # answered in place and went on to an onload is not
                     # counted, while a re-ask the alloc started is.
                     awaiting_lookup = self.kv_cache.awaits_lookup(ctx)
-                    self._onloading_reqs[req_id] = _OnloadingRequest(
+                    onloading = _OnloadingRequest(
                         ctx=ctx,
                         replica_idx=replica_idx,
                         event=onload_event,
                         awaiting_lookup=awaiting_lookup,
                     )
+                    self._onloading_reqs[req_id] = onloading
+                    if req_id not in self._cordon_waits:
+                        self._cordon_waits[req_id] = _CordonWait(
+                            since=time.monotonic(), pass_idx=self._pass_idx
+                        )
                     if awaiting_lookup:
-                        lookup_budget -= ctx.tokens.active_length
+                        lookup_budget -= self._ce_weight(ctx)
+                        self._lookups_this_pass.append(onloading)
                         if req_id not in self._lookup_holds:
                             self._lookup_holds[req_id] = _LookupHold(
                                 replica_idx=replica_idx,
@@ -1664,6 +1904,7 @@ class TextBatchConstructor:
                         return
                     batch.batch[req_id] = ctx
                     self._lookup_holds.pop(req_id, None)
+                    self._record_cordon_wait(req_id)
                     replica_requests.add_active_lora(ctx, self._lora_manager)
                     batch.token_budget.add_to_budget(
                         ctx, request_type=RequestType.CE
@@ -1672,6 +1913,7 @@ class TextBatchConstructor:
                 case BudgetStatus.BUDGET_AVAILABLE:
                     batch.batch[req_id] = ctx
                     self._lookup_holds.pop(req_id, None)
+                    self._record_cordon_wait(req_id)
                     batch.token_budget.add_to_budget(
                         ctx, request_type=RequestType.CE
                     )
@@ -1857,18 +2099,48 @@ class TextBatchConstructor:
             return True
         return self._prefill_interval_phase == 0
 
+    def _cap_ifb_ce_tokens_to_quota(
+        self, batch: ReplicaBatch, replica_idx: int
+    ) -> None:
+        """Caps what CE adds to an in-flight batching step at the CE quota.
+
+        Decode rows share the budget, so the quota cannot be its capacity.
+        The cap also leaves room for the draft width ``_add_ce_requests``
+        reserves per prompt row, or the chunk comes out short and one the
+        min-chunk floor refuses is reset every step.
+        """
+        if (
+            not self.scheduler_config.enable_in_flight_batching
+            or self._ce_step_quota is None
+            or self._ce_step_quota[replica_idx] <= 0
+        ):
+            return
+        verify_width = self.scheduler_config.spec_decode_mixed_verify_width
+        draft_headroom = verify_width * len(self.replicas[replica_idx].ce_reqs)
+        active = batch.token_budget.token_budgets[0]
+        active.capacity = min(
+            active.capacity,
+            active.used + self._ce_step_quota[replica_idx] + draft_headroom,
+        )
+
     def _construct_replica_batch(
         self, replica_idx: int, priority_override: RequestType | None = None
-    ) -> ReplicaBatch:
+    ) -> tuple[ReplicaBatch, RequestType | None]:
         """Constructs a batch for a single replica.
+
+        ``_finish_replica_batch`` fills an empty prefill batch with decode,
+        right after this call, or after every replica's admission when the
+        pass waits on lookups.
 
         Args:
             replica_idx: The index of the replica to construct a batch for.
             priority_override: Optional RequestType to override the priority
                 identified by _identify_priority. If None, priority is determined
                 automatically based on queue state and scheduler configuration.
-        """
 
+        Returns:
+            The batch and the priority it was built under.
+        """
         # Initialize batch. When the DP CE balancer set a step quota for this
         # replica, it becomes the CE budget capacity, sizing this step's
         # chunks to the balance level instead of the full chunk target.
@@ -1876,8 +2148,8 @@ class TextBatchConstructor:
         if (
             self._ce_step_quota is not None
             and self._ce_step_quota[replica_idx] > 0
-            # Under in-flight batching the TG batch shares this budget; a
-            # small CE quota must not truncate it.
+            # Under in-flight batching the TG batch shares this budget, so
+            # _cap_ifb_ce_tokens_to_quota caps the CE share instead.
             and not self.scheduler_config.enable_in_flight_batching
         ):
             ce_capacity = self._ce_step_quota[replica_idx]
@@ -1896,23 +2168,8 @@ class TextBatchConstructor:
 
         match priority:
             case RequestType.CE:
+                self._cap_ifb_ce_tokens_to_quota(batch, replica_idx)
                 self._add_ce_requests(batch, replica_idx)
-
-                if len(batch) == 0 and priority_override is None:
-                    self._add_tg_requests(batch, replica_idx)
-                else:
-                    # This iteration is CE-only: the TG fallback above didn't
-                    # fire, so any pending TG requests get zero progress this
-                    # iteration (see _add_tg_requests, only reached from the
-                    # branch above). Pair with this batch's own execution
-                    # duration to estimate the TPOT cost of the stolen
-                    # iteration.
-                    pending_tg_count = len(self.replicas[replica_idx].tg_reqs)
-                    if len(batch) > 0 and pending_tg_count > 0:
-                        METRICS.di_ce_preempted_tg_iteration_count()
-                        METRICS.di_ce_preempted_tg_pending_count(
-                            pending_tg_count
-                        )
 
             case RequestType.TG:
                 self._add_tg_requests(batch, replica_idx)
@@ -1928,6 +2185,7 @@ class TextBatchConstructor:
                         len(batch)
                         * self.scheduler_config.spec_decode_mixed_verify_width
                     )
+                    self._cap_ifb_ce_tokens_to_quota(batch, replica_idx)
                     self._add_ce_requests(batch, replica_idx)
 
             case None:
@@ -1935,7 +2193,31 @@ class TextBatchConstructor:
                 # add either way.
                 pass
 
-        return batch
+        return batch, priority
+
+    def _finish_replica_batch(
+        self,
+        batch: ReplicaBatch,
+        replica_idx: int,
+        priority: RequestType | None,
+        priority_override: RequestType | None,
+    ) -> None:
+        """Gives a prefill step that admitted nothing to decode instead."""
+        if priority is not RequestType.CE:
+            return
+
+        if len(batch) == 0 and priority_override is None:
+            self._add_tg_requests(batch, replica_idx)
+        else:
+            # This iteration is CE-only: the TG fallback above didn't fire,
+            # so any pending TG requests get zero progress this iteration
+            # (see _add_tg_requests, only reached from the branch above).
+            # Pair with this batch's own execution duration to estimate the
+            # TPOT cost of the stolen iteration.
+            pending_tg_count = len(self.replicas[replica_idx].tg_reqs)
+            if len(batch) > 0 and pending_tg_count > 0:
+                METRICS.di_ce_preempted_tg_iteration_count()
+                METRICS.di_ce_preempted_tg_pending_count(pending_tg_count)
 
     def _plan_ce_step(self) -> None:
         """Plans this iteration's CE work across DP replicas.
@@ -1956,21 +2238,25 @@ class TextBatchConstructor:
         - Deferrable mid-prefill tails (per replica, all-or-nothing) and then
           pooled unbound requests are added largest-first wherever they
           strictly improve the step's occupancy (mean/max of per-replica CE
-          tokens, capped at the CE chunk budget). When no replica has TG
-          work, as on a prefill-only worker, pooled requests instead fill
-          the step up to that budget: holding them back would idle the fleet.
+          tokens, capped at the CE chunk budget). With dynamic chunk sizing,
+          a pooled request is priced at the size it would be cut to. When
+          no replica has TG work, as on a prefill-only worker, pooled
+          requests instead fill the step up to that budget: holding them
+          back would idle the fleet.
         - Pooled requests bind to the replica with the lightest queue total
-          plus their own weight, at the moment the planner schedules them:
-          binding is deferred until first run so it uses fresh loads.
+          plus their own weight, ties going to the replica with the fewest
+          queued requests (decode and CE), at the moment the planner
+          schedules them: binding is deferred until first run so it uses
+          fresh loads.
 
         The assembled step is committed when the floor is non-empty (those
         tokens run regardless, so riders only improve the step), when its
         occupancy meets ``dp_ce_balance_threshold``, or when the fleet has
         nothing else to do. With ``dp_ce_balance_enable_dynamic_chunk_size``,
         a below-threshold step with CE work on two or more replicas also
-        commits, at a reduced chunk size: each working replica's CE quota
-        (``_ce_step_quota``, enforced as that replica's CE budget capacity)
-        is reduced to the lightest working replica's level — never below a
+        commits, at a reduced chunk size: each heavier replica's CE quota
+        (``_ce_step_quota``, the most CE tokens it admits this step) is
+        reduced to the lightest working replica's level — never below a
         replica's floor — so the balanced portion runs now as a shorter,
         ~fully-occupied step and only the excess is deferred. Only a single
         replica's deferrable work with no partner anywhere is held outright:
@@ -1981,6 +2267,7 @@ class TextBatchConstructor:
         self._ce_step_quota = None
         if not self._dp_ce_balance_enabled:
             return
+        self._price_again_once_presence_answers()
         if not self._ce_pending and not any(
             replica.ce_reqs for replica in self.replicas
         ):
@@ -2007,6 +2294,16 @@ class TextBatchConstructor:
         def _has_seat(replica_idx: int) -> bool:
             return len(queues[replica_idx]) < seats[replica_idx]
 
+        # Ties on CE tokens are common (no replica holding the prefix prices
+        # them the same); breaking them by request count keeps them from all
+        # landing on replica 0 until it runs out of decode seats.
+        def _bind_key(replica_idx: int, weight: int) -> tuple[int, int]:
+            return (
+                sum(queues[replica_idx]) + weight,
+                len(self.replicas[replica_idx].tg_reqs)
+                + len(queues[replica_idx]),
+            )
+
         # Expired pooled requests bind before the step is measured, so the
         # replica they land on is priced with them queued on it -- and, being
         # expired, is then not deferrable, which is what forces the commit.
@@ -2018,7 +2315,7 @@ class TextBatchConstructor:
             if not seated:
                 continue
             weights = self._ce_pending[req_id].weights
-            replica_idx = min(seated, key=lambda i: sum(queues[i]) + weights[i])
+            replica_idx = min(seated, key=lambda i: _bind_key(i, weights[i]))
             # Only a replica with a free seat takes the bind, so its whole
             # queue stays inside the seats the floor prices below, and a
             # rebind moved up to its bind-order turn is priced the same.
@@ -2068,6 +2365,16 @@ class TextBatchConstructor:
         # (otherwise they would queue behind a deferred tail).
         no_tg_work = all(not replica.tg_reqs for replica in self.replicas)
         pool_binds: list[tuple[RequestID, int]] = []
+        dynamic_chunk_size = (
+            self.scheduler_config.dp_ce_balance_enable_dynamic_chunk_size
+        )
+        min_chunk = self.scheduler_config.chunked_prefill_min_chunk_size
+        min_balance_level = min_chunk or target // 2
+        # Dynamic chunk sizing cuts a pooled request heavier than the working
+        # replicas to the balance level, so price it there: at full size it
+        # becomes the new max and is refused until it expires and runs alone.
+        # ``real_load`` keeps the uncut sizes the quotas are cut from.
+        real_load = list(step_load)
         for req_id, pending in sorted(
             self._ce_pending.items(),
             key=lambda item: min(item[1].weights),
@@ -2081,19 +2388,25 @@ class TextBatchConstructor:
             if not eligible:
                 continue
             replica_idx = min(
-                eligible, key=lambda i: sum(queues[i]) + pending.weights[i]
+                eligible, key=lambda i: _bind_key(i, pending.weights[i])
             )
+            weight = pending.weights[replica_idx]
+            priced = weight
+            working = [tokens for tokens in step_load if tokens > 0]
+            if dynamic_chunk_size and working:
+                priced = min(weight, max(min(working), min_balance_level))
             trial = list(step_load)
-            trial[replica_idx] = min(
-                trial[replica_idx] + pending.weights[replica_idx], target
-            )
+            trial[replica_idx] = min(trial[replica_idx] + priced, target)
             if (
                 no_tg_work
                 or max(step_load) == 0
                 or _occupancy(trial) > _occupancy(step_load)
             ):
                 step_load = trial
-                queues[replica_idx].append(pending.weights[replica_idx])
+                real_load[replica_idx] = min(
+                    real_load[replica_idx] + weight, target
+                )
+                queues[replica_idx].append(weight)
                 pool_binds.append((req_id, replica_idx))
 
         floor_exists = any(floor)
@@ -2104,19 +2417,19 @@ class TextBatchConstructor:
         # reducing the heavy replicas' chunk size to the balance level runs
         # the balanced portion now (a shorter, ~100%-occupancy step) and
         # defers only the excess. The balance level must be substantial
-        # (>= half the chunk target): each extra chunk re-reads the
-        # request's full context in attention, so undersized chunks cost
-        # more than the imbalance they avoid. The level never drops below
-        # any replica's floor (expired work is not deferrable and runs to
-        # the full chunk budget regardless).
+        # (>= chunked_prefill_min_chunk_size, else half the chunk target):
+        # each extra chunk re-reads the request's full context in attention,
+        # so undersized chunks cost more than the imbalance they avoid. The
+        # level never drops below any replica's floor (expired work is not
+        # deferrable and runs to the full chunk budget regardless).
         loads_with_work = [tokens for tokens in step_load if tokens > 0]
         balance_level = (
             max(max(floor), min(loads_with_work)) if loads_with_work else 0
         )
         can_reduce_chunk_size = (
-            self.scheduler_config.dp_ce_balance_enable_dynamic_chunk_size
+            dynamic_chunk_size
             and len(loads_with_work) > 1
-            and balance_level >= target // 2
+            and balance_level >= min_balance_level
         )
         if (
             floor_exists
@@ -2128,20 +2441,23 @@ class TextBatchConstructor:
                 self._bind_pooled_request(req_id, replica_idx)
             self._ce_deferred_replicas = deferred
 
+            # Gated on the uncut loads: a step balanced only by binds priced
+            # at the cut still needs the quotas that make the cut.
             if (
-                occupancy < threshold
+                _occupancy(real_load) < threshold
                 and can_reduce_chunk_size
                 and not fleet_idle
             ):
-                quotas = [
-                    self.scheduler_config.target_tokens_per_batch_ce
-                ] * self.num_replicas
-                for replica_idx in range(self.num_replicas):
-                    if step_load[replica_idx] > 0:
-                        quotas[replica_idx] = max(
-                            floor[replica_idx],
-                            min(step_load[replica_idx], balance_level),
-                        )
+                # Only replicas actually cut get a quota (0 = uncapped), since
+                # an exact-fit quota leaves no room for the per-row draft
+                # reserve. Nor is a replica cut if less than a min chunk would
+                # remain: the budget's min-chunk floor would move the cut or
+                # refuse and reset the request.
+                quotas = [0] * self.num_replicas
+                for replica_idx, load in enumerate(real_load):
+                    quota = max(floor[replica_idx], min(load, balance_level))
+                    if quota < load and load - quota >= min_chunk:
+                        quotas[replica_idx] = quota
                 self._ce_step_quota = quotas
         else:
             # No worthwhile balanced step exists (lone replica, or a balance
@@ -2151,23 +2467,39 @@ class TextBatchConstructor:
                 replica_idx for _, replica_idx in deferrable_tails
             }
 
-    def _readmit_completed_onloads(self) -> None:
+    def _readmit_completed_onloads(
+        self, include_failed: bool = True
+    ) -> set[int]:
         """Re-admits cordoned requests whose KV onload has completed or failed.
 
-        Runs once per iteration. A request whose onload landed returns to the
+        Runs at the start of every pass, and again on a pass that waited on
+        the lookups it started. A request whose onload landed returns to the
         head of its replica's CE queue (FIFO by bind order) with its onloaded
         prefix device-resident, so the next batch pass can schedule it. One
         whose copy failed, or one back from a lookup, returns behind any
         prefill already under way there, in bind order with every queued
         prompt that has not started. The next ``alloc`` rolls a failed
         prefix back so the request recomputes it.
+
+        Args:
+            include_failed: Whether to readmit a copy that failed. The
+                admission after the lookup wait leaves one that failed during
+                the wait cordoned for the next pass, as it would be without
+                the wait.
+
+        Returns:
+            The replicas it readmitted a request to.
         """
         if not self._onloading_reqs:
-            return
+            return set()
         completed = [
             req_id
             for req_id, onloading in self._onloading_reqs.items()
-            if _onload_settled(onloading.event)
+            if (
+                _onload_settled(onloading.event)
+                if include_failed or onloading.awaiting_lookup
+                else _onload_landed(onloading.event)
+            )
         ]
         touched: set[int] = set()
         loaded: set[RequestID] = set()
@@ -2218,6 +2550,52 @@ class TextBatchConstructor:
             )
             for req_id in reversed(front):
                 ce_reqs.move_to_end(req_id, last=False)
+        return touched
+
+    def _wait_for_started_lookups(self) -> bool:
+        """Waits up to the bound for the lookups this pass started.
+
+        Lookups left out by earlier passes are not waited on, since each has
+        had a whole step to answer.
+
+        Returns:
+            Whether any of them settled.
+        """
+        started = self._lookups_this_pass
+        if not started or self.lookup_wait_s <= 0:
+            return False
+        deadline = time.monotonic() + self.lookup_wait_s
+        unanswered = started
+        while True:
+            unanswered = [
+                onloading
+                for onloading in unanswered
+                if not _onload_settled(onloading.event)
+            ]
+            remaining = deadline - time.monotonic()
+            if not unanswered or remaining <= 0:
+                break
+            time.sleep(min(_LOOKUP_WAIT_POLL_S, remaining))
+        return len(unanswered) < len(started)
+
+    def _admit_answered_lookups(self, batches: Sequence[ReplicaBatch]) -> None:
+        """Readmits what settled during the wait and admits it this pass.
+
+        Admission reruns on each replica that ran it this pass, into the
+        batch it built there, and starts no lookups.
+        """
+        for replica_idx in self._readmit_completed_onloads(
+            include_failed=False
+        ):
+            tg_in_batch = self._ce_admissions.get(replica_idx)
+            if tg_in_batch is None:
+                continue
+            self._add_ce_requests(
+                batches[replica_idx],
+                replica_idx,
+                tg_in_batch=tg_in_batch,
+                start_lookups=False,
+            )
 
     def _hand_back_queued_lookups(self) -> None:
         """Hands back the answered lookups admission passed over this pass.
@@ -2253,6 +2631,7 @@ class TextBatchConstructor:
 
     def construct_batch(self) -> TextGenerationInputs[TextContext]:
         """Constructs Pipeline Inputs which includes a batch for each replica."""
+        self._pass_idx += 1
 
         # Settle what the last forward left in flight, every iteration and not
         # only when something is admitted. ``kv_cache.alloc`` is the only other
@@ -2266,6 +2645,8 @@ class TextBatchConstructor:
 
         # Re-admit any cordoned requests whose KV onload has landed.
         self._readmit_completed_onloads()
+        self._lookups_this_pass = []
+        self._ce_admissions = {}
 
         self._promote_grammar_ready_requests()
 
@@ -2326,12 +2707,37 @@ class TextBatchConstructor:
         # preemption storm coalesces into one cross-process flush instead of
         # one packet per preempted request.
         with METRICS.transaction():
-            batches_per_replica = [
-                self._construct_replica_batch(
-                    replica_idx, priority_override=priority_override
-                )
-                for replica_idx in range(self.num_replicas)
-            ]
+            # With the wait off, each replica falls back to decode before the
+            # next one admits, the order this has always run in. ``__init__``
+            # refuses the wait with cross-replica copy on, since deferring
+            # every fallback lets a decode alloc reuse a page a later copy
+            # still reads (CLIN-2143).
+            if self.lookup_wait_s <= 0:
+                batches_per_replica = []
+                for replica_idx in range(self.num_replicas):
+                    batch, priority = self._construct_replica_batch(
+                        replica_idx, priority_override=priority_override
+                    )
+                    self._finish_replica_batch(
+                        batch, replica_idx, priority, priority_override
+                    )
+                    batches_per_replica.append(batch)
+            else:
+                started = [
+                    self._construct_replica_batch(
+                        replica_idx, priority_override=priority_override
+                    )
+                    for replica_idx in range(self.num_replicas)
+                ]
+                if self._wait_for_started_lookups():
+                    self._admit_answered_lookups(
+                        [batch for batch, _ in started]
+                    )
+                for replica_idx, (batch, priority) in enumerate(started):
+                    self._finish_replica_batch(
+                        batch, replica_idx, priority, priority_override
+                    )
+                batches_per_replica = [batch for batch, _ in started]
 
         self._hand_back_queued_lookups()
 

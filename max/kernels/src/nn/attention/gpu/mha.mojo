@@ -37,6 +37,7 @@ from std.sys import (
 from std.sys.info import _is_amd_rdna
 import max.gpu.primitives.warp as warp
 from max.gpu.primitives.grid_controls import (
+    PDL,
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -140,6 +141,7 @@ from nn.attention.gpu.nvidia.common import (
     immut_tile_tensor_1d,
 )
 from nn.attention.gpu.nvidia.sm100.dispatch import (
+    SPLIT_KV_1Q_MAX_Q_ROWS,
     mha_sm100_dispatch as mha_sm100_2q_dispatch,
 )
 from nn.attention.gpu.nvidia.sm100.mha_depth512 import (
@@ -160,7 +162,6 @@ from nn.attention.mha_utils import (
 )
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
@@ -248,7 +249,7 @@ def flash_attention[
         Trace[
             TraceLevel.OP, target=context.default_device_info.api
         ]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flash_attention_dense[
             config=config,
@@ -577,6 +578,7 @@ def _flash_attention_kv_cache[
     sink: Bool = False,
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
+    cross_p: Bool = True,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[mut=False, dtype, q_layout, address_space=.GENERIC, ...],
@@ -651,7 +653,7 @@ def _flash_attention_kv_cache[
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())
@@ -663,78 +665,153 @@ def _flash_attention_kv_cache[
         else:
             max_prompt_len = Int(k.max_prompt_length())
 
-        # Whether head and depth are static. With BSHD, B and S are dynamic.
-        # H and D are always known for opaque KVCache types, we only check Q.
-        # fmt: off
-        comptime head_depth_known = q.static_shape[q.rank - 2] != -1 and q.static_shape[q.rank - 1] != -1
-        comptime depth = q.static_shape[q.rank-1]
-        comptime gpu_info = ctx.default_device_info
-        comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info, ctx.target]()
-        comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
-        # fmt: on
-        comptime kv_num_heads = cache_t.kv_params.num_heads
-
-        # TODO: This helps differentiate between CE/TG. Not batch-specific.
-        #       We'll just implement a flag on the cache object which is true
-        #       when the batch contains all cache_lens == 0. Remove this when
-        #       such flag (part of ContiguousKVCache) is implemented.
-        # AMD decode also handles a speculative-verify query length S > 1 by
-        # folding the S tokens into the MMA M dimension. `max_prompt_len` is the
-        # batch maximum, so a mixed batch dispatches at S = max and each
-        # sequence's own CTA clamps to its runtime length; a real prefill batch is
-        # unaffected because its max exceeds _MHA_DECODE_FOLD_MAX_S. This
-        # `comptime for` mirrors the dispatch ladder's instantiation set, and both
-        # read the shape from `config` (which `flash_attention_dispatch`
-        # comptime-asserts against Q's layout), so a routed shape always has a
-        # kernel. `use_valid_length=True` because this overload exposes no
-        # `_use_valid_length` parameter and dispatch takes that default.
-        var fold_seq_len_ok = False
-        comptime for S in range(2, _MHA_DECODE_FOLD_MAX_S + 1):
-            comptime if _mha_decode_fold_ok[
-                dtype,
-                config.depth,
+        comptime if cache_t.kv_params.is_split():
+            # A cache whose rows pack a key and a narrower value is read only
+            # by the SM100 FA4 split-KV routes (`mha_sm100_dispatch`'s
+            # `split_kv` arm). No other kernel reads the layout.
+            comptime k_depth = cache_t.kv_params.k_head_size()
+            comptime v_depth = cache_t.kv_params.v_head_size
+            comptime assert (
+                _is_sm10x_gpu(ctx.default_device_info)
+                and dtype == .bfloat16
+                and output.dtype == .bfloat16
+                and ragged
+                and mask_t.mask_safe_out_of_bounds
+                and not naive_kernel
+                and not decoding_warp_split_k
+                and k_depth == 192
+                and v_depth == 128
+                and q.static_shape[q.rank - 1] == k_depth
+                and output.static_shape[output.rank - 1] == v_depth
+            ), (
+                "a split KV cache is read only by SM100 ragged bf16 attention"
+                " with a 192-wide key and Q and a 128-wide value and output,"
+                " under a mask that is safe out of bounds"
+            )
+            comptime split_config = MHAConfig[dtype](
                 config.num_heads,
-                config.num_heads // kv_num_heads,
-                S,
-                sink=sink,
-                use_valid_length=True,
+                k_depth,
+                swizzle_mode=config.swizzle_mode,
+                v_depth=v_depth,
+            )
+            # Decode callers supply a graph-computed cache length, as on the
+            # `fa4_route` of `flash_attention_dispatch`.
+            var max_cache_len = num_keys
+            if max_prompt_len == 1 and not k.empty_cache():
+                if case .Some(decode_metadata) = decode_dispatch_metadata:
+                    max_cache_len = decode_metadata.max_cache_valid_length
+            # A launch whose query rows fit the split-K tile (decode, verify)
+            # takes its partition count from the dispatch metadata: the engine
+            # computes it and keys its graph captures on it, so an eager launch
+            # and a replay of the same key split the keys alike. A longer
+            # prompt runs a tile that cannot split, so it gets no count.
+            comptime group = config.num_heads // cache_t.kv_params.num_heads
+            var split_num_partitions = num_partitions.or_else(0)
+            if (
+                split_num_partitions == 0
+                and max_prompt_len * group <= SPLIT_KV_1Q_MAX_Q_ROWS
+            ):
+                if case .Some(decode_metadata) = decode_dispatch_metadata:
+                    split_num_partitions = max(
+                        decode_metadata.num_partitions, 0
+                    )
+            mha_sm100_2q_dispatch[
+                config=split_config,
+                group=group,
                 ragged=ragged,
-                check_mask_during_decoding=mask_t.check_mask_during_decoding,
-            ]():
-                if max_prompt_len == S:
-                    fold_seq_len_ok = True
+                sink=sink,
+                _is_cache_length_accurate=False,
+            ](
+                output.to_device_buffer(ctx),
+                q.to_device_buffer(ctx).unsafe_ptr(),
+                KVCacheMHAOperand(k),
+                KVCacheMHAOperand(v),
+                q_num_matrix_view_rows(q),
+                mask_functor,
+                valid_length.to_device_buffer(ctx).unsafe_ptr(),
+                DynamicInt(max_prompt_len),
+                max_cache_len,
+                scale,
+                kv_input_row_offsets,
+                Int(valid_length.dim[0]()) - 1,
+                ctx,
+                sink_weights,
+                num_partitions_override=split_num_partitions,
+            )
+        else:
+            # Whether head and depth are static. With BSHD, B and S are dynamic.
+            # H and D are always known for opaque KVCache types, we only check Q.
+            # fmt: off
+            comptime head_depth_known = q.static_shape[q.rank - 2] != -1 and q.static_shape[q.rank - 1] != -1
+            comptime depth = q.static_shape[q.rank-1]
+            comptime gpu_info = ctx.default_device_info
+            comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info, ctx.target]()
+            comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
+            # fmt: on
+            comptime kv_num_heads = cache_t.kv_params.num_heads
 
-        var is_token_generation = (
-            max_prompt_len == 1 or fold_seq_len_ok
-        ) and not k.empty_cache()
+            # TODO: This helps differentiate between CE/TG. Not batch-specific.
+            #       We'll just implement a flag on the cache object which is true
+            #       when the batch contains all cache_lens == 0. Remove this when
+            #       such flag (part of ContiguousKVCache) is implemented.
+            # AMD decode also handles a speculative-verify query length S > 1 by
+            # folding the S tokens into the MMA M dimension. `max_prompt_len` is the
+            # batch maximum, so a mixed batch dispatches at S = max and each
+            # sequence's own CTA clamps to its runtime length; a real prefill batch is
+            # unaffected because its max exceeds _MHA_DECODE_FOLD_MAX_S. This
+            # `comptime for` mirrors the dispatch ladder's instantiation set, and both
+            # read the shape from `config` (which `flash_attention_dispatch`
+            # comptime-asserts against Q's layout), so a routed shape always has a
+            # kernel. `use_valid_length=True` because this overload exposes no
+            # `_use_valid_length` parameter and dispatch takes that default.
+            var fold_seq_len_ok = False
+            comptime for S in range(2, _MHA_DECODE_FOLD_MAX_S + 1):
+                comptime if _mha_decode_fold_ok[
+                    dtype,
+                    config.depth,
+                    config.num_heads,
+                    config.num_heads // kv_num_heads,
+                    S,
+                    sink=sink,
+                    use_valid_length=True,
+                    ragged=ragged,
+                    check_mask_during_decoding=mask_t.check_mask_during_decoding,
+                ]():
+                    if max_prompt_len == S:
+                        fold_seq_len_ok = True
 
-        var k_operand = KVCacheMHAOperand(k)
-        var v_operand = KVCacheMHAOperand(v)
+            var is_token_generation = (
+                max_prompt_len == 1 or fold_seq_len_ok
+            ) and not k.empty_cache()
 
-        flash_attention_dispatch[
-            kv_num_heads=kv_num_heads,
-            config=config,
-            ragged=ragged,
-            sink=sink,
-            _is_flash_attention_applicable=flash_attention_applicable,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
-            output,
-            q,
-            k_operand,
-            v_operand,
-            mask_functor,
-            max_prompt_len,
-            num_keys,
-            scale,
-            is_token_generation,
-            ctx,
-            valid_length,
-            kv_input_row_offsets,
-            num_partitions,
-            sink_weights,
-            decode_dispatch_metadata=decode_dispatch_metadata,
-        )
+            var k_operand = KVCacheMHAOperand(k)
+            var v_operand = KVCacheMHAOperand(v)
+
+            flash_attention_dispatch[
+                kv_num_heads=kv_num_heads,
+                config=config,
+                ragged=ragged,
+                sink=sink,
+                _is_flash_attention_applicable=flash_attention_applicable,
+                decoding_warp_split_k=decoding_warp_split_k,
+                cross_p=cross_p,
+            ](
+                output,
+                q,
+                k_operand,
+                v_operand,
+                mask_functor,
+                max_prompt_len,
+                num_keys,
+                scale,
+                is_token_generation,
+                ctx,
+                valid_length,
+                kv_input_row_offsets,
+                num_partitions,
+                sink_weights,
+                decode_dispatch_metadata=decode_dispatch_metadata,
+            )
 
 
 def flash_attention[
@@ -754,6 +831,7 @@ def flash_attention[
     sink: Bool = False,
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
+    cross_p: Bool = True,
 ](
     output: TileTensor[
         mut=True, output_type, output_tt_layout, address_space=.GENERIC, ...
@@ -803,6 +881,8 @@ def flash_attention[
             decode (defaults to `False`).
         naive_kernel: `True` to force the fallback naive attention kernel
             (defaults to `False`).
+        cross_p: Cross-stage P TMEM placement in the SM100 FA4 kernel,
+            defaulting to the measured choice; read only by the 2Q route.
 
     Args:
         output: Mutable destination `TileTensor` for the attention output.
@@ -829,6 +909,7 @@ def flash_attention[
         sink=sink,
         decoding_warp_split_k=decoding_warp_split_k,
         naive_kernel=naive_kernel,
+        cross_p=cross_p,
     ](
         output,
         q,
@@ -907,6 +988,10 @@ def flash_attention_dispatch[
     # we might also want to use valid length for padded dense inputs
     _padded_ndbuffer: Bool = False,
     decoding_warp_split_k: Bool = False,
+    # Cross-stage P in the SM100 FA4 kernel, defaulting to the measured
+    # choice; threaded to the FA4 dispatch, and every other route ignores
+    # it.
+    cross_p: Bool = True,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[mut=False, dtype, q_layout, address_space=.GENERIC, ...],
@@ -948,6 +1033,8 @@ def flash_attention_dispatch[
         _use_valid_length: `True` to mask output with per-sequence lengths.
         _padded_ndbuffer: `True` when the NBuffer has padded dense inputs.
         decoding_warp_split_k: Enable warp-level split-K for decode.
+        cross_p: Cross-stage P TMEM placement in the SM100 FA4 kernel,
+            defaulting to the measured choice; read only by the FA4 route.
 
     Args:
         output: Mutable output tensor.
@@ -1083,6 +1170,7 @@ def flash_attention_dispatch[
                 ragged=ragged,
                 sink=sink,
                 _is_cache_length_accurate=_is_cache_length_accurate,
+                cross_p=cross_p,
             ](
                 output.to_device_buffer(ctx),
                 q.to_device_buffer(ctx).unsafe_ptr(),
@@ -1187,6 +1275,7 @@ def flash_attention_dispatch[
                             ragged=ragged,
                             sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
+                            cross_p=cross_p,
                         ](
                             output.to_device_buffer(ctx),
                             q.to_device_buffer(ctx).unsafe_ptr(),
@@ -1464,6 +1553,7 @@ def flash_attention_dispatch[
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(smem_use)
                     ),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
         # FA3 decoding impl only support half precision, while fp32 is supported
         # for fp32 as well.
@@ -1789,6 +1879,9 @@ def flash_attention_dispatch[
                                                     - 4096
                                                 ) if ctx.target.is_nvidia_gpu() else 0
                                             )
+                                        ),
+                                        attributes=pdl_launch_attributes(
+                                            PDLLevel.ON
                                         ),
                                     )
                                     return True
@@ -2199,6 +2292,7 @@ def _flash_attention_dense[
     _padded_ndbuffer: Bool = False,
     naive_kernel: Bool = False,
     sink: Bool = False,
+    cross_p: Bool = True,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[mut=False, dtype, q_layout, address_space=.GENERIC, ...],
@@ -2308,6 +2402,7 @@ def _flash_attention_dense[
         _use_valid_length=_use_valid_length,
         _padded_ndbuffer=_padded_ndbuffer,
         decoding_warp_split_k=decoding_warp_split_k,
+        cross_p=cross_p,
     ](
         output,
         q,
@@ -2346,6 +2441,11 @@ def flash_attention[
     _padded_ndbuffer: Bool = False,
     naive_kernel: Bool = False,
     sink: Bool = False,
+    # Cross-stage P in the SM100 FA4 kernel, defaulting to the measured
+    # choice. Only the 2Q route reads it; every other route ignores it.
+    # Threaded so an A/B can elaborate both arms of one executable with
+    # paired timing.
+    cross_p: Bool = True,
 ](
     output: TileTensor[
         mut=True, output_type, output_tt_layout, address_space=.GENERIC, ...
@@ -2392,6 +2492,8 @@ def flash_attention[
             (defaults to `False`).
         sink: `True` to enable attention-sink mode where the first tokens
             always attend (defaults to `False`).
+        cross_p: Cross-stage P TMEM placement in the SM100 FA4 kernel,
+            defaulting to the measured choice; read only by the 2Q route.
 
     Args:
         output: Mutable destination `TileTensor` for the attention output.
@@ -2413,6 +2515,7 @@ def flash_attention[
         _padded_ndbuffer=_padded_ndbuffer,
         naive_kernel=naive_kernel,
         sink=sink,
+        cross_p=cross_p,
     ](
         output,
         q,
@@ -2645,158 +2748,159 @@ def mha[
         return block_idx.x if is_nvidia_gpu() else block_idx.y
 
     var q_batch_offset: Int
-    comptime if ragged:
-        # treat valid_lengths as a input_row_offsets
-        var start_of_seq = Int(valid_length[batch_idx])
-        var end_of_seq = Int(valid_length[batch_idx + 1])
-        seq_len = end_of_seq - start_of_seq
+    with PDL():
+        comptime if ragged:
+            # treat valid_lengths as a input_row_offsets
+            var start_of_seq = Int(valid_length[batch_idx])
+            var end_of_seq = Int(valid_length[batch_idx + 1])
+            seq_len = end_of_seq - start_of_seq
 
-        if seq_len < q_block_idx() * config.block_m():
-            return
+            if seq_len < q_block_idx() * config.block_m():
+                return
 
-        comptime if not _is_cache_length_accurate:
-            start_pos = UInt32(k.cache_length(batch_idx))
+            comptime if not _is_cache_length_accurate:
+                start_pos = UInt32(k.cache_length(batch_idx))
 
-        # this is used for cross attention where we get the num_keys
-        # from kv_input_row_offsets. This is when num_keys != seq_len
-        if case .Some(kv_row_offsets) = kv_input_row_offsets:
-            var kv_seq_start = Int(kv_row_offsets[batch_idx])
-            var kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
-            var cur_kv_len = kv_seq_end - kv_seq_start
-            num_keys = cur_kv_len + Int(start_pos)
-        else:
-            num_keys = seq_len + Int(start_pos)
+            # this is used for cross attention where we get the num_keys
+            # from kv_input_row_offsets. This is when num_keys != seq_len
+            if case .Some(kv_row_offsets) = kv_input_row_offsets:
+                var kv_seq_start = Int(kv_row_offsets[batch_idx])
+                var kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
+                var cur_kv_len = kv_seq_end - kv_seq_start
+                num_keys = cur_kv_len + Int(start_pos)
+            else:
+                num_keys = seq_len + Int(start_pos)
 
-        q_batch_offset = start_of_seq * config.depth * config.num_heads
+            q_batch_offset = start_of_seq * config.depth * config.num_heads
 
-    # KVCache inputs, prompt lengths are all padded to the max in batch.
-    elif _use_valid_length and not _padded_ndbuffer:
-        # treat valid_lengths as valid lengths
-        seq_len = Int(valid_length[batch_idx])
-
-        if seq_len < q_block_idx() * config.block_m():
-            return
-
-        comptime if not _is_cache_length_accurate:
-            var cache_length = k.cache_length(batch_idx)
-            start_pos = UInt32(cache_length)
-
-        num_keys = seq_len + k.cache_length(batch_idx)
-        q_batch_offset = (
-            config.depth * config.num_heads * max_seq_len * batch_idx
-        )
-    # Dense tensor inputs, homogeneous and padded batching.
-    else:
-        comptime if _padded_ndbuffer:
+        # KVCache inputs, prompt lengths are all padded to the max in batch.
+        elif _use_valid_length and not _padded_ndbuffer:
+            # treat valid_lengths as valid lengths
             seq_len = Int(valid_length[batch_idx])
-            num_keys = seq_len
+
+            if seq_len < q_block_idx() * config.block_m():
+                return
+
+            comptime if not _is_cache_length_accurate:
+                var cache_length = k.cache_length(batch_idx)
+                start_pos = UInt32(cache_length)
+
+            num_keys = seq_len + k.cache_length(batch_idx)
+            q_batch_offset = (
+                config.depth * config.num_heads * max_seq_len * batch_idx
+            )
+        # Dense tensor inputs, homogeneous and padded batching.
         else:
-            seq_len = _seq_len_arg
-            num_keys = _num_keys_arg
+            comptime if _padded_ndbuffer:
+                seq_len = Int(valid_length[batch_idx])
+                num_keys = seq_len
+            else:
+                seq_len = _seq_len_arg
+                num_keys = _num_keys_arg
 
-        if seq_len < q_block_idx() * config.block_m():
-            return
-        q_batch_offset = (
-            config.depth * config.num_heads * max_seq_len * batch_idx
-        )
-
-        # When cache length (num_keys) is greater, we assume it has
-        # prefix preceding the input seq_len.
-        start_pos = UInt32(num_keys - seq_len)
-
-    comptime if is_nvidia_gpu():
-        comptime if is_shared_kv:
-            mha_single_batch_pipelined[
-                config=config,
-                group=group,
-                sink=sink,
-            ](
-                q_ptr.unsafe_offset(q_batch_offset),
-                k,
-                v,
-                output_ptr.unsafe_offset(q_batch_offset),
-                scale,
-                seq_len,
-                max_seq_len,
-                start_pos,
-                num_keys,
-                mask_tensor_col,
-                mask,
-                batch_idx,
-                sink_weights,
+            if seq_len < q_block_idx() * config.block_m():
+                return
+            q_batch_offset = (
+                config.depth * config.num_heads * max_seq_len * batch_idx
             )
+
+            # When cache length (num_keys) is greater, we assume it has
+            # prefix preceding the input seq_len.
+            start_pos = UInt32(num_keys - seq_len)
+
+        comptime if is_nvidia_gpu():
+            comptime if is_shared_kv:
+                mha_single_batch_pipelined[
+                    config=config,
+                    group=group,
+                    sink=sink,
+                ](
+                    q_ptr.unsafe_offset(q_batch_offset),
+                    k,
+                    v,
+                    output_ptr.unsafe_offset(q_batch_offset),
+                    scale,
+                    seq_len,
+                    max_seq_len,
+                    start_pos,
+                    num_keys,
+                    mask_tensor_col,
+                    mask,
+                    batch_idx,
+                    sink_weights,
+                )
+            else:
+                mha_single_batch[
+                    config=config,
+                    group=group,
+                    sink=sink,
+                ](
+                    q_ptr.unsafe_offset(q_batch_offset),
+                    k,
+                    v,
+                    output_ptr.unsafe_offset(q_batch_offset),
+                    scale,
+                    seq_len,
+                    max_seq_len,
+                    start_pos,
+                    num_keys,
+                    mask_tensor_col,
+                    mask,
+                    batch_idx,
+                    sink_weights,
+                )
+        elif is_amd_gpu():
+            # Single unified prefill kernel — handles BF16+FP8, any mask,
+            # depth∈{64,128,256,512}, with/without sink. Depth-supported asserts
+            # live in the kernel itself. Branches on `_is_amd_rdna()` because
+            # gfx950 (CDNA) and gfx11/12 (RDNA) need different fragment
+            # geometry / wave size / WMMA intrinsics.
+            var sink_weights_ptr = OptionalReg[
+                ImmPointer[Scalar[q_type], ImmutAnyOrigin]
+            ]()
+            comptime if sink:
+                sink_weights_ptr = sink_weights.value().ptr
+
+            comptime if _is_amd_rdna():
+                var attention = AttentionRDNA[config, group, sink](
+                    output_ptr.unsafe_offset(q_batch_offset),
+                    q_ptr.unsafe_offset(q_batch_offset),
+                    k,
+                    v,
+                    mask,
+                    sink_weights_ptr,
+                    batch_idx,
+                    scale,
+                    seq_len,
+                    num_keys,
+                    Int(start_pos),
+                )
+                attention.mha_prefill()
+            else:
+                # AMD CDNA prefill via FA2. The long-context `MhaPrefillV2` path
+                # is dispatched host-side from `flash_attention_dispatch` so the
+                # kernel keeps its tuned single-kernel register-allocation context
+                # (`def mha[]`'s body holding the FA2 fallback inflates spills when
+                # the kernel is inlined here — measured ~14% loss vs `MhaPrefillV2`
+                # as a top-level kernel).
+                var attention = Attention[config, group, sink](
+                    output_ptr.unsafe_offset(q_batch_offset),
+                    q_ptr.unsafe_offset(q_batch_offset),
+                    k,
+                    v,
+                    mask,
+                    sink_weights_ptr,
+                    batch_idx,
+                    scale,
+                    seq_len,
+                    num_keys,
+                    Int(start_pos),
+                )
+                attention.mha_prefill()
         else:
-            mha_single_batch[
-                config=config,
-                group=group,
-                sink=sink,
-            ](
-                q_ptr.unsafe_offset(q_batch_offset),
-                k,
-                v,
-                output_ptr.unsafe_offset(q_batch_offset),
-                scale,
-                seq_len,
-                max_seq_len,
-                start_pos,
-                num_keys,
-                mask_tensor_col,
-                mask,
-                batch_idx,
-                sink_weights,
-            )
-    elif is_amd_gpu():
-        # Single unified prefill kernel — handles BF16+FP8, any mask,
-        # depth∈{64,128,256,512}, with/without sink. Depth-supported asserts
-        # live in the kernel itself. Branches on `_is_amd_rdna()` because
-        # gfx950 (CDNA) and gfx11/12 (RDNA) need different fragment
-        # geometry / wave size / WMMA intrinsics.
-        var sink_weights_ptr = OptionalReg[
-            ImmPointer[Scalar[q_type], ImmutAnyOrigin]
-        ]()
-        comptime if sink:
-            sink_weights_ptr = sink_weights.value().ptr
-
-        comptime if _is_amd_rdna():
-            var attention = AttentionRDNA[config, group, sink](
-                output_ptr.unsafe_offset(q_batch_offset),
-                q_ptr.unsafe_offset(q_batch_offset),
-                k,
-                v,
-                mask,
-                sink_weights_ptr,
-                batch_idx,
-                scale,
-                seq_len,
-                num_keys,
-                Int(start_pos),
-            )
-            attention.mha_prefill()
-        else:
-            # AMD CDNA prefill via FA2. The long-context `MhaPrefillV2` path
-            # is dispatched host-side from `flash_attention_dispatch` so the
-            # kernel keeps its tuned single-kernel register-allocation context
-            # (`def mha[]`'s body holding the FA2 fallback inflates spills when
-            # the kernel is inlined here — measured ~14% loss vs `MhaPrefillV2`
-            # as a top-level kernel).
-            var attention = Attention[config, group, sink](
-                output_ptr.unsafe_offset(q_batch_offset),
-                q_ptr.unsafe_offset(q_batch_offset),
-                k,
-                v,
-                mask,
-                sink_weights_ptr,
-                batch_idx,
-                scale,
-                seq_len,
-                num_keys,
-                Int(start_pos),
-            )
-            attention.mha_prefill()
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
 
 
 @__llvm_metadata(
@@ -3093,11 +3197,11 @@ def mha_single_batch[
         if (
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row,
+                    Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -3242,7 +3346,7 @@ def mha_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=.uint32](
+                                (
                                     block_idx.z,
                                     block_idx.y,
                                     Int(score_row_with_start_pos),
@@ -3262,24 +3366,19 @@ def mha_single_batch[
 
                         comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
-                                IndexList[2, element_type=.uint32](
-                                    seq_len,
-                                    num_keys,
-                                ),
+                                (Int(score_row), Int(score_col)),
+                                (Int(seq_len), Int(num_keys)),
                                 p_reg_vec2[mma_id, i],
                             )
 
         unswitch(
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row,
+                    Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK,
             _apply_mask,
@@ -3752,11 +3851,11 @@ def mha_single_batch_pipelined[
         if (
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row,
+                    Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -3922,7 +4021,7 @@ def mha_single_batch_pipelined[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=.uint32](
+                                (
                                     block_idx.z,
                                     block_idx.y,
                                     Int(score_row_with_start_pos),
@@ -3943,25 +4042,19 @@ def mha_single_batch_pipelined[
 
                         comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[
-                                    2,
-                                    element_type=.uint32,
-                                ](Int(score_row), Int(score_col)),
-                                IndexList[
-                                    2,
-                                    element_type=.uint32,
-                                ](seq_len, num_keys),
+                                (Int(score_row), Int(score_col)),
+                                (Int(seq_len), Int(num_keys)),
                                 p_reg_vec2[mma_id, i],
                             )
 
         unswitch(
             mask.status(
                 UInt32(batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row,
+                    Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](BM, BN),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK,
             _apply_mask,
@@ -4312,6 +4405,16 @@ def mha_decoding[
     var row_stride: Int
     var start_pos: UInt32 = 0
 
+    # Launched with `PDLLevel.ON`: valid_length, the cache lengths, Q and the KV
+    # cache are written by the predecessor grid, so nothing below may read them
+    # before this wait. Releasing the dependents right after is safe: a
+    # dependent's own wait blocks until this whole grid has completed and its
+    # stores are visible, so the release only decides when it is scheduled
+    # (`test_mha_fallback_pdl_wait` relies on this: its producer releases on
+    # entry and publishes after a spin).
+    wait_on_dependent_grids()
+    launch_dependent_grids()
+
     comptime if ragged:
         # treat valid_lengths as a input_row_offsets
         var start_of_seq = Int(valid_length[batch_idx])
@@ -4574,11 +4677,11 @@ def scale_and_mask_helper[
                 )
 
                 p_reg_tile[n_mma, i + i_group * simd_width] = mask.mask(
-                    Index(
+                    (
                         block_idx.z,
-                        q_head_idx,
-                        score_row,
-                        score_col,
+                        Int(q_head_idx),
+                        Int(score_row),
+                        Int(score_col),
                     ),
                     p_reg_tile[n_mma, i + i_group * simd_width]
                     * scale_log2e.cast[p_type](),
@@ -4590,16 +4693,16 @@ def scale_and_mask_helper[
                     )
 
                 p_reg_tile[n_mma, i + i_group * simd_width] = _kernel_mask(
-                    Index(score_row, score_col),
-                    Index(
-                        batch_cache_valid_length + 1,
+                    (Int(score_row), Int(score_col)),
+                    (
+                        Int(batch_cache_valid_length + 1),
                         # The following setting ensures that out of bound check happens at
                         # every function call, also it corrects the bounds to be exact.
                         # Previous version was using batch_cache_valid_length + 1 which was fine
                         # with the non-split-k based mha as the ooo would have been triggered only
                         # for the last iteration of the outer loop. So while the bound was not exact, it
                         # led to correct output.
-                        kv_tile_start_row + bound,
+                        Int(kv_tile_start_row + bound),
                     ),
                     p_reg_tile[n_mma, i + i_group * simd_width],
                 )
@@ -5832,11 +5935,9 @@ def mha_splitk_reduce[
     # we only reduce over a warp so limit number of warps to 1
     var _batch_size = Int(batch_size)
     var _num_partitions = Int(num_partitions)
-    comptime assert num_threads == WARP_SIZE, (
-        "num_threads: "
-        + String(num_threads)
-        + " should be equal to the warp_size:"
-        + String(WARP_SIZE)
+    comptime assert num_threads == WARP_SIZE, String(
+        t"num_threads: {num_threads} should be equal to the "
+        t"warp_size:{WARP_SIZE}"
     )
     assert (
         block_dim.x == WARP_SIZE
@@ -6095,6 +6196,7 @@ def mha_gpu_naive[
             num_heads * batch_size,
         ),
         block_dim=_NAIVE_BMM_BLOCK_DIM,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     def input_fn_device[
@@ -6135,6 +6237,7 @@ def mha_gpu_naive[
             num_heads * batch_size,
         ),
         block_dim=_NAIVE_BMM_BLOCK_DIM,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     _ = p_device^
@@ -6187,6 +6290,11 @@ def _bmm0_bs[
     var padded_num_keys = _max_cache_size
     var p_offset = batch_head * _max_prompt_len * padded_num_keys
     var start_pos: UInt32 = 0
+
+    # Launched with `PDLLevel.ON`: the lengths, Q and K come from the
+    # predecessor grid, and the early returns below must not skip this wait.
+    wait_on_dependent_grids()
+    launch_dependent_grids()
 
     comptime if ragged:
         comptime if not _is_cache_length_accurate:
@@ -6261,12 +6369,7 @@ def _bmm0_bs[
     var score_row = y + cur_cache_len - cur_query_len
     var score_col = x
     p[y * padded_num_keys + x] = mask_functor.mask(
-        Index(
-            batch,
-            head,
-            score_row,
-            score_col,
-        ),
+        (Int(batch), Int(head), Int(score_row), Int(score_col)),
         accum * scale.cast[p_type](),
     )
 
@@ -6316,6 +6419,11 @@ def _bmm1_bs[
     var padded_num_keys = _max_cache_size
     var p_offset = batch_head * _max_prompt_len * padded_num_keys
     var start_pos: UInt32 = 0
+
+    # Launched with `PDLLevel.ON`: the lengths, P and V come from the
+    # predecessor grid, and the early returns below must not skip this wait.
+    wait_on_dependent_grids()
+    launch_dependent_grids()
 
     comptime if ragged:
         comptime if not _is_cache_length_accurate:

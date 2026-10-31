@@ -24,9 +24,10 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 from std.builtin.dtype import _unsigned_integral_type_of
 from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
-from std.sys import align_of, size_of, _RegisterPackType
+from std.sys import align_of, get_defined_int, size_of, _RegisterPackType
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
+from std.time import sleep
 from std.bit import prev_power_of_two, pop_count
 from max.gpu import block_idx
 from max.gpu.globals import WARP_SIZE
@@ -71,7 +72,6 @@ from nn.attention.mha_operand import (
     kv_num_sub_tiles,
     kv_tma_fold_chunks,
 )
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
@@ -949,7 +949,7 @@ struct SM100TensorAccumulator[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=Self.transpose_b,
     ]()
 
@@ -1358,7 +1358,7 @@ def _build_mma[
 
     # Instruction mnemonic (no predicate prefix; that is applied per-block below).
     var instr = tcgen05_mma_type + kind if ws else (
-        "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+        String(t"tcgen05.mma.cta_group::{cta_group}.") + kind
     )
     # Non-ws zero-column mask operand; absent for ws.
     var mask = (
@@ -2644,12 +2644,11 @@ def store_global_pred[
         address_space == .GENERIC or address_space == .GLOBAL
     ), "store_global_pred emits `st.global`; the pointer must address gmem"
     comptime size = size_of[dtype]()
-    comptime assert size in (2, 4, 8), (
-        "store_global_pred handles 2-, 4- and 8-byte scalars; got a "
-        + String(size)
-        + "-byte dtype"
+    comptime assert size in (2, 4, 8), String(
+        t"store_global_pred handles 2-, 4- and 8-byte scalars; got a "
+        t"{size}-byte dtype"
     )
-    comptime bits = "b" + String(8 * size)
+    comptime bits = String(t"b{8 * size}")
     # Bitcast to the same-width unsigned integer so one `.bXX`/register-class
     # pair covers float and integer dtypes alike; `st.global.bXX` is
     # bit-preserving.
@@ -2803,6 +2802,27 @@ def sum[
     # return rebind[SIMD[dtype,width]](acc)
 
 
+# Test-only forced schedules for the ring-liveness tests. A nonzero value makes
+# that side of every `StagedPipeline` ring sleep this many nanoseconds before
+# it acquires a slot (producer) or waits for a tile (consumer), so the other
+# side runs as far ahead as the ring lets it: a slow consumer keeps the
+# producer blocked on a full ring, a slow producer keeps the consumer waiting
+# on an empty one. A ring with too few slots for its schedule then hangs
+# instead of completing. Zero, the default, compiles to nothing.
+comptime FA4_RING_SLEEP_PRODUCER_NS = get_defined_int[
+    "FA4_RING_SLEEP_PRODUCER_NS", 0
+]()
+comptime FA4_RING_SLEEP_CONSUMER_NS = get_defined_int[
+    "FA4_RING_SLEEP_CONSUMER_NS", 0
+]()
+
+
+@inline(.always)
+def _ring_sleep(ns: Int):
+    if ns > 0:
+        sleep(Float64(ns) * 1e-9)
+
+
 struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
     TrivialRegisterPassable
 ):
@@ -2861,6 +2881,7 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
             qk_stage: K-loading sub-stage to acquire (defaults to the last
                 sub-stage).
         """
+        _ring_sleep(FA4_RING_SLEEP_PRODUCER_NS)
         self.consumer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @inline(.nodebug)
@@ -2871,6 +2892,7 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
             qk_stage: K-loading sub-stage to wait on (defaults to the last
                 sub-stage).
         """
+        _ring_sleep(FA4_RING_SLEEP_CONSUMER_NS)
         self.producer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @inline(.nodebug)
@@ -3740,7 +3762,7 @@ def apply_mask[
             # `visibility_mask` is `mask` for every mask without a row bias.
             comptime if MaskStrategy.COMPUTED in mask_strategy:
                 s = mask.visibility_mask(
-                    IndexList[4, element_type=.uint32](
+                    (
                         Int(prompt_idx),
                         Int(q_head_idx),
                         Int(score_row),
@@ -4033,10 +4055,10 @@ struct FA4MiscMBars[
             When False (default), the non-WS full-depth-tile count applies and
             the layout is byte-identical.
         crossp: Whether cross-stage P applies to the config this type was
-            built from, i.e. `FA4Config.crossp_on()`. Threaded in rather than
-            read from the `FA4_TMEM_CROSS_P` define, because that define
-            defaults ON and this type cannot see the config fields that scope
-            it to the MHA 2Q shape. False (default) keeps the mbar layout
+            built from, i.e. `FA4Config.crossp_on()`. Threaded in rather
+            than read off the config's `cross_p` parameter, because this
+            type cannot see the config fields that scope it to the MHA 2Q
+            shape. False (default) keeps the mbar layout
             byte-identical to cross-P-off.
 
     Memory layout (count=128 first, then count=1):
@@ -4099,9 +4121,9 @@ struct FA4MiscMBars[
     # 2Q + non-WS only -- mutually exclusive with Publish (num_q==1 only), so
     # appending after it never collides.
     # `crossp` is `FA4Config.crossp_on()`, threaded in by whoever built this
-    # type, so this count and `FA4Config.smem_used` always agree. Do NOT read
-    # the `FA4_TMEM_CROSS_P` define here: it defaults ON, and this struct
-    # cannot see the config fields that scope it to the MHA 2Q shape.
+    # type, so this count and `FA4Config.smem_used` always agree. Do NOT
+    # read the config's `cross_p` parameter here: it defaults ON, and this
+    # struct cannot see the config fields that scope it to the MHA 2Q shape.
     comptime CrossP_enabled: Bool = (
         Self.crossp and Self.num_q == 2 and not Self.use_ws
     )

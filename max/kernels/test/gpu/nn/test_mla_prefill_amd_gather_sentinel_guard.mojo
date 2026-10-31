@@ -111,13 +111,8 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     var max_pages_per_batch = align_up(num_pages, 8)  # 8: spare LUT columns
 
     print(
-        "=== gather sentinel guard: cache_length=",
-        cache_length,
-        " seq_len=",
-        seq_len,
-        " num_keys=",
-        num_keys,
-        " ===",
+        t"=== gather sentinel guard: cache_length= {cache_length}  seq_len="
+        t" {seq_len}  num_keys= {num_keys}  ==="
     )
     seed(0)
 
@@ -167,7 +162,7 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,

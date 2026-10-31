@@ -195,16 +195,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "d0=",
-                specs[i].d0,
-                "d1=",
-                specs[i].d1,
-                "inner=",
-                specs[i].inner,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} d0= {specs[i].d0} d1= {specs[i].d1} inner="
+                t" {specs[i].inner} dist= {specs[i].dist}"
             )
         return
 
@@ -213,13 +205,13 @@ def main() raises:
         var d1 = flag_int(args, "--d1", 8)
         var inner = flag_int(args, "--inner", 128)
         var dist = flag_int(args, "--dist", 0)
-        print("FUZZ_SINGLE d0=", d0, "d1=", d1, "inner=", inner, "dist=", dist)
+        print(t"FUZZ_SINGLE d0= {d0} d1= {d1} inner= {inner} dist= {dist}")
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(d0, d1, inner, dist), check, contract)
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print("=== fuzz_softmax seed=", the_seed, "budget=", the_budget, "===")
+    print(t"=== fuzz_softmax seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

@@ -92,6 +92,7 @@ def convert_qwen3_5_state_dict(
         state_dict: The raw checkpoint weights.
         huggingface_config: HuggingFace model configuration.
         pipeline_config: Pipeline configuration.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         The transformed weights for the MAX Qwen3.5 model.

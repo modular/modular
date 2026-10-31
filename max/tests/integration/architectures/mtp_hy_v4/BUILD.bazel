@@ -1,0 +1,37 @@
+load("//bazel:api.bzl", "modular_py_test")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_arch_registration",
+    size = "medium",
+    srcs = ["test_arch_registration.py"],
+    # The architectures the pairing resolves to are imported by the registry,
+    # not the test.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/hy_v4",
+        "//max/python/max/pipelines/architectures/mtp_hy_v4",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/hy_v4",
+        "//max/python/max/pipelines/architectures/mtp_hy_v4",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_spec_adapters",
+    size = "small",
+    srcs = ["test_spec_adapters.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/hy_v4",
+        "//max/python/max/pipelines/speculative",
+    ],
+)

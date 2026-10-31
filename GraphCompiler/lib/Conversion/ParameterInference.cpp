@@ -393,11 +393,11 @@ computeDefaultParamsDict(KernelDeclFunctionAdaptor *fnAdaptor) {
       fnAdaptor->attr.getSignature().getNumImplicitOriginDecls();
   size_t totalPogs = pogs.getPogs().size();
   // Fn-level params are at the end of the merged pog list (struct-level
-  // params come first).
-  size_t fnStart =
-      totalPogs >= fnParams.size() ? totalPogs - fnParams.size() : 0;
+  // params come first). The implicit origin decls trail `fnParams` and have no
+  // pog, so only the explicit fn-level params map onto the list.
   size_t fnEnd =
       fnParams.size() > numImplicit ? fnParams.size() - numImplicit : 0;
+  size_t fnStart = totalPogs >= fnEnd ? totalPogs - fnEnd : 0;
 
   mlir::Builder builder(fnAdaptor->attr.getSignature().getContext());
   mlir::NamedAttrList defaultNames;
@@ -419,13 +419,13 @@ computeDefaultParamsDict(KernelDeclFunctionAdaptor *fnAdaptor) {
 }
 
 ErrorOr<InferredParameters> inferKernelParameters(
-    KernelDeclAdaptor &adaptor, llvm::StringRef funcLabel,
+    KernelDeclAdaptor &adaptor, KernelFunctionKind kind,
     std::function<ErrorOr<MojoValue>(StringRef)> &&inferCallback) {
   KernelDeclFunctionAdaptor *fnAdaptor =
-      const_cast<KernelDeclFunctionAdaptor *>(
-          adaptor.getFunctionByLabel(funcLabel));
-  ASSERT_STREAM(fnAdaptor,
-                "Function label '" << funcLabel << "' not found in adaptor");
+      const_cast<KernelDeclFunctionAdaptor *>(adaptor.getFunction(kind));
+  ASSERT_STREAM(fnAdaptor, "Kernel has no '"
+                               << stringifyKernelFunctionKind(kind)
+                               << "' function");
 
   // Each variant (execute / elementwise / shape / build_graph) has its own
   // param list, since signatures differ (e.g. elementwise omits
@@ -441,7 +441,7 @@ ErrorOr<InferredParameters> inferKernelParameters(
   // Defaults are declared on the execute signature (`execute_device`'s, for a
   // declarative kernel), except that `execute_configuration` declares its own.
   KernelDeclFunctionAdaptor *defaultsFn =
-      funcLabel == kMoggExecuteConfigurationFunctionLabel
+      kind == KernelFunctionKind::ExecuteConfiguration
           ? fnAdaptor
           : (adaptor.executeFunction ? &*adaptor.executeFunction : nullptr);
   mlir::DictionaryAttr defaultParams = computeDefaultParamsDict(defaultsFn);

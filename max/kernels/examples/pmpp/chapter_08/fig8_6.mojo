@@ -25,8 +25,8 @@ from std.memory.alloc import unsafe_alloc
 
 
 def stencil_kernel(
-    in_ptr: ImmPointer[Float32, ImmutAnyOrigin],
-    out_ptr: MutPointer[Float32, MutAnyOrigin],
+    in_ptr: ImmPointer[Float32, ImmUntrackedOrigin],
+    out_ptr: MutPointer[Float32, MutUntrackedOrigin],
     n_dim: Int32,
     c0: Float32,
     c1: Float32,

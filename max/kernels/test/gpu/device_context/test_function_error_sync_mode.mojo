@@ -17,7 +17,7 @@ from std.memory.alloc import unsafe_alloc
 from std.testing import *
 
 
-def kernel(res: MutPointer[UInt32, MutAnyOrigin]):
+def kernel(res: MutPointer[UInt32, MutUntrackedOrigin]):
     res[] = 0
 
 

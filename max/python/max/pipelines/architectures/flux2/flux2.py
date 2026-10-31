@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Flux2 transformer blocks and the denoiser model."""
 
 from dataclasses import dataclass, field
 
@@ -23,11 +24,11 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.comm.allreduce import Allreduce
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer.transformer import forward_sharded_layers
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer.transformer import forward_sharded_layers
 
 from .layers.embeddings import TimestepEmbedding, Timesteps
 from .layers.flux2_attention import (
@@ -41,6 +42,8 @@ from .model_config import Flux2BlockQuant, Flux2Config
 
 
 class Flux2TimestepGuidanceEmbeddings(Module):
+    """Embeds the timestep, and the guidance scale alongside it."""
+
     def __init__(
         self,
         *,
@@ -113,6 +116,8 @@ class Flux2TimestepGuidanceEmbeddings(Module):
 
 
 class Flux2Modulation(Module):
+    """Projects the conditioning vector into the scale, shift and gate one block reads."""
+
     def __init__(
         self,
         dim: int,
@@ -167,6 +172,8 @@ class Flux2Modulation(Module):
 
 
 class Flux2TransformerBlock(Module):
+    """A double-stream block, with separate image and text attention."""
+
     def __init__(
         self,
         dim: int,
@@ -457,6 +464,8 @@ class Flux2TransformerBlock(Module):
 
 
 class Flux2SingleTransformerBlock(Module):
+    """A single-stream block where image and text tokens share one attention."""
+
     def __init__(
         self,
         dim: int,
@@ -483,6 +492,8 @@ class Flux2SingleTransformerBlock(Module):
             mlp_ratio: Multiplier for feedforward hidden dimension.
             eps: Epsilon for layer normalization.
             bias: Whether to use bias in linear layers.
+            quant_config: The quantization to apply to the attention and MLP
+                linear layers, or none to keep them unquantized.
         """
         super().__init__()
         self.devices = list(devices)
@@ -665,6 +676,8 @@ class Flux2TransformerPreamble:
 
 
 class Flux2Transformer2DModel(Module):
+    """The Flux 2 denoising transformer."""
+
     def __init__(self, config: Flux2Config) -> None:
         """Initialize Flux2Transformer2DModel.
 

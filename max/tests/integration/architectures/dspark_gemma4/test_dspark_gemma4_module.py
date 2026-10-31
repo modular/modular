@@ -43,9 +43,9 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 from max.pipelines.architectures.dspark_gemma4.dspark_gemma4 import (
     DSparkGemma4,
     DSparkGemma4DraftConfig,

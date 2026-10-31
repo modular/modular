@@ -77,7 +77,6 @@ from nn.attention.mha_utils import (
     get_start_and_end_for_partitions,
 )
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
@@ -407,22 +406,19 @@ struct MHAPosition[
                 # correspond to the same position w/ respect to the mask.
                 return mask.status(
                     self.prompt_idx,
-                    Index[dtype=DType.int32](
-                        Int(self.num_keys - 1),
-                        Int(kv_tile_start_row),
-                    ),
-                    Index[dtype=DType.int32](Int(1), Self.BN),
+                    (Int(self.num_keys - 1), Int(kv_tile_start_row)),
+                    (Int(1), Int(Self.BN)),
                 )
             else:
                 return TileMaskStatus.PARTIAL_MASK
         else:
             return mask.status(
                 self.prompt_idx,
-                Index[dtype=DType.int32](
+                (
                     Int(self.prompt_offset + self.start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.int32](Self.BM, Self.BN),
+                (Int(Self.BM), Int(Self.BN)),
             )
 
     @inline(.always)

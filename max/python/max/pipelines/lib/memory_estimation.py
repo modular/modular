@@ -16,13 +16,13 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from io import StringIO
 from typing import TYPE_CHECKING, cast
 
 from max.driver import Device, DeviceSpec, is_virtual_device_mode, load_devices
 from max.dtype import DType
-from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.kv_cache import (
     kv_cache_memory_size,
     max_seq_len_fitting_in_cache,
@@ -51,37 +51,43 @@ logger = logging.getLogger("max.pipelines")
 _DEFAULT_BATCH_SIZE = 512
 
 
-def _kv_params_per_layer_depth(params: KVCacheParamInterface) -> int:
-    """Returns the largest ``num_layers`` among the pool's per-layer sub-pools.
+@dataclass(frozen=True)
+class FreeMemory:
+    """Bounds on free device memory, in bytes.
 
-    Recurses into a :class:`~max.nn.kv_cache.MultiKVCacheParams` tree. A leaf
-    with ``per_layer_buffers`` set contributes its ``num_layers``; every other
-    cache contributes ``1`` (a single multi-layer buffer). Returns ``1`` when no
-    cache uses per-layer buffers.
+    ``lo`` is the memory known to be free and ``hi`` the most that could be.
+    They are equal when the driver measures free memory; when it can't,
+    ``lo`` is 0 and ``hi`` is the device's capacity.
     """
-    children = getattr(params, "children", None)
-    if children is not None:
-        return max(
-            (_kv_params_per_layer_depth(child) for child in children.values()),
-            default=1,
+
+    lo: int
+    hi: int
+
+    def __add__(self, other: FreeMemory) -> FreeMemory:
+        return FreeMemory(self.lo + other.lo, self.hi + other.hi)
+
+    @classmethod
+    def from_stats(cls, device: Device) -> FreeMemory:
+        """Reads the free-memory range from ``device.stats``."""
+        stats = device.stats
+        free = stats["free_memory"]
+        if free is None:
+            return cls(0, int(stats["total_memory"]))
+        return cls(int(free), int(free))
+
+    @classmethod
+    def summed(cls, devices: Iterable[Device]) -> FreeMemory:
+        """Returns the free memory summed across ``devices``."""
+        return sum((cls.from_stats(d) for d in devices), cls(0, 0))
+
+    @classmethod
+    def smallest(cls, devices: Iterable[Device]) -> FreeMemory:
+        """Returns the least free memory on any one of ``devices``."""
+        ranges = [cls.from_stats(d) for d in devices]
+        return cls(
+            min((r.lo for r in ranges), default=0),
+            min((r.hi for r in ranges), default=0),
         )
-    if getattr(params, "per_layer_buffers", False):
-        return max(int(getattr(params, "num_layers", 1)), 1)
-    return 1
-
-
-def _max_per_layer_buffer_count(arch_config: ArchConfig) -> int:
-    """Returns the per-device allocation-cap multiplier for the KV pool.
-
-    A pool that uses one buffer *per layer* splits its per-device allocation
-    into ``num_layers`` independent buffers, each bounded by the per-allocation
-    cap, so the pool may use up to ``num_layers`` times that cap per device.
-    Returns the depth of the largest per-layer sub-pool, or ``1`` when no cache
-    uses per-layer buffers (leaving the cap unchanged).
-    """
-    if not isinstance(arch_config, ArchConfigWithKVCache):
-        return 1
-    return _kv_params_per_layer_depth(arch_config.get_kv_params())
 
 
 @dataclass(frozen=True)
@@ -256,16 +262,10 @@ class MemoryEstimator:
         return plan
 
     @classmethod
-    def _free_memory(cls, devices: list[Device]) -> int:
-        """Returns the total free memory available across all provided devices."""
+    def _free_memory(cls, devices: list[Device]) -> FreeMemory:
+        """Returns the free memory summed across ``devices``."""
         try:
-            free_memory = int(sum(d.stats["free_memory"] for d in devices))
-            if free_memory == 0:
-                total_memory = int(
-                    sum(d.stats.get("total_memory", 0) for d in devices)
-                )
-                return total_memory
-            return free_memory
+            return FreeMemory.summed(devices)
         except Exception as e:
             logger.warning(
                 "Unable to estimate memory footprint of model, can't query device stats: "
@@ -316,7 +316,7 @@ class MemoryEstimator:
         """
         return int(
             (
-                cls._free_memory(devices)
+                cls._free_memory(devices).hi
                 * model_config.kv_cache.device_memory_utilization
             )
             - cls._static_memory_size(
@@ -450,7 +450,7 @@ class MemoryEstimator:
             )
 
         try:
-            free_memory = cls._free_memory(devices)
+            free = cls._free_memory(devices)
         except Exception:
             # A KV-cache model cannot be planned without device stats: the plan
             # would carry no cache budget and ``load_kv_manager`` rejects that
@@ -478,6 +478,9 @@ class MemoryEstimator:
         static_memory_size = (
             model_weights_size + activation_memory_size + signal_buffer_size
         )
+        # Plan against the upper bound: a driver that can't measure free
+        # memory reports a lower bound of 0, which would reject every model.
+        free_memory = free.hi
 
         if static_memory_size > free_memory:
             error_msg = f"Model size exceeds available memory ({to_human_readable_bytes(static_memory_size)} > {to_human_readable_bytes(free_memory)}). "
@@ -504,16 +507,33 @@ class MemoryEstimator:
                 f"Try running a smaller model, using a smaller precision, or using a device with more memory."
             )
 
-        # KV cache is normally one buffer per device, so the budget can't
-        # exceed the per-allocation cap (e.g. Metal's maxBufferLength). A pool
-        # that uses one buffer *per layer* (``per_layer_buffers``) splits that
-        # allocation into ``num_layers`` independent buffers, each bounded by
-        # the cap, so it may use up to ``num_layers`` times the cap per device.
-        per_alloc_layers = _max_per_layer_buffer_count(arch_config)
+        # KV cache is one buffer per device; budget can't exceed the
+        # per-allocation cap (Metal's maxBufferLength).
         available_kv_cache_memory = min(
             available_kv_cache_memory,
-            per_alloc_layers * sum(d.max_single_alloc_size for d in devices),
+            sum(d.max_single_alloc_size for d in devices),
         )
+
+        unmeasured = "free memory couldn't be measured exactly on some devices"
+        if static_memory_size > free.lo:
+            logger.warning(
+                "Model size %s exceeds the %s of free memory known to be "
+                "available; %s, so loading may fail.",
+                to_human_readable_bytes(static_memory_size),
+                to_human_readable_bytes(free.lo),
+                unmeasured,
+            )
+        elif available_kv_cache_memory > int(
+            free.lo * model_config.kv_cache.device_memory_utilization
+            - static_memory_size
+        ):
+            logger.warning(
+                "KV cache budget %s exceeds what the %s of free memory known "
+                "to be available allows; %s, so allocating it may fail.",
+                to_human_readable_bytes(available_kv_cache_memory),
+                to_human_readable_bytes(free.lo),
+                unmeasured,
+            )
 
         vision_cache_bytes, vision_cache_plan = (
             cls._reserve_vision_cache_memory(

@@ -22,7 +22,7 @@ from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -676,7 +676,7 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     if batch_size == 0:
         return BatchInfo.empty()
 
-    num_terminated_reqs = scheduler._schedule(inputs)
+    num_terminated_reqs = scheduler._schedule(inputs).terminated_reqs
     assert isinstance(scheduler.pipeline, FakeTokenGeneratorPipeline)
 
     return BatchInfo(
@@ -733,6 +733,9 @@ def run_until_completion(
         ):
             for onloading in list(batch_constructor._onloading_reqs.values()):
                 onloading.event.synchronize()
+            if isinstance(kv_cache, JengaKVCacheManager):
+                for pending in kv_cache._pending_transfers[0]:
+                    pending.event.synchronize()
             kv_cache.poll_transfers()
             batch_info = create_batch_and_execute(scheduler)
             poll_iters += 1

@@ -19,10 +19,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.lib import CheckpointRole, WeightEntry, WeightTransform
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
 )
+from max.pipelines.lib.pipeline_parallel import stage_layers
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.speculative import DraftAliases, validate_draft_state_dict
 
@@ -56,8 +58,11 @@ class Gemma4AssistantDraftArchConfig(Gemma4AssistantConfig):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[Gemma4Assistant, Gemma4AssistantDraftConfig]:
-        """Builds the assistant over the target's KV params, which
-        ``context`` names.
+        """Builds the assistant over the target's KV params.
+
+        ``context`` names them. It embeds through the target's embedding, so
+        spec decoding shares that onto it.
+
 
         It embeds through the target's embedding, so spec decoding shares
         that onto it.
@@ -86,9 +91,13 @@ class Gemma4AssistantDraftArchConfig(Gemma4AssistantConfig):
             backbone_hidden_size=target_text.hidden_size,
             devices=list(sliding.devices),
         )
+        # A pipeline stage's caches hold only its own layers, so the
+        # assistant finds the last sliding and full layers among those.
+        layer_types = list(target_text.layer_types)
+        layers = stage_layers(context.pipeline_config, len(layer_types))
         draft = Gemma4Assistant(
             config,
-            target_layer_types=list(target_text.layer_types),
+            target_layer_types=layer_types[layers.start : layers.stop],
             target_sliding_kv_params=sliding,
             target_global_kv_params=full,
         )
@@ -102,3 +111,15 @@ class Gemma4AssistantDraftArchConfig(Gemma4AssistantConfig):
             DraftAliases(always=("embed_tokens.",)),
         )
         return draft, Gemma4AssistantDraftConfig(config)
+
+    @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: Gemma4AssistantDraftConfig
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the assistant's weights.
+
+        They come from its own checkpoint, named by its weight transform.
+        """
+        del config
+        assert isinstance(context.adapter, WeightTransform)
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]

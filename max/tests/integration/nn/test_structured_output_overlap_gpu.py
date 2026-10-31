@@ -30,7 +30,7 @@ from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.kernels import inplace_memcpy, wait_host_value_with_dep
+from max.nn.legacy.kernels import inplace_memcpy, wait_host_value_with_dep
 from max.pipelines.lib.pipeline_variants.structured_output_overlap import (
     StructuredOutputOverlapState,
 )
@@ -164,7 +164,7 @@ def test_payload_shape_matches_wait_host_value(
     """``wait_payload`` is CPU int64[2] = [flag._unsafe_ptr, 1].
 
     Matches the contract in
-    ``max.nn.kernels.wait_host_value_with_dep``'s docstring.
+    ``max.nn.legacy.kernels.wait_host_value_with_dep``'s docstring.
     """
     payload = state.wait_payload
     assert payload.dtype == DType.int64

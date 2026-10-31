@@ -633,6 +633,8 @@ def multistage_qgemm_kernel[
     comptime assert (
         is_nvidia_gpu()
     ), "Quantized gemm only supports NVIDIA hardwares for now."
+    comptime assert a_type == .bfloat16, "activations (A) must be bfloat16"
+    comptime assert c_type == .bfloat16, "output (C) must be bfloat16"
     comptime simd_size = simd_width_of[c_type]()
 
     comptime repack_tile = (64, 16)
@@ -955,11 +957,11 @@ def multistage_qgemm_kernel[
         comptime if has_epilogue_fn:
             var c_gmem_frag, _, c_frag_offset = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute_with_offset[warp_layout](Int(thread_idx.x))
+            ]().distribute_with_offset[warp_layout](thread_idx.x)
             var c_smem_frag, _, c_smem_frag_offset = (
                 accum_smem_warp_tile.vectorize[
                     1, simd_size
-                ]().distribute_with_offset[warp_layout](Int(thread_idx.x))
+                ]().distribute_with_offset[warp_layout](thread_idx.x)
             )
             var thread_offset = c_tile_offset + c_warp_offset + c_frag_offset
             comptime num_stores_per_thread = type_of(
@@ -1619,7 +1621,7 @@ def matmul_gpu_qint4[
     a_tt: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
-) raises:
+) raises where (a_type == .bfloat16 and c_type == .bfloat16):
     """Launches a GPU int4 quantized matrix multiplication for the given tile tensors.
 
     Parameters:
@@ -1664,7 +1666,7 @@ def matmul_gpu_qint4[
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
     ctx: Optional[DeviceContext] = None,
-) raises:
+) raises where (a_type == .bfloat16 and c_type == .bfloat16):
     """Same as the plain overload, storing the output through `epilogue_fn`.
 
     Parameters:
@@ -2279,8 +2281,13 @@ def gpu_qint4_repack_Q4_0[
 
     var smem_usage: Int = BN * 2 * group_bytes
 
-    var b = TileTensor(b_tt.ptr, b_tt.layout)
-    var b_packed = TileTensor(b_packed_tt.ptr, b_packed_tt.layout)
+    var b = rebind[
+        TileTensor[.uint8, type_of(b_tt).LayoutType, ImmutAnyOrigin]
+    ](b_tt.reshape(b_tt.layout))
+    var b_packed = rebind[
+        TileTensor[.uint8, type_of(b_packed_tt).LayoutType, MutAnyOrigin]
+    ](b_packed_tt.reshape(b_packed_tt.layout))
+
     comptime repack = repack_Q4_0_for_sm8x[
         b.LayoutType, b_packed.LayoutType, DType.bfloat16
     ]
@@ -2322,8 +2329,13 @@ def gpu_qint4_repack_GPTQ[
     Raises:
         An error if the input tensors are not rank-2, the target is not a GPU, or the input and output dimensions are mismatched.
     """
-    var b = TileTensor(b_tt.ptr, b_tt.layout)
-    var b_packed = TileTensor(b_packed_tt.ptr, b_packed_tt.layout)
+    var b = rebind[
+        TileTensor[.uint8, type_of(b_tt).LayoutType, ImmutAnyOrigin]
+    ](b_tt.reshape(b_tt.layout))
+    var b_packed = rebind[
+        TileTensor[.uint8, type_of(b_packed_tt).LayoutType, MutAnyOrigin]
+    ](b_packed_tt.reshape(b_packed_tt.layout))
+
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
     comptime assert is_gpu[target](), "unsupported target"

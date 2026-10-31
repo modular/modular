@@ -10,20 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers the Olmo2 (``Olmo2ForCausalLM``) architecture."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters as llama3_weight_adapters
-from ..llama3.batch_processor import Llama3BatchProcessor
 from . import weight_adapters
-from .model import Olmo2Model
+from .decoder import Olmo2Decoder
 from .model_config import Olmo2Config
 
 olmo2_arch = SupportedArchitecture(
@@ -39,7 +36,7 @@ olmo2_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Olmo2Config.DEFAULT_ENCODING,
     supported_encodings=Olmo2Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Olmo2Model,
+    modules={GraphRole.DECODER: Olmo2Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     weight_adapters={
@@ -47,6 +44,5 @@ olmo2_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Olmo2Config,
-    batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
 )

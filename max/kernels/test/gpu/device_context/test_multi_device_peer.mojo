@@ -14,6 +14,7 @@
 
 from std.collections import Array, Optional
 from std.ffi import c_int, external_call
+from std.time import sleep
 
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal, assert_false, assert_raises, assert_true
@@ -22,8 +23,8 @@ from std.testing import assert_equal, assert_false, assert_raises, assert_true
 def test_device_ids_are_distinct() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    assert_equal(ctx0.id(), 0)
-    assert_equal(ctx1.id(), 1)
+    assert_equal(ctx0.device().id, 0)
+    assert_equal(ctx1.device().id, 1)
 
 
 def test_device_id_out_of_range() raises:
@@ -54,6 +55,33 @@ def test_cross_device_copy_round_trip() raises:
             assert_equal(host[i], Int32(i * 3))
 
 
+def _sleep_then_write[
+    ptr_origin: MutOrigin
+](ptr: MutPointer[Int32, ptr_origin], value: Int32):
+    sleep(0.5)
+    ptr[] = value
+
+
+def test_cross_device_copy_waits_for_source_stream() raises:
+    var ctx0 = DeviceContext(device_id=0)
+    var ctx1 = DeviceContext(device_id=1)
+    var src = ctx0.enqueue_create_buffer[.int32](1)
+    src.enqueue_fill(0)
+    var dst = ctx1.enqueue_create_buffer[.int32](1)
+    dst.enqueue_fill(-1)
+    ctx0.synchronize()
+    ctx1.synchronize()
+    ctx0.enqueue_function[_sleep_then_write[origin_of(src)]](
+        src, Int32(7), grid_dim=1, block_dim=1
+    )
+    # No `enqueue_wait_for`: the copy must order itself after ctx0.
+    ctx1.enqueue_copy(dst, src)
+    ctx1.synchronize()
+    with dst.map_to_host() as host:
+        assert_equal(host[0], Int32(7))
+    ctx0.synchronize()
+
+
 def test_cross_device_copy_wrong_destination_raises() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
@@ -68,19 +96,22 @@ def test_cross_device_copy_wrong_destination_raises() raises:
 
 def test_can_access_self_is_false() raises:
     var ctx0 = DeviceContext(device_id=0)
-    assert_false(ctx0.can_access(ctx0))
+    assert_false(ctx0.device().can_access_peer(ctx0.device()))
 
 
 def test_can_access_is_symmetric() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    assert_equal(ctx0.can_access(ctx1), ctx1.can_access(ctx0))
+    assert_equal(
+        ctx0.device().can_access_peer(ctx1.device()),
+        ctx1.device().can_access_peer(ctx0.device()),
+    )
 
 
 def test_all_peer_access_enabled_transitions() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    if not ctx0.can_access(ctx1):
+    if not ctx0.device().can_access_peer(ctx1.device()):
         print("pair has no peer access; skipping")
         return
     # Runs after `test_enable_all_concurrent`, so these calls pin idempotence.
@@ -93,31 +124,44 @@ def test_all_peer_access_enabled_transitions() raises:
 def test_cpu_peer_is_not_accessible() raises:
     var gpu1 = DeviceContext(device_id=1)
     var cpu = DeviceContext(api="cpu")
-    var accessible: Bool
-    try:
-        accessible = gpu1.can_access(cpu)
-    except:
-        # AsyncRT raises for a CPU peer; HAL answers False.
-        accessible = False
-    assert_false(accessible)
+    assert_false(gpu1.device().can_access_peer(cpu.device()))
     with assert_raises():
         gpu1.enable_peer_access(cpu)
 
 
+def test_copy_from_another_driver_fails_cleanly() raises:
+    var gpu1 = DeviceContext(device_id=1)
+    var cpu = DeviceContext(api="cpu")
+    var src = cpu.enqueue_create_buffer[.int32](1)
+    src.enqueue_fill(7)
+    var dst = gpu1.enqueue_create_buffer[.int32](1)
+    dst.enqueue_fill(-1)
+    cpu.synchronize()
+    gpu1.synchronize()
+    try:
+        gpu1.enqueue_copy(dst, src)
+    except:
+        # HAL refuses a cross-driver copy; it must not crash first.
+        return
+    gpu1.synchronize()
+    with dst.map_to_host() as host:
+        assert_equal(host[0], Int32(7))
+
+
 def _enable_all_worker(
-    error_slot: Pointer[NoneType, MutUnsafeAnyOrigin]
-) -> Pointer[NoneType, MutUnsafeAnyOrigin]:
+    error_slot: Pointer[NoneType, MutUntrackedOrigin]
+) -> Pointer[NoneType, MutUntrackedOrigin]:
     try:
         DeviceContext.enable_all_peer_access()
     except e:
         error_slot.unsafe_bitcast[Optional[Error]]()[] = e^
-    return Pointer[NoneType, MutUnsafeAnyOrigin].unsafe_dangling()
+    return Pointer[NoneType, MutUntrackedOrigin].unsafe_dangling()
 
 
 def test_enable_all_concurrent() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    if not ctx0.can_access(ctx1):
+    if not ctx0.device().can_access_peer(ctx1.device()):
         print("pair has no peer access; skipping")
         return
     # Runs before any enable, so every worker races the full enable.
@@ -131,12 +175,12 @@ def test_enable_all_concurrent() raises:
     for i in range(num_callers):
         var rc = external_call["pthread_create", c_int](
             Pointer(to=threads[i]),
-            Optional[Pointer[NoneType, MutUnsafeAnyOrigin]](),
+            Optional[Pointer[NoneType, MutUntrackedOrigin]](),
             _enable_all_worker,
             Pointer(to=errors[i]).unsafe_bitcast[NoneType](),
         )
         assert_equal(rc, 0, "pthread_create failed")
-    var retval = Pointer[NoneType, MutUnsafeAnyOrigin].unsafe_dangling()
+    var retval = Pointer[NoneType, MutUntrackedOrigin].unsafe_dangling()
     for i in range(num_callers):
         var rc = external_call["pthread_join", c_int](
             threads[i], Pointer(to=retval)
@@ -149,14 +193,16 @@ def test_enable_all_concurrent() raises:
     assert_true(DeviceContext.all_peer_access_enabled())
 
 
-def _write_peer(ptr: MutPointer[Int32, MutAnyOrigin], value: Int32):
+def _write_peer[
+    ptr_origin: MutOrigin
+](ptr: MutPointer[Int32, ptr_origin], value: Int32):
     ptr[] = value
 
 
 def test_kernel_writes_through_peer_pointer() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    if not ctx0.can_access(ctx1):
+    if not ctx0.device().can_access_peer(ctx1.device()):
         print("pair has no peer access; skipping")
         return
     DeviceContext.enable_all_peer_access()
@@ -164,7 +210,7 @@ def test_kernel_writes_through_peer_pointer() raises:
     target.enqueue_fill(0)
     ctx0.synchronize()
     # Only peer access makes device 0's address valid on device 1.
-    ctx1.enqueue_function[_write_peer](
+    ctx1.enqueue_function[_write_peer[origin_of(target)]](
         target, Int32(42), grid_dim=1, block_dim=1
     )
     ctx1.synchronize()
@@ -177,10 +223,12 @@ def main() raises:
     test_device_ids_are_distinct()
     test_device_id_out_of_range()
     test_cross_device_copy_round_trip()
+    test_cross_device_copy_waits_for_source_stream()
     test_cross_device_copy_wrong_destination_raises()
     test_can_access_self_is_false()
     test_can_access_is_symmetric()
     test_cpu_peer_is_not_accessible()
+    test_copy_from_another_driver_fails_cleanly()
     test_enable_all_concurrent()
     test_all_peer_access_enabled_transitions()
     test_kernel_writes_through_peer_pointer()

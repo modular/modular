@@ -19,15 +19,17 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
     spec_decode_cache_slack,
 )
-from max.nn.kv_cache.cache_params import FP4_KV_CACHE_QUANTIZATION_GRANULARITY
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache.cache_params import (
+    FP4_KV_CACHE_QUANTIZATION_GRANULARITY,
+)
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -185,9 +187,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             )
 
     def get_kv_params(self) -> KVCacheParamInterface:
+        """The KV cache parameters for this config."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @classmethod
@@ -196,6 +200,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The longest sequence that fits the KV cache."""
         return upper_bounded_default(
             upper_bound=huggingface_config.max_position_embeddings,
             default=model_config.max_length,
@@ -209,6 +214,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """Builds the KV cache parameters from the cache config."""
         data_parallel_degree = pipeline_config.model.data_parallel_degree
         kvcache_quant_config = mla_kv_cache_quant_config(
             cache_dtype, huggingface_config.qk_rope_head_dim
@@ -239,6 +245,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The number of hidden layers in the checkpoint."""
         return huggingface_config.num_hidden_layers
 
     @override
@@ -259,6 +266,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The model config entry this config is built from,
+                or ``None`` with the entry taken from ``pipeline_config``.
+            max_seq_len: The sequence length the graph is traced for.
 
         Returns:
             An initialized DeepseekV3Config instance.

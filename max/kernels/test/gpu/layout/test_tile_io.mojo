@@ -81,9 +81,11 @@ comptime _NUM_ELEMENTS = _N * _N
 comptime _BLOCK_DIM = 4
 
 
-def generic_to_shared_to_generic_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def generic_to_shared_to_generic_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through shared memory: GENERIC -> SHARED -> GENERIC."""
     comptime thread_layout = row_major(Idx[2], Idx[2])
@@ -99,9 +101,11 @@ def generic_to_shared_to_generic_kernel(
     SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
 
 
-def generic_to_local_to_generic_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def generic_to_local_to_generic_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through registers: GENERIC -> LOCAL -> GENERIC.
 
@@ -120,9 +124,11 @@ def generic_to_local_to_generic_kernel(
     LocalToGenericTileCopier[thread_layout]().copy(dst, local)
 
 
-def shared_local_shared_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def shared_local_shared_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through shared -> local -> shared -> generic.
 
@@ -154,9 +160,11 @@ def shared_local_shared_kernel(
     SharedToGenericTileCopier[thread_layout]().copy(dst, smem_out)
 
 
-def swizzled_local_to_shared_to_generic_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def swizzled_local_to_shared_to_generic_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Swizzled roundtrip: GENERIC -> LOCAL -> SHARED (swizzled) ->
     GENERIC (swizzled).
@@ -186,9 +194,11 @@ def swizzled_local_to_shared_to_generic_kernel(
     SharedToGenericTileCopier[thread_layout, swizzle=swizzle]().copy(dst, smem)
 
 
-def async_generic_to_shared_to_generic_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_generic_to_shared_to_generic_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through shared memory using `cp.async` for the
     DRAM->SMEM leg: GENERIC -> SHARED (async) -> GENERIC.
@@ -213,9 +223,11 @@ def async_generic_to_shared_to_generic_kernel(
     SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
 
 
-def async_generic_to_shared_to_generic_8b_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_generic_to_shared_to_generic_8b_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip with 8-byte (2x f32) async copies.
 
@@ -240,9 +252,11 @@ def async_generic_to_shared_to_generic_8b_kernel(
     SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
 
 
-def async_generic_to_shared_to_generic_16b_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_generic_to_shared_to_generic_16b_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip with 16-byte (4x f32) async copies.
 
@@ -279,9 +293,11 @@ comptime _BF16_SWIZZLED_NUM_ELEMENTS = (
 )
 
 
-def async_generic_to_shared_to_generic_16b_bf16_kernel(
-    src_ptr: MutPointer[BFloat16, MutAnyOrigin],
-    dst_ptr: MutPointer[BFloat16, MutAnyOrigin],
+def async_generic_to_shared_to_generic_16b_bf16_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[BFloat16, src_origin],
+    dst_ptr: MutPointer[BFloat16, dst_origin],
 ):
     """Roundtrip with 16-byte (8x bf16) async copies.
 
@@ -308,9 +324,11 @@ def async_generic_to_shared_to_generic_16b_bf16_kernel(
     SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
 
 
-def access_size_swizzled_vectorized_async_bf16_kernel(
-    src_ptr: MutPointer[BFloat16, MutAnyOrigin],
-    dst_ptr: MutPointer[BFloat16, MutAnyOrigin],
+def access_size_swizzled_vectorized_async_bf16_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[BFloat16, src_origin],
+    dst_ptr: MutPointer[BFloat16, dst_origin],
 ):
     """Roundtrip multiple swizzled 8-element bf16 vectors per thread."""
     comptime thread_layout = row_major(Idx[2], Idx[1])
@@ -344,9 +362,11 @@ def access_size_swizzled_vectorized_async_bf16_kernel(
     )
 
 
-def masked_async_generic_to_shared_to_generic_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def masked_async_generic_to_shared_to_generic_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Smoke-test the masked async write path with a fully in-bounds src.
 
@@ -378,9 +398,11 @@ def masked_async_generic_to_shared_to_generic_kernel(
     SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
 
 
-def access_size_swizzled_vectorized_async_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def access_size_swizzled_vectorized_async_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Production-shaped swizzle + vectorize on the async path.
 
@@ -415,9 +437,11 @@ def access_size_swizzled_vectorized_async_kernel(
     )
 
 
-def swizzled_async_generic_to_shared_to_generic_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def swizzled_async_generic_to_shared_to_generic_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Swizzled async roundtrip: GENERIC -> SHARED (cp.async, swizzled) ->
     GENERIC (swizzled).
@@ -452,10 +476,14 @@ comptime _MASK_SENTINEL = 7
 
 
 def masked_shared_to_generic_kernel[
-    src_dtype: DType, dst_dtype: DType, swizzled: Bool
+    src_dtype: DType,
+    dst_dtype: DType,
+    swizzled: Bool,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
-    src_ptr: MutPointer[Scalar[src_dtype], MutAnyOrigin],
-    dst_ptr: MutPointer[Scalar[dst_dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[src_dtype], src_origin],
+    dst_ptr: MutPointer[Scalar[dst_dtype], dst_origin],
     valid_rows: Int32,
 ):
     """Roundtrip GENERIC -> SHARED -> masked GENERIC with a runtime row count.
@@ -520,7 +548,13 @@ def _run_masked[
     dst_dev.enqueue_fill(Scalar[dst_dtype](_MASK_SENTINEL))
 
     ctx.enqueue_function[
-        masked_shared_to_generic_kernel[src_dtype, dst_dtype, swizzled]
+        masked_shared_to_generic_kernel[
+            src_dtype,
+            dst_dtype,
+            swizzled,
+            src_origin=origin_of(src_dev),
+            dst_origin=origin_of(dst_dev),
+        ]
     ](src_dev, dst_dev, Int32(valid_rows), grid_dim=(1), block_dim=(8))
 
     var dst_host = ctx.enqueue_create_host_buffer[dst_dtype](count)
@@ -547,9 +581,9 @@ def test_masked_shared_to_generic(ctx: DeviceContext) raises:
 
 
 def _run_roundtrip[
-    kernel_fn: def(
-        MutPointer[Float32, MutAnyOrigin],
-        MutPointer[Float32, MutAnyOrigin],
+    kernel_fn: def[src_origin: MutOrigin, dst_origin: MutOrigin](
+        MutPointer[Float32, src_origin],
+        MutPointer[Float32, dst_origin],
     ) thin -> None,
 ](name: String, ctx: DeviceContext) raises:
     print("==", name)
@@ -563,7 +597,7 @@ def _run_roundtrip[
     ctx.enqueue_copy(src_dev, src_host)
     dst_dev.enqueue_fill(Float32(0))
 
-    ctx.enqueue_function[kernel_fn](
+    ctx.enqueue_function[kernel_fn[origin_of(src_dev), origin_of(dst_dev)]](
         src_dev, dst_dev, grid_dim=(1), block_dim=(_BLOCK_DIM)
     )
 
@@ -632,9 +666,11 @@ def test_async_generic_to_shared_to_generic_16b_bf16(
     ctx.enqueue_copy(src_dev, src_host)
     dst_dev.enqueue_fill(BFloat16(0))
 
-    ctx.enqueue_function[async_generic_to_shared_to_generic_16b_bf16_kernel](
-        src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_ROWS)
-    )
+    ctx.enqueue_function[
+        async_generic_to_shared_to_generic_16b_bf16_kernel[
+            src_origin=origin_of(src_dev), dst_origin=origin_of(dst_dev)
+        ]
+    ](src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_ROWS))
 
     var dst_host = ctx.enqueue_create_host_buffer[.bfloat16](_BF16_NUM_ELEMENTS)
     ctx.enqueue_copy(dst_host, dst_dev)
@@ -687,9 +723,11 @@ def test_access_size_swizzled_vectorized_async_bf16(
     ctx.enqueue_copy(src_dev, src_host)
     dst_dev.enqueue_fill(BFloat16(0))
 
-    ctx.enqueue_function[access_size_swizzled_vectorized_async_bf16_kernel](
-        src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_SWIZZLED_ROWS)
-    )
+    ctx.enqueue_function[
+        access_size_swizzled_vectorized_async_bf16_kernel[
+            src_origin=origin_of(src_dev), dst_origin=origin_of(dst_dev)
+        ]
+    ](src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_SWIZZLED_ROWS))
 
     var dst_host = ctx.enqueue_create_host_buffer[.bfloat16](
         _BF16_SWIZZLED_NUM_ELEMENTS

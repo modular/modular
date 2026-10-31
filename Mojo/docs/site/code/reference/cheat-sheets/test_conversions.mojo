@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/conversions.mdx
 # test_conversions.mojo
 # Tests for the Mojo "conversions" cheat-sheet card.
 #
@@ -229,7 +230,7 @@ def test_pointers() raises:
     assert_equal(vec.reduce_add(), 6)  # 0+1+2+3
     assert_equal(r.unsafe_ptr()[unsafe_offset=0], 0)  # deref one element
     assert_equal(r.unsafe_ptr().unsafe_offset(2)[], 2)  # arithmetic, then deref
-    var none = OptionalPointer[Int, MutUntrackedOrigin]()  # nullable pointer
+    var none = Optional[Pointer[Int, MutUntrackedOrigin]]()  # nullable pointer
     assert_false(Bool(none))
 
 

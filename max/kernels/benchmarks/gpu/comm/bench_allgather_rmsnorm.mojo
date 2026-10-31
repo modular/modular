@@ -254,12 +254,9 @@ def _verify_results[
 
     var frac_gt1 = Float32(gt1_ulp) / Float32(full_n)
     print(
-        "NORM(fused vs host ref): frac>1ULP =",
-        frac_gt1 * 100.0,
-        "%, max_ulp =",
-        max_ulp,
-        "| residual (sum_out vs standalone AG) mismatches =",
-        sum_mismatch,
+        t"NORM(fused vs host ref): frac>1ULP = {frac_gt1 * 100.0} %, max_ulp ="
+        t" {max_ulp} | residual (sum_out vs standalone AG) mismatches ="
+        t" {sum_mismatch}"
     )
     if frac_gt1 > 0.01 or max_ulp > 4:
         raise Error(
@@ -729,9 +726,7 @@ def main() raises:
 
     var num_devices = DeviceContext.number_of_devices()
     if num_devices < num_gpus:
-        print(
-            "Need", num_gpus, "GPUs but only found", num_devices, "- skipping."
-        )
+        print(t"Need {num_gpus} GPUs but only found {num_devices} - skipping.")
         return
 
     _ = enable_p2p()
@@ -744,14 +739,8 @@ def main() raises:
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "Benchmarking all-gather + RMSNorm (no quant):",
-        num_gpus,
-        "GPUs,",
-        in_dtype,
-        ",",
-        num_rows,
-        "x",
-        num_cols,
+        t"Benchmarking all-gather + RMSNorm (no quant): {num_gpus} GPUs,"
+        t" {in_dtype} , {num_rows} x {num_cols}"
     )
 
     var m = Bench(BenchConfig(num_repetitions=1))

@@ -1,0 +1,84 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------===##
+
+# Sparse MLA decode over a paged FP8 latent cache, at speculative-decode
+# verify widths, as a sweep: `sweep: true` runs one process per params
+# group, and every `$` parameter becomes the comma list that the benchmark
+# expands into its own configs. The compile-time `q_dtype` arms (FP8 and
+# BF16 Q reach different kernels, so their ratio is the comparison) run in
+# one executable; `--param q_dtype:"[bfloat16]"` pins one, and any other
+# flag the benchmark takes goes through `--param '$flag:value'`.
+#
+# Usage:
+#   kbench bench_mla_decode_sparse.yaml --timeout-secs 600
+#   kbench bench_mla_decode_sparse.yaml --param cache_len:"[2042]"
+#   kbench bench_mla_decode_sparse.yaml --param q_dtype:"[bfloat16]"
+
+name: bench_mla_decode_sparse
+file: $KERNEL_BENCHMARKS_ROOT/sweep/bench_mla_decode_sparse.mojo
+sweep: true
+
+params:
+
+# Both Q dtypes at the shape the sparse decode is tuned for, crossing the
+# batch and cache axes the old YAML kept in separate groups: batch scaling
+# at the saturated window, and the window sweep at batch 8. cache_len 2042
+# saturates the window (cache_len + seq_len == top_k, past which the work
+# per query position stops growing). The old YAML passed `$q_dtype` and
+# `$page_size` at runtime, which the old benchmark read at compile time, so
+# its BF16 and page-size-64 cells silently ran the defaults; the port runs
+# both Q dtype arms in this one executable.
+- num_heads: 8
+  page_size: 128
+  $seq_len: [6]
+  $batch_size: [1, 2, 4, 8, 16, 32]
+  $cache_len: [1024, 2042, 4096]
+  $top_k: [2048]
+
+# Guard shapes: the single-position draft step, at both page sizes the
+# cache is configured with. (seq_len 6 at page size 128 is in the group
+# above.)
+- num_heads: 8
+  page_size: 128
+  $seq_len: [1]
+  $batch_size: [8]
+  $cache_len: [2042]
+  $top_k: [2048]
+
+- num_heads: 8
+  page_size: 64
+  $seq_len: [1, 6]
+  $batch_size: [8]
+  $cache_len: [2042]
+  $top_k: [2048]
+
+# A narrower top-k window over a deeper cache.
+- num_heads: 8
+  page_size: 128
+  q_dtype: float8_e4m3fn
+  $seq_len: [6]
+  $batch_size: [8]
+  $cache_len: [4096]
+  $top_k: [512, 1024]

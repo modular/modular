@@ -23,6 +23,7 @@ namespace M::KGEN {
 class ParameterEvaluationContext;
 class ParameterEvaluator;
 class SymTabEvaluationContext;
+class KGENParamPrinter;
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//

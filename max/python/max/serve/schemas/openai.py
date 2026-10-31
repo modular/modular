@@ -367,8 +367,9 @@ ReasoningEffortLevel = Literal[
 class ReasoningConfig(BaseModel):
     """OpenRouter's ``reasoning`` object (OpenAI only has ``reasoning_effort``).
 
-    Only ``enabled`` is used (mapped to ``enable_thinking`` in the route);
-    the rest are accepted but ignored for now.
+    ``enabled`` and ``effort`` are folded into the chat-template kwargs by
+    :attr:`CreateChatCompletionRequest.resolved_chat_template_kwargs`;
+    ``max_tokens`` and ``exclude`` are accepted but ignored for now.
     """
 
     model_config = _FORBID_EXTRA
@@ -425,7 +426,7 @@ class _MaxRequestExtensions(BaseModel):
         ),
     )
 
-    # OpenRouter reasoning object; mapped to enable_thinking in the route.
+    # OpenRouter reasoning object; folded into the chat-template kwargs.
     reasoning: ReasoningConfig | None = None
 
 
@@ -591,11 +592,12 @@ class CreateChatCompletionRequest(
 
         if reasoning is not None:
             # Within the object, ``enabled: false`` or ``effort: "none"``
-            # wins and discards its own effort, matching the orchestrator's
-            # parser.
+            # wins and discards any other effort, matching the orchestrator's
+            # parser. ``none`` itself is the off switch, so it is kept and
+            # renders as the top-level ``reasoning_effort: "none"`` does.
             off = reasoning.enabled is False or reasoning.effort == "none"
             enable_thinking = not off
-            if off:
+            if off and effort != "none":
                 effort = None
         else:
             # ``none`` is OpenAI's "don't reason" effort.

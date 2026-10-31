@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Types shared by the prefill and decode schedulers."""
+
 from enum import Enum
 from typing import Generic, Literal, TypeVar
 
@@ -89,8 +92,7 @@ class PrefillResponse(
 class PrefillProgressPing(
     msgspec.Struct, tag=True, omit_defaults=True, kw_only=True
 ):
-    """A prefill-side progress event, relayed to decode for latency
-    instrumentation.
+    """A prefill-side progress event, relayed to decode for latency instrumentation.
 
     Carries no timing data itself: decode timestamps *receipt* on its own
     clock, against the send time it recorded for the originating request.

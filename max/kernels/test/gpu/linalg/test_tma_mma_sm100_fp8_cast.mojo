@@ -51,11 +51,13 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
+from std.utils.coord import DynamicCoord
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def cpu_matmul_naive[
@@ -76,7 +78,13 @@ def cpu_matmul_naive[
             C.store((m, n), acc.cast[C.dtype]())
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 def tma_umma_kernel_sgs[
     a_type: DType,  # A type in gmem and smem (bfloat16)
@@ -86,10 +94,10 @@ def tma_umma_kernel_sgs[
     a_desc_shape: Coord,
     b_layout: TensorLayout,  # B's gmem layout (FP8)
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
@@ -243,7 +251,7 @@ def tma_umma_kernel_sgs[
         accum_type,
         a_type,
         b_smem_type,  # bfloat16
-        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
+        (UInt32(mma_shape[0]), UInt32(mma_shape[1])),
         transpose_a=False,  # A is not transposed
         transpose_b=transpose_b,
     ]()
@@ -401,10 +409,10 @@ def test_tma_umma_fp8_b[
     b_gmem_type: DType,  # float8_e4m3fn
     c_type: DType,  # bfloat16
     prob_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext) raises:
@@ -577,9 +585,9 @@ def main() raises:
                         .bfloat16,  # A type
                         .float8_e4m3fn,  # B gmem type
                         .bfloat16,  # C type
-                        Index(MMA_M, 128, BK),  # prob_shape matching block_tile
-                        Index(MMA_M, 128, BK),  # block_tile
-                        Index(MMA_M, 128, MMA_K),  # mma_shape
+                        (MMA_M, 128, BK),  # prob_shape matching block_tile
+                        (MMA_M, 128, BK),  # block_tile
+                        (MMA_M, 128, MMA_K),  # mma_shape
                         a_swizzle=a_swizzle,
                         b_swizzle=b_swizzle,  # No swizzle for B
                         transpose_b=transpose_b,
@@ -590,9 +598,9 @@ def main() raises:
                         .bfloat16,
                         .float8_e4m3fn,
                         .bfloat16,
-                        Index(MMA_M, 128, BK * 2),  # 2 K iterations
-                        Index(MMA_M, 128, BK),
-                        Index(MMA_M, 128, MMA_K),
+                        (MMA_M, 128, BK * 2),  # 2 K iterations
+                        (MMA_M, 128, BK),
+                        (MMA_M, 128, MMA_K),
                         a_swizzle=a_swizzle,
                         b_swizzle=b_swizzle,
                         transpose_b=transpose_b,
@@ -603,9 +611,9 @@ def main() raises:
                         .bfloat16,
                         .float8_e4m3fn,
                         .bfloat16,
-                        Index(MMA_M * 2, 128, BK),  # 2 M blocks
-                        Index(MMA_M, 128, BK),
-                        Index(MMA_M, 128, MMA_K),
+                        (MMA_M * 2, 128, BK),  # 2 M blocks
+                        (MMA_M, 128, BK),
+                        (MMA_M, 128, MMA_K),
                         a_swizzle=a_swizzle,
                         b_swizzle=b_swizzle,
                         transpose_b=transpose_b,
@@ -616,9 +624,9 @@ def main() raises:
                         .bfloat16,
                         .float8_e4m3fn,
                         .bfloat16,
-                        Index(MMA_M, 128 * 2, BK),  # 2 N blocks
-                        Index(MMA_M, 128, BK),
-                        Index(MMA_M, 128, MMA_K),
+                        (MMA_M, 128 * 2, BK),  # 2 N blocks
+                        (MMA_M, 128, BK),
+                        (MMA_M, 128, MMA_K),
                         a_swizzle=a_swizzle,
                         b_swizzle=b_swizzle,
                         transpose_b=transpose_b,

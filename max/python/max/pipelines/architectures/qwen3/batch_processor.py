@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3EpBatchProcessor,
 )
@@ -45,6 +45,7 @@ class Qwen3BatchProcessor(Llama3EpBatchProcessor):
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs | Qwen3Inputs:
+        """Builds the first step's inputs from the replica batches."""
         from .model import Qwen3Inputs
 
         dp = self.runtime.pipeline_config.model.data_parallel_degree

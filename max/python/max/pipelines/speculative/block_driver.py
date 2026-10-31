@@ -20,7 +20,7 @@ state, no per-step cache advance, no token shift and no stack at the end.
 
 Like :class:`~.driver.SequentialDriver`, this driver runs on graph values, but
 nothing outside it has to. A caller may pass experimental
-:class:`~max.experimental.tensor.Tensor` inputs, one per device, and gets
+:class:`~max.tensor.Tensor` inputs, one per device, and gets
 ``Tensor`` outputs back; an adapter that subclasses
 :class:`~.driver.TensorAdapter` reads and returns ``Tensor`` values too. Both
 convert at the boundary, so a ModuleV3 model never reaches for the graph API.
@@ -34,9 +34,6 @@ from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from max import tree
 from max.dtype import DType
-from max.experimental.nn import Module as ModuleV3
-from max.experimental.realization_context import current_realization_context
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -48,13 +45,16 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kernels import topk_fused_sampling_with_dist
-from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.sampling.rejection_sampler import (
+from max.nn import Module as ModuleV3
+from max.nn.legacy.kernels import topk_fused_sampling_with_dist
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.sampling.rejection_sampler import (
     AcceptanceSampler,
     _draft_step_seed,
 )
+from max.tensor import Tensor
+from max.tensor.realization_context import current_realization_context
 from typing_extensions import override
 
 from ._tensor_compat import as_graph_values, as_tensors
@@ -76,6 +76,8 @@ from .ragged_token_merger import (
 from .spec_input_types import (
     SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
+    draft_probs_rows_name,
+    replica_leader_devices,
 )
 from .spec_target import Verified
 from .spec_width_policy import declares_skippable_draft
@@ -184,7 +186,7 @@ class BlockBatch(Generic[_T, _B, _V]):
 
     Mirrors :class:`~.driver.SequentialBatch` for the block shape, including
     the value types: graph values by default, single-device
-    :class:`~max.experimental.tensor.Tensor` values for the adapters that
+    :class:`~max.tensor.Tensor` values for the adapters that
     subclass :class:`~.driver.TensorAdapter`. The optional fields are the
     ones a ``distributed=False`` signature does not declare; the
     single-device DFlash graphs leave them unset.
@@ -507,6 +509,7 @@ class SampledDraftSampler(DraftSampler):
         self._rows = rows
         self._all_dists: TensorValue | None = None
         self._next_dists: list[TensorValue] = []
+        self._replica_dists: list[TensorValue] | None = None
 
     @override
     def sample_all(self, logits: TensorValue) -> TensorValue:
@@ -614,6 +617,21 @@ class SampledDraftSampler(DraftSampler):
         assert self._all_dists is None and not self._next_dists
         self._all_dists = dists
 
+    def adopt_replica_distributions(self, dists: Sequence[TensorValue]) -> None:
+        """Takes the distributions the :meth:`split` samplers drew, unmerged.
+
+        Args:
+            dists: One ``[rows, n, vocab_size]`` per replica, each on the
+                device that drew it.
+        """
+        assert self._all_dists is None and not self._next_dists
+        self._replica_dists = list(dists)
+
+    @property
+    def replica_distributions(self) -> list[TensorValue] | None:
+        """The per-replica distributions, or ``None`` when merged."""
+        return self._replica_dists
+
 
 def _scatter_to_vocab(
     dist: TensorValue, token_ids: TensorValue, vocab_size: int
@@ -692,6 +710,7 @@ class BlockDriver(
         # normally advance together.
         self._ctx_at_draft_cache_length = ctx_at_draft_cache_length
         self.enable_structured_output = enable_structured_output
+        self._bitmask_side_stream = speculative_config.bitmask_side_stream
         self.block_size = proposer.block_size
         # The block always runs at its trained width; a step may verify fewer
         # of its proposals than it holds.
@@ -734,6 +753,23 @@ class BlockDriver(
                 enable_sampled_draft_proposal=True,
                 vocab_size=vocab_size,
             )
+        self._replica_probs = (
+            self._sampled and speculative_config.draft_probs_layout == "replica"
+        )
+        if self._replica_probs:
+            if self.data_parallel_degree == 1 or len(self.devices) != (
+                self.data_parallel_degree
+            ):
+                raise ValueError(
+                    "draft_probs_layout='replica' needs one device per"
+                    " data-parallel replica of more than one"
+                )
+            self._input_spec = replace(
+                self._input_spec,
+                draft_probs_replicas=self.data_parallel_degree,
+            )
+            # Fail at construction rather than at the first compile.
+            replica_leader_devices(self._input_spec)
 
         relaxed_topk: int | None = None
         relaxed_delta: float | None = None
@@ -811,6 +847,7 @@ class BlockDriver(
         draft_block_offsets: TensorLike | None = None,
         extra: Mapping[str, Any] | None = None,
         draft_probs_full: TensorLike | None = None,
+        draft_probs_replicas: Sequence[TensorLike] | None = None,
     ) -> tuple[TensorLike, ...]:
         """Runs one block spec-decode iteration: verify K-1, propose K-1.
 
@@ -861,11 +898,17 @@ class BlockDriver(
                 through :attr:`BlockBatch.extra` untouched.
             draft_probs_full: ``[batch, num_speculative_tokens, vocab_size]``
                 distributions the previous iteration's draft drew its
-                proposals from. Required iff ``draft_proposal="sampled"``.
+                proposals from. Required iff ``draft_proposal="sampled"``
+                and ``draft_probs_layout="device0"``.
+            draft_probs_replicas: The same distributions as one
+                ``[replica rows, num_speculative_tokens, vocab_size]`` tensor
+                per replica, on that replica's leader device. Required iff
+                ``draft_probs_layout="replica"``.
 
         Returns:
             ``(num_accepted, next_tokens, next_draft_tokens)``, plus
-            ``next_draft_probs_full`` under ``draft_proposal="sampled"``.
+            ``next_draft_probs_full`` under ``draft_proposal="sampled"``, or
+            one such tensor per replica under ``draft_probs_layout="replica"``.
         """
         takes_tensors = isinstance(tokens, Tensor)
         signals: Sequence[BufferLike | BufferValue] | None = signal_buffers
@@ -908,6 +951,11 @@ class BlockDriver(
                     draft_block_offsets=draft_block_offsets,
                     extra=dict(extra or {}),
                     draft_probs_full=draft_probs_full,
+                    draft_probs_replicas=(
+                        list(draft_probs_replicas)
+                        if draft_probs_replicas
+                        else None
+                    ),
                 )
             )
         )
@@ -948,12 +996,20 @@ class BlockDriver(
         draft_block_offsets: TensorValue | None = None,
         extra: Mapping[str, Any] | None = None,
         draft_probs_full: TensorValue | None = None,
+        draft_probs_replicas: list[TensorValue] | None = None,
     ) -> tuple[TensorValue, ...]:
         """Runs one block spec-decode iteration on graph values."""
-        if (draft_probs_full is not None) != self._sampled:
+        if (draft_probs_full is not None) != (
+            self._sampled and not self._replica_probs
+        ):
             raise ValueError(
                 "draft_probs_full is required iff the driver was built with"
-                " draft_proposal='sampled'"
+                " draft_proposal='sampled' and draft_probs_layout='device0'"
+            )
+        if (draft_probs_replicas is not None) != self._replica_probs:
+            raise ValueError(
+                "draft_probs_replicas is required iff the driver was built"
+                " with draft_probs_layout='replica'"
             )
         draft_slot_ids, draft_block_offsets = self._draft_rows(
             draft_slot_ids, draft_block_offsets
@@ -1008,16 +1064,26 @@ class BlockDriver(
 
         pre_cache_lengths = self._pre_cache_lengths(batch)
 
+        def copy_bitmasks(side_stream: bool) -> TensorValue | None:
+            return apply_overlap_bitmask(
+                pinned_bitmask,
+                wait_payload,
+                device_bitmask_scratch,
+                num_steps=batch.num_draft_tokens,
+                device=batch.device0,
+                side_stream=side_stream,
+            )
+
+        # On its own stream the copy is issued first and overlaps the target
+        # forward; inline, it follows the forward on device 0's stream.
+        side_stream = self._bitmask_side_stream
+        effective_bitmasks = copy_bitmasks(True) if side_stream else None
+
         verified = self._verify(batch)
         target_logits, target_hidden = verified.logits, verified.hidden
 
-        effective_bitmasks = apply_overlap_bitmask(
-            pinned_bitmask,
-            wait_payload,
-            device_bitmask_scratch,
-            num_steps=batch.num_draft_tokens,
-            device=batch.device0,
-        )
+        if not side_stream:
+            effective_bitmasks = copy_bitmasks(False)
 
         accepted = self._accept(
             batch,
@@ -1031,6 +1097,8 @@ class BlockDriver(
             in_thinking_phase=in_thinking_phase,
             token_bitmasks=effective_bitmasks,
             draft_probs_full=draft_probs_full,
+            draft_probs_replicas=draft_probs_replicas,
+            replica_logits=verified.replica_logits,
         )
 
         # Every phase below runs after the accept, so each sees the count
@@ -1112,6 +1180,20 @@ class BlockDriver(
             ),
         )
         n = self.num_speculative_tokens
+        if self._replica_probs:
+            dists = sampler.replica_distributions
+            assert dists is not None, (
+                "draft_probs_layout='replica' needs a proposer that keeps"
+                " its distributions per replica"
+            )
+            return (
+                accepted.num_accepted,
+                accepted.next_tokens,
+                self._pad_skipped_rows(
+                    batch, next_draft_tokens.rebind([rows, n])
+                ),
+                *dists,
+            )
         return (
             accepted.num_accepted,
             accepted.next_tokens,
@@ -1140,6 +1222,8 @@ class BlockDriver(
         in_thinking_phase: TensorValue | None,
         token_bitmasks: TensorValue | None,
         draft_probs_full: TensorValue | None,
+        draft_probs_replicas: list[TensorValue] | None = None,
+        replica_logits: list[TensorValue] | None = None,
     ) -> Accepted:
         """Verifies the proposals, then corrects the rows that had none.
 
@@ -1151,19 +1235,36 @@ class BlockDriver(
         block forward past the tokens the iteration actually commits.
         """
         device = batch.device0
-        num_accepted, recovered, bonus = self.acceptance_sampler(
-            batch.draft_tokens,
-            target_logits,
-            seed=seed,
-            temperature=temperature,
-            top_k=top_k,
-            max_k=max_k,
-            top_p=top_p,
-            min_top_p=min_top_p,
-            in_thinking_phase=in_thinking_phase,
-            token_bitmasks=token_bitmasks,
-            draft_probs_full=draft_probs_full,
-        )
+        if draft_probs_replicas is not None:
+            assert replica_logits is not None, (
+                "per-replica distributions need per-replica verify logits"
+            )
+            num_accepted, recovered, bonus = self._verdict_per_replica(
+                batch,
+                replica_logits,
+                draft_probs_replicas,
+                seed=seed,
+                temperature=temperature,
+                top_k=top_k,
+                max_k=max_k,
+                top_p=top_p,
+                min_top_p=min_top_p,
+                token_bitmasks=token_bitmasks,
+            )
+        else:
+            num_accepted, recovered, bonus = self.acceptance_sampler(
+                batch.draft_tokens,
+                target_logits,
+                seed=seed,
+                temperature=temperature,
+                top_k=top_k,
+                max_k=max_k,
+                top_p=top_p,
+                min_top_p=min_top_p,
+                in_thinking_phase=in_thinking_phase,
+                token_bitmasks=token_bitmasks,
+                draft_probs_full=draft_probs_full,
+            )
 
         num_steps_u32 = _shape_to_scalar(
             batch.num_draft_tokens, device, dtype=DType.uint32
@@ -1228,6 +1329,117 @@ class BlockDriver(
             next_tokens=next_tokens,
             commit_lengths=commit_lengths,
             is_prefill=is_prefill,
+        )
+
+    def _verdict_per_replica(
+        self,
+        batch: BlockBatch,
+        replica_logits: list[TensorValue],
+        draft_probs: list[TensorValue],
+        *,
+        seed: TensorValue,
+        temperature: TensorValue,
+        top_k: TensorValue,
+        max_k: TensorValue,
+        top_p: TensorValue,
+        min_top_p: TensorValue,
+        token_bitmasks: TensorValue | None,
+    ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        """Judges each replica's proposals on its own device.
+
+        The proposals' distributions never leave the device that drew them, so
+        the ratio test and the residual read them in place. Every draw is keyed
+        by its row's own seed and position in the request, never by the row's
+        slot, so a row gets the verdict it would have in the whole batch. Only
+        the small verdicts return to device 0, in one gather.
+        """
+        signals = batch.signal_buffers
+        splits = batch.data_parallel_splits
+        assert splits is not None
+        n_replicas = self.data_parallel_degree
+        assert batch.devices_per_replica == 1, (
+            "per-replica verification holds one device per replica"
+        )
+        n = Dim("num_steps")
+
+        def rows_of(
+            per_device: list[TensorValue], name: str
+        ) -> list[TensorValue]:
+            return [
+                ops.rebind(
+                    ops.slice_tensor(
+                        value,
+                        [
+                            (
+                                slice(splits[replica], splits[replica + 1]),
+                                f"{name}_{replica}",
+                            ),
+                            ...,
+                        ],
+                    ),
+                    [draft_probs_rows_name(replica), *value.shape[1:]],
+                )
+                for replica, value in enumerate(per_device)
+            ]
+
+        def broadcast(value: TensorValue, name: str) -> list[TensorValue]:
+            return rows_of(
+                broadcast_per_device(value, signals, batch.n_devs), name
+            )
+
+        draft_tokens = broadcast(batch.draft_tokens, "block_verdict_tokens")
+        params = [
+            broadcast(value, f"block_verdict_{name}")
+            for name, value in (
+                ("seed", seed),
+                ("temperature", temperature),
+                ("top_k", top_k),
+                ("top_p", top_p),
+            )
+        ]
+        bitmasks = (
+            broadcast(token_bitmasks, "block_verdict_bitmask")
+            if token_bitmasks is not None
+            else [None] * n_replicas
+        )
+        verdicts = []
+        dtypes: tuple[DType, DType, DType] | None = None
+        for replica in range(n_replicas):
+            rows = draft_probs_rows_name(replica)
+            first_rejected, recovered, bonus = self.acceptance_sampler(
+                draft_tokens[replica],
+                replica_logits[replica],
+                seed=params[0][replica],
+                temperature=params[1][replica],
+                top_k=params[2][replica],
+                max_k=max_k,
+                top_p=params[3][replica],
+                min_top_p=min_top_p,
+                token_bitmasks=bitmasks[replica],
+                draft_probs_full=draft_probs[replica],
+                rows=rows,
+            )
+            dtypes = (first_rejected.dtype, recovered.dtype, bonus.dtype)
+            # One int64 matrix per replica: ``[first_rejected | recovered |
+            # bonus]``, so a single gather carries all three.
+            verdicts.append(
+                ops.concat(
+                    [
+                        ops.unsqueeze(first_rejected.cast(DType.int64), axis=1),
+                        recovered.cast(DType.int64),
+                        bonus.cast(DType.int64),
+                    ],
+                    axis=1,
+                )
+            )
+        gathered = ops.allgather(verdicts, signals)[0].rebind(
+            ["batch_size", n + 2]
+        )
+        assert dtypes is not None
+        return (
+            ops.squeeze(gathered[:, 0:1], axis=1).cast(dtypes[0]),
+            gathered[:, 1:-1].cast(dtypes[1]),
+            gathered[:, -1:].cast(dtypes[2]),
         )
 
     def _pre_cache_lengths(self, batch: BlockBatch) -> list[TensorValue]:

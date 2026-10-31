@@ -24,18 +24,22 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import mhc_post
+from max.nn.legacy.kernels import mhc_post
 from torch.utils.dlpack import from_dlpack
 
 _HC_MULT = 4
 _HIDDEN = 4096
+# 256-thread blocks do not split this one; the kernel takes 128.
+_HIDDEN_128 = 5120
 
 
-def _input_types(streams_shape: list[str | int]) -> tuple[TensorType, ...]:
+def _input_types(
+    streams_shape: list[str | int], hidden: int = _HIDDEN
+) -> tuple[TensorType, ...]:
     device_ref = DeviceRef.GPU()
     return (
         TensorType(DType.bfloat16, streams_shape, device=device_ref),
-        TensorType(DType.bfloat16, ["tokens", _HIDDEN], device=device_ref),
+        TensorType(DType.bfloat16, ["tokens", hidden], device=device_ref),
         TensorType(DType.float32, ["tokens", _HC_MULT], device=device_ref),
         TensorType(
             DType.float32, ["tokens", _HC_MULT, _HC_MULT], device=device_ref
@@ -55,6 +59,18 @@ def compile_post(gpu_session: InferenceSession) -> Model:
 
 
 @pytest.fixture(scope="module")
+def compile_post_128(gpu_session: InferenceSession) -> Model:
+    with Graph(
+        "mhc_post_128",
+        input_types=_input_types(
+            ["tokens", _HC_MULT, _HIDDEN_128], _HIDDEN_128
+        ),
+    ) as graph:
+        graph.output(mhc_post(*(v.tensor for v in graph.inputs)))
+    return gpu_session.load(graph)
+
+
+@pytest.fixture(scope="module")
 def compile_post_broadcast(gpu_session: InferenceSession) -> Model:
     """Feeds the op the model-entry broadcast of one residual to all streams."""
     with Graph(
@@ -68,12 +84,12 @@ def compile_post_broadcast(gpu_session: InferenceSession) -> Model:
     return gpu_session.load(graph)
 
 
-def _inputs(tokens: int) -> tuple[torch.Tensor, ...]:
+def _inputs(tokens: int, hidden: int = _HIDDEN) -> tuple[torch.Tensor, ...]:
     torch.manual_seed(tokens)
     streams = torch.randn(
-        tokens, _HC_MULT, _HIDDEN, dtype=torch.bfloat16, device="cuda"
+        tokens, _HC_MULT, hidden, dtype=torch.bfloat16, device="cuda"
     )
-    y = torch.randn(tokens, _HIDDEN, dtype=torch.bfloat16, device="cuda")
+    y = torch.randn(tokens, hidden, dtype=torch.bfloat16, device="cuda")
     post = 2 * torch.rand(tokens, _HC_MULT, device="cuda")
     comb = torch.softmax(
         torch.randn(tokens, _HC_MULT, _HC_MULT, device="cuda"), dim=-2
@@ -116,6 +132,22 @@ def test_post_matches_float64(compile_post: Model, tokens: int) -> None:
     _assert_rounded_once(actual, streams, y, post, comb)
 
 
+@pytest.mark.parametrize("tokens", [1, 17, 1185, 2049])
+def test_post_128_thread_blocks(compile_post_128: Model, tokens: int) -> None:
+    streams, y, post, comb = _inputs(tokens, _HIDDEN_128)
+    (out,) = compile_post_128.execute(streams, y, post, comb)
+    actual = from_dlpack(out)
+
+    assert actual.shape == (tokens, _HC_MULT, _HIDDEN_128)
+    _assert_rounded_once(actual, streams, y, post, comb)
+
+
+def test_post_accepts_no_tokens(compile_post: Model) -> None:
+    """A data-parallel replica with no rows in the batch runs the op."""
+    (out,) = compile_post.execute(*_inputs(0))
+    assert from_dlpack(out).shape == (0, _HC_MULT, _HIDDEN)
+
+
 def test_post_contracts_over_the_first_stream_axis(
     compile_post: Model,
 ) -> None:
@@ -146,7 +178,7 @@ def test_post_accepts_broadcast_streams(
 
 def test_post_rejects_unaligned_hidden_size() -> None:
     device_ref = DeviceRef.GPU()
-    bad_hidden = 1024
+    bad_hidden = 1536
     with Graph(
         "mhc_post_bad_hidden",
         input_types=(
@@ -160,7 +192,7 @@ def test_post_rejects_unaligned_hidden_size() -> None:
             ),
         ),
     ) as graph:
-        with pytest.raises(ValueError, match="multiple of 2048"):
+        with pytest.raises(ValueError, match="multiple of 1024"):
             mhc_post(*(v.tensor for v in graph.inputs))
 
 

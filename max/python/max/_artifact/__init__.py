@@ -17,7 +17,7 @@ checksums), ``artifact.json`` (one section per pipeline component), and any
 files the components reference, such as the compiled MEFs.
 
 The package's own import exposes only the value types, which
-:mod:`max.experimental` uses, so importing it never imports the pipeline
+:mod:`max.tensor` uses, so importing it never imports the pipeline
 stack. The writer and reader are in :mod:`.serialization` and
 :mod:`.model_artifact`, and ``max export`` is in :mod:`.export`.
 """

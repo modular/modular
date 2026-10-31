@@ -39,6 +39,7 @@ from ssd_scan_test_utils.ssd_scan import (
     check_preserved_slots,
     run_ssd_gpu,
 )
+from state_space.mamba2_ssd_out_mi355 import ssd_out_mi355_supported
 from state_space.mamba2_ssd_chunked import (
     GROUPED_CB_AUTO,
     GROUPED_CB_ON,
@@ -335,6 +336,12 @@ def run_mamba2_ssd[
     `row_pad` widens the token stride of x, B and C, like the column slices of
     the conv output the model passes.
     """
+    comptime if DSTATE_SPLIT < 0 and ctx.target.is_amd_gpu():
+        # MI355's chunk kernels take P 64, N 128 and even heads per group
+        # only; the op keeps any other shape on the serial scan.
+        if not ssd_out_mi355_supported(nheads, ngroups, head_dim, DSTATE):
+            print("skip: no MI355 chunked scan for", nheads, head_dim, ngroups)
+            return
     comptime dstate = DSTATE
     comptime if not check_reference:
         comptime assert (
@@ -1128,6 +1135,59 @@ def _channel_blocked_decode_shapes[
         seq_lengths=Index(1, 1, 1, 1),
         ctx=ctx,
     )
+    # The decode tiles the graph op picks: split 16 with 2 channels a thread
+    # on NVIDIA, split 32 with 4 on AMD. Both run on either vendor.
+    run_mamba2_ssd[
+        .bfloat16,
+        128,
+        16,
+        init_state=True,
+        update_flags=update_flags,
+        CH_PER_THREAD=2,
+        prefill=False,
+        check_parity=True,
+    ](
+        nheads=32,
+        head_dim=64,
+        ngroups=4,
+        max_slots=5,
+        seq_lengths=Index(1, 1, 1, 1),
+        ctx=ctx,
+    )
+    run_mamba2_ssd[
+        .bfloat16,
+        128,
+        32,
+        init_state=True,
+        update_flags=update_flags,
+        CH_PER_THREAD=4,
+        prefill=False,
+        check_parity=True,
+    ](
+        nheads=32,
+        head_dim=64,
+        ngroups=4,
+        max_slots=5,
+        seq_lengths=Index(1, 1, 1, 1),
+        ctx=ctx,
+    )
+    run_mamba2_ssd[
+        .bfloat16,
+        128,
+        32,
+        init_state=True,
+        update_flags=update_flags,
+        CH_PER_THREAD=4,
+        prefill=False,
+        check_parity=True,
+    ](
+        nheads=8,
+        head_dim=72,
+        ngroups=2,
+        max_slots=4,
+        seq_lengths=Index(1, 1, 1),
+        ctx=ctx,
+    )
 
 
 def test_mamba2_ssd_dstate_split_channel_blocked() raises:
@@ -1335,7 +1395,10 @@ def test_mamba2_ssd_chunked() raises:
     seeds nonzero initial states.
     """
     with DeviceContext() as ctx:
-        comptime if not ctx.target._is_sm_8x_or_newer():
+        # the chunked scan runs on NVIDIA SM80+ and MI355
+        comptime if not (
+            ctx.target._is_sm_8x_or_newer() or ctx.target.is_amd_gpu["gfx950"]()
+        ):
             return
         # One sequence, 2 full chunks + a 188-token tail, nonzero state.
         run_mamba2_ssd[DType.bfloat16, 128, -1, init_state=True](
@@ -1357,6 +1420,26 @@ def test_mamba2_ssd_chunked() raises:
         ](8, 64, 4, 6, Index(257, 5, 1000, 64, 256), ctx, row_pad=8)
 
 
+def test_mamba2_ssd_chunked_wide_state_pass() raises:
+    """8 sequences x 64 heads reach the 4-vectors-per-thread state pass.
+
+    batch * nheads = 512 picks that specialization. With 8 heads per group a
+    B200 also takes the sm100 kernels, whose entering states are bf16; with
+    one head per group (odd) every target takes the generic kernels and fp32
+    entering states. Both mix a multi-chunk sequence, initial states and
+    skipped write-backs.
+    """
+    with DeviceContext() as ctx:
+        comptime if not ctx.target._is_sm_8x_or_newer():
+            return
+        run_mamba2_ssd[
+            DType.bfloat16, 128, -1, init_state=True, update_flags=True
+        ](64, 64, 8, 9, Index(600, 1, 257, 33, 300, 2, 128, 64), ctx)
+        run_mamba2_ssd[
+            DType.bfloat16, 128, -1, init_state=True, update_flags=True
+        ](64, 64, 64, 9, Index(600, 1, 257, 33, 300, 2, 128, 64), ctx)
+
+
 def test_mamba2_ssd_chunked_boundaries() raises:
     """Sequence lengths around the 256-token chunk size, one launch each.
 
@@ -1366,7 +1449,10 @@ def test_mamba2_ssd_chunked_boundaries() raises:
     against the serial kernel at 1% of the largest output.
     """
     with DeviceContext() as ctx:
-        comptime if not ctx.target._is_sm_8x_or_newer():
+        # the chunked scan runs on NVIDIA SM80+ and MI355
+        comptime if not (
+            ctx.target._is_sm_8x_or_newer() or ctx.target.is_amd_gpu["gfx950"]()
+        ):
             return
         # 1, 255, 256, 257 (chunk -1/0/+1), 511, 512, 513 (two chunks -1/0/+1),
         # fresh and seeded states.
@@ -1389,7 +1475,10 @@ def test_mamba2_ssd_chunked_boundaries() raises:
 def test_mamba2_ssd_chunked_many_sequences() raises:
     """Many sequences in one launch, mixing 1-token and multi-chunk rows."""
     with DeviceContext() as ctx:
-        comptime if not ctx.target._is_sm_8x_or_newer():
+        # the chunked scan runs on NVIDIA SM80+ and MI355
+        comptime if not (
+            ctx.target._is_sm_8x_or_newer() or ctx.target.is_amd_gpu["gfx950"]()
+        ):
             return
         run_mamba2_ssd[DType.bfloat16, 128, -1, init_state=True](
             4,
@@ -1439,7 +1528,10 @@ def test_mamba2_ssd_chunked_many_sequences() raises:
 def test_mamba2_ssd_chunked_shapes() raises:
     """Head layouts the Nemotron configs use, and optional inputs."""
     with DeviceContext() as ctx:
-        comptime if not ctx.target._is_sm_8x_or_newer():
+        # the chunked scan runs on NVIDIA SM80+ and MI355
+        comptime if not (
+            ctx.target._is_sm_8x_or_newer() or ctx.target.is_amd_gpu["gfx950"]()
+        ):
             return
         # One group shared by every head; 8 heads per group; 2 heads per group
         # with head_dim 128 (two head tiles).
@@ -1475,7 +1567,10 @@ def test_mamba2_ssd_chunked_shapes() raises:
 def test_mamba2_ssd_chunked_decay_range() raises:
     """Very strong and very weak decay stay finite and match the reference."""
     with DeviceContext() as ctx:
-        comptime if not ctx.target._is_sm_8x_or_newer():
+        # the chunked scan runs on NVIDIA SM80+ and MI355
+        comptime if not (
+            ctx.target._is_sm_8x_or_newer() or ctx.target.is_amd_gpu["gfx950"]()
+        ):
             return
         # Strong decay: exp2 of the cumulative log decay underflows to 0 within
         # a chunk; the carry and the masked scores must not produce NaN or inf.
@@ -1499,7 +1594,10 @@ def test_mamba2_ssd_chunked_signed_slow_decay() raises:
     absolute tolerance of 2% of the largest value to the 2% relative one.
     """
     with DeviceContext() as ctx:
-        comptime if not ctx.target._is_sm_8x_or_newer():
+        # the chunked scan runs on NVIDIA SM80+ and MI355
+        comptime if not (
+            ctx.target._is_sm_8x_or_newer() or ctx.target.is_amd_gpu["gfx950"]()
+        ):
             return
         run_mamba2_ssd[
             DType.bfloat16, 128, -1, init_state=True, dt_offset=-9.0
@@ -1678,8 +1776,8 @@ def test_mamba2_ssd_grouped_auto() raises:
             or ctx.target.is_nvidia_gpu["sm_100a"]()
         ):
             assert_true(use_grouped_cb_ssd(8192, 1, 32, 128, 4))
-            print("SSD_AUTO_DEVICE_NAME,", ctx.name(), sep="")
-            if ctx.name() == "NVIDIA B200":
+            print("SSD_AUTO_DEVICE_NAME,", ctx.device().get_name(), sep="")
+            if ctx.device().get_name() == "NVIDIA B200":
                 run_mamba2_ssd[
                     .bfloat16,
                     128,

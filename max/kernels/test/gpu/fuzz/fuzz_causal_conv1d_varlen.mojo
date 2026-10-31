@@ -354,24 +354,11 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "batch=",
-                specs[i].batch,
-                "dim=",
-                specs[i].dim,
-                "max_len=",
-                specs[i].max_len,
-                "len_seed=",
-                specs[i].len_seed,
-                "x_off=",
-                specs[i].x_off,
-                "pad=",
-                specs[i].pad,
-                "init_mode=",
-                specs[i].init_mode,
-                "slot_seed=",
-                specs[i].slot_seed,
+                t"FUZZ_SPEC idx= {i} batch= {specs[i].batch} dim="
+                t" {specs[i].dim} max_len= {specs[i].max_len} len_seed="
+                t" {specs[i].len_seed} x_off= {specs[i].x_off} pad="
+                t" {specs[i].pad} init_mode= {specs[i].init_mode} slot_seed="
+                t" {specs[i].slot_seed}"
             )
         return
 
@@ -393,11 +380,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_causal_conv1d_varlen seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_causal_conv1d_varlen seed= {the_seed} budget="
+        t" {the_budget} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

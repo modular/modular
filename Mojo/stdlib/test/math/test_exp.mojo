@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math.math import _Expable, exp
+from std.math import exp
 from std.random import randn_float64, seed
 
 from test_utils.math import libm_call
@@ -64,45 +64,6 @@ def _test_exp_libm[dtype: DType]() raises where dtype.is_floating_point():
 def test_exp_libm() raises:
     _test_exp_libm[.float32]()
     _test_exp_libm[.float64]()
-
-
-@fieldwise_init
-struct Float32Expable(Equatable, Writable, _Expable):
-    """This is a test struct that implements the Expable trait for Float32."""
-
-    var x: Float32
-
-    def __exp__(self) -> Self:
-        return Self(exp(self.x))
-
-    def __eq__(self, other: Self) -> Bool:
-        return self.x == other.x
-
-    def __ne__(self, other: Self) -> Bool:
-        return self.x != other.x
-
-    def write_to(self, mut writer: Some[Writer]):
-        t"Float32Expable({self.x})".write_to(writer)
-
-
-@fieldwise_init
-struct FakeExpable(Equatable, Writable, _Expable):
-    """Test struct using default reflection-based __eq__."""
-
-    var x: Int
-
-    def __exp__(self) -> Self:
-        return Self(99)
-
-    # Uses default reflection-based __eq__ from Equatable trait
-
-    def write_to(self, mut writer: Some[Writer]):
-        t"FakeExpable({self.x})".write_to(writer)
-
-
-def test_exapble_trait() raises:
-    assert_equal(exp(Float32Expable(1.0)), Float32Expable(exp(Float32(1.0))))
-    assert_equal(exp(FakeExpable(1)), FakeExpable(99))
 
 
 def main() raises:

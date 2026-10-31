@@ -516,10 +516,9 @@ def _gemv_partial_norm_fused[
     comptime assert gamma.element_size == 1
 
     var m = Int(act.dim[0]())
-    assert m == 1, (
-        "gemv_and_partial_norm fused path is GEMV-only (M=1); got M="
-        + String(m)
-        + ". Use matmul + rms_norm_gpu for M>1."
+    assert m == 1, String(
+        t"gemv_and_partial_norm fused path is GEMV-only (M=1); got M={m}. Use"
+        t" matmul + rms_norm_gpu for M>1."
     )
 
     var k = Int(act.dim[1]())
@@ -558,7 +557,7 @@ def _gemv_partial_norm_fused[
         tile_n=tile_n,
         num_threads=num_threads,
         enable_trace=enable_trace,
-        pdl_level=pdl_level,
+        pdl_level=PDLLevel.ON,
     ]
     ctx.enqueue_function[kernel](
         normed_output,
@@ -575,7 +574,7 @@ def _gemv_partial_norm_fused[
         Int32(num_normed_blocks),
         grid_dim=(1, num_blocks),
         block_dim=num_threads,
-        attributes=pdl_launch_attributes(pdl_level),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

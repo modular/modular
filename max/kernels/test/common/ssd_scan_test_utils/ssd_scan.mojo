@@ -282,10 +282,14 @@ def run_ssd_gpu[
     ](b: Int) {var slot_g} -> SIMD[.uint32, width]:
         return slot_g.load[width=width]((b,))
 
+    # The grouped-CB arms compare two generic output kernels; the sm100
+    # path (which ignores grouped_cb_mode) would make both arms the same.
+    var sm100_x = 0 if grouped_pair else Int(x_d.unsafe_ptr())
+
     def launch_chunked(lctx: DeviceContext) raises {imm}:
-        comptime if (
-            (DSTATE_SPLIT < 0 or compare_chunked)
-            and lctx.target._is_sm_8x_or_newer()
+        comptime if (DSTATE_SPLIT < 0 or compare_chunked) and (
+            lctx.target._is_sm_8x_or_newer()
+            or lctx.target.is_amd_gpu["gfx950"]()
         ):
             mamba2_ssd_chunked_fwd_inplace_gpu[
                 DSTATE, dt_softplus=True, grouped_cb_mode=GROUPED_CB_OFF
@@ -307,6 +311,11 @@ def run_ssd_gpu[
                 b_fn,
                 c_fn,
                 slot_fn,
+                x_addr=sm100_x,
+                x_ld=x_row,
+                b_addr=Int(B_d.unsafe_ptr()),
+                c_addr=Int(C_d.unsafe_ptr()),
+                bc_ld=bc_row,
             )
 
     def launch_grouped(lctx: DeviceContext) raises {imm}:
@@ -330,6 +339,11 @@ def run_ssd_gpu[
                     b_fn,
                     c_fn,
                     slot_fn,
+                    x_addr=sm100_x,
+                    x_ld=x_row,
+                    b_addr=Int(B_d.unsafe_ptr()),
+                    c_addr=Int(C_d.unsafe_ptr()),
+                    bc_ld=bc_row,
                 )
             else:
                 mamba2_ssd_chunked_fwd_inplace_gpu[
@@ -352,6 +366,11 @@ def run_ssd_gpu[
                     b_fn,
                     c_fn,
                     slot_fn,
+                    x_addr=sm100_x,
+                    x_ld=x_row,
+                    b_addr=Int(B_d.unsafe_ptr()),
+                    c_addr=Int(C_d.unsafe_ptr()),
+                    bc_ld=bc_row,
                 )
 
     def launch(lctx: DeviceContext) raises {imm}:

@@ -61,8 +61,8 @@ def int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[.bfloat16, 8]:
 
 
 def call_int4tobf16[
-    no_lop: Bool
-](i4: Int32, out_ptr: MutPointer[BFloat16, MutAnyOrigin],):
+    no_lop: Bool, out_origin: MutOrigin
+](i4: Int32, out_ptr: MutPointer[BFloat16, out_origin],):
     var v = int4tobf16[no_lop](i4)
     out_ptr.unsafe_bitcast[Int32]().unsafe_store[alignment=16](
         0, bitcast[.int32, 4](v)
@@ -74,7 +74,7 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
     var out_host = TileTensor(stack, row_major[8]())
     var out_device = ctx.enqueue_create_buffer[.bfloat16](8)
 
-    comptime kernel = call_int4tobf16[no_lop]
+    comptime kernel = call_int4tobf16[no_lop, origin_of(out_device)]
     ctx.enqueue_function[kernel](
         Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )

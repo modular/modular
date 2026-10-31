@@ -510,8 +510,6 @@ kgen.generator @datalayout_operators() {
   kgen.param.constant: index = <get_sizeof(index, #target)>
   // CHECK-NEXT: <8>
   kgen.param.constant: index = <get_sizeof(!kgen.generator<() -> ()>, #target)>
-  // CHECK-NEXT: <16>
-  kgen.param.constant: index = <get_sizeof(!kgen.generator<() capturing -> ()>, #target)>
 
   // CHECK-NEXT: <4>
   kgen.param.constant: index = <get_alignof(si32, #target)>
@@ -749,7 +747,7 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 
 // CHECK-LABEL: @elaborateFnWithContextualType2()
 kgen.generator @elaborateFnWithContextualType2() -> index {
-  kgen.param.declare fn: <type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType>
+  kgen.param.declare fn: <type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType<:type *(0,0), :() -> !kgen.param<*(1,0)> *(0,1)>>
 
   // CHECK: kgen.param.declare boundFn: () -> index =
   // CHECK-SAME: <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, :type index, :() -> index @sillyFn)>
@@ -762,7 +760,7 @@ kgen.generator @elaborateFnWithContextualType2() -> index {
 
 // CHECK-LABEL: @partialBindSignature
 kgen.generator @partialBindSignature() -> index {
-  kgen.param.declare fn: <type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType>
+  kgen.param.declare fn: <type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType<:type *(0,0), :() -> !kgen.param<*(1,0)> *(0,1)>>
 
   // CHECK: kgen.param.declare partiallyBound: <() -> index>() -> index =
   // CHECK-SAME: <bind_params(:<type, () -> !kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn, :type index, ?)>
@@ -773,34 +771,6 @@ kgen.generator @partialBindSignature() -> index {
   %0 = kgen.call_param[() -> index: bind_params(:<() -> index>() -> index partiallyBound, :() -> index @sillyFn)]()
 
   hlcf.return %0 : index
-}
-
-// CHECK-LABEL: @partialBindSignature2
-kgen.generator @partialBindSignature2() -> index {
-  // CHECK: kgen.param.declare fn: <() -> index>() -> index = <@takeFnContextualType<:type index, :() -> index ?>>
-  kgen.param.declare fn: <()->index>() -> index =
-    <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> @takeFnContextualType, :type index, :() -> index ?)>
-  // CHECK: kgen.param.declare fullyBound: () -> index = <bind_params(:<() -> index>() -> index fn, :() -> index @sillyFn)>
-  kgen.param.declare fullyBound: () -> index = <bind_params(:<()->index>() -> index fn, :() -> index @sillyFn)>
-
-  // CHECK: kgen.call_param[() -> index: bind_params(:<() -> index>() -> index fn, :() -> index @sillyFn)]()
-  %0 = kgen.call_param[()->index: bind_params(:<()->index>()->index fn, :() -> index @sillyFn)]()
-  // CHECK: kgen.call_param[() -> index: fullyBound]()
-  %1 = kgen.call_param[()->index : fullyBound]()
-
-  hlcf.return %0 : index
-}
-
-kgen.generator @returnParam<T: type, I>(%arg : !kgen.param<T>) -> !kgen.param<T> {
- hlcf.return %arg : !kgen.param<T>
-}
-
-// CHECK-LABEL: @partialBindSignature3
-kgen.generator @partialBindSignature3<T: type>(%arg : !kgen.param<T>) {
-  // CHECK-NEXT: kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> = <@returnParam<:type ?, 32>>
-  kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> =
-    <bind_params(:<type, index>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> @returnParam, ?, 32)>
-  hlcf.return
 }
 
 // CHECK-LABEL: @mlirOperationExpr
@@ -922,44 +892,6 @@ kgen.generator @apply_result_slot() {
   hlcf.return
 }
 
-// Helper for apply_result_slot_depth_adj test:
-//  1-param generatorwith argument types depend on the param T.
-kgen.generator @ptr_slot<T: type>(%arg: !kgen.pointer<T>, %out: !kgen.pointer<!kgen.pointer<T>> byref_result) -> !kgen.none {
-  %0 = kgen.param.constant: none = <#kgen.none>
-  hlcf.return %0 : !kgen.none
-}
-
-// CHECK-LABEL: kgen.generator @apply_result_slot_depth_adj
-kgen.generator @apply_result_slot_depth_adj() {
-  // Tests that IndexDepthAdjuster(-1) is applied in the ApplyResultSlot parser.
-  //
-  // #kgen.gen provides a ParameterScopeAttrInterface (depth-0) scope with two
-  // params: *(0,0): type (T) and *(0,1): !kgen.pointer<*(0,0)> (a T-pointer).
-  //
-  // bind_params(@ptr_slot, :type *(0,0)) binds T to the gen's first param.
-  // Inside the resulting zero-param <> FuncTypeGeneratorType (one extra scope
-  // boundary), the bound value lifts from *(0,0) to *(1,0), so arg types
-  // become (!kgen.pointer<*(1,0)>, ...).
-  //
-  // Without the fix, the operand *(0,1) would be parsed with the un-adjusted
-  // type !kgen.pointer<*(1,0)> instead of the correct !kgen.pointer<*(0,0)>,
-  // and -verify-parameters would reject the round-trip.
-  // CHECK-NEXT: constant: <type, pointer<*(0,0)>>pointer<*(0,0)> = <#kgen.gen<apply_result_slot(
-  // CHECK-SAME: :(!kgen.pointer<*(1,0)>, !kgen.pointer<pointer<*(1,0)>> byref_result) -> !kgen.none
-  // CHECK-SAME: @ptr_slot<:type *(0,0)>, *(0,1))>>
-  kgen.param.constant: <type, pointer<*(0,0)>>pointer<*(0,0)> =
-    <#kgen.gen<apply_result_slot(
-      :(!kgen.pointer<*(1,0)>, !kgen.pointer<pointer<*(1,0)>> byref_result) -> !kgen.none
-        bind_params(
-          :<type>(!kgen.pointer<*(0,0)>, !kgen.pointer<pointer<*(0,0)>> byref_result) -> !kgen.none
-            @ptr_slot,
-          :type *(0,0)
-        ),
-      *(0,1)
-    )>>
-  hlcf.return
-}
-
 // CHECK-LABEL: @int_literal_param
 kgen.generator @int_literal_param<abcd: !pop.int_literal>() {
   // CHECK-NEXT: constant: !pop.int_literal = <abcd>
@@ -973,8 +905,8 @@ kgen.generator @kernel() {
 
 // CHECK-LABEL: @get_likage_name
 kgen.generator @get_likage_name() {
-  // CHECK: constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>>>
-  kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>>>
+  // CHECK: constant: string = <#kgen.get_linkage_name<current_target(), #kgen.gen<#kgen.func.symbol<@kernel>> : !kgen.generator<() -> ()>>>
+  kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.gen<#kgen.func.symbol<@kernel>> : !kgen.generator<() -> ()>>>
   hlcf.return
 }
 

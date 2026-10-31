@@ -17,7 +17,7 @@
 # Output:
 #   [Dim(4), Dim(8)]
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 activations = Tensor.zeros([4, 8])  # (batch=4, features=8)
 bias = Tensor.ones([8])  # (features=8,)

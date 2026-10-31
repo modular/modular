@@ -88,6 +88,11 @@ from max.gpu.memory import (
 from max.gpu.intrinsics import Scope, byte_permute
 from max.gpu.sync import barrier, named_barrier, syncwarp
 import max.gpu.primitives.warp as warp
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_arrive_relaxed,
@@ -140,11 +145,6 @@ comptime _CTOPK_SMEM_OPTIN: Int = (
     )
     - 1024
 )
-
-# Row-count gate, vLLM's `AUTO_COOPERATIVE_MAX_ROWS` prior. Beyond this the
-# rows fill the GPU on their own and clustering only adds DSMEM traffic; the
-# true crossover is M4's to measure.
-comptime _CTOPK_MAX_ROWS: Int = 64
 
 # Streaming-flavor pipeline slots the staging area is carved into. Two: the
 # double buffer with an epilogue prefetch is vLLM's `kStreamingStagesCS4`.
@@ -372,7 +372,7 @@ def _ctopk_hist_reduce[
     (`_ctopk_gather_threshold`, or `_ctopk_hist_gather` at 2 and 3 ranks).
     """
     cluster_sync()
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     comptime kLocal = ceildiv(nbins, CS)
     var b = kLocal * Int(block_rank_in_cluster()) + tx
     if tx < kLocal and b < nbins:
@@ -488,7 +488,7 @@ def _ctopk_hist_gather[
     The caller must have passed a cluster barrier after every rank finished
     binning `hist`, and no rank may write `hist` again: it is round 0's own.
     """
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var v = UInt32(0)
     var pre = UInt32(0)
     comptime for p in range(CS):
@@ -556,11 +556,10 @@ def _ctopk_gather_threshold[
     exit: the caller passes the refinement histogram, zeroed before round 0
     and next read by rank 0's first refinement round.
 
-    The caller must have passed a cluster barrier after every rank published
-    its `sums`, and no rank may write `hist` or `sums` again until every peer
-    is past this read (rank 0's refinement and the multi-round path reuse
-    `sums` only after a barrier or mbarrier wait that orders them so). The
-    trailing block barrier publishes `mtch`.
+    The caller must synchronize the cluster after every rank publishes
+    `sums` and again after every peer finishes reading `hist` and `sums`,
+    before either buffer is reused or a rank exits. The trailing block
+    barrier publishes `mtch`.
     """
     comptime NW = 1 if CS <= 8 else 2
     comptime PW = CS // NW
@@ -913,7 +912,7 @@ def _ctopk_tma_stream[
     `cand` is the candidate scatter (`_ctopk_scatter_group`), its bin floor
     in `slo`.
     """
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     comptime step = UInt32(_CTOPK_BLOCK * scan_items)
     comptime stage_elems = _ctopk_tma_stage_elems[in_dtype]()
     comptime align_u = _elems_per_16b[in_dtype]()
@@ -1818,8 +1817,8 @@ def _topk_cluster_impl[
        bin's candidates as `(column, phi)` pairs, and each peer appends its
        pairs to rank 0's list over DSMEM. A prefix sum of the published
        above counts assigns each rank its slots in `[0, above)`; rank 0 runs
-       the remaining radix rounds over the candidates alone, with no
-       cluster barrier, and writes `[above, K)`.
+       the remaining radix rounds over the candidates alone and writes
+       `[above, K)`.
     4. If the split bin holds more than rank 0's list, or one peer more than
        `_CTOPK_CAND_CAP` (a tie-dense row), every rank instead refines the
        split bin over its whole slice: 10-bit rounds on `phi`, each with its
@@ -1833,8 +1832,8 @@ def _topk_cluster_impl[
     threshold is cut first-come, and nothing about the arrangement within a
     class is promised.
     """
-    var tid = Int(thread_idx.x)
-    var row = Int(block_idx.x)
+    var tid = thread_idx.x
+    var row = block_idx.x
     var rank = Int(block_rank_in_cluster())
 
     # One dynamic shared-memory block, carved by the offsets above. Everything
@@ -1938,7 +1937,6 @@ def _topk_cluster_impl[
             mbar[tid].init()
     if tid == 0:
         cbar[].init()
-        cbar[].expect_bytes(Int32(4 * 2 * CS))
         pbar[].init()
     fence_mbarrier_init()
 
@@ -1957,6 +1955,10 @@ def _topk_cluster_impl[
     if tid < 8:
         ctl[tid] = 0
     barrier()
+    # `cbar`'s byte count registers once the barrier has published its init.
+    # Peers store into `counts` only after round 0's cluster barrier.
+    if tid == 0:
+        cbar[].expect_bytes(Int32(4 * 2 * CS))
     if single_pass:
         _ctopk_scan[
             scan_items,
@@ -2020,13 +2022,10 @@ def _topk_cluster_impl[
                 UInt32(0),
                 UInt32(0),
             )
-    # One cluster barrier, then every rank reads the round's bins from its
-    # peers. Before it a rank has written only its own shared memory
-    # (`hist0`, its group totals, the zeroing, `ctl`, the staging) and read
-    # global, so its arrive releases only shared::cta writes. No rank exits
-    # before the counts exchange, which each sends after its read. From 4
-    # ranks the two-level read wins (1-1.5% at 4, 6-7% at 8 and 10, on
-    # B200); at 2 and 3 reading every bin is as fast or faster.
+    # Publish each rank's local histogram before reading the peers' bins.
+    # Only shared::cta writes precede this barrier, so its arrive need not
+    # release remote or global accesses. From 4 ranks, read group totals
+    # before the selected group's bins; at 2 and 3, read every bin.
     comptime if CS > 3:
         _ctopk_publish_sums(hist0, wsum)
         _ctopk_cluster_sync_cta_release()
@@ -2039,6 +2038,10 @@ def _topk_cluster_impl[
         _ctopk_find_threshold[_CTOPK_BINS, with_pre=(CS > 2)](
             v0, wsum, mtch, K, pre0
         )
+
+    # A rank may reuse its sums or exit only after every peer has finished
+    # reading its shared memory.
+    cluster_sync()
 
     # `[slo, shi]` brackets the K-th largest key's phi; `need` is how many of
     # the top K the bracket still owes after the columns above it.
@@ -2131,15 +2134,10 @@ def _topk_cluster_impl[
         # rank (itself included) `(counts, pairs pushed)` on that rank's
         # `cbar`, and each pair completes on rank 0's `pbar`, whose bytes
         # rank 0 registers once its counts say how many were pushed (an
-        # mbarrier's tx-count may run negative before that arrival). No
-        # cluster barrier closes the exchange. Exit safety: a CTA's shared
-        # memory is touched remotely only by peers' round-0 gathers (loads
-        # whose values a peer consumed before computing the counts it sends)
-        # and by the exchange's stores into it. A rank leaves only after its
-        # `cbar` wait, which completes once every rank's counts landed, and
-        # rank 0 also after its `pbar` wait, once every pair landed; so no
-        # peer reads or writes a CTA that has exited. Its own stores into a
-        # peer may still be in flight at exit; that peer waits for them.
+        # mbarrier's tx-count may run negative before that arrival). The
+        # cluster barrier above retired the round-0 peer reads. A rank waits
+        # on `cbar` for every peer's counts store, and rank 0 also waits on
+        # `pbar` for every pair store.
         var lc = Int(ctl[1])
         var pushed = UInt32(0)
         if not root and lc <= _CTOPK_CAND_CAP:
@@ -2522,9 +2520,10 @@ def _topk_cluster_kernel[
     K: Int32,
 ):
     """`_topk_cluster_impl` over the full row width `N`."""
-    _topk_cluster_impl[in_dtype, CS, TMA, PlainSink](
-        in_scores, PlainSink(out_idxs), Int(N), Int(K), Int(N)
-    )
+    with PDL():
+        _topk_cluster_impl[in_dtype, CS, TMA, PlainSink](
+            in_scores, PlainSink(out_idxs), Int(N), Int(K), Int(N)
+        )
 
 
 @__llvm_metadata(
@@ -2549,10 +2548,11 @@ def _topk_cluster_bounded_kernel[
     never read them, and the TMA streaming's 16 B copy rounding reads no
     further than the padded row's end.
     """
-    var bound, sink = row_bounds.row(Int(block_idx.x), out_idxs)
-    _topk_cluster_impl[in_dtype, CS, TMA, RB.Sink](
-        in_scores, sink, Int(N), Int(K), min(Int(N), max(0, bound))
-    )
+    with PDL():
+        var bound, sink = row_bounds.row(block_idx.x, out_idxs)
+        _topk_cluster_impl[in_dtype, CS, TMA, RB.Sink](
+            in_scores, sink, Int(N), Int(K), min(Int(N), max(0, bound))
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2589,6 +2589,14 @@ def _ctopk_resident_clusters[sm_count: Int](cs: Int) -> Int:
         else:
             at_148 = 15
         return at_148 * sm_count // 148
+
+
+def _ctopk_max_rows[sm_count: Int]() -> Int:
+    """The most rows the launcher sends to the cluster kernel: as many as
+    clusters of two keep resident in one wave. Past it a row waits for a
+    second wave, and the selects that give each row one CTA, which then fill
+    the GPU, are faster."""
+    return _ctopk_resident_clusters[sm_count](2)
 
 
 def _ctopk_passes(N: Int, cs: Int) -> Int:
@@ -2751,6 +2759,7 @@ def topk_cluster_split[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(_ctopk_smem_bytes[in_dtype, CS]())
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             ctx.enqueue_function[_topk_cluster_kernel[in_dtype, CS, TMA]](
@@ -2765,6 +2774,7 @@ def topk_cluster_split[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(_ctopk_smem_bytes[in_dtype, CS]())
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
     @inline(.always)

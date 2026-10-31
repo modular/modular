@@ -46,7 +46,7 @@ def _test_grouped_1d1d_block_fp4_impl[
     num_experts: Int,
     N: Int,
     K: Int,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1),
     cta_group: Int = 1,
     mma_n: Int = 128 * cta_group,
     AB_swapped: Bool = (cta_group == 2),
@@ -60,18 +60,8 @@ def _test_grouped_1d1d_block_fp4_impl[
     comptime packed_K = K // 2
 
     print(
-        "  experts=",
-        num_active_experts,
-        "/",
-        num_experts,
-        " tokens=",
-        tokens_per_expert,
-        " N=",
-        N,
-        " K=",
-        K,
-        " mma_n=",
-        mma_n,
+        t"  experts= {num_active_experts} / {num_experts}  tokens="
+        t" {tokens_per_expert}  N= {N}  K= {K}  mma_n= {mma_n}"
     )
 
     var total_tokens = num_active_experts * tokens_per_expert
@@ -206,7 +196,7 @@ def _test_grouped_1d1d_block_fp4_impl[
     ).as_unsafe_any_origin()
 
     # Launch kernel
-    comptime mma_shape = Index(128 * cta_group, mma_n, 32)
+    comptime mma_shape = (128 * cta_group, mma_n, 32)
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, sf_dtype, sf_dtype, True
     ](
@@ -254,7 +244,7 @@ def _test_grouped_1d1d_mixed_experts[
     num_experts: Int,
     N: Int,
     K: Int,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1),
     cta_group: Int = 1,
     mma_n: Int = 128 * cta_group,
     AB_swapped: Bool = (cta_group == 2),
@@ -284,18 +274,8 @@ def _test_grouped_1d1d_mixed_experts[
         total_tokens += tokens_per_expert_ptr[i]
 
     print(
-        "  mixed experts=",
-        num_active_experts,
-        "/",
-        num_experts,
-        " total_tokens=",
-        total_tokens,
-        " N=",
-        N,
-        " K=",
-        K,
-        " mma_n=",
-        mma_n,
+        t"  mixed experts= {num_active_experts} / {num_experts}  total_tokens="
+        t" {total_tokens}  N= {N}  K= {K}  mma_n= {mma_n}"
     )
 
     var a_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
@@ -418,7 +398,7 @@ def _test_grouped_1d1d_mixed_experts[
         ),
     ).as_unsafe_any_origin()
 
-    comptime mma_shape = Index(128 * cta_group, mma_n, 32)
+    comptime mma_shape = (128 * cta_group, mma_n, 32)
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, sf_dtype, sf_dtype, True
     ](
@@ -473,7 +453,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
         num_experts: Int,
         N: Int,
         K: Int,
-        cluster_shape: IndexList[3] = Index(1, 1, 1),
+        cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1),
         cta_group: Int = 1,
         mma_n: Int = 128 * cta_group,
         AB_swapped: Bool = (cta_group == 2),
@@ -518,16 +498,12 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
         " (TileTensor) ==="
     )
     # 2SM with mma_n=64: UMMA shape (256, 128, 32), BM=128, BN=64
-    test_grouped_1d1d_block_fp4[4, 2048, 1024, Index(2, 1, 1), 2, 64](
-        ctx, 4, 64
-    )
-    test_grouped_1d1d_block_fp4[4, 2048, 1024, Index(2, 1, 1), 2, 64](
-        ctx, 2, 256
-    )
+    test_grouped_1d1d_block_fp4[4, 2048, 1024, (2, 1, 1), 2, 64](ctx, 4, 64)
+    test_grouped_1d1d_block_fp4[4, 2048, 1024, (2, 1, 1), 2, 64](ctx, 2, 256)
 
     print("\n=== Grouped 1D1D NVFP4 2SM Smoke Tests (TileTensor) ===")
-    test_grouped_1d1d_block_fp4[4, 2048, 1024, Index(2, 1, 1), 2](ctx, 4, 64)
-    test_grouped_1d1d_block_fp4[4, 2048, 1024, Index(2, 1, 1), 2](ctx, 2, 256)
+    test_grouped_1d1d_block_fp4[4, 2048, 1024, (2, 1, 1), 2](ctx, 4, 64)
+    test_grouped_1d1d_block_fp4[4, 2048, 1024, (2, 1, 1), 2](ctx, 2, 256)
 
     print("\n=== Grouped 1D1D NVFP4 MMA_N=8 Smoke Tests (TileTensor) ===")
     test_grouped_1d1d_block_fp4[6, 2048, 1024, mma_n=8](ctx, 1, 512)

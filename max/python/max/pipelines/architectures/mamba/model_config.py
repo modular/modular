@@ -21,9 +21,9 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParams, MHAKVCacheParams
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
@@ -59,6 +59,7 @@ class SSMStateCacheParams:
 
     @property
     def per_element_bytes(self) -> int:
+        """Bytes one slot of the SSM state takes."""
         return (
             self.num_layers
             * self.intermediate_size
@@ -128,6 +129,7 @@ class MambaConfig(ArchConfigWithKVCache):
     quantization_encoding: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     def get_kv_params(self) -> KVCacheParams:
@@ -148,6 +150,7 @@ class MambaConfig(ArchConfigWithKVCache):
         )
 
     def get_ssm_cache_params(self) -> SSMStateCacheParams:
+        """The SSM state cache geometry."""
         return SSMStateCacheParams(
             num_layers=self.num_hidden_layers,
             intermediate_size=self.intermediate_size,
@@ -158,6 +161,7 @@ class MambaConfig(ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         num_layers = getattr(
             huggingface_config, "num_hidden_layers", None
         ) or getattr(huggingface_config, "n_layer", 64)
@@ -169,6 +173,7 @@ class MambaConfig(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The longest sequence that fits the state cache."""
         try:
             return upper_bounded_default(
                 upper_bound=getattr(
@@ -216,6 +221,7 @@ class MambaConfig(ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline and HF configs."""
         model_config = model_config or pipeline_config.model
         quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
@@ -308,4 +314,5 @@ class MambaConfig(ArchConfigWithKVCache):
 
     @staticmethod
     def help() -> dict[str, str]:
+        """The config help entries, which this config leaves empty."""
         return {}

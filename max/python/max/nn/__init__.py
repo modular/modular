@@ -10,172 +10,86 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Neural network modules for MAX.
+"""Module framework for models built on :mod:`max.tensor`.
 
-``max.nn`` layers come in two modes. In graph-based execution, a layer's
-``__call__`` stages its operations into a :class:`~max.graph.Graph`, and MAX
-compiles the finished graph into an optimized executable that runs on
-:class:`~max.driver.Buffer` inputs:
+Provides the :class:`Module` base class, the :func:`module_dataclass`
+decorator, and :meth:`Module.compile`, which traces ``forward`` against
+symbolic inputs and returns an ahead-of-time-compiled ``CompiledCallable``. The
+same ``forward`` body runs eagerly, traces to a :class:`~max.graph.Graph`, or
+compiles, depending on the active realization context.
+
+Example:
 
 .. code-block:: python
 
+    from max.driver import CPU
+    from max.dtype import DType
+    from max.tensor import Tensor, default_device
+    from max.nn import Module, module_dataclass
+    from max.graph import TensorType
+
+    @module_dataclass
+    class MyLayer(Module):
+        weight: Tensor
+        bias: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x @ self.weight.T + self.bias
+
+    with default_device(CPU()):
+        model = MyLayer(weight=Tensor.zeros([10, 5]), bias=Tensor.zeros([10]))
+        y = model(Tensor.ones([3, 5]))
+
+        input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
+        compiled = model.compile(input_type)
+        result = compiled(Tensor.ones([3, 5]))
+
+.. invisible-code-block: python
+
     import numpy as np
 
-    from max.dtype import DType
-    from max.engine import InferenceSession
-    from max.graph import DeviceRef, Graph, TensorType
-    from max.nn import Linear
-
-    input_type = TensorType(DType.float32, ["batch", 64], device=DeviceRef.CPU())
-    with Graph("layer", input_types=[input_type]) as graph:
-        x = graph.inputs[0].tensor
-        graph.output(Linear(64, 32, DType.float32, DeviceRef.CPU())(x))
-
-    model = InferenceSession().load(
-        graph,
-        weights_registry={"weight": np.zeros((32, 64), dtype=np.float32)},
-    )
-
-In eager execution, :mod:`max.experimental.nn` runs the same layer
-abstractions directly on :class:`~max.experimental.tensor.Tensor` values,
-executing each operation immediately, PyTorch-style.
+    assert tuple(int(d) for d in y.shape) == (3, 10)
+    assert tuple(int(d) for d in result.shape) == (3, 10)
+    assert np.allclose(y.to_numpy(), result.to_numpy())
+    assert np.allclose(result.to_numpy(), np.zeros((3, 10)))
 """
 
-from .attention import (
-    AttentionWithRope,
-    DistributedAttentionImpl,
-    GGUFQAttentionWithRope,
-    GPTQAttentionWithRope,
-    LatentAttentionWithRope,
-    MultiheadAttention,
-    RaggedAttention,
-    TensorParallelAttentionWithRope,
-    TensorParallelLatentAttentionWithRope,
-)
-from .clamp import clamp
-from .comm import Allreduce, Signals
-from .conv import Conv1D, Conv2d, Conv3D
-from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
-from .data_parallelism import split_batch, split_batch_replicated
-from .embedding import Embedding, VocabParallelEmbedding
+from max.tensor.compilation import as_subgraph
+
+from .common_layers.lora_wrapper import LoRA, lora_layers, lora_parameters
+from .conv import Conv2d
+from .embedding import Embedding
 from .hyper_connection import HyperConnection
-from .identity import Identity
-from .kv_cache import (
-    KVCacheInputs,
-    KVCacheMetrics,
-    KVCacheParams,
-    build_max_lengths_tensors,
+from .linear import Linear
+from .module import (
+    Module,
+    PinnedDeviceTensor,
+    module_dataclass,
 )
-from .layer import Layer, LayerList, MissingLayer, Module, Shardable
-from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
-from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
-from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
-from .quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-    WeightSource,
-)
-from .rotary_embedding import (
-    DynamicRotaryEmbedding,
-    LinearScalingParams,
-    Llama3RopeScalingParams,
-    Llama3RotaryEmbedding,
-    LongRoPERotaryEmbedding,
-    LongRoPEScalingParams,
-    RotaryEmbedding,
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
-from .sampling import (
-    MinPSampler,
-    RejectionSampler,
-    RejectionSamplerWithResiduals,
-)
-from .sequential import Sequential
-from .stacked_linear import StackedLinear
-from .transformer import (
-    DistributedTransformer,
-    DistributedTransformerBlock,
-    ReturnHiddenStates,
-    ReturnLogits,
-    Transformer,
-    TransformerBlock,
-)
+from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
+from .rope import RotaryEmbedding, TransposedRotaryEmbedding
+from .sequential import ModuleList, Sequential
+from .transparent_module import TransparentModule
 
 __all__ = [
-    "MLP",
-    "Allreduce",
-    "AttentionWithRope",
-    "ColumnParallelLinear",
-    "ConstantLayerNorm",
-    "Conv1D",
     "Conv2d",
-    "Conv3D",
-    "ConvTranspose1d",
-    "DistributedAttentionImpl",
-    "DistributedTransformer",
-    "DistributedTransformerBlock",
-    "DynamicRotaryEmbedding",
     "Embedding",
-    "GGUFQAttentionWithRope",
-    "GPTQAttentionWithRope",
-    "GPTQLinear",
+    "GemmaRMSNorm",
     "GroupNorm",
     "HyperConnection",
-    "Identity",
-    "InputScaleSpec",
-    "KVCacheInputs",
-    "KVCacheMetrics",
-    "KVCacheParams",
-    "LatentAttentionWithRope",
-    "Layer",
-    "LayerList",
     "LayerNorm",
     "Linear",
-    "LinearScalingParams",
-    "Llama3RopeScalingParams",
-    "Llama3RotaryEmbedding",
-    "LongRoPERotaryEmbedding",
-    "LongRoPEScalingParams",
-    "MinPSampler",
-    "MissingLayer",
-    "MoE",
-    "MoEGate",
-    "MoEQuantized",
+    "LoRA",
     "Module",
-    "MultiheadAttention",
-    "QuantConfig",
-    "QuantFormat",
+    "ModuleList",
+    "PinnedDeviceTensor",
     "RMSNorm",
-    "RaggedAttention",
-    "RejectionSampler",
-    "RejectionSamplerWithResiduals",
-    "ReturnHiddenStates",
-    "ReturnLogits",
     "RotaryEmbedding",
-    "ScaleGranularity",
-    "ScaleOrigin",
     "Sequential",
-    "Shardable",
-    "Signals",
-    "StackedLinear",
-    "TensorParallelAttentionWithRope",
-    "TensorParallelLatentAttentionWithRope",
-    "Transformer",
-    "TransformerBlock",
-    "VocabParallelEmbedding",
-    "WeightNormConvTranspose1d",
-    "WeightScaleSpec",
-    "WeightSource",
-    "YarnRotaryEmbedding",
-    "YarnScalingParams",
-    "build_max_lengths_tensors",
-    "clamp",
-    "forward_moe_sharded_layers",
-    "split_batch",
-    "split_batch_replicated",
+    "TransparentModule",
+    "TransposedRotaryEmbedding",
+    "as_subgraph",
+    "lora_layers",
+    "lora_parameters",
+    "module_dataclass",
 ]

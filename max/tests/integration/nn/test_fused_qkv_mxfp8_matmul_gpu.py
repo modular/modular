@@ -42,7 +42,7 @@ from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
     dynamic_block_scaled_matmul_amd,
@@ -51,14 +51,14 @@ from max.nn.kernels import (
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
     MLAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -66,7 +66,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.quant_ops import quantized_fused_qkv_index_matmul
+from max.nn.legacy.quant_ops import quantized_fused_qkv_index_matmul
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 

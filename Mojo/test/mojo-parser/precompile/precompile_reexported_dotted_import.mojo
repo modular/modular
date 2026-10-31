@@ -16,11 +16,11 @@
 # `inner` itself, so that import is the only way to reach it. It must work the
 # same whether the packages were built from source or precompiled.
 
-# RUN: %parse-mojo-isolated -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I%S/inputs %s
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %precompile-mojo-isolated %S/inputs/dotted_dep -o %t/dotted_dep.mojoc
 # RUN: %precompile-mojo-isolated -I %t %S/inputs/dotted_user -o %t/dotted_user.mojoc
-# RUN: %parse-mojo-isolated -verify-diagnostics -I=%t %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I%t %s
 
 import dotted_user
 

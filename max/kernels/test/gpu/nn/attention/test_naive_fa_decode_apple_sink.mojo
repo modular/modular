@@ -79,17 +79,8 @@ def _run_sink_closed_form[
     var max_context_len = num_keys
 
     print(
-        "  decode-sink",
-        "dtype:",
-        dtype,
-        "depth:",
-        depth,
-        "q_heads:",
-        num_q_heads,
-        "kv_heads:",
-        kv_params.num_heads,
-        "num_keys:",
-        num_keys,
+        t"  decode-sink dtype: {dtype} depth: {depth} q_heads:"
+        t" {num_q_heads} kv_heads: {kv_params.num_heads} num_keys: {num_keys}"
     )
 
     # ---- q [batch, 1, num_q_heads, depth]; value irrelevant (scale=0). ---- #

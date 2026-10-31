@@ -16,6 +16,7 @@
 #include "Mojo/LITDialect/LITAttrs.h"
 #include "Mojo/LITDialect/LITTypes.h"
 #include "Mojo/LITDialect/LITUtils.h"
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -91,6 +92,34 @@ static KGEN::LIT::StructType getAsStructType(mlir::Type t) {
   if (auto ref = KGEN::sugarDynCast<KGEN::LIT::RefType>(t))
     return KGEN::sugarDynCast<KGEN::LIT::StructType>(ref.getElementType());
   return KGEN::sugarDynCast<KGEN::LIT::StructType>(t);
+}
+
+/// Whether any parameter value of `structType` refers to a parameter of the
+/// enclosing signature, e.g. the unbound target of `DeviceContext.Generic`.
+///
+/// TODO(MSTDL-3265): Remove along with `genericTarget` once kernels no longer
+/// take a `target: StaticString` parameter, since every context is then generic
+/// over its target.
+static bool hasSignatureParameterValue(KGEN::LIT::StructType structType) {
+  mlir::AttrTypeWalker walker;
+  // Sugar keeps the written and partly expanded forms alongside the canonical
+  // one, and those can mention parameters, e.g. of the struct's own
+  // declaration, that the canonical form has already resolved. Only the
+  // canonical form says what the argument's type really is. Walking in
+  // pre-order lets this callback skip the other forms before they are visited.
+  constexpr mlir::WalkOrder order = mlir::WalkOrder::PreOrder;
+  walker.addWalk([&](KGEN::SugarAttr sugar) {
+    return walker.walk<order>(sugar.getCanonical()).wasInterrupted()
+               ? mlir::WalkResult::interrupt()
+               : mlir::WalkResult::skip();
+  });
+  walker.addWalk(
+      [](KGEN::ParamDeclRefAttr) { return mlir::WalkResult::interrupt(); });
+  walker.addWalk(
+      [](KGEN::ParamIndexRefAttr) { return mlir::WalkResult::interrupt(); });
+  return llvm::any_of(structType.getParamValues(), [&](mlir::Attribute value) {
+    return walker.walk<order>(value).wasInterrupted();
+  });
 }
 
 /// Extract the IOSpec encoded in the mut/input parameter values of a
@@ -363,8 +392,11 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
   // `DeviceContext` is an alias of the target-parameterized
   // `DeviceContextBase`, which is the name the struct type carries.
   if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContext) ||
-      symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContextBase))
-    return KernelDeclContextPtrAdaptor{};
+      symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContextBase)) {
+    KernelDeclContextPtrAdaptor adaptor;
+    adaptor.genericTarget = hasSignatureParameterValue(structType);
+    return adaptor;
+  }
 
   if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContextArray))
     return KernelDeclContextPtrListAdaptor{};
@@ -787,16 +819,25 @@ KernelDeclAdaptor::KernelDeclAdaptor(KernelDeclOp decl) {
     return f;
   };
 
-  executeFunction = buildFn(decl.getExecute(), kMoggExecuteFuncName);
-  buildGraphFunction = buildFn(decl.getBuildGraph(), kMoggBuildGraphFuncName);
+  executeFunction =
+      buildFn(decl.getExecute(),
+              stringifyKernelFunctionKind(KernelFunctionKind::Execute));
+  buildGraphFunction =
+      buildFn(decl.getBuildGraph(),
+              stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph));
   elementwiseFunction =
-      buildFn(decl.getElementwise(), kMoggElementwiseFuncName);
+      buildFn(decl.getElementwise(),
+              stringifyKernelFunctionKind(KernelFunctionKind::Elementwise));
+  // The TileTensor overload is a Mojo method named `elementwise` too.
   tileElementwiseFunction =
-      buildFn(decl.getTileElementwise(), kMoggElementwiseFuncName);
+      buildFn(decl.getTileElementwise(),
+              stringifyKernelFunctionKind(KernelFunctionKind::Elementwise));
   executeDeviceFunction =
-      buildFn(decl.getExecuteDevice(), kMoggExecuteDeviceFuncName);
-  executeConfigurationFunction = buildFn(decl.getExecuteConfiguration(),
-                                         kMoggExecuteConfigurationFuncName);
+      buildFn(decl.getExecuteDevice(),
+              stringifyKernelFunctionKind(KernelFunctionKind::ExecuteDevice));
+  executeConfigurationFunction = buildFn(
+      decl.getExecuteConfiguration(),
+      stringifyKernelFunctionKind(KernelFunctionKind::ExecuteConfiguration));
 
   if (executeDeviceFunction)
     executeFunction = executeDeviceFunction;
@@ -816,21 +857,27 @@ KernelDeclAdaptor::KernelDeclAdaptor(KernelDeclOp decl) {
 }
 
 const KernelDeclFunctionAdaptor *
-KernelDeclAdaptor::getFunctionByLabel(llvm::StringRef label) const {
-  if (label == kMoggExecuteFunctionLabel)
-    return executeFunction ? &*executeFunction : nullptr;
-  if (label == kMoggElementwiseFunctionLabel)
-    return elementwiseFunction ? &*elementwiseFunction : nullptr;
-  if (label == "tile_elementwise")
-    return tileElementwiseFunction ? &*tileElementwiseFunction : nullptr;
-  if (label == kMoggBuildGraphFunctionLabel)
-    return buildGraphFunction ? &*buildGraphFunction : nullptr;
-  if (label == kMoggExecuteDeviceFunctionLabel)
-    return executeDeviceFunction ? &*executeDeviceFunction : nullptr;
-  if (label == kMoggExecuteConfigurationFunctionLabel)
-    return executeConfigurationFunction ? &*executeConfigurationFunction
-                                        : nullptr;
-  return nullptr;
+KernelDeclAdaptor::getFunction(KernelFunctionKind kind) const {
+  auto get = [](const std::optional<KernelDeclFunctionAdaptor> &function) {
+    return function ? &*function : nullptr;
+  };
+  switch (kind) {
+  case KernelFunctionKind::Execute:
+    return get(executeFunction);
+  case KernelFunctionKind::Elementwise:
+    return get(elementwiseFunction);
+  case KernelFunctionKind::TileElementwise:
+    return get(tileElementwiseFunction);
+  case KernelFunctionKind::BuildGraph:
+    return get(buildGraphFunction);
+  case KernelFunctionKind::ExecuteDevice:
+    return get(executeDeviceFunction);
+  case KernelFunctionKind::ExecuteConfiguration:
+    return get(executeConfigurationFunction);
+  case KernelFunctionKind::Shape:
+    return nullptr;
+  }
+  llvm_unreachable("unknown kernel function kind");
 }
 
 KernelFunctionDeclAdaptor::KernelFunctionDeclAdaptor(PrimitiveDeclOp decl)

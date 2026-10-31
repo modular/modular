@@ -10,18 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# ===----------------------------------------------------------------------=== #
-# Copyright (c) 2026, Modular Inc. All rights reserved.
-#
-# Licensed under the Apache License v2.0 with LLVM Exceptions:
-# https://llvm.org/LICENSE.txt
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ===----------------------------------------------------------------------=== #
 """Route + numerics test for the AMD tiled batched blockwise-FP8 dispatch.
 
 The GLM-5.3 MLA decode absorb GEMMs reach the blockwise-FP8 kernel through the
@@ -55,7 +43,7 @@ un-rounded fp32 host sum within an e4m3 half-ULP tolerance.
 from std.math import ceildiv, exp2, isnan
 
 from max.gpu.host import DeviceContext
-from layout import TileTensor, row_major
+from layout import TileTensor, row_major, Coord
 from std.random import rand
 from linalg.bmm import (
     _batched_matmul_dynamic_scaled_fp8_impl,
@@ -83,7 +71,7 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
     comptime BLOCK_SCALE_K = k_scale
     comptime BLOCK_SCALE_N = n_scale
     comptime transpose_b = True
-    comptime gran = Index(m_scale, n_scale, k_scale)
+    comptime gran = Coord[Int, Int, Int](m_scale, n_scale, k_scale)
     # Scale-tensor block counts use ceildiv (K=192 -> 2 K-blocks); the host ref
     # must stride scales by these, not floor division, or it reads the wrong tail.
     comptime K_BLOCKS = ceildiv(K, k_scale)
@@ -98,23 +86,11 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
     )
 
     print(
-        "== test_batched_matmul_dynamic_scaled_fp8_amd_tiled",
-        " B=",
-        batch_size,
-        " M=",
-        M,
-        " N=",
-        N,
-        " K=",
-        K,
-        " scale=(",
-        m_scale,
-        ",",
-        n_scale,
-        ",",
-        k_scale,
-        ") check_route=",
-        check_route,
+        (
+            t"== test_batched_matmul_dynamic_scaled_fp8_amd_tiled"
+            t" B={batch_size} M={M} N={N} K={K} scale=({m_scale},{n_scale},{k_scale})"
+            t" check_route={check_route}"
+        ),
         sep="",
     )
 
@@ -238,7 +214,7 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
         if isnan(got) or abs_diff > atol + rtol * abs_ref:
             ndiff_ref += 1
             if ndiff_ref <= 5:
-                print("  ref diff @", i, "got=", got, "ref=", ref_val)
+                print(t"  ref diff @ {i} got= {got} ref= {ref_val}")
     if ndiff_ref > 0:
         raise Error(
             "batched absorb GEMM diverged from host ref at "
@@ -261,12 +237,8 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
                 ndiff_route += 1
                 if ndiff_route <= 5:
                     print(
-                        "  route diff @",
-                        i,
-                        "dispatched=",
-                        c_disp_host[i],
-                        "naive=",
-                        c_naive_host[i],
+                        t"  route diff @ {i} dispatched="
+                        t" {c_disp_host[i]} naive= {c_naive_host[i]}"
                     )
         if ndiff_route == 0:
             raise Error(
@@ -275,11 +247,8 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
                 " NOT take the tiled AMD kernel"
             )
         print(
-            "  route-gate: dispatched != naive at",
-            ndiff_route,
-            "of",
-            c_size,
-            "positions (tiled route taken)",
+            t"  route-gate: dispatched != naive at {ndiff_route} of"
+            t" {c_size} positions (tiled route taken)"
         )
 
     # Launch-count gate: numerics pass whether or not the path batches, so only

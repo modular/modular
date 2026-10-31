@@ -30,10 +30,14 @@ from max.gpu import (
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.runtime.tracing import Trace, TraceLevel
 from std.math import ceildiv
 from std.utils import StaticTuple
-from std.utils.index import IndexList
 
 # Default GPU block size; override per launch via `_arg_nonzero_gpu[BLOCK_SIZE=...]`.
 comptime _ARG_NONZERO_BLOCK_SIZE = 256
@@ -80,8 +84,7 @@ def arg_nonzero[
             )
             var offset = input_buffer.layout(Coord(indices))
             if input_buffer[Coord(indices)] != 0:
-                var out_indices = IndexList[2]()
-                out_indices[0] = j
+                var out_row = j
                 j += 1
 
                 # Get the coordinates for the current index
@@ -89,9 +92,8 @@ def arg_nonzero[
 
                 # Write each coordinate to the output buffer
                 comptime for k in range(input_buffer.rank):
-                    out_indices[1] = k
                     output_buffer.store(
-                        (out_indices[0], out_indices[1]),
+                        (out_row, k),
                         output_buffer.ElementType(coords[k].value()),
                     )
 
@@ -134,17 +136,18 @@ def _arg_nonzero_count_kernel[
     var tile_start = tile_len * block_idx.x
     var local: Int32 = 0
     var input_flat = input_buffer.reshape(row_major(num_elements))
-    for chunk in range(0, tile_len, BLOCK_SIZE):
-        var flat_index = tile_start + chunk + thread_idx.x
-        if chunk + thread_idx.x < tile_len and flat_index < num_elements:
-            # 32-bit lanes: warp shuffles move 32- and 64-bit lanes only,
-            # and the 32-bit path is the one every other scan in this tree
-            # exercises.
-            if input_flat[flat_index] != 0:
-                local += 1
-    var count = block.sum[block_size=BLOCK_SIZE](local)
-    if thread_idx.x == 0:
-        counts[block_idx.x] = Int64(count)
+    with PDL():
+        for chunk in range(0, tile_len, BLOCK_SIZE):
+            var flat_index = tile_start + chunk + thread_idx.x
+            if chunk + thread_idx.x < tile_len and flat_index < num_elements:
+                # 32-bit lanes: warp shuffles move 32- and 64-bit lanes only,
+                # and the 32-bit path is the one every other scan in this tree
+                # exercises.
+                if input_flat[flat_index] != 0:
+                    local += 1
+        var count = block.sum[block_size=BLOCK_SIZE](local)
+        if thread_idx.x == 0:
+            counts[block_idx.x] = Int64(count)
 
 
 @__llvm_metadata(
@@ -171,13 +174,14 @@ def _arg_nonzero_offsets_kernel[
     var num_tiles = Int(num_tiles_arg)
     var tid = thread_idx.x
     var selected: Int64 = 0
-    if tid < num_tiles:
-        selected = Int64(counts[tid])
-    var offset = block.prefix_sum[block_size=BLOCK_SIZE, exclusive=True](
-        selected
-    )
-    if tid < num_tiles:
-        counts[tid] = Int64(offset)
+    with PDL():
+        if tid < num_tiles:
+            selected = Int64(counts[tid])
+        var offset = block.prefix_sum[block_size=BLOCK_SIZE, exclusive=True](
+            selected
+        )
+        if tid < num_tiles:
+            counts[tid] = Int64(offset)
 
 
 @__llvm_metadata(
@@ -229,32 +233,36 @@ def _arg_nonzero_emit_kernel[
     var num_elements = Int(num_elements_arg)
     var tid = thread_idx.x
     var tile_start = tile_len * block_idx.x
-    var base = Int(offsets[block_idx.x])
     var input_flat = input_buffer.reshape(row_major(num_elements))
-    for chunk in range(0, tile_len, BLOCK_SIZE):
-        var selected: Int32 = 0
-        if chunk + tid < tile_len and tile_start + chunk + tid < num_elements:
-            if input_flat[tile_start + chunk + tid] != 0:
-                selected = 1
+    with PDL():
+        var base = Int(offsets[block_idx.x])
+        for chunk in range(0, tile_len, BLOCK_SIZE):
+            var selected: Int32 = 0
+            if (
+                chunk + tid < tile_len
+                and tile_start + chunk + tid < num_elements
+            ):
+                if input_flat[tile_start + chunk + tid] != 0:
+                    selected = 1
 
-        var local_row = block.prefix_sum[block_size=BLOCK_SIZE, exclusive=True](
-            selected
-        )
+            var local_row = block.prefix_sum[
+                block_size=BLOCK_SIZE, exclusive=True
+            ](selected)
 
-        if selected != 0:
-            var output_row = base + Int(local_row)
-            var remainder = tile_start + chunk + tid
-            comptime for axis in range(rank):
-                var coordinate = (remainder // Int(strides[axis])) % Int(
-                    dims[axis]
-                )
-                remainder -= coordinate * Int(strides[axis])
-                output_buffer.store(
-                    (output_row, axis),
-                    output_buffer.ElementType(coordinate),
-                )
+            if selected != 0:
+                var output_row = base + Int(local_row)
+                var remainder = tile_start + chunk + tid
+                comptime for axis in range(rank):
+                    var coordinate = (remainder // Int(strides[axis])) % Int(
+                        dims[axis]
+                    )
+                    remainder -= coordinate * Int(strides[axis])
+                    output_buffer.store(
+                        (output_row, axis),
+                        output_buffer.ElementType(coordinate),
+                    )
 
-        base += Int(block.sum[block_size=BLOCK_SIZE](selected))
+            base += Int(block.sum[block_size=BLOCK_SIZE](selected))
 
 
 def _arg_nonzero_gpu[
@@ -304,12 +312,11 @@ def _arg_nonzero_gpu[
     for axis in range(rank):
         if actual_strides[axis] != row_major_strides[axis]:
             raise Error(
-                "arg_nonzero GPU path requires a row-major input; axis "
-                + String(axis)
-                + " has stride "
-                + String(actual_strides[axis])
-                + ", expected "
-                + String(row_major_strides[axis])
+                String(
+                    t"arg_nonzero GPU path requires a row-major input; axis "
+                    t"{axis} has stride {actual_strides[axis]}, expected "
+                    t"{row_major_strides[axis]}"
+                )
             )
 
     # One tile per block. The offsets kernel scans the tile counts in a
@@ -340,6 +347,7 @@ def _arg_nonzero_gpu[
         Int64(num_elements),
         grid_dim=num_tiles,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     comptime offsets_kernel = _arg_nonzero_offsets_kernel[
@@ -352,6 +360,7 @@ def _arg_nonzero_gpu[
         Int64(num_tiles),
         grid_dim=1,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     comptime emit_kernel = _arg_nonzero_emit_kernel[
@@ -376,6 +385,7 @@ def _arg_nonzero_gpu[
         strides_tuple,
         grid_dim=num_tiles,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -411,7 +421,7 @@ def arg_nonzero[
 @inline(.always)
 def arg_nonzero_shape[
     dtype: DType
-](input_buffer: TileTensor[dtype, ...]) -> IndexList[2]:
+](input_buffer: TileTensor[dtype, ...]) -> Coord[Int, Int]:
     """Return [NumNonZeros, InputRank] where NumNonZeros are the number of
     non-zero elements in the input.
 
@@ -425,15 +435,11 @@ def arg_nonzero_shape[
         Shape of the arg_nonzero kernel for this input [NumNonZeros, InputRank].
     """
 
-    var shape = IndexList[2]()
-    shape[1] = input_buffer.rank
-
     var numel = input_buffer.num_elements()
 
-    var j: Int = 0
+    var num_nonzero: Int = 0
     for i in range(numel):
         if input_buffer[i] != 0:
-            j += 1
+            num_nonzero += 1
 
-    shape[0] = j
-    return shape
+    return (num_nonzero, input_buffer.rank)

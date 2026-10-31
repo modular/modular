@@ -10,13 +10,13 @@ to use depends on what's known at write time. A fixed position or range, like
 the last token in a sequence or a window of attention heads, uses Python slice
 syntax directly. Positions computed at runtime, like token IDs from a sampler or
 expert assignments from a router, require
-[`F.gather`](/api/python/experimental.functional/#max.experimental.functional.gather),
+[`F.gather`](/api/python/functional/#max.functional.gather),
 which takes a tensor of indices and returns the selected values. When a boolean
 condition determines which values to keep,
-[`F.where`](/api/python/experimental.functional/#max.experimental.functional.where)
+[`F.where`](/api/python/functional/#max.functional.where)
 selects element-wise from two tensors based on a mask. To write values to
 specific positions, use
-[`F.scatter`](/api/python/experimental.functional/#max.experimental.functional.scatter).
+[`F.scatter`](/api/python/functional/#max.functional.scatter).
 
 :::note Coming from PyTorch or NumPy?
 Integer, range, and `...` indexing follow PyTorch and NumPy conventions. For
@@ -39,7 +39,7 @@ selects by index, `x[a:b]` selects a range, and negative indices count from the
 end.
 
 ```python
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 hidden = Tensor.ones((2, 4, 8))  # (batch=2, seq_len=4, features=8)
 
@@ -64,15 +64,15 @@ expert assignments from a router, use `F.gather`.
 ## Select elements by index
 
 When positions are data rather than literals,
-[`F.gather(input, indices, axis)`](/api/python/experimental.functional/#max.experimental.functional.gather)
+[`F.gather(input, indices, axis)`](/api/python/functional/#max.functional.gather)
 selects elements from `input` at the positions given by `indices`, along `axis`.
 The following example uses it for a vocabulary lookup: each token ID selects one
 row from an embedding table:
 
 ```python
-import max.experimental.functional as F
+import max.functional as F
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 embeddings = Tensor.ones((32000, 64))
 token_ids = Tensor(
@@ -98,7 +98,7 @@ which values to keep, use `F.where` instead.
 
 ## Select elements by condition
 
-[`F.where(cond, x, y)`](/api/python/experimental.functional/#max.experimental.functional.where)
+[`F.where(cond, x, y)`](/api/python/functional/#max.functional.where)
 takes from `x` where `cond` is `True` and from `y` where it's `False`,
 element-wise. The `cond` argument must have a boolean dtype.
 
@@ -111,9 +111,9 @@ The following example applies a causal mask to attention scores of shape
 `(batch, seq_len, seq_len)`, setting masked positions to `-1e9`:
 
 ```python
-import max.experimental.functional as F
+import max.functional as F
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 seq_len = 4
 
@@ -143,21 +143,21 @@ broadcastable to a common shape. To write values to specific positions, use
 
 ## Place values by index
 
-[`F.scatter`](/api/python/experimental.functional/#max.experimental.functional.scatter)
+[`F.scatter`](/api/python/functional/#max.functional.scatter)
 writes `updates` into a copy of `input` at the positions in `indices`. The
 signature is `F.scatter(input, updates, indices, axis=-1)`. `updates` comes
 before `indices`, the opposite of the argument order you might expect. The
 `indices` tensor must have the same shape as `updates`.
 
 The following example writes 4 expert outputs back into an 8-token sequence.
-[`F.tile`](/api/python/experimental.functional/#max.experimental.functional.tile)
+[`F.tile`](/api/python/functional/#max.functional.tile)
 repeats the route indices across all 64 feature positions so that `indices` has
 the same shape as `expert_out`:
 
 ```python
-import max.experimental.functional as F
+import max.functional as F
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 hidden = Tensor.zeros((8, 64))
 expert_out = Tensor.ones((4, 64))

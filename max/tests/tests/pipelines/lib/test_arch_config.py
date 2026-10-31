@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import FrozenInstanceError, dataclass
 from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
@@ -27,7 +27,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVConnectorConfigInterface,
     KVConnectorType,
@@ -43,6 +43,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
     ArchConfigWithKVCache,
+    ModelOutputConfig,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from pydantic import ValidationError
@@ -363,6 +364,13 @@ class TestArchConfigWithAttentionKVCache:
 
         # cache_dtype should remain as explicitly set
         assert config.cache_dtype == DType.bfloat16
+
+
+def test_model_output_config_is_frozen() -> None:
+    outputs = ModelOutputConfig()
+    field_name = "target_layer_ids"
+    with pytest.raises(FrozenInstanceError):
+        setattr(outputs, field_name, (1, 3))
 
 
 def test_to_params_replication_disabled_by_default() -> None:

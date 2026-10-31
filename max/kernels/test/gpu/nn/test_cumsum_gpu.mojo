@@ -144,6 +144,16 @@ def _check_shapes[dtype: DType](ctx: DeviceContext, zero_input: Bool) raises:
     _check_modes[dtype, 1](
         ctx, IndexList[3](3, 200_003, 2), zero_input=zero_input
     )
+    # Rows short enough for the split to carry every chunk's sum inside the
+    # scanning launch, the last chunk exact then ragged, and a row just past
+    # the 512-thread tile, which stays whole.
+    _check_modes[dtype, 1](ctx, IndexList[2](3, 49_152), zero_input=zero_input)
+    _check_modes[dtype, 1](ctx, IndexList[2](3, 40_009), zero_input=zero_input)
+    _check_modes[dtype, 1](ctx, IndexList[2](1, 8193), zero_input=zero_input)
+    # Eight chunks for 8-byte rows (the mask's top byte) and nine for 4-byte
+    # ones, which is past the chain's cap and takes the fallback path.
+    _check_modes[dtype, 1](ctx, IndexList[2](1, 65_536), zero_input=zero_input)
+    _check_modes[dtype, 1](ctx, IndexList[2](1, 140_000), zero_input=zero_input)
     # Split lines whose per-chunk carries are themselves scanned by the
     # row-scan kernel, with fewer and with `_CUMSUM_MIN_ROW_SCAN_LEN` chunks.
     _check_modes[dtype, 1](ctx, IndexList[3](8, 3000, 8), zero_input=zero_input)

@@ -21,9 +21,9 @@ include "Support/Driver/CommonOptions.td"
 def FormatOptionGroup : OptionGroup<"Format options">, Index<0>;
 
 defm line_length : CommandOption<["--", "-"], "line-length",
-  FormatOptionGroup, Index<0>, MetaVarName<"INTEGER">,
+  FormatOptionGroup, MetaVarName<"INTEGER">,
   HelpText<"Sets the max character line length. Default is 80.">>;
-def : Separate<["-"], "l">, Group<FormatOptionGroup>, Index<1>,
+def : Separate<["-"], "l">, Group<FormatOptionGroup>,
   MetaVarName<"INTEGER">, Alias<line_length>;
 
 //===----------------------------------------------------------------------===//
@@ -33,10 +33,10 @@ def : Separate<["-"], "l">, Group<FormatOptionGroup>, Index<1>,
 def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<1>;
 
 def quiet : Flag<["--"], "quiet">, Group<DiagnosticOptionGroup>,
-  Index<0>, HelpText<"Disables non-error messages.">;
-def : Flag<["-"], "q">, Group<DiagnosticOptionGroup>, Index<0>, Alias<quiet>;
+  HelpText<"Disables non-error messages.">;
+def : Flag<["-"], "q">, Group<DiagnosticOptionGroup>, Alias<quiet>;
 
 def print_cache_dir : Flag<["--"], "print-cache-dir">,
-  Group<DiagnosticOptionGroup>, Index<1>,
+  Group<DiagnosticOptionGroup>,
   Flags<[HelpHidden]>,
   HelpText<"Print the cache directory path and exit.">;

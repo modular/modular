@@ -42,7 +42,7 @@ from std.utils.index import Index
 from std.utils.numerics import nan
 
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major, Coord
 from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import (
     _batched_matmul_dynamic_scaled_fp8_impl,
@@ -185,7 +185,8 @@ def run_case[
     ](c_disp_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx)
     # Second oracle on the identical fixture.
     _ = batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk=Index(1, gran, gran), transpose_b=True
+        scales_granularity_mnk=(1, gran, gran),
+        transpose_b=True,
     ](c_naive_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx)
 
     ctx.enqueue_copy(c_disp_host, c_disp_dev)
@@ -240,18 +241,10 @@ def run_case[
                     ndiff_disp += 1
                     if ndiff_disp <= 4:
                         print(
-                            "  tiled diff @ (b,m,n)=(",
-                            b,
-                            ",",
-                            m,
-                            ",",
-                            n,
-                            ") got=",
-                            got,
-                            " ref=",
-                            ref_val,
-                            " naive=",
-                            got_naive,
+                            (
+                                t"  tiled diff @ (b,m,n)=({b},{m},{n})"
+                                t" got={got} ref={ref_val} naive={got_naive}"
+                            ),
                             sep="",
                         )
                 if not (abs(got_naive - ref_val) <= tol):
@@ -278,13 +271,8 @@ def run_case[
             + " NaN)"
         )
         print(
-            "  FAILED:",
-            ndiff_disp,
-            "of",
-            c_size,
-            "positions differ (",
-            nnan_disp,
-            "NaN )",
+            t"  FAILED: {ndiff_disp} of {c_size} positions differ ("
+            t" {nnan_disp} NaN )"
         )
     else:
         print("  ok (", c_size, "positions )")

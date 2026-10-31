@@ -159,6 +159,8 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated("Use `Optional[Pointer[T, origin]]` instead.")
 comptime OptionalPointer[
     mut: Bool,
     //,
@@ -167,7 +169,9 @@ comptime OptionalPointer[
     *,
     address_space: AddressSpace = .GENERIC,
 ] = Optional[Pointer[T, origin, address_space=address_space]]
-"""An optional (nullable) `Pointer`.
+"""Deprecated: An optional (nullable) `Pointer`.
+
+Use `Optional[Pointer[T, origin]]` instead.
 
 Parameters:
     mut: The mutability of the pointer.
@@ -176,13 +180,17 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated("Use `Optional[MutPointer[T, origin]]` instead.")
 comptime OptionalMutPointer[
     T: AnyType,
     origin: MutOrigin,
     *,
     address_space: AddressSpace = .GENERIC,
-] = OptionalPointer[T, origin, address_space=address_space]
-"""An optional (nullable) mutable `Pointer`.
+] = Optional[MutPointer[T, origin, address_space=address_space]]
+"""Deprecated: An optional (nullable) mutable `Pointer`.
+
+Use `Optional[MutPointer[T, origin]]` instead.
 
 Parameters:
     T: The pointee type.
@@ -190,13 +198,17 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated("Use `Optional[ImmPointer[T, origin]]` instead.")
 comptime OptionalImmPointer[
     T: AnyType,
     origin: ImmOrigin,
     *,
     address_space: AddressSpace = .GENERIC,
-] = OptionalPointer[T, origin, address_space=address_space]
-"""An optional (nullable) immutable `Pointer`.
+] = Optional[ImmPointer[T, origin, address_space=address_space]]
+"""Deprecated: An optional (nullable) immutable `Pointer`.
+
+Use `Optional[ImmPointer[T, origin]]` instead.
 
 Parameters:
     T: The pointee type.
@@ -616,9 +628,9 @@ struct Pointer[
             A reference to the value.
         """
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=Self._mlir_lit_ref](
-                self._mlir_value
-            )
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=Self._mlir_lit_ref, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @__unsafe_nested_origins_read_only
@@ -700,7 +712,9 @@ struct Pointer[
             `>`,
         ]
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=ref_type](self._mlir_value)
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=ref_type, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @inline(.always)
@@ -737,7 +751,9 @@ struct Pointer[
             `>`,
         ]
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=ref_type](self._mlir_value)
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=ref_type, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @doc_hidden
@@ -1361,6 +1377,29 @@ struct Pointer[
         return {
             _mlir_value = __mlir_op.`pop.noalias_pointer_cast`(self._mlir_value)
         }
+
+    # TODO(MSTDL-3326): Promote to a safe implicit conversion, once the compiler
+    #   can prove `Self.origin` is not `UntrackedOrigin`.
+    @inline(.always)
+    def _as_origin_superset[
+        O: Origin[mut=Self.mut]
+    ](self) -> Self._OriginCastType[O] where O.contains[Self.origin]:
+        """Widens this pointer's origin to a superset origin `O`.
+
+        Parameters:
+            O: The destination origin. Must contain `Self.origin`.
+
+        Returns:
+            A pointer to the same address with origin `O`.
+
+        Safety:
+
+        The `contains` constraint does not reject `UntrackedOrigin`, because the
+        empty origin is contained by every origin. Do not call this on a pointer
+        whose origin is `UntrackedOrigin` (or `UnsafeAnyOrigin`); doing so
+        silently attaches an arbitrary tracked origin to untracked memory.
+        """
+        return self.unsafe_origin_cast[O]()
 
     @__allow_legacy_custom_self_type
     @inline(.nodebug)

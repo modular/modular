@@ -152,7 +152,7 @@ def _test_case[
     comptime K_BYTES = K_static
     comptime K_SCALES = K_static // MXFP8_SF_VECTOR_SIZE
 
-    print("  ", name, " ", M_static, "x", N_static, "x", K_static)
+    print(t"   {name}   {M_static} x {N_static} x {K_static}")
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
     var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
@@ -279,24 +279,9 @@ def test_mxfp8_matmul_split_k[
     K-band error still fails; the tighter spread keeps the reference in atol.
     """
     print(
-        M_static,
-        "x",
-        N_static,
-        "x",
-        K_static,
-        " [split-K num_splits=",
-        num_splits,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        " unit_scales=",
-        unit_scales,
-        "]",
+        t"{M_static} x {N_static} x {K_static}  [split-K num_splits="
+        t" {num_splits}  BM= {BM}  BN= {BN}  BK= {BK_ELEMS}  WN= {WN} "
+        t" unit_scales= {unit_scales} ]"
     )
 
     comptime assert (
@@ -415,7 +400,7 @@ def _test_dispatch[
     comptime K_BYTES = K_static
     comptime K_SCALES = K_static // MXFP8_SF_VECTOR_SIZE
 
-    print("  ", name, " ", M_static, "x", N_static, "x", K_static)
+    print(t"   {name}   {M_static} x {N_static} x {K_static}")
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
     var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)

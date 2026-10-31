@@ -29,7 +29,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 
 def test_blackwell_matmul_with_1d_bias[
@@ -40,9 +39,9 @@ def test_blackwell_matmul_with_1d_bias[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int = 1,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -111,8 +110,10 @@ def test_blackwell_matmul_with_1d_bias[
     ctx.enqueue_copy(bias_device, bias_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -216,8 +217,8 @@ def main() raises:
                     192,
                     256,
                 ]:
-                    comptime block_tile_shape = Index(mma_m, mma_n, BK)
-                    comptime umma_shape = Index(mma_m, mma_n, MMA_K)
+                    comptime block_tile_shape = (mma_m, mma_n, BK)
+                    comptime umma_shape = (mma_m, mma_n, MMA_K)
 
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
@@ -225,7 +226,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -243,7 +244,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                        cluster_shape=(4, 2, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -265,7 +266,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                        cluster_shape=(8, 2, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -284,7 +285,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -300,8 +301,8 @@ def main() raises:
             # AB_swapped + 1D bias (1SM)
             comptime for mma_m in [64, 128]:
                 comptime for mma_n in [8, 16, 32, 48, 64, 88, 128]:
-                    comptime block_tile_shape = Index(mma_m, mma_n, BK)
-                    comptime umma_shape = Index(mma_m, mma_n, MMA_K)
+                    comptime block_tile_shape = (mma_m, mma_n, BK)
+                    comptime umma_shape = (mma_m, mma_n, MMA_K)
 
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
@@ -309,7 +310,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -328,7 +329,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                        cluster_shape=(4, 2, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -349,8 +350,8 @@ def main() raises:
             # which reach up to BM-1 at the last warp.
             comptime for mma_m in [64, 128]:
                 comptime for mma_n in [16, 64, 128]:
-                    comptime block_tile_shape = Index(mma_m, mma_n, BK)
-                    comptime umma_shape = Index(mma_m, mma_n, MMA_K)
+                    comptime block_tile_shape = (mma_m, mma_n, BK)
+                    comptime umma_shape = (mma_m, mma_n, MMA_K)
 
                     # M=3: odd, smaller than warp size
                     test_blackwell_matmul_with_1d_bias[
@@ -359,7 +360,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -379,7 +380,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                        cluster_shape=(4, 2, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -394,8 +395,8 @@ def main() raises:
 
             # Non-swapAB with M=1 (single-row, non-transpose bias path)
             comptime for mma_n in [16, 64, 128]:
-                comptime block_tile_shape = Index(128, mma_n, BK)
-                comptime umma_shape = Index(128, mma_n, MMA_K)
+                comptime block_tile_shape = (128, mma_n, BK)
+                comptime umma_shape = (128, mma_n, MMA_K)
 
                 test_blackwell_matmul_with_1d_bias[
                     dtype,
@@ -403,7 +404,7 @@ def main() raises:
                     .bfloat16,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,

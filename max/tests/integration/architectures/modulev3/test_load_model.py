@@ -30,25 +30,20 @@ from max.driver import (
     scan_available_devices,
 )
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
 from max.graph.weights import SafetensorWeights
+from max.nn import Module
+from max.pipelines.architectures.gemma4.weight_adapters import (
+    GEMMA4_WEIGHT_RULES,
+)
 from max.pipelines.architectures.gemma4_modulev3.model import Gemma4Model
-from max.pipelines.architectures.gemma4_modulev3.vision_model.vision_model import (
-    Gemma4VisionModel,
-)
-from max.pipelines.architectures.gemma4_modulev3.weight_adapters import (
-    convert_safetensor_state_dict as convert_gemma4_state_dict,
-)
-from max.pipelines.architectures.gemma4_modulev3.weight_adapters import (
-    convert_vision_state_dict_for_module,
-)
+from max.pipelines.architectures.granite_modulev3 import granite_modulev3_arch
 from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
 from max.pipelines.architectures.llama3_modulev3.weight_adapters import (
     convert_safetensor_state_dict,
 )
 from max.pipelines.architectures.olmo_modulev3.model import OlmoModel
-from max.pipelines.architectures.phi3_modulev3.model import Phi3Model
-from max.pipelines.lib import MemoryPlan
+from max.pipelines.architectures.phi3_modulev3 import phi3_modulev3_arch
+from max.pipelines.lib import MemoryPlan, WeightTransform
 from test_common.load_model_helpers import (
     assert_load_model_succeeds,
     make_pipeline_config_factory,
@@ -62,9 +57,12 @@ from transformers import PretrainedConfig
     "model_cls,repo_id",
     [
         (Llama3Model, "meta-llama/Llama-3.1-8B-Instruct"),
-        (Phi3Model, "microsoft/phi-4"),
+        (phi3_modulev3_arch.pipeline_model, "microsoft/phi-4"),
         (OlmoModel, "allenai/OLMo-1B-hf"),
-        (Llama3Model, "ibm-granite/granite-3.1-8b-instruct"),
+        (
+            granite_modulev3_arch.pipeline_model,
+            "ibm-granite/granite-3.1-8b-instruct",
+        ),
     ],
     ids=["llama3", "phi3", "olmo", "granite"],
 )
@@ -171,8 +169,8 @@ def _gemma4_vision_zero_weights(
 ) -> None:
     """Add checkpoint-shaped vision keys to ``wm``.
 
-    Names are the inverse of ``GEMMA4_VISION_SAFETENSOR_MAP`` in
-    ``gemma4/weight_adapters.py``: the tower lives under
+    Names are the inverse of the vision renames in ``GEMMA4_WEIGHT_RULES``
+    (``gemma4/weight_adapters.py``): the tower lives under
     ``model.vision_tower.`` (stripped) and the projector under
     ``model.embed_vision.`` (kept as ``embed_vision.``).
     """
@@ -305,7 +303,10 @@ def test_load_model_gemma4_modulev3() -> None:
         hf_config, "google/gemma-4-31B-it"
     )
     assert_load_model_succeeds(
-        Gemma4Model, make_pipeline_config, weights, convert_gemma4_state_dict
+        Gemma4Model,
+        make_pipeline_config,
+        weights,
+        WeightTransform(GEMMA4_WEIGHT_RULES),
     )
 
 
@@ -333,7 +334,7 @@ def _build_gemma4_model(
         devices=load_devices(device_specs),
         kv_cache_config=pipeline_config.model.kv_cache,
         weights=weights,
-        adapter=convert_gemma4_state_dict,
+        adapter=WeightTransform(GEMMA4_WEIGHT_RULES),
         # Mirrors assert_load_model_succeeds: the factory pins max_length
         # to the checkpoint bound, so the planned value equals what the
         # arch policies derived before plans became required.
@@ -355,22 +356,26 @@ def test_load_model_gemma4_modulev3_vision() -> None:
     assert model.language_model is not None
 
 
-def test_gemma4_modulev3_vision_weight_keys_match_module_tree() -> None:
-    """The vision converter's output keys must exactly cover the eager tower.
+def test_gemma4_modulev3_entries_name_every_declared_weight() -> None:
+    """Each graph's entries name every weight its module declares.
 
-    ``Module.compile(weights=...)`` silently ignores unmatched entries, so
-    without this the load test would pass on a misnamed checkpoint key and the
-    tower would serve its zero-initialized defaults.
+    The rules name the whole checkpoint and each graph skips the names it
+    doesn't declare, so a misnamed checkpoint key shows as a declared name
+    the entries miss. The load tests mock the session, which never compiles,
+    so they would pass on one.
     """
     hf_config = make_small_gemma4_vision_config()
-    weights = make_gemma4_vision_zero_weights(hf_config)
-    model = _build_gemma4_model(hf_config, weights)
+    model = _build_gemma4_model(
+        hf_config, make_gemma4_vision_zero_weights(hf_config)
+    )
 
-    with F.lazy():
-        tower = Gemma4VisionModel(model.config)
-
-    converted = set(convert_vision_state_dict_for_module(dict(weights.items())))
-    assert converted == set(dict(tower.parameters))
+    specs = model.graph_specs(model.config)
+    assert specs.keys() == model.weight_naming.keys()
+    for role, spec in specs.items():
+        assert isinstance(spec.module, Module)
+        assert spec.weights is not None
+        missing = set(dict(spec.module.parameters)) - set(spec.weights)
+        assert not missing, (role, sorted(missing)[:3])
 
 
 def test_load_model_gemma4_modulev3_text_only_skips_vision() -> None:

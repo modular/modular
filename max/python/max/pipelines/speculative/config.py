@@ -402,14 +402,54 @@ class SpeculativeConfig(ConfigFileModel):
         ),
     )
 
+    draft_probs_layout: Literal["device0", "replica"] = Field(
+        default="device0",
+        description=(
+            "Where the sampled draft's proposal distributions live between "
+            "steps. 'device0' (default) keeps one ``[batch, K, vocab]`` "
+            "tensor on device 0. 'replica' keeps each data-parallel "
+            "replica's rows on its own device and verifies them there, "
+            "which drops the allgather onto device 0 and the verify's "
+            "single-device cost. Requires ``draft_proposal='sampled'`` and "
+            "``draft_head_parallelism='replica'``; the engine feeding the "
+            "graph has to bind one distribution per replica. MAX Serve's "
+            "speculative pipeline does not."
+        ),
+    )
+
+    logits_delivery: Literal["allgather", "replica"] = Field(
+        default="allgather",
+        description=(
+            "How the lm_head's logits reach the devices that read them. "
+            "'allgather' (default) gathers the whole batch's logits onto "
+            "every device. 'replica' delivers each data-parallel replica "
+            "only its own rows, moving one eighth of the bytes at DP8, for "
+            "the verify and the draft head both. Each replica's rows are "
+            "padded to the widest replica's first, so any split of the batch "
+            "works. Requires ``draft_probs_layout='replica'`` and "
+            "``draft_head_parallelism='replica'``."
+        ),
+    )
+
+    bitmask_side_stream: bool = Field(
+        default=False,
+        description=(
+            "Copies the constrained-decoding bitmask to the device on its own "
+            "stream, issued before the target forward, so the copy overlaps "
+            "the forward instead of following it. The copy still waits for "
+            "the host to publish the masks, and the graph's inputs do not "
+            "change. Applies to a block draft; verified on CUDA only."
+        ),
+    )
+
     logit_penalties: bool = Field(
         default=False,
         description=(
             "Declares presence/frequency penalty inputs on the fused "
             "speculative graph and applies them to the verified logits "
-            "before acceptance. For engines that feed those inputs (Mach); "
-            "MAX Serve's speculative pipeline does not, and a block draft "
-            "refuses them."
+            "before acceptance. It takes effect only in an engine that feeds "
+            "those inputs. MAX Serve's speculative pipeline doesn't, and a "
+            "block draft refuses them."
         ),
     )
 
@@ -424,6 +464,25 @@ class SpeculativeConfig(ConfigFileModel):
                 " use_relaxed_acceptance_for_thinking: relaxed acceptance"
                 " takes the drafted token to be the draft's argmax, which a"
                 " sampled proposal does not guarantee"
+            )
+        if self.draft_probs_layout == "replica" and (
+            self.draft_proposal != "sampled"
+            or self.draft_head_parallelism != "replica"
+        ):
+            raise ValueError(
+                "draft_probs_layout='replica' needs draft_proposal='sampled'"
+                " and draft_head_parallelism='replica': the distributions"
+                " are drawn on each replica's device and stay there"
+            )
+        if self.logits_delivery == "replica" and (
+            self.draft_probs_layout != "replica"
+            or self.draft_head_parallelism != "replica"
+        ):
+            raise ValueError(
+                "logits_delivery='replica' needs draft_probs_layout='replica'"
+                " and draft_head_parallelism='replica': it hands each device"
+                " only its own replica's logits, which only those layouts"
+                " read"
             )
         return self
 

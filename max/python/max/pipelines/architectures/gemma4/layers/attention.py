@@ -24,22 +24,32 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention import MHAMaskVariant, num_heads_for_device
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant, num_heads_for_device
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.stacked_linear import StackedLinear
 from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
+
+KV_SHARING_SUPPORTED = True
+"""Whether this attention layer implements KV sharing.
+
+Read by ``Gemma4TextModel``, which refuses a ``num_kv_shared_layers > 0``
+checkpoint when the attention module does not implement sharing: the layers
+would otherwise load without complaint and diverge from the reference at every
+shared layer. The check stops firing on its own, which is why it keys on this
+flag rather than on a version comparison.
+"""
 
 
 class Gemma4Attention(Module, Shardable):
@@ -72,6 +82,7 @@ class Gemma4Attention(Module, Shardable):
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 1024,
         quant_config: QuantConfig | None = None,
+        kv_share_source_layer_idx_in_cache: int | None = None,
     ) -> None:
         """Initializes the attention layer.
 
@@ -82,9 +93,15 @@ class Gemma4Attention(Module, Shardable):
                 layers.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: The number of key/value heads.
+            num_global_key_value_heads: The number of key/value heads a global
+                layer uses, which is twice the sliding layers' count when
+                ``attention_k_eq_v`` is set.
+            attention_k_eq_v: Whether global layers share one projection for
+                keys and values.
             hidden_size: The dimension of the hidden states.
             kv_params: KV Cache Params, including the number of kv heads, the
                 head dim, and data type.
+            global_head_dim: The head dimension a global layer uses.
             layer_idx: The layer number associated with this Attention block.
             layer_idx_in_cache: The 0-based index of this layer within its
                 sub-cache (sliding or global).
@@ -97,9 +114,14 @@ class Gemma4Attention(Module, Shardable):
             linear_cls: Linear class to use for the outputs dense layer.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
+            local_window_size: The number of tokens a sliding layer attends
+                over. Defaults to 1024.
             quant_config: Scaled quantization configuration. Defaults to None.
+            kv_share_source_layer_idx_in_cache: The index, within this layer
+                type's KV cache, of the layer whose keys and values this
+                layer reuses. Defaults to None, meaning the layer projects
+                and caches its own.
         """
-
         super().__init__()
         self.rope_global = rope_global
         self.rope_local = rope_local
@@ -121,6 +143,9 @@ class Gemma4Attention(Module, Shardable):
 
         self.use_local = is_sliding
         self.layer_idx_in_cache = layer_idx_in_cache
+        self.kv_share_source_layer_idx_in_cache = (
+            kv_share_source_layer_idx_in_cache
+        )
 
         self.head_dim = (
             self.kv_params.head_dim
@@ -187,11 +212,27 @@ class Gemma4Attention(Module, Shardable):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
         layer_idx = ops.constant(
             self.layer_idx_in_cache, DType.uint32, device=DeviceRef.CPU()
+        )
+
+        # A sharing layer reads the source layer's cached keys and values.
+        # The reference keeps the shared keys and values outside its cache,
+        # so a sharing layer there sees the source layer's whole history,
+        # while the slot bounds it by the sliding window. The sharing layer
+        # still caches its own keys and values, which nothing reads.
+        kv_read_layer_idx = (
+            ops.constant(
+                self.kv_share_source_layer_idx_in_cache,
+                DType.uint32,
+                device=DeviceRef.CPU(),
+            )
+            if self.kv_share_source_layer_idx_in_cache is not None
+            else layer_idx
         )
 
         head_dim = self.head_dim
@@ -250,7 +291,7 @@ class Gemma4Attention(Module, Shardable):
             self.kv_params,
             input=xq,
             kv_collection=kv_collection,
-            layer_idx=layer_idx,
+            layer_idx=kv_read_layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
             mask_variant=mask_variant,
             scale=self.scale,
@@ -263,6 +304,7 @@ class Gemma4Attention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -379,6 +421,9 @@ class Gemma4Attention(Module, Shardable):
                 qk_norm_eps=self.qk_norm_eps,
                 local_window_size=self.local_window_size,
                 quant_config=self.quant_config,
+                kv_share_source_layer_idx_in_cache=(
+                    self.kv_share_source_layer_idx_in_cache
+                ),
             )
 
             # Assign sharded weights

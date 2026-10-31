@@ -19,7 +19,7 @@ iteration strategies used by prefill and decode kernels.
 """
 
 from std.utils import StaticTuple
-from std.math import align_down, iota, ceildiv
+from std.math import align_down, ceildiv, clamp, iota
 from std.sys import is_nvidia_gpu, llvm_intrinsic
 from std.memory import bitcast
 from layout import (
@@ -29,7 +29,6 @@ from layout import (
     TensorLayout,
 )
 from std.collections import OptionalReg
-from std.utils.index import IndexList, Index
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 from nn.attention.mha_operand import MHAOperand, SparseRowsMHAOperand
@@ -249,11 +248,9 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         """Return mask vector at given coordinates.
@@ -263,11 +260,10 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         Parameters:
             dtype: The element type of the score vector.
             width: The SIMD width of the score vector.
-            element_type: The integer type for index coordinates (inferred;
-                defaults to `DType.uint32`).
 
         Args:
-            coord: The coordinate tuple `(seq_id, head, q_idx, k_idx)`.
+            coord: The coordinate tuple `(seq_id, head, q_idx, k_idx)`, with
+                `Int` leaves.
             score_vec: The score vector at `coord` of the score matrix.
         """
         ...
@@ -307,11 +303,9 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         """Applies `mask` without the additive bias `add_row_bias` adds.
@@ -319,10 +313,10 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         Parameters:
             dtype: The element type of the score vector.
             width: The SIMD width of the score vector.
-            element_type: The integer type for index coordinates.
 
         Args:
-            coord: The coordinate tuple `(seq_id, head, q_idx, k_idx)`.
+            coord: The coordinate tuple `(seq_id, head, q_idx, k_idx)`, with
+                `Int` leaves.
             score_vec: The score vector at `coord` of the score matrix.
 
         Returns:
@@ -330,13 +324,11 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         """
         return self.mask(coord, score_vec)
 
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         """Given a tile's index range, return its masking status.
 
@@ -345,16 +337,12 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         per-sequence state. Implementations that don't need it should ignore
         it; the unused argument will be DCE'd.
 
-        Parameters:
-            element_type: The integer type for index coordinates (defaults
-                to `DType.uint32`).
-
         Args:
             seq_id: The sequence/batch index.
             tile_offset: The `(row, col)` offset of the tile in the score
-                matrix.
+                matrix, with `Int` leaves.
             tile_size: The `(height, width)` size of the tile in query rows
-                and key columns.
+                and key columns, with `Int` leaves.
         """
         ...
 
@@ -602,14 +590,16 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        comptime index_type = coord.element_type
+        # The coordinate leaves are `Int`; the index arithmetic below stays
+        # 32-bit (as it was when the coordinate carried `element_type=.uint32`),
+        # since every coordinate is a non-negative sequence/head/tile index that
+        # fits in 32 bits.
+        comptime index_type = DType.uint32
 
         # coord[2] and coord[3] are the token index in query and key respectively.
         var q_idx = coord[2]
@@ -627,13 +617,11 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
         return masked_score_vec
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         # Consider tile corners
         #
@@ -654,14 +642,12 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
 
         # If false, the tile is not masked.
         var min_q_lt_max_k = (
-            (tile_offset.data[0] + 1).lt(
-                tile_offset.data[1] + tile_size.data[1]
-            )
+            (tile_offset[0] + 1).lt(tile_offset[1] + tile_size[1])
         ).cast[.uint8]()
 
         # If true, the tile is fully masked
         var max_q_lt_min_k = (
-            (tile_offset.data[0] + tile_size.data[0]).le(tile_offset.data[1])
+            (tile_offset[0] + tile_size[0]).le(tile_offset[1])
         ).cast[.uint8]()
 
         # Use 2 bits to represent:
@@ -797,23 +783,19 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         return score_vec
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         # no mask
         return TileMaskStatus.NO_MASK
@@ -952,30 +934,26 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
 
     @staticmethod
     def name() -> String:
-        return "ChunkedMask[" + String(Self.local_window_size) + "]"
+        return String(t"ChunkedMask[{Self.local_window_size}]")
 
     @inline(.always)
     def mask[
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         comptime assert (
             width <= Self.local_window_size
         ), "SIMD width of chunked mask must be <= local window size"
 
-        var k_start_idx = coord.data[3]
-        var k_end_idx = k_start_idx + Scalar[element_type](width) - 1
+        var k_start_idx = coord[3]
+        var k_end_idx = k_start_idx + Scalar[.int](width) - 1
 
-        var q_chunk_idx = Int(
-            coord.data[2] // Scalar[element_type](Self.local_window_size)
-        )
+        var q_chunk_idx = Int(coord[2] // Scalar[.int](Self.local_window_size))
         var k_start_chunk_idx = Int(k_start_idx) // Self.local_window_size
         var k_end_chunk_idx = Int(k_end_idx) // Self.local_window_size
 
@@ -987,8 +965,8 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
             # partial mask
             var retval = score_vec
             var boundary = UInt32(
-                (k_start_idx + Scalar[element_type](Self.local_window_size) - 1)
-                // Scalar[element_type](Self.local_window_size)
+                (k_start_idx + Scalar[.int](Self.local_window_size) - 1)
+                // Scalar[.int](Self.local_window_size)
             ) * UInt32(Self.local_window_size)
 
             var mask_val = SIMD[.bool, width](fill=False)
@@ -1004,13 +982,11 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         return SIMD[dtype, width](MASK_VALUE)
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         var q_start_window = tile_offset[0] // Self.local_window_size
         var q_end_window = (
@@ -1183,9 +1159,9 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         comptime W: Int32 = Int32(Self.local_window_size)
         var c_q: Int32 = align_down(score_row, W)
 
-        var lo: Int32 = max(min(c_q - col_start, Int32(32)), Int32(0))
-        var hi: Int32 = max(min(c_q + W - col_start, Int32(32)), Int32(0))
-        var n_oob: Int32 = max(min(num_keys - col_start, Int32(32)), Int32(0))
+        var lo: Int32 = clamp(c_q - col_start, Int32(0), Int32(32))
+        var hi: Int32 = clamp(c_q + W - col_start, Int32(0), Int32(32))
+        var n_oob: Int32 = clamp(num_keys - col_start, Int32(0), Int32(32))
 
         var high_mask: UInt32 = (
             (UInt32(1) << UInt32(hi)) - UInt32(1)
@@ -1254,20 +1230,18 @@ struct SlidingWindowCausalMask[window_size: Int](
 
     @staticmethod
     def name() -> String:
-        return "SlidingWindowCausalMask[" + String(Self.window_size) + "]"
+        return String(t"SlidingWindowCausalMask[{Self.window_size}]")
 
     @inline(.always)
     def mask[
         dtype: DType,
         width: SIMDLength,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        comptime index_type = coord.element_type
+        comptime index_type = DType.uint32
 
         comptime assert (
             width <= Self.window_size
@@ -1298,20 +1272,18 @@ struct SlidingWindowCausalMask[window_size: Int](
         )
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         # --- Check for FULL_MASK scenarios ---
 
         # Case 1: If the entire tile is too far to the right
         # (all query positions come before all key positions)
         var query_ends_before_keys_begin = (
-            tile_offset.data[0] + tile_size.data[0] <= tile_offset.data[1]
+            tile_offset[0] + tile_size[0] <= tile_offset[1]
         )
 
         # Case 2: If the entire tile is too far to the left
@@ -1329,12 +1301,8 @@ struct SlidingWindowCausalMask[window_size: Int](
         # Hence we compare two *added* terms, avoiding any risk of wrapping
         # around zero.
 
-        var lhs = tile_offset.data[0] + 1
-        var rhs = (
-            tile_offset.data[1]
-            + tile_size.data[1]
-            + Scalar[element_type](Self.window_size)
-        )
+        var lhs = tile_offset[0] + 1
+        var rhs = tile_offset[1] + tile_size[1] + Scalar[.int](Self.window_size)
         var queries_too_far_ahead_of_keys = lhs >= rhs
 
         if query_ends_before_keys_begin or queries_too_far_ahead_of_keys:
@@ -1347,16 +1315,14 @@ struct SlidingWindowCausalMask[window_size: Int](
         # Condition 1: The earliest query position must be after the latest key position
         # (diagonal condition)
         var min_query_after_max_key = (
-            tile_offset.data[0] >= tile_offset.data[1] + tile_size.data[1] - 1
+            tile_offset[0] >= tile_offset[1] + tile_size[1] - 1
         )
 
         # Condition 2: The latest query position must be within the window range of the
         # earliest key position
-        var max_query_within_window_of_min_key = tile_offset.data[
+        var max_query_within_window_of_min_key = tile_offset[0] + tile_size[
             0
-        ] + tile_size.data[0] - 1 < tile_offset.data[1] + Scalar[element_type](
-            Self.window_size
-        )
+        ] - 1 < tile_offset[1] + Scalar[.int](Self.window_size)
 
         if min_query_after_max_key and max_query_within_window_of_min_key:
             return TileMaskStatus.NO_MASK
@@ -1556,20 +1522,18 @@ struct SlidingWindowNonCausalMask[window_size: Int](
 
     @staticmethod
     def name() -> String:
-        return "SlidingWindowNonCausalMask[" + String(Self.window_size) + "]"
+        return String(t"SlidingWindowNonCausalMask[{Self.window_size}]")
 
     @inline(.always)
     def mask[
         dtype: DType,
         width: SIMDLength,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        comptime index_type = coord.element_type
+        comptime index_type = DType.uint32
 
         comptime assert (
             width <= Self.window_size
@@ -1589,23 +1553,17 @@ struct SlidingWindowNonCausalMask[window_size: Int](
         )
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         # FULL_MASK iff the least-masked corner `(q0, k0+k_size-1)` is masked:
         # `q0 + 1 >= k0 + k_size + window_size` (addition form, underflow-safe).
         # No causal "too far right" case: future keys are always visible.
-        var lhs = tile_offset.data[0] + 1
-        var rhs = (
-            tile_offset.data[1]
-            + tile_size.data[1]
-            + Scalar[element_type](Self.window_size)
-        )
+        var lhs = tile_offset[0] + 1
+        var rhs = tile_offset[1] + tile_size[1] + Scalar[.int](Self.window_size)
         if lhs >= rhs:
             return TileMaskStatus.FULL_MASK
 
@@ -1613,8 +1571,8 @@ struct SlidingWindowNonCausalMask[window_size: Int](
         # `k0 + window_size > q0 + q_size - 1`. No diagonal upper bound (unlike
         # causal): future keys are always visible.
         var max_query_within_window_of_min_key = (
-            tile_offset.data[1] + Scalar[element_type](Self.window_size)
-            > tile_offset.data[0] + tile_size.data[0] - 1
+            tile_offset[1] + Scalar[.int](Self.window_size)
+            > tile_offset[0] + tile_size[0] - 1
         )
 
         if max_query_within_window_of_min_key:
@@ -1789,17 +1747,15 @@ struct CausalPaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         # Apply causal mask first, then further mask padding positions.
         var causal_result = Self.causal_mask.mask(coord, score_vec)
 
-        comptime index_type = coord.element_type
+        comptime index_type = DType.uint32
         var k_idx = coord[3]
         var valid_len = Scalar[index_type](
             Int(self.valid_lengths[Int(coord[0])])
@@ -1809,13 +1765,11 @@ struct CausalPaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
         return k_positions.lt(valid_len).select(causal_result, MASK_VALUE)
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         var causal_status = Self.causal_mask.status(
             seq_id, tile_offset, tile_size
@@ -1827,19 +1781,17 @@ struct CausalPaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
             return TileMaskStatus.FULL_MASK
 
         # Bring in the padding boundary now that we have seq_id.
-        var valid_len = Scalar[element_type](
-            Int(self.valid_lengths[Int(seq_id)])
-        )
+        var valid_len = Scalar[.int](Int(self.valid_lengths[Int(seq_id)]))
 
         # Tile fully masked when its first column is already past valid_len.
-        if tile_offset.data[1] >= valid_len:
+        if tile_offset[1] >= valid_len:
             return TileMaskStatus.FULL_MASK
 
         # NO_MASK only when causal alone is NO_MASK AND padding doesn't cut
         # the tile (last column is still strictly within valid_len).
         if (
             causal_status == TileMaskStatus.NO_MASK
-            and tile_offset.data[1] + tile_size.data[1] <= valid_len
+            and tile_offset[1] + tile_size[1] <= valid_len
         ):
             return TileMaskStatus.NO_MASK
 
@@ -1995,14 +1947,12 @@ struct PaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        comptime index_type = coord.element_type
+        comptime index_type = DType.uint32
         var k_idx = coord[3]
         var valid_len = Scalar[index_type](
             Int(self.valid_lengths[Int(coord[0])])
@@ -2012,23 +1962,19 @@ struct PaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
         return k_positions.lt(valid_len).select(score_vec, MASK_VALUE)
 
     @always_inline
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
-        var valid_len = Scalar[element_type](
-            Int(self.valid_lengths[Int(seq_id)])
-        )
+        var valid_len = Scalar[.int](Int(self.valid_lengths[Int(seq_id)]))
 
         # Tile fully masked when its first column is already past valid_len.
-        if tile_offset.data[1] >= valid_len:
+        if tile_offset[1] >= valid_len:
             return TileMaskStatus.FULL_MASK
 
-        if tile_offset.data[1] + tile_size.data[1] <= valid_len:
+        if tile_offset[1] + tile_size[1] <= valid_len:
             return TileMaskStatus.NO_MASK
 
         return TileMaskStatus.PARTIAL_MASK
@@ -2107,6 +2053,227 @@ struct PaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
 
 
 # ===-----------------------------------------------------------------------===#
+# SegmentMask
+# ===-----------------------------------------------------------------------===#
+
+
+struct SegmentMask(MHAMask, TrivialRegisterPassable):
+    """Segment mask over ragged sequences: a query sees a key iff either
+    token's segment id is -1 or the two ids are equal.
+
+    Tokens with id -1 see, and are seen by, every token of their sequence;
+    every other segment sees only itself and the -1 tokens. Within each
+    sequence the ids must be nondecreasing, with -1 the only negative id,
+    so a tile's status follows from the ids at its corners, and the keys a
+    query tile sees lie in one range of columns.
+
+    Exactly the tiles past that range's end report `FULL_MASK`: some
+    producers count tiles up to the end and don't skip, while their
+    consumers skip `FULL_MASK` tiles up to the key count. A tile between
+    the -1 keys and the query's own segment is computed, all masked.
+
+    `segment_ids` holds one int32 id per token of the ragged batch, and
+    `row_offsets` the batch's `[batch + 1]` row offsets.
+    """
+
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
+
+    @__allow_legacy_any_origin_fields
+    var segment_ids: ImmPointer[Int32, ImmutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var row_offsets: ImmPointer[UInt32, ImmutAnyOrigin]
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "SegmentMask"
+
+    @staticmethod
+    def name() -> String:
+        return "SegmentMask"
+
+    def __init__(
+        out self,
+        segment_ids: ImmPointer[Int32, ImmutAnyOrigin],
+        row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+    ):
+        self.segment_ids = segment_ids
+        self.row_offsets = row_offsets
+
+    @always_inline
+    def _bounds(self, seq_id: Int) -> Tuple[Int, Int]:
+        var start = Int(self.row_offsets[unsafe_offset=seq_id])
+        return start, Int(self.row_offsets[unsafe_offset=seq_id + 1]) - start
+
+    @always_inline
+    def _id(self, start: Int, length: Int, position: Int) -> Int32:
+        # Clamped, so the reads past a sequence's end that the kernels
+        # mask afterwards stay inside it.
+        return self.segment_ids[unsafe_offset=start + min(position, length - 1)]
+
+    @always_inline
+    def _end_of(self, start: Int, length: Int, id: Int32) -> Int:
+        """Returns the first position whose id exceeds `id`."""
+        var lo, hi = 0, length
+        while lo < hi:
+            var mid = (lo + hi) // 2
+            if self.segment_ids[unsafe_offset=start + mid] <= id:
+                lo = mid + 1
+            else:
+                hi = mid
+        return lo
+
+    @always_inline
+    def _key_end(self, start: Int, length: Int, row: Int, rows: Int) -> Int:
+        """Returns the end column of the keys query rows `[row, row + rows)`
+        see."""
+        if self._id(start, length, row) == -1:
+            return length
+        return self._end_of(
+            start, length, self._id(start, length, row + rows - 1)
+        )
+
+    @always_inline
+    def _key_range[
+        BM: Int, BN: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> Tuple[
+        UInt32, UInt32
+    ]:
+        """Returns the BN-aligned first and the end column of the keys the
+        query tile at `row` sees, empty for a tile past its sequence."""
+        var start, length = self._bounds(Int(seq_id))
+        if Int(row) >= length:
+            return UInt32(0), UInt32(0)
+        var q_first = self._id(start, length, Int(row))
+        var end = self._key_end(start, length, Int(row), BM)
+        var first = 0
+        if q_first != -1 and self.segment_ids[unsafe_offset=start] != -1:
+            first = align_down(self._end_of(start, length, q_first - 1), BN)
+        return UInt32(first), max(min(UInt32(end), num_cols), UInt32(first))
+
+    @always_inline
+    def mask[
+        dtype: DType,
+        width: SIMDLength,
+        //,
+    ](
+        self,
+        coord: Coord[Int, Int, Int, Int],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        var start, length = self._bounds(coord[0])
+        var q_id = self._id(start, length, coord[2])
+        var visible = SIMD[DType.bool, width](fill=q_id == -1)
+        comptime for i in range(width):
+            var k_id = self._id(start, length, coord[3] + i)
+            visible[i] = visible[i] or k_id == -1 or k_id == q_id
+        return visible.select(score_vec, MASK_VALUE)
+
+    @always_inline
+    def status(
+        self,
+        seq_id: UInt32,
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
+    ) -> TileMaskStatus:
+        var start, length = self._bounds(Int(seq_id))
+        var row, col = tile_offset[0], tile_offset[1]
+        if col >= length:
+            return TileMaskStatus.FULL_MASK
+        if row >= length:
+            return TileMaskStatus.PARTIAL_MASK
+        if col >= self._key_end(start, length, row, tile_size[0]):
+            return TileMaskStatus.FULL_MASK
+        var q_first = self._id(start, length, row)
+        var q_last = self._id(start, length, row + tile_size[0] - 1)
+        var k_first = self._id(start, length, col)
+        var k_last = self._id(start, length, col + tile_size[1] - 1)
+        if col + tile_size[1] > length:
+            return TileMaskStatus.PARTIAL_MASK
+        if (
+            q_last == -1
+            or k_last == -1
+            or (q_first == q_last and k_first == k_last and q_first == k_first)
+        ):
+            return TileMaskStatus.NO_MASK
+        return TileMaskStatus.PARTIAL_MASK
+
+    @always_inline
+    def start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32) -> UInt32:
+        return self._key_range[BM, BN](seq_id, row, UInt32.MAX)[0]
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        return BN
+
+    @always_inline
+    def total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        var first, end = self._key_range[BM, BN](seq_id, row, num_cols)
+        return ceildiv(end - first, UInt32(BN))
+
+    @staticmethod
+    def count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 1
+
+    @always_inline
+    def last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+
+    @always_inline
+    def masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        return {
+            self.last_masked_set_end[BM, BN, page_size](seq_id, row, num_cols)
+        }
+
+    @staticmethod
+    def nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.UNKNOWN_MASK}
+
+    @staticmethod
+    def mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS}
+
+    @always_inline
+    def mask_bits(
+        self,
+        seq_id: UInt32,
+        score_row: Int32,
+        col_start: Int32,
+        num_keys: Int32,
+    ) -> UInt32:
+        # Unused: `mask_strategies` never selects `BITMASK`.
+        return UInt32(0xFFFF_FFFF)
+
+    @staticmethod
+    def sliding_window_size() -> Int:
+        return 0
+
+
+# ===-----------------------------------------------------------------------===#
 # SparseRowsDecodeMask
 # ===-----------------------------------------------------------------------===#
 
@@ -2173,14 +2340,12 @@ struct SparseRowsDecodeMask[base_t: MHAOperand, //, row_width: Int](
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        comptime index_type = coord.element_type
+        comptime index_type = DType.uint32
         var k_idx = coord[3]
         var valid_len = Scalar[index_type](
             Int(self.rows.valid_length(UInt32(coord[0])))
@@ -2190,23 +2355,21 @@ struct SparseRowsDecodeMask[base_t: MHAOperand, //, row_width: Int](
         return k_positions.lt(valid_len).select(score_vec, MASK_VALUE)
 
     @always_inline
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
-        var valid_len = Scalar[element_type](
+        var valid_len = Scalar[.int](
             Int(self.rows.valid_length(UInt32(seq_id)))
         )
 
         # Tile fully masked when its first column is already past valid_len.
-        if tile_offset.data[1] >= valid_len:
+        if tile_offset[1] >= valid_len:
             return TileMaskStatus.FULL_MASK
 
-        if tile_offset.data[1] + tile_size.data[1] <= valid_len:
+        if tile_offset[1] + tile_size[1] <= valid_len:
             return TileMaskStatus.NO_MASK
 
         return TileMaskStatus.PARTIAL_MASK
@@ -2324,8 +2487,8 @@ def naively_compute_total_iters[
             Int(
                 mask.status(
                     seq_id,
-                    Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
-                    Index[dtype=DType.int32](BM, BN),
+                    (Int(q_row), Int(kv_row)),
+                    (Int(BM), Int(BN)),
                 )
                 != TileMaskStatus.FULL_MASK
             )
@@ -2364,8 +2527,8 @@ def naively_get_first_nonempty_mask_col[
     while (
         mask.status(
             seq_id,
-            Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
-            Index[dtype=DType.int32](BM, BN),
+            (Int(q_row), Int(kv_row)),
+            (Int(BM), Int(BN)),
         )
         == TileMaskStatus.FULL_MASK
     ):
@@ -2444,64 +2607,71 @@ struct MaterializedMask[
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        comptime IndexListType = IndexList[
-            Self.layout_.rank, element_type=element_type
-        ]
-        var adjusted_coord: IndexListType
-
         var start_pos = self.get_start_pos(coord[0])
+        var retval = SIMD[dtype, width](MASK_VALUE)
 
         comptime if Self.layout_.rank == 3:
-            adjusted_coord = IndexListType(
-                coord[0], coord[2] - start_pos, coord[3]
-            )
+            var adjusted = Coord(coord[0], coord[2] - start_pos, coord[3])
+            # `coord[2] - start_pos` goes negative when the query predates the
+            # mask's start position. The lower bound keeps that case out of the
+            # tensor read; the coordinate used to be stored unsigned, so the
+            # subtraction wrapped and the upper bound alone rejected it.
+            if 0 <= adjusted[1] < Int(self.mask_tensor.dim[1]()):
+                if (
+                    adjusted[2] + width <= Int(self.mask_tensor.dim[2]())
+                    and self.is_multiple_of_2
+                ):
+                    retval = self.mask_tensor.load[width=width](adjusted).cast[
+                        dtype
+                    ]()
+                elif adjusted[2] < Int(self.mask_tensor.dim[2]()):
+                    for i in range(
+                        min(
+                            Int(width),
+                            Int(self.mask_tensor.dim[2]()) - coord[3],
+                        )
+                    ):
+                        adjusted.replace_dynamic[2](coord[3] + i)
+                        retval[i] = self.mask_tensor.load(adjusted).cast[
+                            dtype
+                        ]()
         else:
-            adjusted_coord = IndexListType(
+            var adjusted = Coord(
                 coord[0], coord[1], coord[2] - start_pos, coord[3]
             )
-
-        var retval = SIMD[dtype, width](MASK_VALUE)
-        comptime rank = Self.layout_.rank
-        if adjusted_coord[rank - 2] < Int(self.mask_tensor.dim[rank - 2]()):
-            if (
-                adjusted_coord[rank - 1] + width
-                <= Int(self.mask_tensor.dim[rank - 1]())
-                and self.is_multiple_of_2
-            ):
-                retval = self.mask_tensor.load[width=width](
-                    Coord(adjusted_coord)
-                ).cast[dtype]()
-            elif adjusted_coord[rank - 1] < Int(
-                self.mask_tensor.dim[rank - 1]()
-            ):
-                for i in range(
-                    min(
-                        Int(width),
-                        Int(self.mask_tensor.dim[rank - 1]()) - coord[3],
-                    )
+            if 0 <= adjusted[2] < Int(self.mask_tensor.dim[2]()):
+                if (
+                    adjusted[3] + width <= Int(self.mask_tensor.dim[3]())
+                    and self.is_multiple_of_2
                 ):
-                    adjusted_coord[rank - 1] = coord[3] + i
-                    retval[i] = self.mask_tensor.load(
-                        Coord(adjusted_coord)
-                    ).cast[dtype]()
+                    retval = self.mask_tensor.load[width=width](adjusted).cast[
+                        dtype
+                    ]()
+                elif adjusted[3] < Int(self.mask_tensor.dim[3]()):
+                    for i in range(
+                        min(
+                            Int(width),
+                            Int(self.mask_tensor.dim[3]()) - coord[3],
+                        )
+                    ):
+                        adjusted.replace_dynamic[3](coord[3] + i)
+                        retval[i] = self.mask_tensor.load(adjusted).cast[
+                            dtype
+                        ]()
 
         return score_vec + retval
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         # This is counter-intuitive but setting to `partial` ensures we
         # always read the values for the tensor.
@@ -2706,11 +2876,9 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         comptime if dtype == .bool or dtype.is_integral():
@@ -2725,13 +2893,11 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
             )
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         var lhs_status = self.lhs.status(seq_id, tile_offset, tile_size)
         var rhs_status = self.rhs.status(seq_id, tile_offset, tile_size)
@@ -2880,11 +3046,9 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         comptime if dtype == .bool or dtype.is_integral():
@@ -2898,13 +3062,11 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
             )
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         var lhs_status = self.lhs.status(seq_id, tile_offset, tile_size)
         var rhs_status = self.rhs.status(seq_id, tile_offset, tile_size)
@@ -3016,8 +3178,8 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
                 )
                 var nm_lo = max(l_nm[0], r_nm[0])
                 var nm_hi = min(l_nm[1], r_nm[1])
-                nm_lo = min(max(nm_lo, cs_col), ce_col)
-                nm_hi = min(max(nm_hi, nm_lo), ce_col)
+                nm_lo = clamp(nm_lo, cs_col, ce_col)
+                nm_hi = clamp(nm_hi, nm_lo, ce_col)
                 return {
                     (nm_lo - cs_col) // UInt32(BN),
                     (nm_hi - cs_col) // UInt32(BN),
@@ -3227,7 +3389,7 @@ struct RelativeLogitsMask[
 
     @staticmethod
     def name() -> String:
-        return "RelativeLogitsMask[" + String(Self.window_size) + "]"
+        return String(t"RelativeLogitsMask[{Self.window_size}]")
 
     def __init__(
         out self,
@@ -3274,11 +3436,9 @@ struct RelativeLogitsMask[
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         var q_idx = coord[2]
@@ -3393,23 +3553,19 @@ struct RelativeLogitsMask[
         dtype: DType,
         width: SIMDLength,
         //,
-        *,
-        element_type: DType = .uint32,
     ](
         self,
-        coord: IndexList[4, element_type=element_type],
+        coord: Coord[Int, Int, Int, Int],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         return Self.visibility.mask(coord, score_vec)
 
     @inline(.always)
-    def status[
-        *, element_type: DType = .uint32
-    ](
+    def status(
         self,
         seq_id: UInt32,
-        tile_offset: IndexList[2, element_type=element_type],
-        tile_size: IndexList[2, element_type=element_type],
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
     ) -> TileMaskStatus:
         # `visibility` owns the FULL_MASK boundary; downgrade its NO_MASK
         # (skip `mask()`) to PARTIAL_MASK, since the bias must be added on

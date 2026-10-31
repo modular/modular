@@ -28,7 +28,7 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
 
     Use this function to invoke a subgraph built with
     :meth:`~max.graph.Graph.add_subgraph` or
-    :meth:`~max.nn.Module.build_subgraph`. The primary benefit is that the
+    :meth:`~max.nn.legacy.Module.build_subgraph`. The primary benefit is that the
     compiler processes the subgraph definition once, which reduces compile
     time significantly for models with repeated blocks.
 
@@ -67,7 +67,7 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
             from max.dtype import DType
             from max.engine import InferenceSession
             from max.graph import DeviceRef, Graph, TensorType, ops
-            from max.nn import LayerList, Linear, Module
+            from max.nn.legacy import LayerList, Linear, Module
 
             class Model(Module):
                 def __init__(self):

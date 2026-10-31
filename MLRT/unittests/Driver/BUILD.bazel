@@ -62,7 +62,7 @@ modular_cc_library(
     visibility = [
         "//GraphCompiler:__subpackages__",
         "//MLRT/unittests/Driver/NIXL:__subpackages__",
-        "//plugins/internal-trainium/runtime/test:__pkg__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         "@llvm-project//third-party/unittest:gmock",
@@ -436,41 +436,61 @@ modular_cc_test(
     ],
 )
 
-modular_cc_test(
-    name = "MemoryManagerOomSideChannelTest",
-    size = "large",
-    srcs = [
-        "MemoryManagerOomSideChannelTest.cpp",
-    ],
-    env = {
-        # No budget cap: the MM budget defaults to ~90% of device free, so it
-        # keeps headroom while an untracked chunkAlloc exhausts the device.
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
-    },
-    exec_properties = {
-        # Consumes essentially all device memory (the untracked side-channel
-        # allocation), so reserve a whole GPU to keep it off shared devices.
-        "test.resources:gpu-memory": "180",
-    },
-    # As above: reserving GPU memory has to be paired with requiring a GPU, or
-    # a CPU lane schedules it and fails before the test runs.
-    gpu_constraints = ["//:has_gpu"],
-    tags = ["gpu"],
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":TestUtils",
-        "//MLRT:Driver/DeviceContextImpl",
-        "//Support:Base",
-        "@llvm-project//llvm:Support",
-    ],
-)
+[
+    modular_cc_test(
+        name = "MemoryManagerOomSideChannel{}Test".format(suffix),
+        size = "large",
+        srcs = [
+            "MemoryManagerOomSideChannelTest.cpp",
+        ],
+        env = {
+            # No budget cap: the MM budget defaults to ~90% of device free, so it
+            # keeps headroom while an untracked chunkAlloc exhausts the device.
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+        },
+        exec_properties = {
+            # Consumes essentially all device memory (the untracked side-channel
+            # allocation), so reserve a whole GPU to keep it off shared devices.
+            "test.resources:gpu-memory": gpu_memory,
+        },
+        # As above: reserving GPU memory has to be paired with requiring a GPU, or
+        # a CPU lane schedules it and fails before the test runs.
+        gpu_constraints = ["//:has_gpu"],
+        tags = ["gpu"],
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) + compatible_with,
+        deps = [
+            ":TestUtils",
+            "//MLRT:Driver/DeviceContextImpl",
+            "//Support:Base",
+            "@llvm-project//llvm:Support",
+        ],
+    )
+    # A whole GPU is the gpu-memory each executor pool advertises: 180 on B200,
+    # 288 on MI355. Any less leaves room for other tests on the GPU this fills.
+    # The macro reads gpu-memory as a plain string, so it can't be a select().
+    for suffix, gpu_memory, compatible_with in [
+        (
+            "",
+            "180",
+            select({
+                "//:mi355_gpu": ["@platforms//:incompatible"],
+                "//conditions:default": [],
+            }),
+        ),
+        (
+            "Mi355",
+            "288",
+            ["//:mi355_gpu"],
+        ),
+    ]
+]
 
 modular_cc_test(
     name = "GPUMemoryManagerFallthroughTest",
@@ -591,6 +611,7 @@ modular_cc_test(
         "//AsyncRT:RuntimeGlobals",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
+        "//Target:Support",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -669,6 +690,74 @@ modular_cc_test(
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
         "@llvm-project//llvm:Support",
+    ],
+)
+
+# The compiler family's local-arch query (HAL-only, like the library it tests).
+modular_cc_test(
+    name = "CompilerDeviceArchTest",
+    size = "small",
+    srcs = ["CompilerDeviceArchTest.cpp"],
+    data = ["//Target:CPUPlugin.so"] + select({
+        "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
+        "//:amd_gpu": ["//Target:HIPPlugin.so"],
+        "//:apple_gpu": ["//Target:MetalPlugin.so"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "EXPECTED_ARCH_PREFIX": "nvidia:sm_",
+            "MODULAR_DRIVER_PLUGINS": "$(rootpath //Target:CPUPlugin.so);CUDA@$(rootpath //Target:CUDAPlugin.so)",
+        },
+        "//:amd_gpu": {
+            "EXPECTED_ARCH_PREFIX": "amdgpu:gfx",
+            "MODULAR_DRIVER_PLUGINS": "$(rootpath //Target:CPUPlugin.so);HIP@$(rootpath //Target:HIPPlugin.so)",
+        },
+        "//:apple_gpu": {
+            "EXPECTED_ARCH_PREFIX": "metal:",
+            "MODULAR_DRIVER_PLUGINS": "$(rootpath //Target:CPUPlugin.so);Metal@$(rootpath //Target:MetalPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/CompilerDeviceArch",
+        "//MLRT:Driver/DeviceContextAPI",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# A plugin whose api has no Mojo vendor reports no arch, so the compiler falls
+# back to an explicit target instead of a guessed one.
+modular_cc_test(
+    name = "CompilerDeviceArchMockTest",
+    size = "small",
+    srcs = ["CompilerDeviceArchTest.cpp"],
+    data = [
+        "//MLRT/test/Driver/HAL:MockPlugin.so",
+        "//Target:CPUPlugin.so",
+    ],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
+    },
+    deps = [
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/CompilerDeviceArch",
+        "//MLRT:Driver/DeviceContextAPI",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "LaunchTraceLabelsTest",
+    size = "small",
+    srcs = ["LaunchTraceLabelsTest.cpp"],
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/LaunchTraceRegistry",
+        "//Support:ProfilingRanges",
     ],
 )
 
@@ -1117,5 +1206,82 @@ modular_cc_test(
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
         "@llvm-project//llvm:Support",
+    ],
+)
+
+# Exercises the driver C API (MLRT/Driver/CAPI/DriverCAPI.h) on one device.
+# The CPU cases run everywhere, but the GPU lanes run only tagged tests, and
+# the CUDA, HIP and Metal paths this covers are what matters, so it asks for a
+# GPU like the other accelerator tests here.
+modular_cc_test(
+    name = "CAPITest",
+    size = "small",
+    srcs = [
+        "CAPITest.cpp",
+        "CAPITestHelpers.h",
+        # Compiled as C on purpose: it is the only check that the header is
+        # consumable without a C++ compiler.
+        "DriverCAPIHeaderCheck.c",
+    ],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+    ],
+)
+
+# The cases that need two accelerators, which are peer access and peer copies.
+modular_cc_test(
+    name = "CAPIPeerTest",
+    size = "small",
+    srcs = [
+        "CAPIPeerTest.cpp",
+        "CAPITestHelpers.h",
+    ],
+    gpu_constraints = ["//:has_multi_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+    ],
+)
+
+# Loads the shim as a consumer outside bazel would and resolves every entry
+# point the C header check names, so a library that exports nothing fails
+# here rather than in that consumer. No GPU, because nothing it calls needs
+# one.
+modular_cc_test(
+    name = "CAPIShimExportsTest",
+    size = "small",
+    srcs = ["CAPIShimExportsTest.cpp"],
+    data = [
+        "DriverCAPIHeaderCheck.c",
+        "//MLRT:Driver/CAPIShim",
+    ],
+    env = {
+        "M_DRIVER_CAPI_HEADER_CHECK": "$(rootpath DriverCAPIHeaderCheck.c)",
+        "M_DRIVER_CAPI_SHIM": "$(rootpath //MLRT:Driver/CAPIShim)",
+    },
+    deps = ["//Support:Base"],
+)
+
+# Its own binary on purpose: it races the driver's lazy device initialization,
+# which a preceding test in the same process would have already completed.
+modular_cc_test(
+    name = "CAPIConcurrencyTest",
+    size = "small",
+    srcs = ["CAPIConcurrencyTest.cpp"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
     ],
 )

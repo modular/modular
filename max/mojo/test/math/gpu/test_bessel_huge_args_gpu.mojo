@@ -17,7 +17,7 @@
 # also correct on targets that flush subnormals (Apple GPUs). References are
 # correctly rounded (MPFR via mpmath).
 
-from std.math import inf, isfinite, isnan, j0, j1, nan, y0, y1
+from std.math import align_up, inf, isfinite, isnan, j0, j1, nan, y0, y1
 from std.sys import bit_width_of, simd_width_of
 
 from max.algorithm.functional import elementwise
@@ -41,7 +41,7 @@ def _run[
     var length = len(xs)
     comptime pack_size = simd_width_of[dtype, target=ctx.target]()
     # Pad to a whole number of packs so every lane holds a real input.
-    var padded = ((length + pack_size - 1) // pack_size) * pack_size
+    var padded = align_up(length, pack_size)
     var in_device = ctx.enqueue_create_buffer[dtype](padded)
     var out_device = ctx.enqueue_create_buffer[dtype](padded)
     with in_device.map_to_host() as in_host:

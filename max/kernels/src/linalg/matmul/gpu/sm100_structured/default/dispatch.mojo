@@ -26,7 +26,7 @@ from std.sys import (
 
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext
-from max.gpu.host._legacy.device_attribute import DeviceAttribute
+from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     DefaultEngine,
@@ -36,6 +36,7 @@ from layout import (
 )
 from std.logger import Logger
 
+from std.utils.coord import Coord
 from std.utils.index import Index
 from std.collections import OptionalReg
 
@@ -179,6 +180,7 @@ def _small_MN_gemms_impl[
                 unroll_factor=config.unroll_factor,
                 check_bounds_m=check_bounds_m,
                 check_bounds_n=check_bounds_n,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -214,6 +216,7 @@ def _small_MN_gemms_impl[
                 unroll_factor=config.unroll_factor,
                 check_bounds_m=check_bounds_m,
                 check_bounds_n=check_bounds_n,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -248,6 +251,7 @@ def _small_MN_gemms_impl[
                 unroll_factor=config.unroll_factor,
                 check_bounds_m=check_bounds_m,
                 check_bounds_n=check_bounds_n,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -334,6 +338,8 @@ def dispatch_gemv[
         Index(7168, 18432),
         Index(16384, 512),
         Index(8192, 512),
+        Index(32768, 1280),
+        Index(4096, 1280),
     ]
 
     comptime if static_NK in SM100_GEMV_SHAPES:
@@ -581,9 +587,7 @@ def _matmul_dispatch_sm100_impl[
         comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
         comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
         comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
-        comptime CLUSTER_DIM = Index(
-            CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
-        )
+        comptime CLUSTER_DIM = (CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z)
         comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
             "TUNE_BLOCK_SWIZZLE_SIZE", 0
         ]()
@@ -596,10 +600,14 @@ def _matmul_dispatch_sm100_impl[
         comptime NUM_ACCUM = get_defined_int["TUNE_NUM_ACCUM", 2]()
         comptime NUM_CLC = get_defined_int["TUNE_NUM_CLC", 2]()
 
-        comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
+        comptime umma_shape = (BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=umma_shape,
+            mma_shape=(
+                Int(umma_shape[0]),
+                Int(umma_shape[1]),
+                Int(umma_shape[2]),
+            ),
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),
@@ -1119,7 +1127,7 @@ def _outlier_fits_device[
         tuning_config.cluster_shape[1],
         tuning_config.num_split_k,
     )
-    return grid[0] * grid[1] * grid[2] <= ctx.get_attribute(
+    return grid[0] * grid[1] * grid[2] <= ctx.device().get_attribute(
         DeviceAttribute.MULTIPROCESSOR_COUNT
     )
 
@@ -1941,11 +1949,15 @@ def sm100_heuristic_and_outliers_dispatch[
             ]
         ],
     ) raises {var epilogue_fn, var compute_fn}:
+        comptime assert (
+            config.a_type == a_type
+            and config.b_type == b_type
+            and config.c_type == c_type
+            and config.transpose_b == transpose_b
+        ), "Selected matmul config must match the dispatched operands"
         _blackwell_matmul_with_epilogues[
-            transpose_b,
-            config=rebind[MatmulConfig[a_type, b_type, c_type, transpose_b]](
-                config
-            ),
+            config.transpose_b,
+            config=config,
             pdl_level=pdl_level,
             EpilogueEngine=EpilogueEngine,
             has_epilogue_fn=has_epilogue_fn,
@@ -1957,7 +1969,16 @@ def sm100_heuristic_and_outliers_dispatch[
             epilogue_fn,
             compute_fn,
             dispatch_ctx,
-            epilogue_tensor=dispatch_epilogue_tensor,
+            epilogue_tensor=rebind[
+                OptionalReg[
+                    TileTensor[
+                        config.c_type,
+                        RowMajorLayout[Int64, Int64],
+                        ImmutAnyOrigin,
+                        Engine=EpilogueEngine,
+                    ]
+                ]
+            ](dispatch_epilogue_tensor),
         )
 
     return select_and_launch_sm100_config[

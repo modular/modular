@@ -188,7 +188,8 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getInputParams() { return {}; }
 void PackageOp::build(OpBuilder &builder, OperationState &state,
                       StringAttr name) {
   build(builder, state, name, /*sym_visibility=*/nullptr, /*docString=*/{},
-        /*dependencies=*/{}, /*externLLVMBitcodeModules=*/{});
+        /*dependencies=*/{}, /*externLLVMBitcodeModules=*/{},
+        /*isNamespace=*/nullptr);
   assert(state.regions.size() == 1);
   state.regions.back()->push_back(new Block());
 }
@@ -320,7 +321,12 @@ parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
     if (p.parseColon() ||
         parseKGENFuncTypeGenerator(p, functionType, signature))
       return failure();
-    calleeAttr = SymbolConstantAttr::get(callee, signature, paramValues);
+    if (!signature.isFullyBound())
+      return p.emitError(p.getCurrentLocation(),
+                         "expected a fully bound callee signature");
+    calleeAttr = FuncSymbolGenerator::get(
+        {}, FuncSymbolAttr::get(callee, signature.getBody(), paramValues),
+        signature.getParamListAttrs());
   }
   if (failed(parseCallOpTypes(p, operandTypes, resultTypes, calleeAttr,
                               implicitOrigins)))
@@ -332,24 +338,24 @@ static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
                         ParameterExprArrayAttr implicitOrigins,
                         ValueRange operands, TypeRange operandTypes,
                         TypeRange resultTypes) {
-  auto symbolCst = dyn_cast<SymbolConstantAttr>(calleeAttr);
+  auto callee = FuncSymbolGenerator::dynCast(calleeAttr);
   // Optionally print the direct call syntax. Otherwise, print the parametric
   // call syntax.
-  if (symbolCst)
-    p << ' ' << symbolCst.getSymbol();
+  if (callee)
+    p << ' ' << callee.getSymbol();
   else
     printParametricCallee(p, op, calleeAttr);
   printOriginParams(p, op, implicitOrigins);
-  if (symbolCst)
-    printParameterValues(p, symbolCst.getParamValues());
+  if (callee && callee.isFullyBound())
+    printParameterValues(p, callee.getParamValues());
   p << '(';
   p.printOperands(operands);
   p << ')';
-  if (symbolCst) {
+  if (callee) {
     p << " : ";
     printSignatureValues(
         p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
-        symbolCst.getType());
+        callee.getType());
   }
 }
 
@@ -408,8 +414,8 @@ LogicalResult LIT::CallOp::verify() {
 }
 
 SymbolRefAttr LIT::CallOp::getDirectCallee() {
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(getCallee()))
-    return symbolCst.getSymbol();
+  if (auto callee = FuncSymbolGenerator::dynCast(getCallee()))
+    return callee.getSymbol();
   return {};
 }
 
@@ -470,26 +476,24 @@ parseBindParamsOpValues(AsmParser &p, GeneratorType genType,
                         SmallVectorImpl<TypedAttr> &paramValues,
                         DenseBoolArrayAttr &discharged) {
   ParameterEvaluator evaluator;
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
   size_t numUnboundParams = 0;
   for (Type inputType : genType.getInputParamTypes()) {
     if (failed(p.parseOptionalComma()))
       break;
     Type remappedDeclType = evaluator.getReboundType(inputType);
-    Type defaultValueType = minusOneAdjuster.replace(remappedDeclType);
     Type valueType;
-    if (parseColonTypeOrDefault(p, valueType, defaultValueType) ||
+    if (parseColonTypeOrDefault(p, valueType, remappedDeclType) ||
         parseParamValue(p, paramValues.emplace_back(), valueType))
       return failure();
     TypedAttr value = paramValues.back();
     if (::isa<UnboundAttr>(value)) {
       auto residual = ParamIndexRefAttr::get(
-          /*depth=*/-1, numUnboundParams++, defaultValueType);
+          /*depth=*/0, numUnboundParams++, remappedDeclType);
       evaluator.appendIndexBinding(residual);
       continue;
     }
-    evaluator.appendIndexBinding(value);
+    evaluator.appendIndexBinding(plusOneAdjuster.replace(value));
   }
   return parseDischargedBodyConstraints(p, discharged);
 }
@@ -498,24 +502,22 @@ static void printBindParamsOpValues(AsmPrinter &p, GeneratorType genType,
                                     ArrayRef<TypedAttr> paramValues,
                                     DenseBoolArrayAttr discharged) {
   ParameterEvaluator evaluator;
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
   size_t numUnboundParams = 0;
   for (auto [inputType, value] :
        llvm::zip(genType.getInputParamTypes(), paramValues)) {
     p << ", ";
     Type remappedDeclType = evaluator.getReboundType(inputType);
-    Type defaultValueType = minusOneAdjuster.replace(remappedDeclType);
     if (::isa<UnboundAttr>(value)) {
-      printColonTypeOrDefault(p, value.getType(), defaultValueType);
+      printColonTypeOrDefault(p, value.getType(), remappedDeclType);
       printParamValue(p, value);
       auto residual = ParamIndexRefAttr::get(
-          /*depth=*/-1, numUnboundParams++, defaultValueType);
+          /*depth=*/0, numUnboundParams++, remappedDeclType);
       evaluator.appendIndexBinding(residual);
       continue;
     }
     printColonTypeParamValue(p, value);
-    evaluator.appendIndexBinding(value);
+    evaluator.appendIndexBinding(plusOneAdjuster.replace(value));
   }
   if (discharged && !discharged.empty()) {
     p << " | \"";
@@ -681,18 +683,24 @@ TypedAttr FnOp::getBoundReference(ParameterEvaluationContext &evalContext,
   if (!bindings) // We allow null for convenience.
     bindings = ParameterExprArrayAttr::get(getContext(), {});
 
-  SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
-  auto unboundSymbol = SymbolConstantAttr::get(symbol, getFullSignature());
-  auto resultType = cast<FuncTypeGeneratorType>(
-      BindParamsAttr::inferResultType(unboundSymbol, bindings,
-                                      /*discharged=*/{}, &evalContext));
-  return SymbolConstantAttr::get(symbol, resultType, bindings);
+  TypedAttr literal =
+      getFuncLiteralGenerator(evalContext, bindings, /*discharged=*/{});
+
+  return cast<FuncLiteralTypeGeneratorType>(literal.getType())
+      .getFuncSymbolAttr();
 }
 
-SymbolConstantAttr
+FuncSymbolGenerator
 FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
                         ParameterExprArrayAttr bindings) {
-  return cast<SymbolConstantAttr>(getBoundReference(evalContext, bindings));
+  return getBoundReference(evalContext, bindings);
+}
+
+FuncSymbolGenerator
+FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
+                        ArrayRef<TypedAttr> bindings) {
+  return getBoundSymbolRef(evalContext,
+                           ParameterExprArrayAttr::get(getContext(), bindings));
 }
 
 TypedAttr FnOp::getFuncLiteralGenerator(
@@ -1189,15 +1197,19 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseSymbol(AsmParser &p, SymbolConstantAttr &symbol) {
+static ParseResult parseSymbol(AsmParser &p, GeneratorAttr &symbol) {
+  llvm::SMLoc loc = p.getCurrentLocation();
   TypedAttr value;
   if (parseColonTypeParamValue(p, value))
     return failure();
-  symbol = cast<SymbolConstantAttr>(value);
+  auto generator = FuncSymbolGenerator::dynCast(value);
+  if (!generator)
+    return p.emitError(loc, "expected a function symbol");
+  symbol = generator;
   return success();
 }
 
-static void printSymbol(AsmPrinter &p, Operation *, SymbolConstantAttr symbol) {
+static void printSymbol(AsmPrinter &p, Operation *, GeneratorAttr symbol) {
   printColonTypeParamValue(p, symbol);
 }
 
@@ -1955,18 +1967,13 @@ LogicalResult RefUpcastOp::verify() {
 
   // The destination origin must be an upcast of the source, which happens with
   // subtree origins, conversions to unions with other origins, and upcast
-  // symbolic mutabilities, e.g. "x" -> "x&y" is less mutable than "x".  We can
-  // check this by forming union(dst, src): it will collapse to dst when src is
-  // already covered by dst.
-  auto srcOrigin = getCanonicalAttr(srcType.getOrigin());
-  auto dstOrigin = getCanonicalAttr(dstType.getOrigin());
-  auto dstOriginType = cast<OriginType>(dstOrigin.getType());
-  auto originUnion = OriginUnionAttr::get(
-      {dstOrigin, OriginMutCastAttr::get(srcOrigin, dstOriginType)},
-      dstOriginType);
-  if (dstOrigin != originUnion)
+  // symbolic mutabilities, e.g. "x" -> "x&y" is less mutable than "x".
+  if (!OriginType::covers(dstType.getOrigin(), srcType.getOrigin())) {
+    auto srcOrigin = getCanonicalAttr(srcType.getOrigin());
+    auto dstOrigin = getCanonicalAttr(dstType.getOrigin());
     return emitOpError("result origin is not an upcast of the source origin: ")
            << srcOrigin << " is not covered by " << dstOrigin;
+  }
 
   return success();
 }
@@ -1976,12 +1983,12 @@ LogicalResult RefUpcastOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void RefFromPointerOp::build(OpBuilder &builder, OperationState &result,
-                             Value pointer, TypedAttr origin, bool startsUninit,
-                             bool endsUninit) {
+                             Value pointer, TypedAttr origin, StringAttr name,
+                             bool startsUninit, bool endsUninit) {
   auto ptr = cast<PointerType>(pointer.getType());
   auto refType =
       RefType::get(ptr.getElementType(), origin, ptr.getAddressSpace());
-  build(builder, result, refType, pointer, startsUninit, endsUninit);
+  build(builder, result, refType, pointer, name, startsUninit, endsUninit);
 }
 
 //===----------------------------------------------------------------------===//

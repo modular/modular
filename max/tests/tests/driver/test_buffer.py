@@ -24,6 +24,7 @@ import pytest
 import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from max._core.driver import _batch_copy_rows
 from max.driver import (
     CPU,
     Accelerator,
@@ -1494,6 +1495,46 @@ def test_batch_inplace_copy_lands_a_repeated_pair() -> None:
     batch_inplace_copy([dst, dst[:], dst], [src, src[:], src])
 
     np.testing.assert_array_equal(dst.to_numpy(), [1, 2, 3, 4])
+
+
+def test_batch_copy_rows_matches_a_copy_of_row_views() -> None:
+    """Rows land where per-row views would put them, across buffers."""
+
+    def pages(base: int) -> list[Buffer]:
+        return [
+            Buffer.from_numpy(
+                np.arange(
+                    base + 24 * i, base + 24 * (i + 1), dtype=np.uint8
+                ).reshape(6, 4)
+            )
+            for i in range(2)
+        ]
+
+    srcs, by_rows, by_views = pages(100), pages(0), pages(0)
+    plan = [(0, 5, 0), (0, 1, 3), (1, 2, 2), (0, 4, 4), (1, 0, 5)]
+
+    _batch_copy_rows(
+        [by_rows[b] for b, _, _ in plan],
+        [srcs[b] for b, _, _ in plan],
+        [d for _, d, _ in plan],
+        [s for _, _, s in plan],
+    )
+    batch_inplace_copy(
+        [by_views[b][d, :] for b, d, _ in plan],
+        [srcs[b][s, :] for b, _, s in plan],
+    )
+
+    for got, want in zip(by_rows, by_views, strict=True):
+        np.testing.assert_array_equal(got.to_numpy(), want.to_numpy())
+    assert (by_rows[0].to_numpy()[2] == np.arange(8, 12)).all()
+
+
+def test_batch_copy_rows_rejects_a_row_out_of_range() -> None:
+    buf = Buffer.from_numpy(np.zeros((2, 4), dtype=np.uint8))
+    with pytest.raises(IndexError):
+        _batch_copy_rows([buf], [buf], [2], [0])
+    with pytest.raises(ValueError):
+        _batch_copy_rows([buf], [buf], [0, 1], [0])
 
 
 def test_inplace_copy_from_still_copies_an_offset_view() -> None:

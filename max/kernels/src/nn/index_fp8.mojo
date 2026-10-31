@@ -35,6 +35,11 @@ from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from layout.tile_layout import row_major
 from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from max.gpu.primitives import warp
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu.host import DeviceContext, FuncAttribute, default_accelerator
 from max.gpu.intrinsics import AMDBufferResource, permlane_swap, readfirstlane
@@ -152,163 +157,173 @@ def fp8_index_kernel[
     var key_offset = block_idx.z * BM
     var tid = thread_idx.x * 8 + thread_idx.y
 
-    var start_of_seq = valid_length[batch_idx][0]
-    var end_of_seq = valid_length[batch_idx + 1][0]
-    var seq_len = end_of_seq - start_of_seq
+    with PDL():
+        var start_of_seq = valid_length[batch_idx][0]
+        var end_of_seq = valid_length[batch_idx + 1][0]
+        var seq_len = end_of_seq - start_of_seq
 
-    var num_keys = k_operand.cache_length(batch_idx)
+        var num_keys = k_operand.cache_length(batch_idx)
 
-    comptime if not _is_cache_length_accurate:
-        num_keys += Int(seq_len)
+        comptime if not _is_cache_length_accurate:
+            num_keys += Int(seq_len)
 
-    if seq_offset >= Int(seq_len) or key_offset >= num_keys:
-        return
+        if seq_offset >= Int(seq_len) or key_offset >= num_keys:
+            return
 
-    ref smem_ptr = external_memory[
-        UInt8,
-        address_space=.SHARED,
-        alignment=128,
-    ]().unsafe_bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
+        ref smem_ptr = external_memory[
+            UInt8,
+            address_space=.SHARED,
+            alignment=128,
+        ]().unsafe_bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
 
-    ref q_smem = smem_ptr.q_smem
-    ref k_smem = smem_ptr.k_smem
-    ref scratch_smem = smem_ptr.scratch
+        ref q_smem = smem_ptr.q_smem
+        ref k_smem = smem_ptr.k_smem
+        ref scratch_smem = smem_ptr.scratch
 
-    var q_smem_tile = TileTensor(
-        q_smem.unsafe_ptr(), row_major[num_heads, depth]()
-    )
-
-    var k_smem_tile = TileTensor(k_smem.unsafe_ptr(), row_major[BN, depth]())
-
-    var k_smem_ptr: Pointer[
-        Scalar[dtype], origin_of(k_smem), address_space=.SHARED
-    ] = k_smem.unsafe_ptr()
-
-    var q_ptr = q.ptr_at_offset(Coord(start_of_seq + UInt32(seq_offset), 0, 0))
-    var q_s_ptr = q_s.ptr_at_offset(Coord(start_of_seq + UInt32(seq_offset), 0))
-    var o_ptr = output.ptr_at_offset(
-        Coord(start_of_seq + UInt32(seq_offset), UInt32(key_offset))
-    )
-
-    var q_tile = TileTensor(q_ptr, row_major[num_heads, depth]())
-    var q_s_tile = TileTensor(q_s_ptr, row_major[1, num_heads]())
-    var logits = stack_allocation[.float32, .LOCAL](
-        row_major[BN // thread_dim_x, num_heads // thread_dim_y]()
-    )
-    var q_s_reg_tile = stack_allocation[.float32, .LOCAL](
-        row_major[1, num_heads // thread_dim_y]()
-    )
-    var logits_sum = stack_allocation[.float32, .LOCAL](
-        row_major[BN // thread_dim_x, 1]()
-    )
-    var scratch = TileTensor(
-        scratch_smem.unsafe_ptr().as_unsafe_any_origin(),
-        row_major[BN, thread_dim_y](),
-    )
-
-    var q_s_frag = q_s_tile.tile[1, num_heads // thread_dim_y](
-        ufloordiv(thread_idx.x, thread_dim_x), thread_idx.y
-    )
-
-    comptime for q_frag_idx in range(num_heads // thread_dim_y):
-        q_s_reg_tile[0, q_frag_idx] = q_s_frag[0, q_frag_idx][0]
-
-    comptime num_threads = thread_dim_x * thread_dim_y
-    comptime assert (
-        depth % simd_width == 0
-    ), "depth must be a multiple of the SIMD width"
-
-    # Flat thread-strided copy of the contiguous [num_heads, depth] Q tile.
-    # A layout-distributed copy over the [16, 8] thread shape floor-divides
-    # the tile shape per axis and silently stages NOTHING whenever
-    # num_heads < 16 or depth // simd_width < 8 (e.g. depth == 64).
-    comptime q_vecs = num_heads * depth // simd_width
-    var q_smem_dst: Pointer[
-        Scalar[dtype], origin_of(q_smem), address_space=.SHARED
-    ] = q_smem.unsafe_ptr()
-    for v in range(Int(tid), q_vecs, num_threads):
-        q_smem_dst.unsafe_store(
-            v * simd_width, q_ptr.unsafe_load[width=simd_width](v * simd_width)
+        var q_smem_tile = TileTensor(
+            q_smem.unsafe_ptr(), row_major[num_heads, depth]()
         )
 
-    for i in range(BM // BN):
-        var current_key_offset = key_offset + i * BN
-        if current_key_offset >= num_keys:
-            break
-        for k_row in range(tid, BN, num_threads):
-            var row_base = k_row * depth
-            if current_key_offset + k_row >= num_keys:
-                comptime for d in range(0, depth, simd_width):
-                    k_smem_ptr.unsafe_store(
-                        row_base + d, SIMD[dtype, simd_width](0)
+        var k_smem_tile = TileTensor(
+            k_smem.unsafe_ptr(), row_major[BN, depth]()
+        )
+
+        var k_smem_ptr: Pointer[
+            Scalar[dtype], origin_of(k_smem), address_space=.SHARED
+        ] = k_smem.unsafe_ptr()
+
+        var q_ptr = q.ptr_at_offset(
+            Coord(start_of_seq + UInt32(seq_offset), 0, 0)
+        )
+        var q_s_ptr = q_s.ptr_at_offset(
+            Coord(start_of_seq + UInt32(seq_offset), 0)
+        )
+        var o_ptr = output.ptr_at_offset(
+            Coord(start_of_seq + UInt32(seq_offset), UInt32(key_offset))
+        )
+
+        var q_tile = TileTensor(q_ptr, row_major[num_heads, depth]())
+        var q_s_tile = TileTensor(q_s_ptr, row_major[1, num_heads]())
+        var logits = stack_allocation[.float32, .LOCAL](
+            row_major[BN // thread_dim_x, num_heads // thread_dim_y]()
+        )
+        var q_s_reg_tile = stack_allocation[.float32, .LOCAL](
+            row_major[1, num_heads // thread_dim_y]()
+        )
+        var logits_sum = stack_allocation[.float32, .LOCAL](
+            row_major[BN // thread_dim_x, 1]()
+        )
+        var scratch = TileTensor(
+            scratch_smem.unsafe_ptr().as_unsafe_any_origin(),
+            row_major[BN, thread_dim_y](),
+        )
+
+        var q_s_frag = q_s_tile.tile[1, num_heads // thread_dim_y](
+            ufloordiv(thread_idx.x, thread_dim_x), thread_idx.y
+        )
+
+        comptime for q_frag_idx in range(num_heads // thread_dim_y):
+            q_s_reg_tile[0, q_frag_idx] = q_s_frag[0, q_frag_idx][0]
+
+        comptime num_threads = thread_dim_x * thread_dim_y
+        comptime assert (
+            depth % simd_width == 0
+        ), "depth must be a multiple of the SIMD width"
+
+        # Flat thread-strided copy of the contiguous [num_heads, depth] Q tile.
+        # A layout-distributed copy over the [16, 8] thread shape floor-divides
+        # the tile shape per axis and silently stages NOTHING whenever
+        # num_heads < 16 or depth // simd_width < 8 (e.g. depth == 64).
+        comptime q_vecs = num_heads * depth // simd_width
+        var q_smem_dst: Pointer[
+            Scalar[dtype], origin_of(q_smem), address_space=.SHARED
+        ] = q_smem.unsafe_ptr()
+        for v in range(Int(tid), q_vecs, num_threads):
+            q_smem_dst.unsafe_store(
+                v * simd_width,
+                q_ptr.unsafe_load[width=simd_width](v * simd_width),
+            )
+
+        for i in range(BM // BN):
+            var current_key_offset = key_offset + i * BN
+            if current_key_offset >= num_keys:
+                break
+            for k_row in range(tid, BN, num_threads):
+                var row_base = k_row * depth
+                if current_key_offset + k_row >= num_keys:
+                    comptime for d in range(0, depth, simd_width):
+                        k_smem_ptr.unsafe_store(
+                            row_base + d, SIMD[dtype, simd_width](0)
+                        )
+                else:
+                    var k_ptr = k_operand.block_paged_ptr[1](
+                        UInt32(batch_idx),
+                        UInt32(current_key_offset + k_row),
+                        UInt32(0),  # head_idx = 0 for MLA (single head for K)
+                        UInt32(0),
                     )
-            else:
-                var k_ptr = k_operand.block_paged_ptr[1](
+                    comptime for d in range(0, depth, simd_width):
+                        k_smem_ptr.unsafe_store(
+                            row_base + d,
+                            k_ptr.unsafe_load[width=simd_width](d).cast[
+                                dtype
+                            ](),
+                        )
+
+            barrier()
+
+            # Load K scales for current tile
+            var k_s_reg: Float32 = 0.0
+            if current_key_offset + tid < num_keys:
+                var ks_ptr = ks_operand.block_paged_ptr[1](
                     UInt32(batch_idx),
-                    UInt32(current_key_offset + k_row),
-                    UInt32(0),  # head_idx = 0 for MLA (single head for K)
+                    UInt32(current_key_offset + tid),
+                    UInt32(0),
                     UInt32(0),
                 )
-                comptime for d in range(0, depth, simd_width):
-                    k_smem_ptr.unsafe_store(
-                        row_base + d,
-                        k_ptr.unsafe_load[width=simd_width](d).cast[dtype](),
-                    )
+                k_s_reg = ks_ptr[].cast[.float32]()
 
-        barrier()
-
-        # Load K scales for current tile
-        var k_s_reg: Float32 = 0.0
-        if current_key_offset + tid < num_keys:
-            var ks_ptr = ks_operand.block_paged_ptr[1](
-                UInt32(batch_idx),
-                UInt32(current_key_offset + tid),
-                UInt32(0),
-                UInt32(0),
+            var q_smem_frag = q_smem_tile.tile[
+                num_heads // thread_dim_y, depth
+            ](thread_idx.y, 0)
+            var k_smem_frag = k_smem_tile.tile[BN // thread_dim_x, depth](
+                thread_idx.x, 0
             )
-            k_s_reg = ks_ptr[].cast[.float32]()
 
-        var q_smem_frag = q_smem_tile.tile[num_heads // thread_dim_y, depth](
-            thread_idx.y, 0
-        )
-        var k_smem_frag = k_smem_tile.tile[BN // thread_dim_x, depth](
-            thread_idx.x, 0
-        )
+            _ = logits.fill(0)
+            _ = logits_sum.fill(0)
 
-        _ = logits.fill(0)
-        _ = logits_sum.fill(0)
+            for k in range(depth):
+                comptime for mma_m in range(BN // thread_dim_x):
+                    comptime for mma_n in range(num_heads // thread_dim_y):
+                        logits[mma_m, mma_n] += (
+                            k_smem_frag[mma_m, k][0].cast[.float32]()
+                            * q_smem_frag[mma_n, k][0].cast[.float32]()
+                        )
 
-        for k in range(depth):
-            comptime for mma_m in range(BN // thread_dim_x):
-                comptime for mma_n in range(num_heads // thread_dim_y):
-                    logits[mma_m, mma_n] += (
-                        k_smem_frag[mma_m, k][0].cast[.float32]()
-                        * q_smem_frag[mma_n, k][0].cast[.float32]()
+            comptime for l_i in range(BN // thread_dim_x):
+                comptime for l_j in range(num_heads // thread_dim_y):
+                    logits[l_i, l_j] = (
+                        max(logits[l_i, l_j], 0) * q_s_reg_tile[0, l_j][0]
                     )
 
-        comptime for l_i in range(BN // thread_dim_x):
-            comptime for l_j in range(num_heads // thread_dim_y):
-                logits[l_i, l_j] = (
-                    max(logits[l_i, l_j], 0) * q_s_reg_tile[0, l_j][0]
-                )
+                    logits_sum[l_i, 0] += logits[l_i, l_j]
 
-                logits_sum[l_i, 0] += logits[l_i, l_j]
+                scratch[
+                    thread_idx.x * (BN // thread_dim_x) + l_i,
+                    thread_idx.y,
+                ] = logits_sum[l_i, 0]
 
-            scratch[
-                thread_idx.x * (BN // thread_dim_x) + l_i,
-                thread_idx.y,
-            ] = logits_sum[l_i, 0]
+            barrier()
 
-        barrier()
+            if current_key_offset + tid < num_keys:
+                # Sum logits across heads
+                var row_sum: Float32 = 0.0
 
-        if current_key_offset + tid < num_keys:
-            # Sum logits across heads
-            var row_sum: Float32 = 0.0
+                for col_idx in range(thread_dim_y):
+                    row_sum += scratch[tid, col_idx][0]
 
-            for col_idx in range(thread_dim_y):
-                row_sum += scratch[tid, col_idx][0]
-
-            o_ptr[unsafe_offset=i * BN + tid] = k_s_reg * row_sum
+                o_ptr[unsafe_offset=i * BN + tid] = k_s_reg * row_sum
 
 
 @inline(.always)
@@ -457,6 +472,7 @@ def _fp8_index_score_amd_kernel[
     var tile = Int32(block_idx.x)
     var b = Int(batch_size)
     var base = 0
+
     while base < Int(batch_size):
         var r = base + Int(lane_id())
         var first = 0
@@ -1101,6 +1117,7 @@ def fp8_index[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(smem_available)
             ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1132,34 +1149,35 @@ def _index_matmul_max[
     var seq_idx = block_idx.x * 16 + thread_idx.x
     var key_idx = block_idx.y * 16 + thread_idx.y
 
-    var start_of_seq = valid_length[batch_idx]
-    var end_of_seq = valid_length[batch_idx + 1]
-    var seq_len = end_of_seq - start_of_seq
+    with PDL():
+        var start_of_seq = valid_length[batch_idx]
+        var end_of_seq = valid_length[batch_idx + 1]
+        var seq_len = end_of_seq - start_of_seq
 
-    var k_row_start = cache_row_offsets[batch_idx]
-    var k_row_end = cache_row_offsets[batch_idx + 1]
-    var num_keys = k_row_end - k_row_start
+        var k_row_start = cache_row_offsets[batch_idx]
+        var k_row_end = cache_row_offsets[batch_idx + 1]
+        var num_keys = k_row_end - k_row_start
 
-    if key_idx >= Int(num_keys) or seq_idx >= Int(seq_len):
-        return
+        if key_idx >= Int(num_keys) or seq_idx >= Int(seq_len):
+            return
 
-    var q_batch = q[Int(start_of_seq) : Int(end_of_seq), :, :]
-    var k_batch = k[Int(k_row_start) : Int(k_row_end), :, :]
-    # Slice only the leading axis: the view inherits the dense parent's
-    # `max_num_keys` row stride, which differs from this entry's own key count
-    # on a ragged batch.
-    var o_batch = output[Int(start_of_seq) : Int(end_of_seq), :, :]
+        var q_batch = q[Int(start_of_seq) : Int(end_of_seq), :, :]
+        var k_batch = k[Int(k_row_start) : Int(k_row_end), :, :]
+        # Slice only the leading axis: the view inherits the dense parent's
+        # `max_num_keys` row stride, which differs from this entry's own key count
+        # on a ragged batch.
+        var o_batch = output[Int(start_of_seq) : Int(end_of_seq), :, :]
 
-    # Cast each FP8 code to F32 before multiply so we match TileLang-style GEMM
-    # (FP8×FP8 in low precision can saturate/widen differently than F32 products).
-    var accum = Float32(0.0)
-    for d in range(Int(depth)):
-        var kd = k_batch[key_idx, 0, d][0].cast[.float32]()
-        var qd = q_batch[seq_idx, head_idx, d][0].cast[.float32]()
-        accum += kd * qd
+        # Cast each FP8 code to F32 before multiply so we match TileLang-style GEMM
+        # (FP8×FP8 in low precision can saturate/widen differently than F32 products).
+        var accum = Float32(0.0)
+        for d in range(Int(depth)):
+            var kd = k_batch[key_idx, 0, d][0].cast[.float32]()
+            var qd = q_batch[seq_idx, head_idx, d][0].cast[.float32]()
+            accum += kd * qd
 
-    accum = max(accum, 0) * q_s[start_of_seq + UInt32(seq_idx), head_idx][0]
-    o_batch[seq_idx, key_idx, head_idx] = accum
+        accum = max(accum, 0) * q_s[start_of_seq + UInt32(seq_idx), head_idx][0]
+        o_batch[seq_idx, key_idx, head_idx] = accum
 
 
 @__name(t"fp8_index_reduce_logits")
@@ -1181,28 +1199,29 @@ def _reduce_logits[
     var seq_idx = block_idx.x * 16 + thread_idx.x
     var key_idx = block_idx.y * 16 + thread_idx.y
 
-    var start_of_seq = valid_length[batch_idx][0]
-    var end_of_seq = valid_length[batch_idx + 1][0]
-    var seq_len = end_of_seq - start_of_seq
+    with PDL():
+        var start_of_seq = valid_length[batch_idx][0]
+        var end_of_seq = valid_length[batch_idx + 1][0]
+        var seq_len = end_of_seq - start_of_seq
 
-    var k_row_start = cache_row_offsets[batch_idx][0]
-    var k_row_end = cache_row_offsets[batch_idx + 1][0]
-    var num_keys = k_row_end - k_row_start
+        var k_row_start = cache_row_offsets[batch_idx][0]
+        var k_row_end = cache_row_offsets[batch_idx + 1][0]
+        var num_keys = k_row_end - k_row_start
 
-    if seq_idx >= Int(seq_len) or key_idx >= Int(num_keys):
-        return
+        if seq_idx >= Int(seq_len) or key_idx >= Int(num_keys):
+            return
 
-    # Slice only the leading axis so both views keep the dense parents'
-    # `max_num_keys` row stride rather than this entry's own key count.
-    var o_batch = output[Int(start_of_seq) : Int(end_of_seq), :]
-    var logits_batch = logits[Int(start_of_seq) : Int(end_of_seq), :, :]
-    var k_s_batch = k_s[Int(k_row_start) : Int(k_row_end)]
+        # Slice only the leading axis so both views keep the dense parents'
+        # `max_num_keys` row stride rather than this entry's own key count.
+        var o_batch = output[Int(start_of_seq) : Int(end_of_seq), :]
+        var logits_batch = logits[Int(start_of_seq) : Int(end_of_seq), :, :]
+        var k_s_batch = k_s[Int(k_row_start) : Int(k_row_end)]
 
-    var sum = Float32(0.0)
-    for head in range(num_heads):
-        sum += logits_batch[seq_idx, key_idx, head][0]
+        var sum = Float32(0.0)
+        for head in range(num_heads):
+            sum += logits_batch[seq_idx, key_idx, head][0]
 
-    o_batch[seq_idx, key_idx] = sum * k_s_batch[key_idx][0]
+        o_batch[seq_idx, key_idx] = sum * k_s_batch[key_idx][0]
 
 
 @inline(.always)
@@ -1302,6 +1321,7 @@ def fp8_index_naive[
             batch_size * num_heads,
         ),
         block_dim=(16, 16, 1),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     comptime reduce_logits = _reduce_logits[
@@ -1324,6 +1344,7 @@ def fp8_index_naive[
             batch_size,
         ),
         block_dim=(16, 16, 1),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     _ = logits_dev

@@ -32,12 +32,8 @@ def run_row_mean_of_squares_qk_gpu[
     atol: Float64 = 1e-3,
 ) raises:
     print(
-        "== run_row_mean_of_squares_qk_gpu rows=",
-        rows,
-        " q_cols=",
-        q_cols,
-        " k_cols=",
-        k_cols,
+        t"== run_row_mean_of_squares_qk_gpu rows= {rows}  q_cols= {q_cols} "
+        t" k_cols= {k_cols}"
     )
 
     comptime out_dtype = DType.float32

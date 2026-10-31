@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Host-side table and index inputs of the DeepSeek-V4.1 vision model."""
 
 from __future__ import annotations

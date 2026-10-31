@@ -79,17 +79,8 @@ def test_matches_one_row_kernel[
     comptime one_row_block_dim = min(align_up(K // simd_width, warp_size), 1024)
 
     print(
-        "N",
-        N,
-        "K",
-        K,
-        c_type,
-        "seed",
-        seed,
-        "rows_per_warp",
-        rows_per_warp,
-        "epilogue",
-        with_epilogue,
+        t"N {N} K {K} {c_type} seed {seed} rows_per_warp"
+        t" {rows_per_warp} epilogue {with_epilogue}"
     )
 
     var w_dev = ctx.enqueue_create_buffer[dtype](N * K)
@@ -252,7 +243,7 @@ def test_matches_host_reference[
     comptime rows_per_warp = _GEMV_MULTIROW_ROWS
     comptime warps_per_block = 8
 
-    print("N", N, "K", K, c_type, "host reference, rows", rows_per_warp)
+    print(t"N {N} K {K} {c_type} host reference, rows {rows_per_warp}")
 
     var w_dev = ctx.enqueue_create_buffer[dtype](N * K)
     var act_dev = ctx.enqueue_create_buffer[dtype](K)

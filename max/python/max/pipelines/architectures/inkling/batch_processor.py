@@ -23,7 +23,7 @@ from max import tree
 from max.driver import Buffer, Device, Usage
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.graph_input_stager import InputDescriptor
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -63,6 +63,7 @@ class InklingInputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         assert self.kv_cache_inputs is not None
         return (
             self.tokens,
@@ -114,8 +115,7 @@ class InklingBatchProcessor(
     def bind_vision_encoder(
         self, *, vision_model: Model, session: InferenceSession | None = None
     ) -> None:
-        """Wires the compiled vision tower, which encodes each batch's new
-        images."""
+        """Wires the compiled vision tower, which encodes each batch's new images."""
         del session
         self._vision_model = vision_model
 
@@ -125,6 +125,7 @@ class InklingBatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InklingInputs:
+        """Builds the first step's inputs from the replica batches."""
         context_batch = single_replica_context_batch(
             replica_batches, processor_name=type(self).__qualname__
         )
@@ -258,12 +259,17 @@ class InklingBatchProcessor(
             if getattr(context, "needs_vision_encoding", False)
             for image in context.images
         ]
-        assert self._vision_model is not None
         device0 = self.runtime.devices[0]
         pixels = _pinned_copy(blocks, device0)
-        embeddings = self._vision_model.execute(pixels)[0]
-        assert isinstance(embeddings, Buffer)
+        embeddings = self._encode_images(pixels)
         return embeddings, _pinned_copy([indices], device0)
+
+    def _encode_images(self, patches: Buffer) -> Buffer:
+        """Runs the vision tower over one block of patches."""
+        assert self._vision_model is not None
+        embeddings = self._vision_model.execute(patches)[0]
+        assert isinstance(embeddings, Buffer)
+        return embeddings
 
 
 def _pinned_copy(

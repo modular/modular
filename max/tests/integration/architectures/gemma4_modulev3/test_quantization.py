@@ -21,20 +21,14 @@ quantized and attention stays BF16.
 from __future__ import annotations
 
 import numpy as np
+from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMesh,
-    Replicated,
-    Sharded,
-)
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
@@ -42,11 +36,18 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
     Gemma4TextConfig,
 )
-from max.pipelines.architectures.gemma4_modulev3.gemma4 import Gemma4TextModel
-from max.pipelines.architectures.gemma4_modulev3.weight_adapters import (
-    convert_language_state_dict_for_module,
+from max.pipelines.architectures.gemma4.weight_adapters import (
+    GEMMA4_WEIGHT_RULES,
 )
+from max.pipelines.architectures.gemma4_modulev3.gemma4 import Gemma4TextModel
+from max.pipelines.lib import WeightRenaming, WeightTransform
 from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import (
+    DeviceMesh,
+    Replicated,
+    Sharded,
+)
 from transformers import PretrainedConfig
 
 # Small dims: TP2-divisible in the shapes that matter for scale sharding
@@ -332,6 +333,13 @@ def _nvfp4_checkpoint(quant_config: QuantConfig) -> dict[str, Buffer]:
     return wm
 
 
+# The decoder graph's entry: the full model nests its language model under
+# ``language_model.``.
+_DECODER_TRANSFORM = WeightTransform(
+    [*GEMMA4_WEIGHT_RULES, WeightRenaming.prefix("language_model.")]
+)
+
+
 def _to_safetensor_weights(
     wm: dict[str, Buffer],
 ) -> SafetensorWeights:
@@ -358,9 +366,7 @@ def test_nvfp4_checkpoint_keys_match_module_tree() -> None:
 
     wm = _nvfp4_checkpoint(quant_config)
     converted = set(
-        convert_language_state_dict_for_module(
-            dict(_to_safetensor_weights(wm).items())
-        )
+        _DECODER_TRANSFORM(dict(_to_safetensor_weights(wm).items()))
     )
 
     expected = {f"language_model.{name}" for name, _ in model.parameters}
@@ -510,9 +516,7 @@ def test_bf16_checkpoint_keys_still_match_module_tree() -> None:
         )
 
     converted = set(
-        convert_language_state_dict_for_module(
-            dict(_to_safetensor_weights(wm).items())
-        )
+        _DECODER_TRANSFORM(dict(_to_safetensor_weights(wm).items()))
     )
     expected = {f"language_model.{name}" for name, _ in model.parameters}
     assert converted == expected

@@ -48,7 +48,6 @@ from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationRequest,
 )
-from max.support import fetch_bytes_from_s3
 from PIL import Image
 from transformers import PreTrainedTokenizerBase
 
@@ -57,6 +56,7 @@ from .model_output import (
     TokenInfo,
 )
 from .numerics import log_softmax
+from .storage import load_bytes
 from .test_data import MockPixelGenerationRequest, MockTextGenerationRequest
 
 
@@ -77,8 +77,9 @@ def _decode_base64_image_to_numpy(image_data: str) -> np.ndarray:
 def _load_input_image(image_uri: str) -> Image.Image:
     """Load an input image for image-to-image requests."""
     if image_uri.startswith("s3://"):
-        image_bytes = fetch_bytes_from_s3(image_uri)
-        return Image.open(BytesIO(image_bytes)).convert("RGB")
+        # Falls back to an unsigned read of the public bucket when the
+        # runner has no AWS credentials, as test_data's images do.
+        return Image.open(BytesIO(load_bytes(image_uri))).convert("RGB")
     return Image.open(image_uri).convert("RGB")
 
 

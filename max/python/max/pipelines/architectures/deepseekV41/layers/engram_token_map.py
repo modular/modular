@@ -33,8 +33,13 @@ class BackendTokenizerLike(Protocol):
     (mypy checks Protocol data attributes invariantly).
     """
 
-    def decode(self, ids: list[int], skip_special_tokens: bool) -> str: ...
-    def id_to_token(self, token_id: int) -> str: ...
+    def decode(self, ids: list[int], skip_special_tokens: bool) -> str:
+        """Decodes ``ids`` to text, dropping special tokens when asked."""
+        ...
+
+    def id_to_token(self, token_id: int) -> str:
+        """Returns the token text for ``token_id``."""
+        ...
 
 
 class TokenizerLike(Protocol):

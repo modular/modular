@@ -27,10 +27,12 @@ reference:
     (cuBLASLt) MXFP8 block-scaled matmul.
 
 It also runs every decode shape with tuning-table rows at M values inside
-and at the edges of each row.
+and at the edges of each row, and checks that a compute closure that needs
+column vectors gets them from every kind of config.
 """
 
 from std.math import ceildiv, align_up
+from std.os import abort
 from std.random import rand, random_ui64
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
@@ -44,7 +46,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_raises
 
 from linalg.block_scaled_quantization import (
     block_scaled_matmul,
@@ -72,6 +74,10 @@ def test_mxfp8_dispatch[
     input_type: DType,
     output_type: DType,
     pdl_level: PDLLevel = PDLLevel.OFF,
+    check_vector_compute: Bool = False,
+    col_period: Int = 0,
+    col_start: Int = 0,
+    pass_col_start: Int = col_start,
 ](
     ctx: DeviceContext,
     m: Int,
@@ -85,7 +91,12 @@ def test_mxfp8_dispatch[
 
     When `expect_heuristic_hit` is set, also runs
     `heuristic_and_outliers_dispatch` with an epilogue closure and with a
-    compute closure, each against the same reference."""
+    compute closure, each against the same reference. With
+    `check_vector_compute`, also runs a closure that swaps each pair of
+    columns, which only works on column vectors. With `col_period`, the
+    closure swaps only the columns at or past `col_start` in each period,
+    and the matmul is told that the changed columns start at
+    `pass_col_start`."""
     var M = m
     var N = Int(n)
     var K = Int(k)
@@ -282,6 +293,62 @@ def test_mxfp8_dispatch[
             )
             print("  -> PASSED (heuristic dispatch, compute=", use_compute, ")")
 
+    comptime if check_vector_compute:
+
+        def swap_pairs[
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            comptime if width == 1:
+                abort()
+            else:
+                comptime if col_period > 0:
+                    if Int(idx[1]) % col_period < col_start:
+                        return val
+                var even, odd = val.deinterleave()
+                return rebind[SIMD[_dtype, width]](odd.interleave(even))
+
+        c_device.enqueue_fill(Scalar[output_type](0))
+        block_scaled_matmul[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=True,
+            has_compute_fn=True,
+            compute_fn_needs_vectors=True,
+            compute_fn_col_period=col_period,
+            compute_fn_col_start=pass_col_start,
+            pdl_level=pdl_level,
+            target="gpu",
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            Float32(1.0),
+            ctx,
+            compute_fn=_as_compute_fn(swap_pairs),
+        )
+        ctx.enqueue_copy(c_host_ptr, c_device)
+        ctx.synchronize()
+        var want = c_host_ref_ptr.unsafe_ptr()
+        for i in range(0, c_size, 2):
+            comptime if col_period > 0:
+                if i % N % col_period < col_start:
+                    continue
+            var even = want[unsafe_offset=i]
+            want[unsafe_offset=i] = want[unsafe_offset=i + 1]
+            want[unsafe_offset=i + 1] = even
+        assert_almost_equal(
+            c_host_ptr.unsafe_ptr(),
+            want,
+            c_size,
+            atol=1e-2,
+            rtol=1e-2,
+        )
+        print("  -> PASSED (column-vector compute)")
+
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -293,7 +360,7 @@ def test_mxfp8_dispatch[
 def test_tuned_decode_shape[N: Int, K: Int](ctx: DeviceContext) raises:
     # M inside and at the edges of the shape's tuning-table rows, plus one
     # past the last row. PDL on turns on the rows' weight prefetch.
-    for m in [17, 61, 96, 127, 129, 151, 191, 193]:
+    for m in [1, 17, 61, 64, 65, 96, 127, 128, 129, 151, 191, 193]:
         test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
             ctx, m, Idx[N], Idx[K], expect_heuristic_hit=True
         )
@@ -337,6 +404,39 @@ def main() raises:
         test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
             ctx, 12, Idx[9856], Idx[6144], expect_heuristic_hit=True
         )
+
+        # A closure that needs column vectors, on a small-BN config, below
+        # and above the 512-row split, and at a size where the heuristic swaps
+        # A and B.
+        for m in [8, 300, 513, 2053]:
+            test_mxfp8_dispatch[
+                .float8_e4m3fn, .bfloat16, check_vector_compute=True
+            ](ctx, m, Idx[2048], Idx[1280], expect_heuristic_hit=False)
+
+        # The same closure changing only the last 64 columns of each
+        # 512-column head, as the RoPE tail does, so a separate pass visits
+        # only those. Decode and prefill rows at the q projection's width,
+        # with prime and ragged counts.
+        for m in [1, 7, 48, 144, 300, 513, 577, 2053]:
+            test_mxfp8_dispatch[
+                .float8_e4m3fn,
+                .bfloat16,
+                check_vector_compute=True,
+                col_period=512,
+                col_start=448,
+            ](ctx, m, Idx[32768], Idx[1280], expect_heuristic_hit=False)
+        # A pass told the changed columns start 16 late must fail, both on a
+        # config that swaps A and B and on one below the 512-row split.
+        for m in [48, 300]:
+            with assert_raises():
+                test_mxfp8_dispatch[
+                    .float8_e4m3fn,
+                    .bfloat16,
+                    check_vector_compute=True,
+                    col_period=512,
+                    col_start=448,
+                    pass_col_start=464,
+                ](ctx, m, Idx[32768], Idx[1280], expect_heuristic_hit=False)
 
         # KERN-3024: 30k-token prefill. The heuristic has no config for this
         # M, so the dispatcher must fall back to the vendor (cuBLASLt) MXFP8

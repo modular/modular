@@ -65,13 +65,13 @@ def zero_based(data: Pointer[Float32, MutAnyOrigin], count: Int):
 
 
 def two_arg(data: Pointer[Float32, MutAnyOrigin], count: Int):
-    for i in range(Int(thread_idx.x), count):
+    for i in range(thread_idx.x, count):
         data[unsafe_offset=i] = data[unsafe_offset=i] + 1.0
 
 
 def grid_stride(data: Pointer[Float32, MutAnyOrigin], count: Int):
     """The spelling almost every kernel's outer loop has."""
-    for i in range(Int(thread_idx.x), count, Int(block_dim.x)):
+    for i in range(thread_idx.x, count, block_dim.x):
         data[unsafe_offset=i] = data[unsafe_offset=i] + 1.0
 
 
@@ -81,17 +81,17 @@ def grid_stride_unsigned(data: Pointer[Float32, MutAnyOrigin], count: UInt):
 
 
 def grid_stride_comptime_step(data: Pointer[Float32, MutAnyOrigin], count: Int):
-    for i in range(Int(thread_idx.x), count, 128):
+    for i in range(thread_idx.x, count, 128):
         data[unsafe_offset=i] = data[unsafe_offset=i] + 1.0
 
 
 def grid_stride_descending(data: Pointer[Float32, MutAnyOrigin], count: Int):
-    for i in range(count - 1 - Int(thread_idx.x), -1, -Int(block_dim.x)):
+    for i in range(count - 1 - thread_idx.x, -1, -block_dim.x):
         data[unsafe_offset=i] = data[unsafe_offset=i] + 1.0
 
 
 def grid_stride_reversed(data: Pointer[Float32, MutAnyOrigin], count: Int):
-    for i in reversed(range(Int(thread_idx.x), count, Int(block_dim.x))):
+    for i in reversed(range(thread_idx.x, count, block_dim.x)):
         data[unsafe_offset=i] = data[unsafe_offset=i] + 1.0
 
 

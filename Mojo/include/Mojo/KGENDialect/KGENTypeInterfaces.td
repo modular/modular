@@ -47,9 +47,12 @@ def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
                                                   "TypedAttr &":$value)>,
     InterfaceMethod<[{
       Print an attribute of this type, using pretty syntax if desired. Return
-      false if the attribute is not one the type knows how to print.
+      false if the attribute is not one the type knows how to print. `printer`
+      carries the dedup state (if any) and must be forwarded to any nested
+      parameter value printing.
     }], "LogicalResult", "printValue", (ins "AsmPrinter &":$p,
-                                            "TypedAttr":$value)>,
+                                            "TypedAttr":$value,
+                                            "::M::KGEN::KGENParamPrinter &":$printer)>,
     InterfaceMethod<[{
       Return whether the type is a metatype.
     }], "bool", "isMetaType", (ins), [{}], [{ return false; }]>,
@@ -211,6 +214,26 @@ def SugaredTypeInterface : TypeInterface<"SugaredTypeInterface"> {
       null.  The type canonicalizer will recursively canonicalize types without
       a cache.
     }], "Type", "getCachedCanonicalType", (ins "Type":$type)>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// ParamPrintableTypeInterface
+//===----------------------------------------------------------------------===//
+
+def ParamPrintableTypeInterface : TypeInterface<"ParamPrintableTypeInterface"> {
+  let description = [{
+    Implemented by types that print nested parameters.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Prints this type with `printer`, so its nested parameters keep the
+      printer's context.
+    }], "void", "printWith",
+        (ins "AsmPrinter &":$p, "::M::KGEN::KGENParamPrinter &":$printer)>,
   ];
 }
 

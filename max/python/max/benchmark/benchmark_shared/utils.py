@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import contextlib
+import http.client
 import json
 import logging
 import os
@@ -189,9 +190,40 @@ def fetch_server_max_model_len(
         ValueError,
         AttributeError,
         TypeError,
+        # A dry run's placeholder host yields a URL http.client rejects.
+        http.client.HTTPException,
     ):
         return None
     return max_model_len if isinstance(max_model_len, int) else None
+
+
+def fetch_model_config_max_length(
+    pretrained_model_name_or_path: str,
+    *,
+    revision: str | None,
+    trust_remote_code: bool,
+    local_files_only: bool = False,
+) -> int | None:
+    """The model's maximum context length from its config, or ``None``."""
+    try:
+        with _quiet_hf_hub_retries():
+            config = AutoConfig.from_pretrained(
+                pretrained_model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                revision=revision,
+                local_files_only=local_files_only,
+            )
+        # Composite configs (vision-language, audio) keep the length on a
+        # sub-config; ``get_text_config`` resolves both shapes.
+        text_config = (
+            config.get_text_config()
+            if hasattr(config, "get_text_config")
+            else config
+        )
+        value = getattr(text_config, "max_position_embeddings", None)
+    except (ValueError, OSError, AttributeError):
+        return None
+    return value if isinstance(value, int) else None
 
 
 def resolve_revision(pretrained_model_name_or_path: str) -> str | None:

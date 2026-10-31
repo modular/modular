@@ -37,11 +37,11 @@ comptime BLOCK_SIZE = 256
 
 
 def bfs_kernel(
-    coo_src: MutPointer[UInt32, MutAnyOrigin],
-    coo_dst: MutPointer[UInt32, MutAnyOrigin],
+    coo_src: ImmPointer[UInt32, ImmUntrackedOrigin],
+    coo_dst: ImmPointer[UInt32, ImmUntrackedOrigin],
     num_edges_dev: Int32,
-    level: MutPointer[UInt32, MutAnyOrigin],
-    new_vertex_visited: MutPointer[UInt32, MutAnyOrigin],
+    level: MutPointer[UInt32, MutUntrackedOrigin],
+    new_vertex_visited: MutPointer[UInt32, MutUntrackedOrigin],
     curr_level: UInt32,
 ):
     """BFS kernel: edge-centric traversal using COO graph."""

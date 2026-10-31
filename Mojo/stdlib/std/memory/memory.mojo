@@ -429,10 +429,8 @@ def _malloc[
     /,
     *,
     alignment: Int = align_of[type](),
-    out result: OptionalPointer[
-        type,
-        MutUntrackedOrigin,
-        address_space=.GENERIC,
+    out result: Optional[
+        Pointer[type, MutUntrackedOrigin, address_space=.GENERIC]
     ],
 ):
     comptime MlirPointerType = type_of(result).T._mlir_type
@@ -473,13 +471,13 @@ def _free(ptr: MutPointer[...]):
 
 
 @inline(.always)
-def _free(ptr: OptionalPointer[mut=True, ...]):
+def _free(ptr: Optional[MutPointer[...]]):
     comptime if is_gpu():
         # SAFETY: `Optional[Pointer]`'s niche layout is identical regardless of
         # pointee type, so reinterpret to the erased type `libc.free` expects.
         libc.free(
             Pointer(to=ptr).unsafe_bitcast[
-                OptionalPointer[mut=True, NoneType, MutAnyOrigin]
+                Optional[MutPointer[NoneType, MutAnyOrigin]]
             ]()[]
         )
     else:

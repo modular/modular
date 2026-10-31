@@ -34,15 +34,16 @@ from __future__ import annotations
 import numpy as np
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.functional import (
+from max.functional import (
     add,
     matmul,
     relu,
     rms_norm,
     transfer_to,
 )
-from max.experimental.nn.module import Module, module_dataclass
-from max.experimental.sharding import (
+from max.nn.module import Module, module_dataclass
+from max.tensor import Tensor
+from max.tensor.sharding import (
     ALL_TRANSITIONS,
     DEFAULT_TRANSITIONS,
     DeviceMapping,
@@ -52,8 +53,7 @@ from max.experimental.sharding import (
     Transition,
     auto_reshard,
 )
-from max.experimental.sharding.types import TensorLayout
-from max.experimental.tensor import Tensor
+from max.tensor.sharding.types import TensorLayout
 
 F32 = DType.float32
 HIDDEN = 8

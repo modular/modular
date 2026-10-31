@@ -50,7 +50,7 @@ from std.memory import (
     unsafe_memcpy,
     unsafe_memset,
 )
-from std.python import ConvertibleFromPython, PythonObject
+from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
 from std.utils._nicheable import NicheIndex, UnsafeNicheable
 
 # ===----------------------------------------------------------------------=== #
@@ -63,6 +63,7 @@ struct String(
     Boolable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     Defaultable,
     FloatableRaising,
     ImplicitlyCopyable,
@@ -761,8 +762,8 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data.unsafe_offset(-Self.REF_COUNT_SIZE)
             var refcount = ptr.unsafe_bitcast[Atomic[Int]]()
-            if refcount[].fetch_sub(1) == 1:
-                fence[Ordering.ACQUIRE]()
+            if refcount[].fetch_sub[ordering=.RELEASE](1) == 1:
+                fence[ordering=.ACQUIRE]()
                 dealloc(
                     ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
                         Layout[Byte](
@@ -1210,6 +1211,20 @@ struct String(
         self = String(StringSlice(unsafe_borrowed_obj=str_obj))
         # keep python object alive so the copy can occur
         _ = str_obj
+
+    comptime ConversionToPythonErrorType = Error
+    """The error type raised if conversion to a PythonObject fails."""
+
+    def to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a Python `str` object.
+
+        Returns:
+            A PythonObject representing this value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
+        """
+        return StringSlice(self).to_python_object()
 
     # ===------------------------------------------------------------------=== #
     # Methods
@@ -1849,7 +1864,7 @@ struct String(
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-        `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
+        `"\\r\\n"` and `"\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
         Args:
             keepends: If True, line breaks are kept in the resulting strings.
@@ -2393,12 +2408,41 @@ def ord(s: StringSlice) -> Int:
     This function is in the prelude, so you don't need to import it.
 
     Args:
-        s: The input string, which must contain only a single- character.
+        s: The input string, which must contain only a single character.
 
     Returns:
         An integer representing the code point of the given character.
     """
     return Int(Codepoint.ord(s))
+
+
+def ord(s: StringLiteral[_]) -> Int:
+    """Returns an integer that represents the codepoint of a single-character
+    string.
+
+    Given a string containing a single character `Codepoint`, return an integer
+    representing the codepoint of that character. For example, `ord("a")`
+    returns the integer `97`. This is the inverse of the `chr()` function.
+
+    Constraints:
+        The literal must contain exactly one codepoint.
+
+    Args:
+        s: The input string, which must contain only a single character.
+
+    Returns:
+        An integer representing the code point of the given character.
+    """
+    comptime literal = type_of(s)()
+    # TODO(MOCO-5221): Use a plain `comptime assert` once it is checked before
+    # the fold below. Until then the fold sits in a branch so bad input never
+    # reaches it.
+    comptime if literal.count_codepoints() == 1:
+        return comptime (ord(StringSlice(literal)))
+    else:
+        comptime assert (
+            False
+        ), "ord() expects a string literal containing exactly one character"
 
 
 # ===----------------------------------------------------------------------=== #

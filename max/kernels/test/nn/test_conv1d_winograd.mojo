@@ -70,9 +70,9 @@ def test[dtype: DType](C: Int):  # Input Len
     rand(input_ptr)
     rand(filter_ptr)
 
-    var output_shape = Index(1, 1, 1, O, 1)
-    var input_shape = Index(1, 1, 1, C, 1)
-    comptime filter_shape = Index(1, 1, S, 1, 1)
+    var output_shape = (1, 1, 1, O, 1)
+    var input_shape = (1, 1, 1, C, 1)
+    comptime filter_shape = (1, 1, S, 1, 1)
     comptime pad_d = Index(0, 0)
     comptime pad_h = Index(0, 0)
     comptime pad_w = Index(0, 0)

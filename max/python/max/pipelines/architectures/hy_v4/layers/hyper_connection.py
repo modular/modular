@@ -16,16 +16,16 @@
 Hy4 keeps ``hc_mult`` residual streams like DeepSeek-V4's mHC but drops the
 ``comb`` mixer and its Sinkhorn projection: each stream is carried forward
 unchanged and only receives the sublayer output scaled by ``post``. That is
-why this is not :class:`max.experimental.nn.HyperConnection`, whose fused gate
+why this is not :class:`max.nn.HyperConnection`, whose fused gate
 kernel always computes ``comb``.
 """
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.tensor import Tensor
 
 from ..model_config import HYV4Config
 

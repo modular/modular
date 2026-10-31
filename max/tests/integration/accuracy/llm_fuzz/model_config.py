@@ -159,6 +159,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:smollm"],
         description="SmolLM model-specific tests",
     ),
+    "laguna": ModelProfile(
+        name="laguna",
+        default_port=8091,
+        tags=["model:laguna"],
+        description="Laguna S-2.1 on Mach",
+    ),
 }
 
 

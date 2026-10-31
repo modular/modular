@@ -26,7 +26,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from std.math import ceildiv, align_up
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -58,9 +57,9 @@ def _test_kernel_impl_base[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     num_experts: Int,
     expert_shape: IndexList[2],
@@ -92,8 +91,9 @@ def _test_kernel_impl_base[
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type},"
         t" {scales_dtype})  problem shape=({M}, {N}, {K})"
-        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
-        t" {cluster_shape[1]}, {cluster_shape[2]})"
+        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=(Int({cluster_shape[0]}),"
+        t" Int("
+        t" {cluster_shape[1]}), Int({cluster_shape[2]}))"
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
@@ -345,8 +345,10 @@ def _test_kernel_impl_base[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=scaling_kind,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -536,8 +538,8 @@ def run_grouped_matmul_sm100_block_fp4_suite[
         comptime MMA_K = 32
         comptime bm = 128
         comptime bn = 128
-        comptime block_tile_shape = Index(bm, bn, BK)
-        comptime umma_shape = Index(bm, bn, MMA_K)
+        comptime block_tile_shape = (bm, bn, BK)
+        comptime umma_shape = (bm, bn, MMA_K)
 
         # Wrapper which forwards suite-level scales_dtype, SF_VECTOR_SIZE,
         # and scaling_kind, so call sites don't have to pass them explicitly.
@@ -547,9 +549,9 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             b_type: DType,
             c_type: DType,
             _scales_dtype: DType,
-            block_tile_shape: IndexList[3],
-            mma_shape: IndexList[3],
-            cluster_shape: StaticTuple[Int32, 3],
+            block_tile_shape: Tuple[Int, Int, Int],
+            mma_shape: Tuple[Int, Int, Int],
+            cluster_shape: Tuple[Int, Int, Int],
             cta_group: Int,
             num_experts: Int,
             expert_shape: IndexList[2],
@@ -604,13 +606,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 4,
@@ -627,13 +629,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 3,
@@ -650,13 +652,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 3,
@@ -673,13 +675,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 4,
@@ -696,13 +698,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 4,
@@ -719,13 +721,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 3,
@@ -742,13 +744,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 4,
@@ -765,13 +767,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 3,
@@ -788,13 +790,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 4,
@@ -811,13 +813,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=8,
-                expert_shape=Index(2880, 2880),
+                expert_shape=(2880, 2880),
                 swapAB=swapAB,
             ](
                 4,
@@ -834,13 +836,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=8,
-                expert_shape=Index(2880, 2880),
+                expert_shape=(2880, 2880),
                 swapAB=swapAB,
             ](
                 4,
@@ -873,13 +875,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape,
             umma_shape,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=12,
-            expert_shape=Index(2048, 2048),
+            expert_shape=(2048, 2048),
             swapAB=False,
         ](
             sched_slots,
@@ -904,13 +906,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape,
             umma_shape,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=12,
-            expert_shape=Index(2048, 2048),
+            expert_shape=(2048, 2048),
             swapAB=False,
         ](
             sched_slots,
@@ -937,13 +939,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape,
             umma_shape,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=20,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=False,
         ](
             sched_slots,
@@ -968,13 +970,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape,
             umma_shape,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=sched_slots,
-            expert_shape=Index(1024, 1024),
+            expert_shape=(1024, 1024),
             swapAB=False,
         ](
             sched_slots,
@@ -995,7 +997,7 @@ def run_grouped_matmul_sm100_block_fp4_suite[
         # masked while still owning rows. K holds at 4
         # k-iterations, so the tile-depth term selects the
         # lookup.
-        comptime umma_shape_2sm_lookup = Index(2 * bm, 2 * bn, MMA_K)
+        comptime umma_shape_2sm_lookup = (2 * bm, 2 * bn, MMA_K)
         comptime warp_lanes = 32
         comptime lookup_depth = sched_slots // warp_lanes
         var tokens_2sm = List[Int]()
@@ -1015,13 +1017,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape,
             umma_shape_2sm_lookup,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=warp_lanes,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             sched_slots,
@@ -1031,7 +1033,7 @@ def run_grouped_matmul_sm100_block_fp4_suite[
         )
 
         # 2SM tests (new structured kernel only, swapAB=True required)
-        comptime umma_shape_2sm = Index(2 * bm, 2 * bn, MMA_K)
+        comptime umma_shape_2sm = (2 * bm, 2 * bn, MMA_K)
 
         # 2SM: Large token counts
         _test_kernel_impl[
@@ -1041,13 +1043,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape,
             umma_shape_2sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=6,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             4,
@@ -1064,13 +1066,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape,
             umma_shape_2sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,
@@ -1087,13 +1089,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape,
             umma_shape_2sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,
@@ -1107,8 +1109,8 @@ def run_grouped_matmul_sm100_block_fp4_suite[
         print("Testing NEW kernel with MMA_N=64")
         print("========================================\n")
 
-        comptime umma_shape_n64 = Index(bm, 64, MMA_K)
-        comptime block_tile_shape_n64 = Index(bm, 64, BK)
+        comptime umma_shape_n64 = (bm, 64, MMA_K)
+        comptime block_tile_shape_n64 = (bm, 64, BK)
 
         # MMA_N=64: Large token counts
         comptime for swapAB in [False, True]:
@@ -1119,13 +1121,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_n64,
                 umma_shape_n64,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 4,
@@ -1142,13 +1144,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape_n64,
             umma_shape_n64,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,
@@ -1165,13 +1167,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape_n64,
             umma_shape_n64,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             3,
             [64 + 1, 1024 + 3, 128 * 3 + 2],
@@ -1187,13 +1189,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape_n64,
             umma_shape_n64,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             3,
             [31, 97, 63],
@@ -1207,8 +1209,8 @@ def run_grouped_matmul_sm100_block_fp4_suite[
         print("========================================\n")
 
         # mma_n=64, cta_group=2: block_tile_shape auto-derived by config
-        comptime umma_shape_2sm_n64 = Index(2 * bm, 64, MMA_K)
-        comptime block_tile_shape_2sm_n64 = Index(bm, 64 // 2, BK)
+        comptime umma_shape_2sm_n64 = (2 * bm, 64, MMA_K)
+        comptime block_tile_shape_2sm_n64 = (bm, 64 // 2, BK)
 
         _test_kernel_impl[
             dtype,
@@ -1217,13 +1219,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape_2sm_n64,
             umma_shape_2sm_n64,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=6,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             4,
@@ -1239,13 +1241,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             scale_dtype,
             block_tile_shape_2sm_n64,
             umma_shape_2sm_n64,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,
@@ -1260,8 +1262,8 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             print("Testing NEW kernel with MMA_N=", mma_n_val)
             print("========================================\n")
 
-            comptime umma_shape_small = Index(bm, mma_n_val, MMA_K)
-            comptime block_tile_shape_small = Index(bm, mma_n_val, BK)
+            comptime umma_shape_small = (bm, mma_n_val, MMA_K)
+            comptime block_tile_shape_small = (bm, mma_n_val, BK)
 
             # Step 1: single active expert, aligned M, tests expert selection
             print("Step 1: single active expert (expert 3 of 4), aligned M")
@@ -1272,13 +1274,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 1,
                 [512],
@@ -1295,13 +1297,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 1,
                 [1000],
@@ -1318,13 +1320,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 1,
                 [129],
@@ -1341,13 +1343,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 1,
                 [129],
@@ -1364,13 +1366,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 1,
                 [1000],
@@ -1387,13 +1389,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 1,
                 [1000],
@@ -1408,15 +1410,15 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 dtype,
                 out_dtype,
                 scale_dtype,
-                Index(bm, 128, BK),
-                Index(bm, 128, MMA_K),
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                (bm, 128, BK),
+                (bm, 128, MMA_K),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 1,
                 [1000],
@@ -1433,13 +1435,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 2,
                 [512, 512],
@@ -1456,13 +1458,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 2,
                 [512, 1024],
@@ -1479,13 +1481,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 2,
                 [500, 1024],
@@ -1502,13 +1504,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 2,
                 [512, 1000],
@@ -1525,13 +1527,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 2,
                 [500, 1000],
@@ -1548,13 +1550,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 4,
                 [512, 1000, 2000, 3000],
@@ -1571,13 +1573,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 3,
                 [64 + 1, 1024 + 3, 128 * 3 + 2],
@@ -1594,13 +1596,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
             ](
                 3,
                 [31, 97, 63],
@@ -1617,13 +1619,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=True,
             ](
                 1,
@@ -1640,13 +1642,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=True,
             ](
                 1,
@@ -1663,13 +1665,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=True,
             ](
                 4,
@@ -1686,13 +1688,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=True,
             ](
                 3,
@@ -1709,13 +1711,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=True,
             ](
                 3,
@@ -1744,13 +1746,13 @@ def run_grouped_matmul_sm100_block_fp4_suite[
                 scale_dtype,
                 block_tile_shape_small,
                 umma_shape_small,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=True,
             ](
                 64,

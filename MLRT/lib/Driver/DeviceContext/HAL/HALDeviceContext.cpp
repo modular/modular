@@ -20,6 +20,7 @@
 #include "MLRT/Driver/DeviceContext/HALDeviceContext.h"
 
 #include "AsyncRT/Runtime/CPUDevice.h"
+#include "HAL/M_driver_context.h"
 #include "MLRT/Driver/DeviceContext/BinaryID.h"
 #include "MLRT/Driver/DeviceContext/DeviceAPINames.h"
 #include "Support/BinaryID.h"
@@ -40,8 +41,13 @@
 extern "C" {
 void MojoHAL_strfree(const char *s);
 int32_t MojoHAL_Device_numberOfDevices(const char *api);
+const char *MojoHAL_Device_getApiAndArch(char **out_api, char **out_arch,
+                                         int32_t device_id);
+const char *MojoHAL_DeviceContext_enableAllPeerAccess();
 const char *MojoHAL_DeviceContext_create(MojoHALContextBox **out_ctx,
                                          const char *api, int32_t device_id);
+void MojoHAL_DeviceContext_copy(MojoHALContextBox **out_ctx,
+                                MojoHALContextBox *ctx);
 void MojoHAL_DeviceContext_release(MojoHALContextBox *ctx);
 const char *MojoHAL_DeviceContext_synchronize(MojoHALContextBox *ctx);
 const char *MojoHAL_DeviceContext_createBuffer(MojoHALBufferBox **out_buf,
@@ -106,6 +112,8 @@ const char *MojoHAL_HostBuffer_createSubBuffer(MojoHALBufferBox **out_buf,
                                                uint64_t byteSize);
 const char *MojoHAL_DeviceContext_reassignWait(MojoHALContextBox *dst_ctx,
                                                MojoHALContextBox *src_ctx);
+bool MojoHAL_DeviceContext_sameStream(MojoHALContextBox *a,
+                                      MojoHALContextBox *b);
 const char *MojoHAL_DeviceContext_memmapFile(MojoHALBufferBox **out_buf,
                                              void **out_ptr, uint64_t *out_size,
                                              MojoHALContextBox *ctx,
@@ -149,6 +157,9 @@ void MojoHAL_CompletionFlag_release(MojoHALCompletionFlagBox *flag);
 void MojoHAL_CompletionFlag_signal(void *host_ptr, uint64_t value);
 uint64_t MojoHAL_CompletionFlag_load(void *host_ptr);
 void MojoHAL_CompletionFlag_reset(void *host_ptr);
+const char *MojoHAL_DeviceStream_launchHostFunc(MojoHALStreamBox *stream,
+                                                void (*fn)(void *),
+                                                void *userData);
 const char *MojoHAL_DeviceStream_waitOnHostValue(MojoHALStreamBox *stream,
                                                  uint64_t device_addr,
                                                  uint64_t value);
@@ -174,6 +185,19 @@ Error virtualDeviceError(const char *what) {
 
 /// Memory a virtual device reports, matching the legacy backend's constant.
 constexpr size_t kVirtualDeviceMemoryBytes = 192ULL * 1024 * 1024 * 1024;
+
+ErrorOr<Device::MemInfo> queryMemoryInfo(MojoHALContextBox *ctx) {
+  uint64_t memFree = 0;
+  uint64_t memTotal = 0;
+  if (const char *err =
+          MojoHAL_DeviceContext_getMemoryInfo(&memFree, &memTotal, ctx))
+    return takeError(err);
+  Device::MemInfo info;
+  info.total = memTotal;
+  if (memFree != M_DRIVER_MEMORY_UNKNOWN)
+    info.free = memFree;
+  return info;
+}
 } // namespace
 
 // ===-- Device ----------------------------------------------------------=== //
@@ -202,6 +226,14 @@ Device::API mapAPI(StringRef api) {
 }
 
 } // namespace
+
+ErrorOrSuccess Device::enableAllPeerAccess() {
+  if (AsyncRT::isVirtualDeviceMode())
+    return virtualDeviceError("peer access");
+  if (const char *err = MojoHAL_DeviceContext_enableAllPeerAccess())
+    return takeError(err);
+  return {};
+}
 
 ErrorOr<DeviceRef> Device::create(StringRef api, int id) {
   if (AsyncRT::isVirtualDeviceMode() &&
@@ -263,8 +295,16 @@ ErrorOr<DeviceContextRef> Device::createContext() {
         new DeviceContext(/*mojoCtx=*/nullptr, DeviceRef::copy(this)));
   MojoHALContextBox *ctx = nullptr;
   if (const char *err =
-          MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_))
-    return takeError(err);
+          MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_)) {
+    // Metadata-only Devices (see adoptMojoBox) have no context to fall back
+    // on.
+    if (!mojoCtx_)
+      return takeError(err);
+    // Some plugins allow one context per device, and this Device already
+    // holds it, so share that one (and its stream) instead.
+    MojoHAL_strfree(err);
+    MojoHAL_DeviceContext_copy(&ctx, mojoCtx_);
+  }
   return DeviceContextRef::take(new DeviceContext(ctx, DeviceRef::copy(this)));
 }
 
@@ -282,6 +322,26 @@ const std::string &Device::getAcceleratorArchOrEmpty() {
               ":" + virtualArch)
           .str();
 
+    // Ask the plugin directly first: opening a Device takes a context, and a
+    // plugin that allows one per device rejects it while another is live.
+    // Unlike the fallback below, this keeps plugin APIs: a plugin backend's
+    // API is its own `--target-accelerator` vendor.
+    // TODO(DRIV-251): a Device eagerly holds a whole Mojo DeviceContext. If it
+    // opened its context lazily, this lookup and createContext's sharing
+    // wouldn't need special cases.
+    char *apiName = nullptr;
+    char *archName = nullptr;
+    if (const char *err =
+            MojoHAL_Device_getApiAndArch(&apiName, &archName, /*device_id=*/0))
+      MojoHAL_strfree(err);
+    else {
+      std::string direct =
+          (llvm::Twine(apiToVendorPrefix(apiName)) + ":" + archName).str();
+      MojoHAL_strfree(apiName);
+      MojoHAL_strfree(archName);
+      return direct;
+    }
+
     ErrorOr<DeviceRef> devOr = create(gpuAPI, 0);
     if (devOr.isError())
       return std::string();
@@ -292,15 +352,8 @@ const std::string &Device::getAcceleratorArchOrEmpty() {
       return std::string();
     llvm::StringRef name(nameOr.takeValue());
 
-    // The apis this backend names a vendor for. A plugin api has none, and
-    // the caller reads "" as "no accelerator" -- `apiToVendorPrefix` would
-    // otherwise hand back the plugin's own name as though it were a vendor.
     llvm::StringRef api = dev->api();
-    bool named = api == cudaAPI || api == hipAPI;
-#if MODULAR_MACOS
-    named = named || api == metalAPI;
-#endif
-    if (!named)
+    if (!hasMojoVendor(api))
       return std::string();
 
     return (llvm::Twine(apiToVendorPrefix(api)) + ":" + name).str();
@@ -346,14 +399,7 @@ ErrorOr<Device::MemInfo> Device::getMemoryInfo() const {
     info.total = kVirtualDeviceMemoryBytes;
     return info;
   }
-  uint64_t memFree = 0;
-  uint64_t memTotal = 0;
-  if (const char *err =
-          MojoHAL_DeviceContext_getMemoryInfo(&memFree, &memTotal, mojoCtx_))
-    return takeError(err);
-  info.free = memFree;
-  info.total = memTotal;
-  return info;
+  return queryMemoryInfo(mojoCtx_);
 }
 
 ErrorOr<int> Device::getAttribute(Attribute attr) const {
@@ -409,6 +455,19 @@ DeviceBuffer::~DeviceBuffer() {
       MojoHAL_DeviceBuffer_release(mojoBox_);
     return;
   }
+  if (freeOnDestroy_ && ptr_ != nullptr && byteSize_ > 0) {
+    // Claim the ownership `createBufferOwning` deferred, after dropping the
+    // non-owning view.
+    MojoHAL_DeviceBuffer_release(mojoBox_);
+    MojoHALBufferBox *owner = nullptr;
+    if (const char *err = MojoHAL_DeviceContext_createBufferOwning(
+            &owner, context_->mojoCtx_, ptr_, byteSize_, /*owning=*/true)) {
+      MojoHAL_strfree(err);
+      return;
+    }
+    MojoHAL_DeviceBuffer_release(owner);
+    return;
+  }
   switch (kind_) {
   case BoxKind::Device:
     MojoHAL_DeviceBuffer_release(mojoBox_);
@@ -446,6 +505,7 @@ void *DeviceBuffer::releasePtr() {
   if (const char *err = MojoHAL_DeviceBuffer_relinquishOwnership(mojoBox_))
     MojoHAL_strfree(err); // Cannot fail in practice (plugin-side flag flip);
                           // the legacy signature is non-failing.
+  freeOnDestroy_ = false;
   auto tmp = ptr_;
   ptr_ = nullptr;
   return tmp;
@@ -472,45 +532,12 @@ enqueueOnCpuKeepingAlive(DeviceContext &ctx,
 
 ErrorOrSuccess DeviceBuffer::copyTo(DeviceBuffer &dst, size_t srcByteOffset,
                                     size_t srcByteSize) {
-  // Mirror DeviceContext::enqueueCopyDeviceToDevice (the legacy impl):
-  // dispatch based on whether src and dst are host memory.
-  DeviceBuffer &src = *this;
-  const Device::API srcApi = src.context().device().api();
-  const Device::API dstApi = dst.context().device().api();
-  const uint8_t *srcAt = static_cast<const uint8_t *>(src.ptr_) + srcByteOffset;
+  return dst.context().enqueueCopyDeviceToDevice(dst, *this, srcByteOffset,
+                                                 srcByteSize);
+}
 
-  if (src.isHost() || srcApi == Device::cpuAPI) {
-    // Host -> device. If the source is owned by a CPU device context,
-    // synchronize it first: events cannot be awaited across device types.
-    if (srcApi == Device::cpuAPI && dstApi != Device::cpuAPI) {
-      ErrorOrSuccess sync = src.context().synchronize();
-      if (sync.isError())
-        return sync;
-    }
-    auto copy = [&] {
-      return dst.context().enqueueCopyToDevice(dst.ptr_, srcAt, srcByteSize);
-    };
-    if (dstApi == Device::cpuAPI)
-      return enqueueOnCpuKeepingAlive(dst.context(), {&src, &dst}, copy);
-    return copy();
-  }
-  if (dst.isHost() || dstApi == Device::cpuAPI) {
-    // Device -> host.
-    if (dstApi == Device::cpuAPI && srcApi != Device::cpuAPI) {
-      ErrorOrSuccess sync = dst.context().synchronize();
-      if (sync.isError())
-        return sync;
-    }
-    return src.context().enqueueCopyFromDevice(dst.ptr_, srcAt, srcByteSize);
-  }
-  if (srcApi == dstApi) {
-    if (const char *err = MojoHAL_DeviceContext_enqueueCopy(
-            dst.context().mojoCtx_, dst.ptr_, srcAt, srcByteSize))
-      return takeError(err);
-    return {};
-  }
-  return Error(llvm::Twine("device API mismatch copying from \"") + srcApi +
-               "\" to \"" + dstApi + "\"");
+ErrorOrSuccess DeviceBuffer::copyFrom(const void *src) {
+  return context().enqueueCopyToDevice(*this, src);
 }
 
 ErrorOrSuccess DeviceBuffer::synchronize(void *external_stream) {
@@ -667,16 +694,22 @@ DeviceBufferRef DeviceContext::createBufferOwning(void *ptr, size_t byteSize,
                                                   bool owning) {
   if (device_->isVirtual())
     return DeviceBufferRef();
+  // A plugin-owning wrap is only valid at the base of the plugin's own
+  // allocation, but callers pass `owning` for interior or foreign pointers and
+  // then set a destructor (graph outputs, external buffers). Wrap non-owning
+  // and defer the ownership claim to destruction.
   MojoHALBufferBox *buf = nullptr;
   if (const char *err = MojoHAL_DeviceContext_createBufferOwning(
-          &buf, mojoCtx_, ptr, byteSize, owning)) {
+          &buf, mojoCtx_, ptr, byteSize, /*owning=*/false)) {
     // The replaced API returns a bare ref; surface failure as an empty ref.
     MojoHAL_strfree(err);
     return DeviceBufferRef();
   }
-  return DeviceBufferRef::take(new DeviceBuffer(
-      buf, ptr, byteSize, /*isHost=*/false, DeviceBuffer::BoxKind::Device,
-      DeviceContextRef::copy(this)));
+  auto *result = new DeviceBuffer(buf, ptr, byteSize, /*isHost=*/false,
+                                  DeviceBuffer::BoxKind::Device,
+                                  DeviceContextRef::copy(this));
+  result->freeOnDestroy_ = owning;
+  return DeviceBufferRef::take(result);
 }
 
 DeviceBufferRef
@@ -723,6 +756,75 @@ ErrorOrSuccess DeviceContext::enqueueCopyToDevice(void *dst, const void *src,
           mojoCtx_, dst, src, byteSize))
     return takeError(err);
   return {};
+}
+
+ErrorOrSuccess DeviceContext::enqueueCopyDeviceToDevice(DeviceBuffer &dst,
+                                                        DeviceBuffer &src,
+                                                        size_t srcByteOffset,
+                                                        size_t srcByteSize,
+                                                        bool crossStreamSync) {
+  if (srcByteOffset + srcByteSize > src.byteSize())
+    return Error("not enough data in src");
+  if (srcByteSize != dst.byteSize())
+    return Error("size mismatch with dst");
+
+  DeviceContext &srcCtx = src.context();
+  DeviceContext &dstCtx = dst.context();
+  const Device::API srcApi = srcCtx.device().api();
+  const Device::API dstApi = dstCtx.device().api();
+  const uint8_t *srcAt = static_cast<const uint8_t *>(src.ptr_) + srcByteOffset;
+
+  // A CPU context is synchronized first: events can't be awaited across
+  // device types.
+  if (src.isHost() || srcApi == Device::cpuAPI) {
+    if (srcApi == Device::cpuAPI && dstApi != Device::cpuAPI) {
+      ErrorOrSuccess sync = srcCtx.synchronize();
+      if (sync.isError())
+        return sync;
+    }
+    auto copy = [&] {
+      return dstCtx.enqueueCopyToDevice(dst.ptr_, srcAt, srcByteSize);
+    };
+    if (dstApi == Device::cpuAPI)
+      return enqueueOnCpuKeepingAlive(dstCtx, {&src, &dst}, copy);
+    return copy();
+  }
+  if (dst.isHost() || dstApi == Device::cpuAPI) {
+    if (dstApi == Device::cpuAPI && srcApi != Device::cpuAPI) {
+      ErrorOrSuccess sync = dstCtx.synchronize();
+      if (sync.isError())
+        return sync;
+    }
+    return srcCtx.enqueueCopyFromDevice(dst.ptr_, srcAt, srcByteSize);
+  }
+  if (srcApi != dstApi)
+    return Error(llvm::Twine("device API mismatch copying from \"") + srcApi +
+                 "\" to \"" + dstApi + "\"");
+  if (device_->isVirtual() || srcCtx.device_->isVirtual())
+    return virtualDeviceError("memory operations");
+  if (device().id() != dstCtx.device().id())
+    return Error("device context does not match context of dst");
+
+  // Without the waits, the copy could read `src` before its stream writes it,
+  // or that stream could overwrite or free `src` mid-copy.
+  const bool needsSync = crossStreamSync && !MojoHAL_DeviceContext_sameStream(
+                                                mojoCtx_, srcCtx.mojoCtx_);
+  if (needsSync) {
+    ErrorOrSuccess wait = enqueueWaitFor(srcCtx);
+    if (wait.isError())
+      return wait;
+  }
+  if (const char *err = MojoHAL_DeviceContext_enqueueCopy(mojoCtx_, dst.ptr_,
+                                                          srcAt, srcByteSize))
+    return takeError(err);
+  if (!needsSync)
+    return {};
+  ErrorOrSuccess wait = srcCtx.enqueueWaitFor(*this);
+  // The copy is already enqueued: drain it before reporting failure, so the
+  // caller can't free a buffer the copy is still using.
+  if (wait.isError())
+    (void)synchronize();
+  return wait;
 }
 
 ErrorOrSuccess DeviceContext::enqueueCopyFromDevice(void *dst, const void *src,
@@ -802,15 +904,7 @@ ErrorOrSuccess DeviceContext::pollPendingEvents() {
 ErrorOr<Device::MemInfo> DeviceContext::getMemoryInfo() const {
   if (device_->isVirtual())
     return device_->getMemoryInfo();
-  Device::MemInfo info;
-  uint64_t memFree = 0;
-  uint64_t memTotal = 0;
-  if (const char *err =
-          MojoHAL_DeviceContext_getMemoryInfo(&memFree, &memTotal, mojoCtx_))
-    return takeError(err);
-  info.free = memFree;
-  info.total = memTotal;
-  return info;
+  return queryMemoryInfo(mojoCtx_);
 }
 
 ErrorOr<const char *> DeviceContext::getArchName() const {
@@ -915,6 +1009,20 @@ ErrorOrSuccess DeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
     return virtualDeviceError("host-value waits");
   if (const char *err = MojoHAL_DeviceStream_waitOnHostValue(
           mojoStream_, flag.devicePtr(), value))
+    return takeError(err);
+  return {};
+}
+
+ErrorOrSuccess DeviceStream::enqueueHostFunc(void (*fn)(void *),
+                                             void *userData) const {
+  if (device_->isVirtual())
+    return virtualDeviceError("host functions");
+  // CPU and Metal plugins support host functions, but legacy rejects them
+  // there and callers rely on that.
+  if (device_->api() != Device::cudaAPI && device_->api() != Device::hipAPI)
+    return Error("enqueueHostFunc is not supported on this device");
+  if (const char *err =
+          MojoHAL_DeviceStream_launchHostFunc(mojoStream_, fn, userData))
     return takeError(err);
   return {};
 }
@@ -1266,6 +1374,12 @@ using M::AsyncRT::AnyAsyncValueRef;
 using M::AsyncRT::CPUDevice;
 using M::Driver::DeviceBuffer;
 using M::Driver::DeviceBufferRef;
+
+// Backs the HAL Mojo `DeviceStream.wait_for_host_value`.
+MODULAR_EXPORT uint64_t
+AsyncRT_CompletionFlag_devicePtr(M::Driver::CompletionFlag *flag) {
+  return flag->devicePtr();
+}
 
 // Backs the HAL Mojo `DeviceBuffer.take_handle()`, so `takeRCRef` consumers
 // receive a refcount-1 shim `DeviceBuffer`, as with the legacy handle.

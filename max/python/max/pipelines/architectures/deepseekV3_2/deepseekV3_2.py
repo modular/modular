@@ -37,27 +37,27 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import ColumnParallelLinear
-from max.nn.moe import MoE
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import ColumnParallelLinear
+from max.nn.legacy.moe import MoE
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import DecoderOutputs, forward_sequential_layers
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import DecoderOutputs, forward_sequential_layers
+from max.nn.legacy.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from max.tree import Tree
@@ -312,8 +312,7 @@ class DeepseekV3_2DecoderLayer(Module):
     def _get_mlp(
         self, config: DeepseekV3_2Config, layer_idx: int
     ) -> DeepseekV3_2MLP | DeepseekV3_2MoE | MoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP or MoE layer the TransformerBlock uses for a layer.
 
         Args:
             config: Configuration object containing model parameters
@@ -429,6 +428,7 @@ class DeepseekV3_2DecoderLayer(Module):
         # and this step's token.
         selection_lag: int = 0,
     ) -> list[TensorValue]:
+        """Runs one decoder layer over the hidden states."""
         # Dual-carry Pre-LN: attention uses ``xs_norm``; residuals use ``xs_raw``.
         apply_next = bool(next_input_gamma)
 
@@ -746,6 +746,7 @@ class DeepseekV3_2(Module):
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
@@ -926,6 +927,7 @@ class DeepseekV3_2(Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, taken from the input tree."""
         return tuple(tree.leaves(self.input_tree(kv_params)))
 
     def trace(
@@ -936,8 +938,9 @@ class DeepseekV3_2(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the graph, whose inputs are the leaves of
-        :meth:`input_tree` for the config's KV cache parameters.
+        """Traces the graph over the leaves of :meth:`input_tree`.
+
+        The leaves carry the config's KV cache parameters.
 
         Adapts the flat graph inputs to :meth:`__call__`: splits off the
         signal buffers and splits the KV cache into its MLA and indexer

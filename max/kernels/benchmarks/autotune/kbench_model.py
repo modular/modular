@@ -355,6 +355,10 @@ class SpecInstance:
     file: Path
     executor: Lang
     params: list[Param] = field(default_factory=list)
+    # Set on the instances of a sweep spec: the benchmark expands its own
+    # runtime axes from the `$` parameters' comma lists, and writes one CSV
+    # row per benchmark rather than one per instance.
+    sweep: bool = False
 
     def __bool__(self) -> bool:
         return bool(self.params)
@@ -410,6 +414,10 @@ class SpecInstance:
         if executor == SupportedLangs.MOJO:
             cmd = [executor.path]
             cmd.extend(["build"])
+            # A sweep benchmark imports its sibling packages (such as
+            # `bench_sweep`), which no mojo import path carries.
+            if self.sweep:
+                cmd.extend(["-I", str(Path(self.file).parent)])
             cmd.extend(build_opts)
             cmd.extend(
                 [
@@ -605,6 +613,9 @@ class Spec:
     mesh_idx: int = 0
     mesh: list[SpecInstance] = field(default_factory=list)
     rules: list[str] = field(default_factory=list)
+    # A sweep benchmark runs every config of its `$` parameters in one
+    # process, expanding the comma lists itself; see `_sweep_instances`.
+    sweep: bool = False
 
     @staticmethod
     def load_yaml(file: Path) -> Spec:
@@ -765,6 +776,7 @@ class Spec:
             file=obj.get("file", ""),
             params=params,
             rules=obj.get("rules", []),
+            sweep=bool(obj.get("sweep", False)),
         )
 
     def __len__(self) -> int:
@@ -783,6 +795,8 @@ class Spec:
         # setup mesh
         if self.params:
             self.setup_mesh()
+        elif self.sweep:
+            raise ValueError("a sweep spec needs at least one params group")
         else:
             # default values for empty mesh
             self.mesh = [
@@ -808,14 +822,77 @@ class Spec:
         At the end, append the configs with fixed parameters, if any exists in YAML.
 
         Return the total size of mesh.
+
+        A sweep spec has no mesh to expand: each params group collapses to
+        the one process that runs it (`_sweep_instances`).
         """
+        if self.sweep:
+            if self.rules:
+                raise ValueError(
+                    "rules are not supported for sweep specs: a rule sees a"
+                    " `$` axis as its comma-joined list, not one value per"
+                    " instance. Restrict the sweep with --param instead."
+                )
+            self.mesh = self.apply_rules(self._sweep_instances(), self.rules)
+            return len(self.mesh)
         grid_mesh = list(GridSearchStrategy(self.name, self.file, self.params))
         self.mesh = self.apply_rules(grid_mesh, self.rules)
         return len(self.mesh)
 
+    def _sweep_instances(self) -> list[SpecInstance]:
+        """Collapse each params group to the single process that runs it.
+
+        A sweep benchmark expands its own runtime axes in one process, so
+        every `$` parameter becomes one comma-joined list, which the
+        benchmark parses the way it parses `--axis=v1,v2`. A compile-time
+        parameter must pin a single value: a sweep benchmark covers its
+        comptime axes with `comptime for` arms that an unpinned define
+        builds all of, so multiple values here would silently fall to the
+        define's default instead of sweeping.
+
+        Raises:
+            ValueError: if a `$` parameter has no values, or a compile-time
+                parameter has more than one.
+        """
+        instances: list[SpecInstance] = []
+        for cfg in self.params:
+            params: list[Param] = []
+            for ps in cfg:
+                if not ps.value_set:
+                    raise ValueError(
+                        f"sweep parameter '{ps.name}' has no values"
+                    )
+                if ps.name.startswith("$"):
+                    joined = ",".join(str(v) for v in ps.value_set)
+                    params.append(Param(ps.name, joined))
+                elif len(ps.value_set) == 1:
+                    params.append(Param(ps.name, ps.value_set[0]))
+                else:
+                    raise ValueError(
+                        f"sweep parameter '{ps.name}' has "
+                        f"{len(ps.value_set)} values ({ps.value_set}). A"
+                        " sweep spec pins compile-time parameters to one"
+                        " value: the benchmark expands its own comptime arms"
+                        " in one executable, and"
+                        f' --param {ps.name}:"[value]" pins one arm.'
+                    )
+            instances.append(
+                SpecInstance(
+                    name=self.name,
+                    file=self.file,
+                    params=params,
+                    executor=SupportedLangs.which_executor(self.file),
+                    sweep=True,
+                )
+            )
+        return instances
+
     def join(self, other: Spec) -> None:
         assert self.name == other.name
         assert self.file == other.file
+        assert self.sweep == other.sweep, (
+            "Cannot join a sweep spec with a non-sweep spec."
+        )
         assert len(other.mesh) > 0
 
         self.mesh_idx = 0
@@ -905,6 +982,15 @@ class Spec:
         for i, idx in enumerate(valid_cnt):
             if idx == num_filters:
                 filtered_insts.append(self.mesh[i])
+
+        if self.mesh and not filtered_insts:
+            msg = f"kbench --filter: eliminated all {len(self.mesh)} instances"
+            if self.sweep:
+                msg += (
+                    "; a sweep's `$` axes are comma-joined lists, so"
+                    " restrict one with --param instead"
+                )
+            print(msg, file=sys.stderr)
 
         self.mesh = filtered_insts[:]
         self.mesh_idx = 0
@@ -1965,6 +2051,11 @@ class Scheduler:
                     for p in current_spec.params
                 )
                 df.insert(len(df.columns), "kbench_filter", kbench_filter)
+                # A sweep process writes one row per benchmark, each named
+                # for its config, so its rows join on `name` as before.
+                if current_spec.sweep:
+                    valid_specs.append(df)
+                    continue
                 # If there are more than one entries in CSV then bencher
                 # has added an extra column at the end of name with input_id.
                 # TODO: This will create multiple rows with same mesh_idx.

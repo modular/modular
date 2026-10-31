@@ -38,7 +38,9 @@
 
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
+#include "Mojo/KGENDialect/KGENPogUtils.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -808,6 +810,193 @@ static bool isKeptAlias(ASTType type, LIT::StructType structType) {
          !isScalarSIMDType(structType);
 }
 
+/// Checks that an implicit parameter of type `paramType`, about to be prepended
+/// as an inferred parameter, only depends on parameters that are inferred
+/// themselves: implicit parameters declared before it (`siblingNames`),
+/// inferred parameters declared earlier in the same list (`earlierParams`), or
+/// parameters of an enclosing declaration. Consider something like:
+///   struct T1[mut: Bool, value: TakesBool[mut]]: ...
+///   struct T2[m: Bool, n: T1[m, _]]:
+/// it would be incorrect to transform this into:
+///   struct T2[IMP: TakesBool[m], //, m: Bool, n: T1[m, _]]:
+/// because IMP would use m before it is declared. Diagnoses at `loc` and
+/// returns failure on a bad dependency.
+static LogicalResult
+checkPrependedParamDeps(Type paramType, ArrayRef<StringAttr> siblingNames,
+                        ArrayRef<ParamDeclAttr> earlierParams,
+                        ArrayRef<PassingKind> earlierPassingKinds,
+                        ASTDecl &declScope, SMLoc loc) {
+  SharedState &shared = declScope.getShared();
+  auto isDeclaredParam = [](ASTDecl *scope, ParamDeclRefAttr paramRef) -> bool {
+    auto userName = StringAttr::get(
+        scope->getContext(), KGEN::demangleParameterName(paramRef.getName()));
+    if (ArrayRef<ASTDecl *> decls = scope->lookup(userName); !decls.empty()) {
+      for (auto decl : decls)
+        if (CValue cv = decl->getIfIRValue())
+          return cv.getIfPValue() && isEqualCanon(cv.getIfPValue(), paramRef);
+    }
+    return false;
+  };
+
+  bool hadFailure = false;
+  SmallVector<ParamDeclRefAttr> paramUses;
+  shared.collectParamRefsInType(paramType, paramUses);
+  // A type can reference the same parameter more than once; check each once.
+  llvm::SmallDenseSet<StringAttr, 4> checkedNames;
+  // This is O(n^2) but the N's are small.
+  for (ParamDeclRefAttr paramUse : paramUses) {
+    if (!checkedNames.insert(paramUse.getName()).second)
+      continue;
+    // Check to see if it is an earlier part of the type for this argument.
+    std::optional<PassingKind> passingKind;
+    if (llvm::is_contained(siblingNames, paramUse.getName()))
+      passingKind = PassingKind::Inferred;
+    // Otherwise, it must be something part of the enclosing param list.
+    if (!passingKind.has_value()) {
+      // Make sure to iterate over the decls (not the user-facing names)
+      // because those don't get mangled when params shadow.
+      for (auto [decl, kind] :
+           llvm::zip_equal(earlierParams, earlierPassingKinds)) {
+        if (paramUse.getName() == decl.getName()) {
+          passingKind = kind;
+          break;
+        }
+      }
+    }
+    // If we didn't find it, check to see if it is on the enclosing struct.
+    if (!passingKind.has_value()) {
+      // We can not reuse ASTDecl::lookupParamReference here, as the parent
+      // decl might not have been fully resolved yet. E.g.,
+      // def [T : AnyType, F : def [Param[T, _]]() ]()
+      // when auto parameterized `[Param[T, _]`, `T` has not been put into
+      // the parameter list of the holding function yet.
+      //
+      // Any parameters from it are fine.
+      if (isDeclaredParam(&declScope, paramUse))
+        passingKind = PassingKind::Inferred;
+    }
+
+    if (!passingKind.has_value()) {
+      shared.emitError(loc, "INTERNAL ERROR: inferred parameter of type ")
+          << paramType << " depends on unresolved parameter "
+          << paramUse.getName() << "; please file a compiler bug";
+      hadFailure = true;
+    } else if (*passingKind != PassingKind::Inferred) {
+      // It is common to hit this with variadic packs.
+      auto diag = shared.emitError(loc);
+      if (auto paramListType = dyn_cast<ParamListType>(paramType)) {
+        diag << "element type parameter " << paramListType.getElementType()
+             << " must be an 'inferred' parameter";
+        // The message doesn't name the offending parameter, so one is enough.
+        return failure();
+      } else {
+        diag << "inferred parameter of type " << paramType
+             << " cannot depend on non-inferred parameter "
+             << paramUse.getName();
+      }
+      hadFailure = true;
+    }
+  }
+  return failure(hadFailure);
+}
+
+TypeCheckedParamList::DeferredTypingScope::DeferredTypingScope(
+    TypeCheckedParamList &paramList, IREmitter *emitter, StringAttr argName,
+    bool append)
+    : paramList(paramList), emitter(emitter), append(append) {
+  if (argName)
+    context.implicitParams.emplace(paramList.declScope, /*prefix=*/argName);
+  if (emitter) {
+    assert(!emitter->deferredTypingContext &&
+           "an emitter is in one deferred typing scope at a time");
+    emitter->deferredTypingContext = &context;
+  }
+}
+
+TypeCheckedParamList::DeferredTypingScope::~DeferredTypingScope() {
+  if (emitter)
+    emitter->deferredTypingContext = nullptr;
+  SmallVector<ImplicitParamManager::PendingParam> pending;
+  if (context.implicitParams)
+    pending = context.implicitParams->takePending();
+  if (pending.empty()) {
+    llvm::append_range(paramList.deferredConstraints,
+                       context.deferredConstraints);
+    return;
+  }
+
+  // Deferred constraints this type raised on its own holes are auto-propagated
+  // onto this signature as necessary without needing the user to specify.
+  // TODO(MOCO-5245): This is a very rough categorization. We should either make
+  // the categorization more granular (by splitting top-level conjunctions) or
+  // find a better way to auto-propagate constraints.
+  llvm::SmallDenseSet<StringAttr, 4> pendingNames;
+  for (const ImplicitParamManager::PendingParam &param : pending)
+    pendingNames.insert(param.decl.getName());
+  auto refersToPending = [&](const DeferredConstraint &deferral) {
+    return deferral.constraint.getProposition()
+        .walk([&](ParamDeclRefAttr ref) {
+          return pendingNames.contains(ref.getName()) ? WalkResult::interrupt()
+                                                      : WalkResult::advance();
+        })
+        .wasInterrupted();
+  };
+  for (const DeferredConstraint &deferral : context.deferredConstraints) {
+    if (refersToPending(deferral)) {
+      paramList.emittedBodyConstraints.push_back(deferral.constraint);
+      paramList.declScope.insertKnownAssumptions({deferral.constraint});
+    } else {
+      paramList.deferredConstraints.push_back(deferral);
+    }
+  }
+
+  if (!append) {
+    // Only this argument's own implicit parameters can precede each one.
+    SmallVector<StringAttr> siblingNames;
+    for (const ImplicitParamManager::PendingParam &param : pending) {
+      if (failed(checkPrependedParamDeps(
+              param.decl.getType(), siblingNames, paramList.paramDeclAttrs,
+              paramList.passingKinds, paramList.declScope, param.loc)))
+        paramList.hadImplicitParamErrors = true;
+      siblingNames.push_back(param.decl.getName());
+    }
+  }
+  auto decls = llvm::map_range(
+      pending, [](const ImplicitParamManager::PendingParam &param) {
+        return param.decl;
+      });
+
+  size_t insertPt;
+  if (append) {
+    insertPt = paramList.paramDeclAttrs.size();
+  } else {
+    insertPt = 0;
+    while (insertPt < paramList.paramDeclAttrs.size() &&
+           paramList.passingKinds[insertPt] == PassingKind::Inferred)
+      ++insertPt;
+  }
+
+  auto insertN = [&](auto &dst, auto value) {
+    dst.insert(dst.begin() + insertPt, pending.size(), value);
+  };
+  paramList.paramDeclAttrs.insert(paramList.paramDeclAttrs.begin() + insertPt,
+                                  decls.begin(), decls.end());
+  auto declNames =
+      llvm::map_range(decls, [](ParamDeclAttr decl) { return decl.getName(); });
+  paramList.names.insert(paramList.names.begin() + insertPt, declNames.begin(),
+                         declNames.end());
+  insertN(paramList.passingKinds,
+          append ? PassingKind::Implicit : PassingKind::Inferred);
+  // Auto-parameterized parameters are never variadic: the variadic-ness of
+  // `*xs: SomeType` is carried by the user's own parameter. Any parameters
+  // synthesized for holes on the element type are not themselves variadic.
+  // Even if the element type's hole was declared variadic, the
+  // auto-parameterized version is not.
+  insertN(paramList.variadicKinds, VariadicKind::None);
+  insertN(paramList.defaults, TypedAttr());
+  insertN(paramList.locations, SMLoc());
+}
+
 /// Given a type that potentially has all of its parameters unbound, implicitly
 /// add the parameter declarations to the function parameters. For example, a
 /// struct type can be partially bound. This function implicitly adds a
@@ -837,51 +1026,15 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     return {};
 
   auto &shared = paramList.shared;
-  SmallVector<ParamDeclAttr> paramDeclAttrs;
-  SmallVector<StringAttr> names;
-  SmallVector<PassingKind> passingKinds;
-  SmallVector<VariadicKind> variadicKinds;
-  SmallVector<SMLoc> locations;
-  SmallVector<TypedAttr> defaults;
-
-  // Functor to insert the pending vectors into paramList, either at the front
-  // or back.
-  auto insertFn = [](size_t insertPt, auto &dst, auto &src) {
-    dst.insert(dst.begin() + insertPt, src.begin(), src.end());
-  };
-
-  auto commitChanges = llvm::scope_exit([&]() {
-    // All lists guaranteed to have the same length.
-    if (paramDeclAttrs.empty())
-      return;
-
-    // Figure out where to insert the new parameters.  If append, we put them at
-    // the end of the list.  If prepend, we put them after any infer-only
-    // parameters.
-    size_t insertPt;
-    if (append)
-      insertPt = paramList.paramDeclAttrs.size();
-    else {
-      insertPt = 0;
-      while (insertPt < paramList.paramDeclAttrs.size() &&
-             paramList.passingKinds[insertPt] == PassingKind::Inferred)
-        ++insertPt;
-    }
-
-    insertFn(insertPt, paramList.paramDeclAttrs, paramDeclAttrs);
-    insertFn(insertPt, paramList.names, names);
-    insertFn(insertPt, paramList.passingKinds, passingKinds);
-    insertFn(insertPt, paramList.variadicKinds, variadicKinds);
-    insertFn(insertPt, paramList.defaults, defaults);
-    insertFn(insertPt, paramList.locations, locations);
-  });
+  TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+      paramList, /*emitter=*/nullptr, argName, append);
+  DeferredTypingContext &deferredTypingContext =
+      deferredTypingScope.getContext();
 
   // The parameter decl references that will be used to fully bind the type,
   // plus a parameter evaluator we use to progressively refine the type.
   SmallVector<TypedAttr> paramValues;
   ParameterEvaluator evaluator = shared.getParameterEvaluator();
-
-  bool hadFailure = false;
 
   // Re-attach an auto-parameterized generator's trailing `where` (body)
   // constraints to the enclosing parameter list (rebinding their index refs to
@@ -898,7 +1051,9 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     auto mentionsNewParam = [&](TypedAttr prop) {
       bool found = false;
       prop.walk([&](ParamDeclRefAttr ref) {
-        if (llvm::is_contained(names, ref.getName()))
+        if (llvm::any_of(paramValues, [&](TypedAttr value) {
+              return cast<ParamDeclRefAttr>(value).getName() == ref.getName();
+            }))
           found = true;
       });
       return found;
@@ -915,99 +1070,11 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     }
   };
 
-  auto isDeclaredParam = [](ASTDecl *scope, ParamDeclRefAttr paramRef) -> bool {
-    auto userName = StringAttr::get(
-        scope->getContext(), KGEN::demangleParameterName(paramRef.getName()));
-    if (ArrayRef<ASTDecl *> decls = scope->lookup(userName); !decls.empty()) {
-      for (auto decl : decls)
-        if (CValue cv = decl->getIfIRValue())
-          return cv.getIfPValue() && isEqualCanon(cv.getIfPValue(), paramRef);
-    }
-    return false;
-  };
-
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name) {
-    auto boundParamType = evaluator.getReboundType(type);
-    // If we are prepending this as an implicit parameter, make sure its type
-    // doesn't depend on any parameters before it.  Consider something like:
-    //   struct T1[mut: Bool, value: TakesBool[mut]]: ...
-    //   struct T2[m: Bool, n: T1[m, _]]:
-    // it would be incorrect to transform this into:
-    //   struct T2[IMP: TakesBool[m], //, m: Bool, n: T1[m, _]]:
-    // because IMP would use m before it is declared.
-    if (!append) {
-      SmallVector<ParamDeclRefAttr> paramUses;
-      shared.collectParamRefsInType(boundParamType, paramUses);
-      // This is O(n^2) but the N's are small.
-      for (ParamDeclRefAttr paramUse : paramUses) {
-        // Check to see if it is an earlier part of the type for this argument.
-        std::optional<PassingKind> passingKind;
-        for (auto [idx, name] : llvm::enumerate(names)) {
-          if (paramUse.getName() == name) {
-            passingKind = passingKinds[idx];
-            break;
-          }
-        }
-        // Otherwise, it must be something part of the enclosing param list.
-        if (!passingKind.has_value()) {
-          // Make sure to iterate over paramDeclAttrs (not names) because
-          // 'names' doesn't get mangled when params shadow.
-          for (auto [idx, decl] : llvm::enumerate(paramList.paramDeclAttrs)) {
-            if (paramUse.getName() == decl.getName()) {
-              passingKind = paramList.passingKinds[idx];
-              break;
-            }
-          }
-        }
-        // If we didn't find it, check to see if it is on the enclosing struct.
-        if (!passingKind.has_value()) {
-          // We can not reuse ASTDecl::lookupParamReference here, as the parent
-          // decl might not have been fully resolved yet. E.g.,
-          // def [T : AnyType, F : def [Param[T, _]]() ]()
-          // when auto parameterized `[Param[T, _]`, `T` has not been put into
-          // the parameter list of the holding function yet.
-          //
-          // Any parameters from it are fine.
-          if (isDeclaredParam(&paramList.declScope, paramUse))
-            passingKind = PassingKind::Inferred;
-        }
-
-        if (!passingKind.has_value()) {
-          shared.emitError(loc, "INTERNAL ERROR: inferred parameter of type ")
-              << boundParamType << " depends on unresolved parameter "
-              << paramUse.getName() << "; please file a compiler bug";
-          boundParamType = TypeCheckErrorType::get(shared.getContext());
-        } else if (*passingKind != PassingKind::Inferred) {
-          // It is common to hit this with variadic packs.
-          auto diag = shared.emitError(loc);
-          if (auto paramList = dyn_cast<ParamListType>(boundParamType)) {
-            diag << "element type parameter " << paramList.getElementType()
-                 << " must be an 'inferred' parameter";
-          } else {
-            diag << "inferred parameter of type " << boundParamType
-                 << " cannot depend on non-inferred parameter "
-                 << paramUse.getName();
-          }
-          boundParamType = TypeCheckErrorType::get(shared.getContext());
-          hadFailure = true;
-        }
-      }
-    }
-
-    auto mangledName =
-        paramList.declScope.mangleParamName(argName.strref() + "." + name);
-    auto paramDecl = ParamDeclAttr::get(mangledName, boundParamType);
-    names.push_back(mangledName);
-    passingKinds.push_back(append ? PassingKind::Implicit
-                                  : PassingKind::Inferred);
-    paramDeclAttrs.push_back(paramDecl);
-    locations.push_back(SMLoc());
+    ParamDeclAttr paramDecl = deferredTypingContext.declareImplicitParam(
+        evaluator.getReboundType(type), name, loc);
     paramValues.push_back(ParamDeclRefAttr::get(paramDecl));
-
-    // FIXME: Autoparam of variadics looks broken?
-    variadicKinds.push_back(VariadicKind::None);
-    defaults.push_back(TypedAttr());
     evaluator.appendIndexBinding(paramValues.back());
   };
 
@@ -1018,8 +1085,6 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     if (!isa<UnboundAttr>(origins))
       return type;
     declareAndAddParam(origins.getType(), "__origins__");
-    if (hadFailure)
-      return {};
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
@@ -1029,8 +1094,6 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
       ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
       for (auto [idx, type] : llvm::enumerate(gen.getInputParamTypes()))
         declareAndAddParam(type, pogs[idx].getName());
-      if (hadFailure)
-        return {};
       propagateBodyConstraints(genParamList);
       return gen
           .getSpecializedGenerator(paramValues, &shared.getEvaluationContext(),
@@ -1047,8 +1110,6 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
       ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
       for (auto [idx, type] : llvm::enumerate(genType.getInputParamTypes()))
         declareAndAddParam(type, pogs[idx].getName());
-      if (hadFailure)
-        return {};
       propagateBodyConstraints(genParamList);
       TypedAttr generator = paramType.getParam();
       // The generator's trailing constraints were re-attached to the enclosing
@@ -1071,8 +1132,6 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
     for (auto [idx, type] : llvm::enumerate(sig.getParamTypes()))
       declareAndAddParam(type, pogs[idx].getName());
-    if (hadFailure)
-      return {};
     propagateBodyConstraints(paramList, /*onlyOverNewParams=*/true);
     return metatype.bindUnbound(paramValues);
   };
@@ -1148,7 +1207,7 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
 
   ASTType result = specializeStruct(bindings, structDeclOp, listDecl);
   if (!result)
-    return emitter.shared.getTypeCheckErrorType();
+    return {};
 
   // Add the !kgen.param_list parameter to the parameter list.  It is possible
   // the element type is a non-inferred parameter, so "append" this.
@@ -1166,7 +1225,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
   result.stagedBodyConstraints = std::move(parsedParams.bodyConstraints);
 
   // Resolve each of the parameter declarations.
-  IREmitter emitter(declScope, EC_Type, &result.deferredTypingContext);
+  IREmitter emitter(declScope, EC_Type);
   bool hasErrors = false;
 
   IndexRefRemapper remapper(ArrayRef<ParamDeclAttr>{});
@@ -1175,7 +1234,17 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     // parameters.
     ASTType type;
     if (arg.typeExpr) {
-      type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+      // Holes in a variadic element type are appended, matching
+      // `typeCheckVariadicParams`.
+      bool append = arg.variadicKind == VariadicKind::PosVarArg;
+      [[maybe_unused]] size_t numParams = result.paramDeclAttrs.size();
+      {
+        DeferredTypingScope deferredTypingScope(result, &emitter, arg.name,
+                                                append);
+        type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+        assert(result.paramDeclAttrs.size() == numParams &&
+               "parameter list changed under a deferred typing scope");
+      }
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
@@ -1209,8 +1278,9 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 
     // Emit default parameter values if present. An error would have been
     // emitted if failed.
-    PValue defaultVal = emitDefault(parsedParams.params, argIdx, type,
-                                    result.defaults, emitter, EC_DefaultParam);
+    PValue defaultVal;
+    defaultVal = emitDefault(parsedParams.params, argIdx, type, result.defaults,
+                             emitter, EC_DefaultParam);
     result.defaults.push_back(defaultVal);
 
     // TODO: Parameter decls should support conventions at some point.
@@ -1241,7 +1311,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     remapper.appendParamDecl(newDecl);
   }
 
-  if (hasErrors)
+  if (hasErrors || result.hadImplicitParamErrors)
     return std::nullopt;
   return result;
 }
@@ -1285,8 +1355,7 @@ void TypeCheckedParamList::emitBodyConstraints() {
   // signature. A deferred constraint is "discharged" if the body constraints
   // (together with the rest of the scope's known assumptions) now imply it;
   // otherwise we surface a hard error pointing at the original binding site.
-  for (const DeferredConstraint &deferral :
-       deferredTypingContext.deferredConstraints) {
+  for (const DeferredConstraint &deferral : deferredConstraints) {
     SmallVector<ConstraintAttr> stillUnprovable;
     std::optional<MojoInflightDiag> violationDiag;
     auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
@@ -1845,7 +1914,12 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   assert(arg.variadicKind == VariadicKind::PackVarArg &&
          "this applies to pack arguments");
 
-  PValue param = emitter.emitExprPValue(arg.typeExpr, EC_Type);
+  PValue param;
+  {
+    TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+        tcSignature.paramList, &emitter, arg.name, /*append=*/true);
+    param = emitter.emitExprPValue(arg.typeExpr, EC_Type);
+  }
   if (!param) // Error emitting the expression is already diagnosed.
     return {};
 
@@ -1923,8 +1997,12 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   assert(arg.variadicKind == VariadicKind::PosVarArg &&
          "this applies to variadic list arguments");
 
-  ASTType elementType =
-      emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+  ASTType elementType;
+  {
+    TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+        tcSignature.paramList, &emitter, arg.name, /*append=*/true);
+    elementType = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+  }
   if (!elementType) // Error emitting the expression is already diagnosed.
     return {};
 
@@ -1987,8 +2065,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
 
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = declScope.getShared();
-  IREmitter typeEmitter(declScope, EC_Type,
-                        &tcSignature.paramList.deferredTypingContext);
+  IREmitter typeEmitter(declScope, EC_Type);
 
   FnOp fnOp; // Null if type checking a function type.
   if (fnDecl)
@@ -2017,6 +2094,8 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
       // Emit the argument type. Allow argument types to be "automatically"
       // parameterized: if the type is fully unbound, its parameters are
       // appended to the function parameters.
+      TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+          tcSignature.paramList, &typeEmitter, arg.name, /*append=*/true);
       type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
     }
 
@@ -2119,9 +2198,14 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
 
   // Emit default argument values if present. An error would have been emitted
   // if failed.
-  auto defaultVal =
-      emitDefault(tcSignature.argList.parsedArgs, idx, type,
-                  tcSignature.defaults, typeEmitter, EC_DefaultArgument);
+  PValue defaultVal;
+  {
+    TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+        tcSignature.paramList, &typeEmitter);
+    defaultVal =
+        emitDefault(tcSignature.argList.parsedArgs, idx, type,
+                    tcSignature.defaults, typeEmitter, EC_DefaultArgument);
+  }
   tcSignature.defaults.push_back(defaultVal);
 
   // Now that we have the declared type and default value sorted, apply the
@@ -2334,8 +2418,9 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
     // If the result type is a `None` literal, then convert it to NoneType.
     resultType = shared.getNoneType();
   } else if (resultArg.typeExpr) {
-    IREmitter typeEmitter(declScope, EC_Type,
-                          &tcSignature.paramList.deferredTypingContext);
+    IREmitter typeEmitter(declScope, EC_Type);
+    TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+        tcSignature.paramList, &typeEmitter);
     resultType = typeEmitter.emitExprType(resultArg.typeExpr);
 
     // If the resultType is a generated type, ensure that it is convertible to a
@@ -2353,8 +2438,8 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
           // as any constraints on the generator can be discharged by the
           // function's constraints.
           for (ConstraintAttr c : genType.getBodyConstraints())
-            tcSignature.paramList.deferredTypingContext.deferredConstraints
-                .push_back({c, resultArg.typeExpr->getLoc()});
+            deferredTypingScope.getContext().addInconclusive(
+                c, resultArg.typeExpr->getLoc());
           llvm::BitVector discharged(genType.getBodyConstraints().size(), true);
           // Record the type as the discharged body type.
           resultType = BindParamsAttr::get(
@@ -2495,8 +2580,9 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
   if (tcSignature.argList.effects.isThrows()) {
     ASTType errorType;
     if (tcSignature.argList.thrownTypeExpr) {
-      IREmitter typeEmitter(declScope, EC_Type,
-                            &tcSignature.paramList.deferredTypingContext);
+      IREmitter typeEmitter(declScope, EC_Type);
+      TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+          tcSignature.paramList, &typeEmitter);
       errorType = typeEmitter.emitExprType(tcSignature.argList.thrownTypeExpr);
     }
     if (!errorType)
@@ -2622,8 +2708,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     }
   }
   SharedState &shared = paramList.shared;
-  IREmitter typeEmitter(paramList.declScope, EC_Type,
-                        &paramList.deferredTypingContext);
+  IREmitter typeEmitter(paramList.declScope, EC_Type);
 
   // If this definition is a struct/class member, compute the self type.
   if (fnDecl) {
@@ -2740,6 +2825,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     if (originExpr->kind == ExprNode::kDiscardLiteral) {
       captureOrigins = UnboundAttr::get(setType);
     } else {
+      TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+          paramList, &typeEmitter);
       captureOrigins =
           typeEmitter.emitExprPValue(originExpr, EC_Origin, setType);
     }
@@ -2810,6 +2897,36 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
 
   // Check any special function information.
 
+  // A self result declared with a specialization of Self (e.g.
+  // `out self: S[Int]`) is typed as Self, with a body constraint that each of
+  // Self's parameters is identical to the declared one.
+  auto constrainSelfToDeclaredType = [&](ASTType declaredType,
+                                         const ParsedArgument &selfArg) {
+    if (selfArg.isErroneous || selfType.isEqualCanon(declaredType) ||
+        selfType.getDecl(shared) != declaredType.getDecl(shared))
+      return declaredType;
+
+    TypedAttr prop = SIMDAttr::getScalarBool(shared.getContext(), true);
+    for (auto [l, r] : llvm::zip_equal(declaredType.getParamBindings(),
+                                       selfType.getParamBindings()))
+      prop =
+          ParamOperatorAttr::get(POC::And, prop, ParamIdenticalAttr::get(l, r));
+
+    std::string constraintMsg;
+    llvm::raw_string_ostream os(constraintMsg);
+    os << "Self type '";
+    selfType.print(os, {&shared});
+    os << "' is not identical to the declared type '";
+    declaredType.print(os, {&shared});
+    os << "'";
+    os.flush();
+
+    paramList.emittedBodyConstraints.push_back(ConstraintAttr::get(
+        prop, shared.diags.translateLocation(selfArg.loc),
+        StringAttr::get(shared.getContext(), constraintMsg)));
+    return selfType;
+  };
+
   // Check that the 'self' argument/result of a method was specified correctly.
   if (selfType) {
     if (fnInfo.flags & SpecialFunctionInfo::kSelfResult) {
@@ -2817,29 +2934,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
       // thereof.
       checkSelfArgument(decl, resultType, argList.resultArg,
                         /*isSelfResult*/ true);
-      if (!selfType.isEqualCanon(resultType) &&
-          !argList.resultArg.isErroneous) {
-        TypedAttr prop = SIMDAttr::getScalarBool(shared.getContext(), true);
-        for (auto [l, r] : llvm::zip_equal(resultType.getParamBindings(),
-                                           selfType.getParamBindings()))
-          prop = ParamOperatorAttr::get(POC::And, prop,
-                                        ParamIdenticalAttr::get(l, r));
-
-        std::string constraintMsg;
-        llvm::raw_string_ostream os(constraintMsg);
-        os << "Self type '";
-        selfType.print(os, {&shared});
-        os << "' is not identical to the declared type '";
-        resultType.print(os, {&shared});
-        os << "'";
-        os.flush();
-
-        auto bodyConstraint = ConstraintAttr::get(
-            prop, shared.diags.translateLocation(argList.resultArg.loc),
-            StringAttr::get(shared.getContext(), constraintMsg));
-        paramList.emittedBodyConstraints.push_back(bodyConstraint);
-        resultType = selfType;
-      }
+      resultType = constrainSelfToDeclaredType(resultType, argList.resultArg);
     } else if (funcOp.getIsStatic()) {
       // Static methods don't have a self argument.
     } else if (argTypes.empty()) {
@@ -2848,6 +2943,8 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
       // Normal methods require a self argument.
       checkSelfArgument(decl, argTypes[kSelfArgNo], parsedArgs[kSelfArgNo],
                         /*isSelfResult*/ false);
+      this->argTypes[kSelfArgNo] = constrainSelfToDeclaredType(
+          argTypes[kSelfArgNo], parsedArgs[kSelfArgNo]);
     }
   }
 

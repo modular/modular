@@ -574,7 +574,7 @@ struct PythonTypeBuilder(Copyable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: Dict[Int, OptionalPointer[NoneType, MutUntrackedOrigin]]
+    var _slots: Dict[Int, Optional[Pointer[NoneType, MutUntrackedOrigin]]]
     """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]
@@ -1520,7 +1520,7 @@ def _py_function_fastcall_wrapper[
         # non-null for every METH_FASTCALL invocation, including the
         # `nargs == 0` case (CPython hands the callee a pointer into a
         # cached empty tuple). `_dispatch_fast` therefore accepts a plain
-        # `Pointer` rather than `OptionalPointer`.
+        # `Pointer` rather than `Optional[Pointer]`.
         return _dispatch_python_object_function[func](
             args, Int(nargs)
         ).steal_data()

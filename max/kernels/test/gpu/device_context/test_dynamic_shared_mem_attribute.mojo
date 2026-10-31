@@ -29,7 +29,9 @@ comptime STATIC_WORDS = STATIC_SMEM_BYTES // size_of[Float32]()
 
 def test_explicit_attribute_on_any_backend() raises:
     # HAL's Metal and HIP plugins reject this attribute.
-    def dynamic_only_kernel(data: MutPointer[Float32, MutAnyOrigin]):
+    def dynamic_only_kernel[
+        data_origin: MutOrigin
+    ](data: MutPointer[Float32, data_origin]):
         var dynamic_smem = external_memory[
             Float32, address_space=.SHARED, alignment=4
         ]()
@@ -40,7 +42,7 @@ def test_explicit_attribute_on_any_backend() raises:
 
     with DeviceContext() as ctx:
         var out = ctx.enqueue_create_buffer[.float32](BLOCK)
-        ctx.enqueue_function[dynamic_only_kernel](
+        ctx.enqueue_function[dynamic_only_kernel[origin_of(out)]](
             out,
             grid_dim=1,
             block_dim=BLOCK,
@@ -54,7 +56,9 @@ def test_explicit_attribute_on_any_backend() raises:
 
 def test_static_counts_toward_default_cap() raises:
     # 40KB is under 48KB, but CUDA's default cap shrinks by the static 20KB.
-    def static_and_dynamic_kernel(data: MutPointer[Float32, MutAnyOrigin]):
+    def static_and_dynamic_kernel[
+        data_origin: MutOrigin
+    ](data: MutPointer[Float32, data_origin]):
         var static_smem = unsafe_stack_allocation[
             STATIC_WORDS, Float32, address_space=.SHARED
         ]()
@@ -73,7 +77,7 @@ def test_static_counts_toward_default_cap() raises:
         if ctx.api() != "cuda":
             return
         var out = ctx.enqueue_create_buffer[.float32](BLOCK)
-        ctx.enqueue_function[static_and_dynamic_kernel](
+        ctx.enqueue_function[static_and_dynamic_kernel[origin_of(out)]](
             out,
             grid_dim=1,
             block_dim=BLOCK,

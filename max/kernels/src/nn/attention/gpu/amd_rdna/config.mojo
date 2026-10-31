@@ -19,7 +19,6 @@ single-buffered, depth-padded V SMEM.
 
 from max.gpu import block_idx, lane_id
 from std.math.uutils import umod, ufloordiv
-from std.utils import IndexList
 
 from nn.attention.mha_utils import MHAConfig
 
@@ -76,8 +75,8 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @inline(.always)
-    def get_mma_shape() -> IndexList[3]:
-        return IndexList[3](RDNA_MMA_M, RDNA_MMA_N, RDNA_MMA_K)
+    def get_mma_shape() -> Tuple[Int, Int, Int]:
+        return (RDNA_MMA_M, RDNA_MMA_N, RDNA_MMA_K)
 
     @staticmethod
     @inline(.always)

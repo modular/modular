@@ -67,16 +67,9 @@ def run_fused_qk_rms_norm_rope[
     atol: Float64 = 1e-2,
 ) raises:
     print(
-        "== run_fused_qk_rms_norm_rope dtype=",
-        dtype,
-        " head_size=",
-        head_size,
-        " rope_dim=",
-        rope_dim,
-        " num_q_heads=",
-        num_q_heads,
-        " num_k_heads=",
-        num_k_heads,
+        t"== run_fused_qk_rms_norm_rope dtype= {dtype}  head_size= {head_size} "
+        t" rope_dim= {rope_dim}  num_q_heads= {num_q_heads}  num_k_heads="
+        t" {num_k_heads}"
     )
 
     comptime kv_params = KVCacheStaticParams(
@@ -109,10 +102,10 @@ def run_fused_qk_rms_norm_rope[
     var row_offsets_tile_layout = row_major(batch_size + 1)
     comptime freqs_tile_layout = row_major[max_seq_len, rope_dim]()
 
-    var row_offsets_shape = Index(batch_size + 1)
+    var row_offsets_shape = batch_size + 1
     var cache_lengths_shape = Index(batch_size)
-    var q_ragged_shape = IndexList[3](total_length, num_q_heads, head_size)
-    var kv_block_shape = IndexList[6](
+    var q_ragged_shape = Index(total_length, num_q_heads, head_size)
+    var kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -123,7 +116,7 @@ def run_fused_qk_rms_norm_rope[
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)
     )
-    var freqs_shape = IndexList[2](max_seq_len, rope_dim)
+    var freqs_shape = Index(max_seq_len, rope_dim)
 
     var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
@@ -430,20 +423,9 @@ def run_fused_dual_qk_rms_norm_rope[
     exercising the two-`cache_t` instantiation the M3 sparse path needs.
     """
     print(
-        "== run_fused_dual_qk_rms_norm_rope dtype=",
-        dtype,
-        " head_size=",
-        head_size,
-        " rope_dim=",
-        rope_dim,
-        " main=",
-        main_q_heads,
-        "/",
-        main_k_heads,
-        " index=",
-        index_q_heads,
-        "/",
-        index_k_heads,
+        t"== run_fused_dual_qk_rms_norm_rope dtype= {dtype}  head_size="
+        t" {head_size}  rope_dim= {rope_dim}  main= {main_q_heads} /"
+        t" {main_k_heads}  index= {index_q_heads} / {index_k_heads}"
     )
 
     comptime main_kv_params = KVCacheStaticParams(
@@ -480,7 +462,7 @@ def run_fused_dual_qk_rms_norm_rope[
         )
         max_prompt_length = max(max_prompt_length, prompt_lens[i])
 
-    var main_kv_block_shape = IndexList[6](
+    var main_kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -488,7 +470,7 @@ def run_fused_dual_qk_rms_norm_rope[
         main_kv_params.num_heads,
         main_kv_params.head_size,
     )
-    var index_kv_block_shape = IndexList[6](
+    var index_kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -499,7 +481,7 @@ def run_fused_dual_qk_rms_norm_rope[
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)
     )
-    var freqs_shape = IndexList[2](max_seq_len, rope_dim)
+    var freqs_shape = Index(max_seq_len, rope_dim)
 
     # Shared metadata.
     var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
@@ -561,8 +543,8 @@ def run_fused_dual_qk_rms_norm_rope[
             random(gamma_tensor)
 
     # Per-band Q inputs.
-    var q_main_shape = IndexList[3](total_length, main_q_heads, head_size)
-    var q_index_shape = IndexList[3](total_length, index_q_heads, head_size)
+    var q_main_shape = Index(total_length, main_q_heads, head_size)
+    var q_index_shape = Index(total_length, index_q_heads, head_size)
     var q_main_layout = row_major(
         total_length, Idx[main_q_heads], Idx[head_size]
     )

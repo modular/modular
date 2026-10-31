@@ -225,6 +225,36 @@ void printMatmulAttrs(OpAsmPrinter &p, Operation *, BoolAttr transposeB,
                      nonDefault("packed_b", packedB, false)});
 }
 
+ParseResult parseAllGatherAttrs(OpAsmParser &p, IntegerAttr &groupSize,
+                                BoolAttr &sliceRows) {
+  Builder &b = p.getBuilder();
+  return parseAttrGroup(
+      p, {{"group_size",
+           [&] { return p.parseAttribute(groupSize, b.getIntegerType(64)); }},
+          {"slice_rows",
+           [&] { return p.parseAttribute(sliceRows, b.getIntegerType(1)); }}});
+}
+
+void printAllGatherAttrs(OpAsmPrinter &p, Operation *, IntegerAttr groupSize,
+                         BoolAttr sliceRows) {
+  printAttrGroup(p, {nonDefault("group_size", groupSize, 0),
+                     nonDefault("slice_rows", sliceRows, false)});
+}
+
+ParseResult parseAllGatherConcatAttrs(OpAsmParser &p, IntegerAttr &axis,
+                                      IntegerAttr &groupSize) {
+  Type i64 = p.getBuilder().getIntegerType(64);
+  return parseAttrGroup(
+      p, {{"axis", [&] { return p.parseAttribute(axis, i64); }},
+          {"group_size", [&] { return p.parseAttribute(groupSize, i64); }}});
+}
+
+void printAllGatherConcatAttrs(OpAsmPrinter &p, Operation *, IntegerAttr axis,
+                               IntegerAttr groupSize) {
+  printAttrGroup(p, {nonDefault("axis", axis, -1),
+                     nonDefault("group_size", groupSize, 0)});
+}
+
 ParseResult parseReduceScatterSumAttrs(OpAsmParser &p, IntegerAttr &axis,
                                        IntegerAttr &groupSize) {
   Type i64 = p.getBuilder().getIntegerType(64);
@@ -4454,10 +4484,107 @@ LogicalResult AllGatherOp::verify() {
         "number of outputs must be num_inputs * group_size for all-gather; "
         "expected {0} outputs, found {1} (num_inputs={2}, group_size={3})",
         expectedOutputs, outputs.size(), inputs.size(), groupSize));
+  if (getSliceRows() && groupSize != numInputs)
+    return emitError(llvm::formatv(
+        "slice_rows requires one full-world group, but group_size is {0} "
+        "for {1} inputs",
+        groupSize, numInputs));
   return success();
 }
 
 void AllGatherOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  MutableOperandRange signalBuffers = getSignalBuffersMutable();
+
+  for (auto &sig : signalBuffers)
+    effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+//===----------------------------------------------------------------------===//
+// AllGatherConcatOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult AllGatherConcatOp::verify() {
+  auto outputs = getOutputs();
+  auto inputs = getInputs();
+  auto signalBuffers = getSignalBuffers();
+
+  if (inputs.empty())
+    return emitError("allgather requires at least one input");
+  if (signalBuffers.size() != inputs.size())
+    return emitError(
+        llvm::formatv("number of signal buffers should match number of inputs. "
+                      "Expected {0} signal buffers but got {1}",
+                      inputs.size(), signalBuffers.size()));
+  if (outputs.size() != inputs.size())
+    return emitError(llvm::formatv(
+        "number of outputs must match number of inputs; expected {0} outputs, "
+        "found {1}",
+        inputs.size(), outputs.size()));
+
+  int64_t numInputs = inputs.size();
+  int64_t groupSize = getGroupSize();
+  if (groupSize < 1)
+    return emitError("group_size must be at least 1");
+  if (numInputs % groupSize != 0)
+    return emitError(llvm::formatv(
+        "group_size must evenly divide the number of inputs ({0}), but got {1}",
+        numInputs, groupSize));
+
+  auto firstInputType = getInputTensor(0).getType();
+  int64_t rank = firstInputType.getRank();
+  for (int64_t i = 1; i < numInputs; ++i) {
+    auto inputType = getInputTensor(i).getType();
+    if (inputType.getElementType() != firstInputType.getElementType())
+      return emitError("all inputs must have the same element type");
+    if (static_cast<int64_t>(inputType.getRank()) != rank)
+      return emitError("all inputs must have the same rank");
+  }
+
+  int64_t axis = normalizeAxis(getAxis(), rank);
+  if (axis < 0 || axis >= rank)
+    return emitError(
+        llvm::formatv("axis {0} out of bounds for rank {1}", getAxis(), rank));
+
+  // Dynamic dims are left to the kernel.
+  for (int64_t devIdx = 0; devIdx < numInputs; ++devIdx) {
+    auto outputType = getOutputTensor(devIdx).getType();
+    if (outputType.getElementType() != firstInputType.getElementType())
+      return emitError("output element type must match input element type");
+    if (static_cast<int64_t>(outputType.getRank()) != rank)
+      return emitError("output rank must match input rank");
+
+    int64_t groupStart = devIdx / groupSize * groupSize;
+    for (int64_t dim = 0; dim < rank; ++dim) {
+      int64_t outputDim = outputType.getIntDim(dim);
+      bool dynamic = mlir::ShapedType::isDynamic(outputDim);
+      int64_t gathered = 0;
+      for (int64_t src = groupStart; src < groupStart + groupSize; ++src) {
+        int64_t inputDim = getInputTensor(src).getType().getIntDim(dim);
+        if (mlir::ShapedType::isDynamic(inputDim)) {
+          dynamic = true;
+          continue;
+        }
+        if (dim == axis) {
+          gathered += inputDim;
+          continue;
+        }
+        if (!mlir::ShapedType::isDynamic(outputDim) && inputDim != outputDim)
+          return emitError(llvm::formatv(
+              "output {0} dimension {1} must match input {2} ({3} vs {4})",
+              devIdx, dim, src, outputDim, inputDim));
+      }
+      if (dim == axis && !dynamic && gathered != outputDim)
+        return emitError(llvm::formatv(
+            "output {0} dimension {1} must be the sum of its group's inputs "
+            "along the axis ({2}), but got {3}",
+            devIdx, dim, gathered, outputDim));
+    }
+  }
+  return success();
+}
+
+void AllGatherConcatOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
   MutableOperandRange signalBuffers = getSignalBuffersMutable();
 
@@ -4573,6 +4700,18 @@ void Composite::DistributedAllGatherRMSNormQuantMXFP8Op::getEffects(
 //===----------------------------------------------------------------------===//
 
 void Composite::DistributedAllGatherRMSNormQuantMXFP6Op::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  MutableOperandRange signalBuffers = getSignalBuffersMutable();
+
+  for (auto &sig : signalBuffers)
+    effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+//===----------------------------------------------------------------------===//
+// DistributedAllReduceRMSNormOp
+//===----------------------------------------------------------------------===//
+
+void Composite::DistributedAllReduceRMSNormOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
   MutableOperandRange signalBuffers = getSignalBuffersMutable();
 

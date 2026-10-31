@@ -197,12 +197,12 @@ def test_dynamic[
 
     @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {var in_ptr, var shape} -> SIMD[in_dtype, width]:
+        width: Int
+    ](coords: Coord) {var in_ptr, var shape} -> SIMD[in_dtype, width]:
         var linear_idx = Int(0)
         var stride = 1
-        for i in reversed(range(_rank)):
-            linear_idx += idx[i] * stride
+        comptime for i in reversed(range(rank)):
+            linear_idx += Int(coords[i]) * stride
             stride *= shape[i]
         return in_ptr.unsafe_load[width=width, alignment=width](linear_idx)
 
@@ -217,7 +217,7 @@ def test_dynamic[
         target="gpu",
     ](
         input_fn,
-        shape,
+        Coord(shape),
         out_tile,
         gamma_tensor,
         epsilon,
@@ -252,12 +252,8 @@ def test_dynamic[
         raise Error("Higher rank tensor test failed")
 
     print(
-        "✓ Rank-",
-        rank,
-        " tensor test passed (dynamic, weight_offset=",
-        weight_offset,
-        ") ",
-        shape,
+        t"✓ Rank- {rank}  tensor test passed (dynamic, weight_offset="
+        t" {weight_offset} )  {shape}"
     )
 
 

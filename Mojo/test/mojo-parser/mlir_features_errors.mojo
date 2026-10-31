@@ -120,3 +120,17 @@ def mlir_illegal_op():
 
     # expected-error @below {{MLIR verification error: 'llvm.intr.ctlz' op requires attribute 'is_zero_poison'}}
     __mlir_op.`llvm.intr.ctlz`[_type=Int](1)
+
+def infer_result_from_wrong_operand_type(x: __mlir_type.index):
+    # expected-error @below {{unable to infer result type from MLIR operation 'lit.ref.to_pointer'}}
+    _ = __mlir_op.`lit.ref.to_pointer`(x)
+    # expected-error @below {{unable to infer result type from MLIR operation 'lit.ref.immut'}}
+    _ = __mlir_op.`lit.ref.immut`(x)
+    # expected-error @below {{unable to infer result type from MLIR operation 'lit.ref.load'}}
+    _ = __mlir_op.`lit.ref.load`(x)
+    # expected-error @below {{unable to infer result type from MLIR operation 'pop.load'}}
+    _ = __mlir_op.`pop.load`(x)
+    # expected-error @below {{unable to infer result type from MLIR operation 'pop.simd.extractelement'}}
+    _ = __mlir_op.`pop.simd.extractelement`(x, x)
+    # expected-error @below {{unable to infer result type from MLIR operation 'pop.array.get'}}
+    _ = __mlir_op.`pop.array.get`[index=__mlir_attr.`0:index`](x)

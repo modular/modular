@@ -50,7 +50,7 @@ def _build_pw_struct(passwd_ptr: ImmPointer[_C_Passwd, _]) -> Passwd:
 
 def _getpw_macos(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwuid", OptionalPointer[_C_Passwd, UntrackedOrigin[mut=True]]
+        "getpwuid", Optional[Pointer[_C_Passwd, UntrackedOrigin[mut=True]]]
     ](uid)
     try:
         return _build_pw_struct(passwd_ptr[])
@@ -60,7 +60,7 @@ def _getpw_macos(uid: UInt32) raises -> Passwd:
 
 def _getpw_macos(var name: String) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwnam", OptionalPointer[_C_Passwd, UntrackedOrigin[mut=True]]
+        "getpwnam", Optional[Pointer[_C_Passwd, UntrackedOrigin[mut=True]]]
     ](name.as_c_string_span())
     try:
         return _build_pw_struct(passwd_ptr[])

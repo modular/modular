@@ -8,7 +8,7 @@ modular_py_library(
         "__init__.py",
     ],
     deps = [
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",

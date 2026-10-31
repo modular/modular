@@ -29,10 +29,14 @@ comptime NUM_CHUNKS = NUM_ROWS * CHUNKS_PER_ROW
 comptime NUM_SRC_ROWS = 1000
 
 
-def _gather_rows_through_lds(
-    src: MutPointer[UInt8, MutAnyOrigin],
-    indices: MutPointer[Int32, MutAnyOrigin],
-    dst: MutPointer[UInt8, MutAnyOrigin],
+def _gather_rows_through_lds[
+    src_origin: MutOrigin,
+    indices_origin: MutOrigin,
+    dst_origin: MutOrigin,
+](
+    src: MutPointer[UInt8, src_origin],
+    indices: MutPointer[Int32, indices_origin],
+    dst: MutPointer[UInt8, dst_origin],
 ):
     comptime assert NUM_CHUNKS % WARP_SIZE == 0
     var smem = unsafe_stack_allocation[
@@ -90,7 +94,11 @@ def main() raises:
         ctx.enqueue_copy(dev_idx, host_idx)
         dev_dst.enqueue_fill(0)
 
-        ctx.enqueue_function[_gather_rows_through_lds](
+        ctx.enqueue_function[
+            _gather_rows_through_lds[
+                origin_of(dev_src), origin_of(dev_idx), origin_of(dev_dst)
+            ]
+        ](
             dev_src,
             dev_idx,
             dev_dst,

@@ -34,13 +34,14 @@ class ParamDeclAttr;
 class ParamDeclArrayAttr;
 struct PartiallySpecializedInputParams;
 class FuncSymbolAttr;
+class FuncOp;
+class GeneratorAttr;
 class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
 class ConstraintAttr;
 class FnMetadataAttr;
 class PogListAttr;
 class StructDefFieldAttr;
-class SymbolConstantAttr;
 class ParamListType;
 class ParamListAttr;
 } // namespace M::KGEN
@@ -119,7 +120,10 @@ public:
                           Location location);
 
   // Unwrap the target literal from the literal type.
-  SymbolConstantAttr getSymbolConstantAttr();
+  TypedAttr getFuncSymbolAttr();
+  /// Return the signature of the target literal, i.e. this generator with the
+  /// FuncLiteralType body replaced by its FuncType.
+  FuncTypeGeneratorType getNonLiteralGeneratorType();
 
   FuncLiteralType getBody();
   FuncLiteralType getInstantiatedBody();

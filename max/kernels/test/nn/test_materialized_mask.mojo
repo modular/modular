@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import assert_equal
-from std.utils import IndexList
 
 from layout import ImmTileTensor, TensorLayout, TileTensor, row_major
 from nn.attention.mha_mask import MASK_VALUE, MaterializedMask
@@ -62,7 +61,7 @@ def check_values[
             for row in range(rows + 1):
                 for col in range(0, columns + 2, 2):
                     var actual = mask.mask(
-                        IndexList[4](batch, head, row + start, col),
+                        (Int(batch), Int(head), Int(row + start), Int(col)),
                         SIMD[.float32, 2](0.25),
                     )
                     comptime for lane in range(2):

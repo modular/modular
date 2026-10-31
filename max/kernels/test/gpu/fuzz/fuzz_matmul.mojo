@@ -330,31 +330,18 @@ def run_batch_variance_case(
             _ = alone^
 
     print(
-        "BATCH_VARIANCE base_m=",
-        spec.m,
-        "N=",
-        N,
-        "K=",
-        K,
-        "rows_diverged=",
-        n_rows_diverged,
-        "/",
-        N_PROBES,
-        "n_diff_total=",
-        n_diff_total,
-        "max_abs=",
-        max_abs,
+        t"BATCH_VARIANCE base_m= {spec.m} N= {N} K= {K} rows_diverged="
+        t" {n_rows_diverged} / {N_PROBES} n_diff_total= {n_diff_total} max_abs="
+        t" {max_abs}"
     )
 
     if n_rows_diverged == 0:
         # Negative control lost its teeth: every row bit-matched across the
         # M=1 / M>1 breakpoint.
         print(
-            "FUZZ_CONTRACT_FAIL batch-variance negative control: all",
-            N_PROBES,
-            "rows bit-identical across the M=1 / M=",
-            N_PROBES,
-            "dispatch breakpoint (expected divergence)",
+            t"FUZZ_CONTRACT_FAIL batch-variance negative control: all"
+            t" {N_PROBES} rows bit-identical across the M=1 / M="
+            t" {N_PROBES} dispatch breakpoint (expected divergence)"
         )
         raise Error("batch-variance negative control observed no divergence")
 
@@ -382,7 +369,7 @@ def main() raises:
 
     if mode == "single":
         var m = flag_int(args, "--m", 128)
-        print("FUZZ_SINGLE m=", m, "N=", N, "K=", K)
+        print(t"FUZZ_SINGLE m= {m} N= {N} K= {K}")
         with DeviceContext() as ctx:
             if batch_variance:
                 run_batch_variance_case(
@@ -396,15 +383,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_matmul seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "N=",
-        N,
-        "K=",
-        K,
-        "===",
+        t"=== fuzz_matmul seed= {the_seed} budget= {the_budget} N= {N} K="
+        t" {K} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

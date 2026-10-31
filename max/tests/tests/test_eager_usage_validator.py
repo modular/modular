@@ -21,18 +21,17 @@ from collections.abc import Iterator
 import numpy as np
 import pytest
 from max import _validation_hooks as hooks
+from max import functional as F
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental import realization_context
-from max.experimental.compilation import CompiledCallable, compile
-from max.experimental.sharding import Partial, Replicated, auto_reshard
-from max.experimental.sharding._auto_reshard import _AUTO_RESHARD_POLICY
-from max.experimental.tensor import Tensor
-from max.experimental.validation import EagerUsageValidator
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.modeling.eager_validation import eager_validator
+from max.tensor import Tensor, realization_context
+from max.tensor.compilation import CompiledCallable, compile
+from max.tensor.sharding import Partial, Replicated, auto_reshard
+from max.tensor.sharding._auto_reshard import _AUTO_RESHARD_POLICY
+from max.tensor.validation import EagerUsageValidator
 
 _F32 = DType.float32
 

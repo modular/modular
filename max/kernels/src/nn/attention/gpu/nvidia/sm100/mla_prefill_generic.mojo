@@ -439,17 +439,11 @@ __extension SM100MLA:
     ):
         comptime assert Self.MMA_M == 64 or Self.MMA_M == 128
         comptime assert _is_decoding[Self.MaxSeqLenType]() == False
-        comptime assert Self.config.supported(), (
-            "depth = "
-            + String(Self.config.qk_depth)
-            + "\nBN = "
-            + String(Self.config.BN)
-            + "\nnum_kv_stages = "
-            + String(Self.config.num_kv_stages)
-            + "\ntmem_used = "
-            + String(Self.config.tmem_used)
-            + "\nsmem_used = "
-            + String(Self.config.smem_used)
+        comptime assert Self.config.supported(), String(
+            t"depth = {Self.config.qk_depth}\nBN = "
+            t"{Self.config.BN}\nnum_kv_stages = "
+            t"{Self.config.num_kv_stages}\ntmem_used = "
+            t"{Self.config.tmem_used}\nsmem_used = {Self.config.smem_used}"
         )
         comptime assert (
             not Self.SchedulerType.may_advance
@@ -2928,7 +2922,9 @@ def _mla_prefill_sm100_valid_length_dispatch[
                 max_prompt_len.as_uint32(),
                 UInt32(PartitionType().num_partitions()),
                 UInt32(batch_size),
-                ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                ctx.device().get_attribute(
+                    DeviceAttribute.MULTIPROCESSOR_COUNT
+                ),
             ):
                 _launch[cfg_1q]()
             else:

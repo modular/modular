@@ -45,15 +45,8 @@ def test[
     ctx: DeviceContext,
 ) raises:
     print(
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts; q_dim",
-        q_dim,
-        "kv_dim",
-        kv_dim,
-        "R",
-        R,
+        t"{num_active_experts} active of {num_experts} experts; q_dim"
+        t" {q_dim} kv_dim {kv_dim} R {R}"
     )
     print("tokens:", end="")
     for i in range(len(num_tokens_by_expert)):

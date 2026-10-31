@@ -13,12 +13,11 @@
 """GPT-OSS mixture-of-experts architecture for text generation."""
 
 from .arch import gpt_oss_arch
-from .model import GptOssInputs, GptOssModel
+from .decoder import GptOssDecoder
 from .model_config import GptOssConfig
 
 __all__ = [
     "GptOssConfig",
-    "GptOssInputs",
-    "GptOssModel",
+    "GptOssDecoder",
     "gpt_oss_arch",
 ]

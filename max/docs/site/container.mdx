@@ -31,7 +31,7 @@ The MAX container isn't currently compatible with macOS.
 First, make sure you're on a system with the following requirements:
 
 <Requirements requirementsData={requirementsNoMacWithGPU}
-url="/packages#system-requirements" />
+url="/system-requirements/" />
 
 Then start an endpoint with the MAX container:
 
@@ -200,7 +200,7 @@ to control features of the endpoint.
   option](https://docs.docker.com/reference/cli/docker/container/run/#gpus) in
   order for the container to access it. It doesn't hurt to include this even if
   your system doesn't have a [GPU compatible with
-  MAX](/packages#gpu-compatibility).
+  MAX](/system-requirements/#gpu-compatibility).
 
 - `--devices`: When deploying MAX on multiple GPUs, you must specify the ID of
   the GPUs to use. For example, to use four available GPUs, include the
@@ -392,7 +392,7 @@ container](https://hub.docker.com/r/modular/max-nvidia-base) on Docker Hub.
 For best performance and compatibility with our
 [supported models](/models/), we recommend that you deploy the MAX container
 on a cloud instance with a GPU that meets the
-[MAX system requirements](/packages#system-requirements).
+[MAX system requirements](/system-requirements/).
 
 The Modular Platform is hardware-agnostic and optimized for both the latest
 NVIDIA and AMD GPUs. To take full advantage of this flexibility, Modular

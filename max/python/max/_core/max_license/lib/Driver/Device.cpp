@@ -136,7 +136,9 @@ std::string Python::Device::getStats() const {
   llvm::json::OStream j(os);
 
   j.object([&] {
-    j.attribute("free_memory", info.free);
+    // JSON null tells Python the driver could not measure free memory.
+    j.attribute("free_memory", info.free ? llvm::json::Value(*info.free)
+                                         : llvm::json::Value(nullptr));
     j.attribute("total_memory", info.total);
     ErrorOr<M::Driver::Device::GraphMemInfo> graphMemResult =
         ctx->device().getGraphMemoryInfo();

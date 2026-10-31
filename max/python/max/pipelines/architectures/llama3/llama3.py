@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Build a Llama3 model that uses continuous or paged kv-caching"""
+"""Build a Llama3 model that uses continuous or paged kv-caching."""
 
 from __future__ import annotations
 
@@ -34,17 +34,21 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.attention import (
+from max.nn.legacy.attention import (
     AttentionWithRope,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
 )
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.layer import Module
-from max.nn.linear import MLP, GPTQLinear, Linear
-from max.nn.norm import ConstantLayerNorm, RMSNorm
-from max.nn.transformer import DecoderOutputs, Transformer, TransformerBlock
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, GPTQLinear, Linear
+from max.nn.legacy.norm import ConstantLayerNorm, RMSNorm
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    Transformer,
+    TransformerBlock,
+)
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_kv_symbolic_input_tree,
 )
@@ -53,6 +57,8 @@ from .model_config import Llama3Config, create_rope_embedding
 
 
 class StackedMLP(Module):
+    """The fused gate/up and down projection."""
+
     def __init__(
         self,
         dtype: DType,
@@ -80,6 +86,7 @@ class StackedMLP(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the fused gate/up projection, then the down projection."""
         up_states = self.gate_up_proj(x)
 
         gate = up_states[:, : up_states.shape.static_dims[0] // 2]
@@ -89,6 +96,8 @@ class StackedMLP(Module):
 
 
 class Llama3(Transformer):
+    """The Llama3 model graph."""
+
     def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) == 1
         self.config = config
@@ -266,6 +275,7 @@ class Llama3(Transformer):
         kv_params: KVCacheParamInterface,
         needs_hidden_state_input: bool = False,
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in :meth:`__call__`'s order."""
         return tuple(
             tree.leaves(self.input_tree(kv_params, needs_hidden_state_input))
         )

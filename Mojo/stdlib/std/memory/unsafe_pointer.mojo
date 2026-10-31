@@ -20,7 +20,7 @@ method surface.
 
 from std.collections import OptionalReg
 from std.memory.address_space import AddressSpace
-from std.memory.pointer import OptionalPointer, Pointer
+from std.memory.pointer import Pointer
 
 # ===----------------------------------------------------------------------=== #
 # unsafe_cast
@@ -41,10 +41,10 @@ def unsafe_cast[
     origin: Origin[mut=mut] = from_origin,
     address_space: AddressSpace = from_address_space,
 ](
-    pointer: OptionalPointer[
-        from_type, from_origin, address_space=from_address_space
+    pointer: Optional[
+        Pointer[from_type, from_origin, address_space=from_address_space]
     ],
-    out result: OptionalPointer[Type, origin, address_space=address_space],
+    out result: Optional[Pointer[Type, origin, address_space=address_space]],
 ):
     result = Pointer(to=pointer).unsafe_bitcast[type_of(result)]()[]
 
@@ -73,7 +73,7 @@ def unsafe_cast[
 
 @inline(.nodebug)
 @doc_hidden
-def pointer_to_int(pointer: OptionalPointer[...]) -> Int:
+def pointer_to_int(pointer: Optional[Pointer[...]]) -> Int:
     return Pointer(to=pointer).unsafe_bitcast[Int]()[]
 
 

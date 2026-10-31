@@ -27,14 +27,13 @@ import numpy as np
 import pytest
 from max.driver import CPU, Accelerator
 from max.dtype import DType
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.quant_tensor import (
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_tensor import (
     NVFP4Activation,
     NVFP4Tensor,
     QuantAwareTensor,
 )
-from max.experimental.tensor import Tensor
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -42,6 +41,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.tensor import Tensor
 
 _NVFP4_BLOCK = (1, 16)
 _HIDDEN = 256

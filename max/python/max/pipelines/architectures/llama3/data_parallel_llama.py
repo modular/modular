@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Llama3 decoder replicated across data-parallel devices."""
 
 from __future__ import annotations
 
@@ -32,10 +33,10 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.layer import LayerList, Module
-from max.nn.transformer import DecoderOutputs
+from max.nn.legacy.data_parallelism import split_batch
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.transformer import DecoderOutputs
 
 from .llama3 import Llama3
 from .model_config import Llama3Config
@@ -44,6 +45,8 @@ from .model_config import Llama3Config
 # TODO: This could be into a helper that wraps any top-level Module into a
 # data-parallel model.
 class DataParallelLlama(Module):
+    """The decoder, one replica per data-parallel device."""
+
     def __init__(self, config: Llama3Config):
         self.config = config
         self.devices = config.devices
@@ -66,6 +69,7 @@ class DataParallelLlama(Module):
     def __call__(
         self, all_model_args: Sequence[Sequence[Any]]
     ) -> DecoderOutputs:
+        """Runs every replica over its own rows."""
         replicas: list[DecoderOutputs] = []
         for args, model in zip(all_model_args, self.models, strict=True):
             replica = model(*args)

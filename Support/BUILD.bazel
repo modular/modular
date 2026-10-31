@@ -455,10 +455,12 @@ modular_cc_library(
 modular_cc_library(
     name = "ProfilingRanges",
     srcs = [
+        "lib/Profiling/CaptureLabels.cpp",
         "lib/Profiling/ExternalProfilerAnnotation.cpp",
         "lib/Profiling/Ranges.cpp",
     ],
     hdrs = [
+        "include/Support/Profiling/CaptureLabels.h",
         "include/Support/Profiling/ExternalProfilerAnnotation.h",
         "include/Support/Profiling/Ranges.h",
     ],

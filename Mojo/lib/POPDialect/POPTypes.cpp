@@ -245,12 +245,13 @@ OptionalParseResult UnionType::parseValue(AsmParser &p,
   return mlir::success((bool)value);
 }
 
-LogicalResult UnionType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult UnionType::printValue(AsmPrinter &p, TypedAttr value,
+                                    KGENParamPrinter &printer) const {
   auto attr = ::dyn_cast<UnionAttr>(value);
   if (!attr)
     return failure();
   p << '{';
-  printColonTypeParamValue(p, attr.getValue());
+  printer.printColonTypeParamValue(p, attr.getValue());
   p << '}';
   return success();
 }
@@ -315,8 +316,8 @@ void POPDialect::registerTypes() {
       >();
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
-  dialect->registerMnemonicType<ArrayType>();
-  dialect->registerMnemonicType<UnionType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<ArrayType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<UnionType>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -335,7 +336,8 @@ OptionalParseResult IntLiteralType::parseValue(AsmParser &p,
   return mlir::success();
 }
 
-LogicalResult IntLiteralType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult IntLiteralType::printValue(AsmPrinter &p, TypedAttr value,
+                                         KGENParamPrinter &printer) const {
   auto v = ::dyn_cast<IntLiteralAttr>(value);
   if (!v)
     return failure();

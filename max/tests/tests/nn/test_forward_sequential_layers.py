@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for transformer sequential layers helper in max.nn.transformer."""
+"""Tests for transformer sequential layers helper in max.nn.legacy.transformer."""
 
 from __future__ import annotations
 
@@ -30,13 +30,13 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     PagedCacheValues,
     packed_page_stride,
 )
-from max.nn.layer import Module
-from max.nn.transformer import forward_sequential_layers
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import forward_sequential_layers
 
 TENSOR_T = TensorType(DType.float32, (1, 8), DeviceRef.CPU())
 IDX_T = TensorType(DType.uint32, (), DeviceRef.CPU())

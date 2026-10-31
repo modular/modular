@@ -188,6 +188,8 @@ HIP_FUNC(hipEventElapsedTime, Result, float *, hipEvent_t, hipEvent_t)
 HIP_FUNC(hipMemGetInfo, Result, size_t *, size_t *)
 
 HIP_FUNC(hipPointerGetAttributes, Result, hipPointerAttribute_t *, const void *)
+HIP_FUNC(hipMemGetAddressRange, Result, hipDeviceptr_t *, size_t *,
+         hipDeviceptr_t)
 
 HIP_FUNC(hipModuleOccupancyMaxActiveBlocksPerMultiprocessor, Result, int *,
          hipFunction_t, int, size_t)
@@ -195,6 +197,10 @@ HIP_FUNC(hipModuleOccupancyMaxActiveBlocksPerMultiprocessor, Result, int *,
 HIP_OPT_FUNC(hipMemcpyBatchAsync, Result, void **, const void **, size_t *,
              size_t, hipMemcpyAttributes *, size_t *, size_t, size_t *,
              hipStream_t)
+
+// hipDeviceGetUuid is loaded optionally so a ROCm without it still
+// initializes and only the UUID query reports not supported.
+HIP_OPT_FUNC(hipDeviceGetUuid, Result, hipUUID *, hipDevice_t)
 
 #ifdef HIP_OPT_FUNC_DEFINED_LOCALLY
 #undef HIP_OPT_FUNC

@@ -10,16 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Kimi K2.5 with the ModuleV3 registry."""
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
 from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
+from .layers.language_model import KimiK2_5Decoder
+from .layers.vision.transformer import KimiK2_5VisionEncoder
 from .memory_planner import KimiK25MemoryPlanner
-from .model import KimiK2_5Model
 from .model_config import KimiK2_5Config
 from .tokenizer import KimiK2_5VLTokenizer
 
@@ -38,7 +40,10 @@ kimik2_5_modulev3_arch = SupportedArchitecture(
     supported_encodings=KimiK2_5Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    pipeline_model=KimiK2_5Model,
+    modules={
+        GraphRole.DECODER: KimiK2_5Decoder,
+        GraphRole.VISION: KimiK2_5VisionEncoder,
+    },
     batching=KimiK2_5BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
@@ -64,7 +69,10 @@ kimivl_modulev3_arch = SupportedArchitecture(
     supported_encodings=KimiK2_5Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    pipeline_model=KimiK2_5Model,
+    modules={
+        GraphRole.DECODER: KimiK2_5Decoder,
+        GraphRole.VISION: KimiK2_5VisionEncoder,
+    },
     batching=KimiK2_5BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,

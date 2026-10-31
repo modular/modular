@@ -28,18 +28,24 @@ comptime _UnaryFn = def[dtype: DType, width: SIMDLength, //](
 
 
 def _kernel[
-    func: _UnaryFn, dtype: DType
+    func: _UnaryFn, dtype: DType, output_origin: MutOrigin
 ](
-    output: MutPointer[Scalar[dtype], MutAnyOrigin]
+    output: MutPointer[Scalar[dtype], output_origin]
 ) where dtype.is_floating_point():
     comptime result = func(Scalar[dtype](2))
     output[0] = result
 
 
 def _compile[func: _UnaryFn, target: CompilationTarget]():
-    _ = _compile_code[_kernel[func, .float32], target=target]()
-    _ = _compile_code[_kernel[func, .float16], target=target]()
-    _ = _compile_code[_kernel[func, .bfloat16], target=target]()
+    _ = _compile_code[
+        _kernel[func, .float32, MutUntrackedOrigin], target=target
+    ]()
+    _ = _compile_code[
+        _kernel[func, .float16, MutUntrackedOrigin], target=target
+    ]()
+    _ = _compile_code[
+        _kernel[func, .bfloat16, MutUntrackedOrigin], target=target
+    ]()
 
 
 def _compile_all[target: CompilationTarget]():

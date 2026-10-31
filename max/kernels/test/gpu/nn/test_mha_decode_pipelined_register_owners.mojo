@@ -28,7 +28,7 @@ from nn.attention.mha_operand import TileTensorMHAOperand, MHAOperand
 
 
 def _decode_pipelined_kernel[
-    dtype: DType, k_t: MHAOperand, v_t: MHAOperand
+    dtype: DType, keys: Int, k_t: MHAOperand, v_t: MHAOperand
 ](
     q: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     k: k_t,
@@ -58,7 +58,7 @@ def _decode_pipelined_kernel[
         exp_sum,
         qk_max,
         Float32(0.125),
-        128,
+        keys,
         1,
         OptionalReg[ImmutTileTensor1D[dtype]](),
         NullMask(),
@@ -66,11 +66,10 @@ def _decode_pipelined_kernel[
     )
 
 
-def _check_decode_pipelined[dtype: DType](ctx: DeviceContext) raises:
+def _check_decode_pipelined[dtype: DType, keys: Int](ctx: DeviceContext) raises:
     comptime heads = 4
     comptime depth = 64
     comptime query_rows = 16
-    comptime keys = 128
     comptime query_size = query_rows * depth
     comptime key_size = keys * depth
     comptime guard = 32
@@ -130,7 +129,9 @@ def _check_decode_pipelined[dtype: DType](ctx: DeviceContext) raises:
             v_buffer.unsafe_ptr(), row_major[1, keys, 1, depth]()
         ).as_imm()
     )
-    comptime kernel = _decode_pipelined_kernel[dtype, type_of(k), type_of(v)]
+    comptime kernel = _decode_pipelined_kernel[
+        dtype, keys, type_of(k), type_of(v)
+    ]
     # Direct invocation covers this path even when dispatch selects FA4 on B200.
     ctx.enqueue_function[kernel](
         q.unsafe_ptr().as_unsafe_any_origin(),
@@ -148,6 +149,12 @@ def _check_decode_pipelined[dtype: DType](ctx: DeviceContext) raises:
     )
     ctx.enqueue_copy(out_host, out_buffer)
     ctx.synchronize()
+    # The kernel reads these through raw pointers, so keep them alive past it.
+    _ = q_buffer^
+    _ = k_buffer^
+    _ = v_buffer^
+    _ = exp_sum_buffer^
+    _ = qk_max_buffer^
 
     for head in range(heads):
         var max_score = Float64(-1e30)
@@ -181,5 +188,10 @@ def _check_decode_pipelined[dtype: DType](ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        _check_decode_pipelined[.bfloat16](ctx)
-        _check_decode_pipelined[.float16](ctx)
+        # Whole KV tiles, then counts that end in a partial tile.
+        _check_decode_pipelined[.bfloat16, 128](ctx)
+        _check_decode_pipelined[.float16, 128](ctx)
+        _check_decode_pipelined[.bfloat16, 97](ctx)
+        _check_decode_pipelined[.float16, 65](ctx)
+        _check_decode_pipelined[.bfloat16, 37](ctx)
+        _check_decode_pipelined[.float16, 1](ctx)

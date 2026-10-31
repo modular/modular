@@ -177,11 +177,8 @@ def test_lazy_rescale_crossrow_canary(ctx: DeviceContext, rng_seed: Int) raises:
     # observed row 0 itself.
     var poison_row = Int(random_ui64(1, UInt64(Q_BLOCK_SIZE - 1)))
     print(
-        "  [AMD lazy-rescale crossrow canary] seed=",
-        rng_seed,
-        " poison_row=",
-        poison_row,
-        sep="",
+        t"  [AMD lazy-rescale crossrow canary]"
+        t" seed={rng_seed} poison_row={poison_row}"
     )
 
     # Clean run: EVERY row shares row 0's small Q (poison_row = -1, which
@@ -190,7 +187,7 @@ def test_lazy_rescale_crossrow_canary(ctx: DeviceContext, rng_seed: Int) raises:
     var clean = _run(-1, ctx)
     var poisoned = _run(poison_row, ctx)
 
-    print("     row0 sum clean=", clean, " poisoned=", poisoned, sep="")
+    print(t"     row0 sum clean={clean} poisoned={poisoned}")
     assert_equal(
         clean,
         poisoned,
@@ -210,7 +207,7 @@ def main() raises:
                 test_lazy_rescale_crossrow_canary(ctx, s)
             except e:
                 failures.append(String("seed=") + String(s))
-                print("     CANARY FAILED (seed=", s, "): ", e, sep="")
+                print(t"     CANARY FAILED (seed={s}): {e}")
 
         assert_true(
             len(failures) == 0,

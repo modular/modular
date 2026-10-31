@@ -219,12 +219,6 @@ def test_get_value_within_bounds() -> None:
         assert 1.0 <= val <= 10.0
 
 
-def test_uniform_is_continuous() -> None:
-    dist = UniformDistribution(lower=0.0, upper=1.0)
-    assert isinstance(dist, ContinuousDistribution)
-    assert isinstance(dist, BaseDistribution)
-
-
 # ---------------------------------------------------------------------------
 # DiscreteUniformDistribution
 # ---------------------------------------------------------------------------
@@ -253,12 +247,6 @@ def test_discrete_uniform_returns_ints_within_bounds() -> None:
         val = dist.sample_value()
         assert isinstance(val, int)
         assert 1 <= val <= 10
-
-
-def test_discrete_uniform_is_discrete() -> None:
-    dist = DiscreteUniformDistribution(lower=0, upper=5)
-    assert isinstance(dist, DiscreteDistribution)
-    assert isinstance(dist, BaseDistribution)
 
 
 def test_discrete_uniform_non_int_raises() -> None:
@@ -301,12 +289,6 @@ def test_nb_samples_near_expected_mean() -> None:
     expected_mean = 1 + n * (1 - p) / p
     samples = [dist.sample_value() for _ in range(2000)]
     assert abs(np.mean(samples) - expected_mean) < 0.5
-
-
-def test_nb_is_discrete() -> None:
-    dist = NegativeBinomialDistribution(n=1, p=0.5)
-    assert isinstance(dist, DiscreteDistribution)
-    assert isinstance(dist, BaseDistribution)
 
 
 # ---------------------------------------------------------------------------

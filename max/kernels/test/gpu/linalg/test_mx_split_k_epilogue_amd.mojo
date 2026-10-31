@@ -146,17 +146,8 @@ def test_split_k_epilogue[
     )
 
     print(
-        "   MXFP",
-        4 if is_fp4 else 8,
-        " ",
-        M_static,
-        "x",
-        N_static,
-        "x",
-        K_static,
-        " [split-K + epilogue num_splits=",
-        num_splits,
-        "]",
+        t"   MXFP {4 if is_fp4 else 8}   {M_static} x {N_static} x {K_static} "
+        t" [split-K + epilogue num_splits= {num_splits} ]"
     )
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
@@ -385,16 +376,8 @@ def test_dispatch_workspace_cap[
     comptime K_SCALES = K_static // SF_VECTOR_SIZE
 
     print(
-        "   MXFP",
-        4 if is_fp4 else 8,
-        " ",
-        name,
-        " ",
-        M_static,
-        "x",
-        N_static,
-        "x",
-        K_static,
+        t"   MXFP {4 if is_fp4 else 8}   {name}   {M_static} x {N_static} x"
+        t" {K_static}"
     )
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)

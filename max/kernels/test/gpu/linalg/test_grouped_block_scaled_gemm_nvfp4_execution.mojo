@@ -52,6 +52,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
+from std.utils.coord import Coord
 
 
 def launch_grouped_gemm_with_templates[
@@ -174,8 +175,8 @@ def test_grouped_kernel_nvfp4_single_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
-    cluster_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with NVFP4 (4-bit packed) data format.
 
@@ -183,15 +184,8 @@ def test_grouped_kernel_nvfp4_single_group[
     """
     print("\n--- Testing grouped kernel with NVFP4 (single group) ---")
     print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " (logical K, actual K/2 bytes)",
-        " cta_group=",
-        cta_group,
+        t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  (logical K, actual K/2"
+        t" bytes)  cta_group= {cta_group}"
     )
 
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE  # 16 for NVFP4
@@ -461,21 +455,9 @@ def test_grouped_kernel_nvfp4_single_group[
     var avg_diff = sum_diff / Float32(c_size)
 
     if max_diff < 0.1:
-        print(
-            "  PASSED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  PASSED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
     else:
-        print(
-            "  FAILED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  FAILED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
         raise Error("Grouped kernel NVFP4 output does not match cuBLAS")
 
 
@@ -490,21 +472,12 @@ def test_grouped_kernel_nvfp4_multi_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
-    cluster_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with NVFP4 and 2 groups using different pointers."""
     print("\n--- Testing grouped kernel NVFP4 (2 groups, different ptrs) ---")
-    print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " cta_group=",
-        cta_group,
-    )
+    print(t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group}")
 
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE
     comptime max_groups = 2
@@ -889,8 +862,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](
         ctx,
         Idx[256],
@@ -906,8 +879,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[512], Idx[512], Idx[512])
 
     # Test 3: Multi-group with different pointers (1SM mode)
@@ -918,8 +891,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[256])
 
     # 2SM tests
@@ -933,8 +906,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(Int(256), Int(128), Int(32)),
+        cluster_shape=(Int(2), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[256])
 
     # Test 5: 2SM larger dimensions
@@ -945,8 +918,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(Int(256), Int(128), Int(32)),
+        cluster_shape=(Int(2), Int(1), Int(1)),
     ](ctx, Idx[512], Idx[512], Idx[512])
 
     # Test 6: 2SM multi-group with different pointers
@@ -957,8 +930,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(Int(256), Int(128), Int(32)),
+        cluster_shape=(Int(2), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[256])
 
     print("\n" + "=" * 60)

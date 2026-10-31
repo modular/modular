@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Pixtral language model."""
 
 from __future__ import annotations
 
@@ -21,20 +22,20 @@ from typing import Any
 from max import tree
 from max.graph import Graph, TensorValue, Type, Value, ops
 from max.graph import Module as GraphModule
-from max.nn.attention import AttentionWithRope
-from max.nn.conv import Conv2d
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import (
+from max.nn.legacy.attention import AttentionWithRope
+from max.nn.legacy.conv import Conv2d
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import Module
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import DecoderOutputs, TransformerBlock
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs, TransformerBlock
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_batch_inputs,
     vision_merge_inputs,
@@ -235,8 +236,7 @@ class PixtralLanguage(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s leaves.
 
         Args:
             *input_types: The graph's input types, the leaves of
@@ -297,6 +297,7 @@ class PixtralLanguage(Module):
         image_embeddings: TensorValue,
         image_token_indices: TensorValue,
     ) -> DecoderOutputs:
+        """Runs the language model over the tokens and image embeddings."""
         h = self.language_model.embed_tokens(tokens)
 
         h = merge_multimodal_embeddings(

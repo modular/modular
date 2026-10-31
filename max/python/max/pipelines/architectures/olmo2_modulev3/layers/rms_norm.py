@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm implementation for Olmo2 models."""
 
-from max.experimental.nn.norm import RMSNorm, rms_norm
-from max.experimental.tensor import Tensor
+from max.nn.norm import RMSNorm, rms_norm
+from max.tensor import Tensor
 
 
 class Olmo2RMSNorm(RMSNorm):
@@ -24,6 +24,7 @@ class Olmo2RMSNorm(RMSNorm):
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` by its root mean square."""
         return rms_norm(
             x,
             self.weight,

@@ -25,7 +25,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.type import Shape
 from max.graph.weights import WeightData
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.dflash_mimo_v2 import DFlashMiMoV2Config
 from max.pipelines.architectures.mimo_v2.model_config import (
     FULL,

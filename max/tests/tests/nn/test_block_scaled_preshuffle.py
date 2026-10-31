@@ -30,7 +30,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
+    BLOCKWISE_FP8_LANE_BYTES,
     MXFP6_LANE_BYTES,
     preshuffle_block_scaled_b,
     preshuffle_block_scaled_b_scales,
@@ -212,6 +213,33 @@ def test_mxfp6_planes_match_kernel_offsets(
         got.reshape(-1, tile_bytes)[:, :plane0_bytes].reshape(-1),
         _expected_b_5d(truncated.reshape(n_rows, -1)).reshape(-1),
     )
+
+
+def test_blockwise_fp8_lane_is_two_16_byte_planes(
+    session: InferenceSession,
+) -> None:
+    """Each 32-byte lane fragment lands as two 16-byte planes, each in the
+    16-byte-lane layout of its half of the bytes: the order the blockwise-FP8
+    MegaFFN reads."""
+    experts, n, k_bytes = 2, 32, 256
+    src = _bytes(4, (experts, n, k_bytes))
+    got = _run(
+        session,
+        lambda w: preshuffle_block_scaled_b(w, BLOCKWISE_FP8_LANE_BYTES),
+        src,
+    )
+    tile_bytes = _MFMA_MN_LANES * _MFMA_K_LANES * _MFMA_LANE_BYTES
+    for e in range(experts):
+        lanes = src[e].reshape(n, -1, BLOCKWISE_FP8_LANE_BYTES)
+        planes = [
+            _expected_b_5d(lanes[..., half].reshape(n, -1)).reshape(
+                -1, tile_bytes
+            )
+            for half in (slice(0, 16), slice(16, 32))
+        ]
+        np.testing.assert_array_equal(
+            got[e], np.concatenate(planes, axis=1).reshape(n, k_bytes)
+        )
 
 
 @pytest.mark.parametrize(

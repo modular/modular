@@ -24,10 +24,12 @@ from max.benchmark.benchmark_shared.metrics import (
     PercentileMetrics,
     PixelGenAggregates,
     RatePercentileMetrics,
+    SpecDecodeMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
+    calculate_spec_decode_stats,
 )
 from max.benchmark.benchmark_shared.percentile_metrics import (
     compute_confidence_info,
@@ -1052,3 +1054,36 @@ def test_json_safe_tree_round_trips_strict_json() -> None:
     text = json.dumps(json_safe(tree), allow_nan=False)
     assert "NaN" not in text and "Infinity" not in text
     assert json.loads(text)["nested"][1] == [2.0, None]
+
+
+# ---------------------------------------------------------------------------
+# Spec-decode acceptance length
+# ---------------------------------------------------------------------------
+
+
+def test_max_histogram_and_vllm_counters_agree_on_acceptance_length() -> None:
+    """Both backends report tokens committed per verify step.
+
+    The MAX histogram records accepted drafts per verification, so its delta
+    mean plus the bonus token must equal vLLM's ``1 + accepted / drafts``.
+    """
+    max_stats = calculate_spec_decode_stats(
+        SpecDecodeMetrics(
+            avg_acceptance_length_sum=9.0, avg_acceptance_length_count=3.0
+        ),
+        SpecDecodeMetrics(
+            avg_acceptance_length_sum=15.0, avg_acceptance_length_count=5.0
+        ),
+    )
+    vllm_stats = calculate_spec_decode_stats(
+        SpecDecodeMetrics(),
+        SpecDecodeMetrics(
+            num_drafts=5, num_draft_tokens=15, num_accepted_tokens=15
+        ),
+    )
+
+    assert max_stats is not None
+    assert vllm_stats is not None
+    assert max_stats.acceptance_length == pytest.approx(4.0)
+    assert vllm_stats.acceptance_length == pytest.approx(4.0)
+    assert max_stats.acceptance_length == vllm_stats.acceptance_length

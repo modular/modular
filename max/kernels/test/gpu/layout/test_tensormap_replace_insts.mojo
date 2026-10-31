@@ -52,9 +52,11 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     cta_tile_shape: Coord,
     desc_shape: Coord,
     thread_layout: MixedLayout,
+    dst_origin: MutOrigin,
+    new_src_origin: ImmOrigin,
 ](
-    dst: TileTensor[dtype, type_of(dst_layout), MutAnyOrigin],
-    new_src: TileTensor[dtype, type_of(src_layout), ImmutAnyOrigin],
+    dst: TileTensor[dtype, type_of(dst_layout), dst_origin],
+    new_src: TileTensor[dtype, type_of(src_layout), new_src_origin],
     template_tma_tensormap: TMATensorTile[dtype, cta_tile_shape, desc_shape],
     device_tma_tile: TMATensorTileArray[
         num_of_tensormaps, dtype, cta_tile_shape, desc_shape
@@ -156,7 +158,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         dst_layout,  # dst layout
         type_of(template_tma_tensormap).tile_shape,  # cta tile shape
         type_of(template_tma_tensormap).desc_shape,  # desc shape
-        __thread_layout,  # thread layout
+        __thread_layout,  # thread layout,
+        dst_origin=origin_of(dst),
+        new_src_origin=origin_of(new_src),
     ]
 
     ctx.enqueue_function[kernel](
@@ -185,6 +189,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     _ = old_src^
     _ = new_src^
     _ = dst^
+    _ = device_tensormaps^
 
 
 # Test loading a single 2d tile.
@@ -197,9 +202,11 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     cta_tile_shape: Coord,
     desc_shape: Coord,
     thread_layout: MixedLayout,
+    dst_origin: MutOrigin,
+    new_src_origin: ImmOrigin,
 ](
-    dst: TileTensor[dtype, type_of(dst_layout), MutAnyOrigin],
-    new_src: TileTensor[dtype, type_of(src_layout), ImmutAnyOrigin],
+    dst: TileTensor[dtype, type_of(dst_layout), dst_origin],
+    new_src: TileTensor[dtype, type_of(src_layout), new_src_origin],
     template_tma_tensormap: TMATensorTile[dtype, cta_tile_shape, desc_shape],
     device_tma_tile: TMATensorTileArray[
         num_of_tensormaps, dtype, cta_tile_shape, desc_shape
@@ -320,7 +327,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         dst_layout,  # dst layout
         type_of(template_tma_tensormap).tile_shape,  # cta tile shape
         type_of(template_tma_tensormap).desc_shape,  # desc shape
-        __thread_layout,  # thread layout
+        __thread_layout,  # thread layout,
+        dst_origin=origin_of(dst),
+        new_src_origin=origin_of(new_src),
     ]
 
     ctx.enqueue_function[kernel](
@@ -349,6 +358,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     _ = old_src^
     _ = new_src^
     _ = dst^
+    _ = device_tensormaps^
 
 
 @__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)
@@ -359,9 +369,11 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     dst_layout: MixedLayout,
     cta_tile_shape: Coord,
     desc_shape: Coord,
+    dst_origin: MutOrigin,
+    src_origin: ImmOrigin,
 ](
-    dst: TileTensor[dtype, type_of(dst_layout), MutAnyOrigin],
-    src: TileTensor[dtype, type_of(src_layout), ImmutAnyOrigin],
+    dst: TileTensor[dtype, type_of(dst_layout), dst_origin],
+    src: TileTensor[dtype, type_of(src_layout), src_origin],
     template_tma_tensormap: TMATensorTile[dtype, cta_tile_shape, desc_shape],
     subtensors_m: IndexList[num_of_subtensors + 1],
     device_tma_tile: TMATensorTileArray[
@@ -514,7 +526,9 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         src_layout,  # new src layout
         dst_layout,  # dst layout
         type_of(template_tma_tensormap).tile_shape,  # cta tile shape
-        type_of(template_tma_tensormap).desc_shape,  # desc shape
+        type_of(template_tma_tensormap).desc_shape,  # desc shape,
+        dst_origin=origin_of(dst),
+        src_origin=origin_of(new_src),
     ]
 
     ctx.enqueue_function[kernel](
@@ -560,6 +574,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     _ = old_src^
     _ = new_src^
     _ = dst^
+    _ = device_tensormaps^
 
 
 def main() raises:

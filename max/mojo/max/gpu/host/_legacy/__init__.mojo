@@ -20,6 +20,7 @@ from .device_attribute import DeviceAttribute
 from .device_context import (
     CompletionFlag,
     DeviceBuffer,
+    DeviceClosureFunction,
     DeviceContext,
     DeviceContextArray,
     DeviceContextList,
@@ -33,12 +34,3 @@ from .device_context import (
 from .dim import Dim
 from .func_attribute import Attribute, FuncAttribute
 from .launch_attribute import LaunchAttribute
-from .device_graph import (
-    DeviceGraph,
-    DeviceGraphBuilder,
-    DeviceGraphCache,
-    DeviceGraphInput,
-    DeviceGraphInputKind,
-    DeviceGraphNode,
-    StableAddr,
-)

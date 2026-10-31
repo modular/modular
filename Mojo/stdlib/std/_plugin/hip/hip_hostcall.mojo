@@ -14,6 +14,7 @@
 
 from std.collections import Array
 from std.atomic import Atomic, Ordering
+from std.math import ceildiv
 from std.sys.intrinsics import llvm_intrinsic
 
 from std._gpu.primitives.id import lane_id
@@ -148,7 +149,7 @@ def append_bytes(
     msg_desc: UInt64,
     mut data: Span[UInt8, _],
 ) -> Tuple[UInt64, UInt64]:
-    var msg_desc_ = msg_set_len(msg_desc, UInt32((len(data) + 7) // 8))
+    var msg_desc_ = msg_set_len(msg_desc, UInt32(ceildiv(len(data), 8)))
 
     @inline(.always)
     def pack_uint64() {mut} -> UInt64:

@@ -26,7 +26,6 @@ live in structured_kernels.amd_tile_io.
 
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu import lane_id, WARP_SIZE
-from std.utils import IndexList
 from layout import TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
@@ -43,7 +42,7 @@ from structured_kernels.amd_tile_io import SMemTile, load_lds_fragment
 struct QuadrantMmaOp[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     k_group_size: Int,
     num_k_groups: Int,
     num_m_mmas: Int,
@@ -234,7 +233,7 @@ struct QuadrantMmaOp[
 struct TiledMma[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     group_size: Int,
 ]:
     """Stateless MMA computation on TileTensors.
@@ -319,7 +318,7 @@ struct TiledMma[
 struct MmaOp[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     k_group_size: Int,
     num_k_tiles: Int,
     num_m_mmas: Int,

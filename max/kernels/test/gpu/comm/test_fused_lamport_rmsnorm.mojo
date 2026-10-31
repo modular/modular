@@ -89,7 +89,7 @@ def _run_rms_norm_unfused[
     `out_ptr`. Wraps `rms_norm_gpu` with the minimal input/output lambdas it
     requires. Takes raw pointers (not DeviceBuffer) so callers can pass slice
     offsets into a larger buffer."""
-    var shape = Index(M, K)
+    var shape = (M, K)
     var in_view = TileTensor(in_ptr, row_major(Coord(shape)))
     var out_view = TileTensor(out_ptr, row_major(Coord(shape)))
     var gamma_view = TileTensor(gamma_ptr, row_major(Coord(Index(K))))
@@ -140,14 +140,8 @@ def rmsnorm_test[
     not launch, so the generation rotation stays in step and every real call
     still matches the reference."""
     print(
-        "==== fused Lamport AR+RMSNorm  ngpus=",
-        ngpus,
-        " M=",
-        M,
-        " K=",
-        K,
-        " iters=",
-        iters,
+        t"==== fused Lamport AR+RMSNorm  ngpus= {ngpus}  M= {M}  K= {K}  iters="
+        t" {iters}"
     )
 
     var act_size = M * K

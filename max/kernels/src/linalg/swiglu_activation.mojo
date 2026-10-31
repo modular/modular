@@ -17,7 +17,7 @@ each activation compiles to its own specialization. `get_swiglu_activation`
 builds one from a name and its f32 scalar constants.
 """
 
-from std.math import exp, recip, tanh
+from std.math import clamp, exp, recip, tanh
 
 
 comptime swiglu_activation_type = def(Float32, Float32) thin -> Float32
@@ -51,7 +51,7 @@ def swiglu[limit: Float32](gate: Float32, up: Float32) -> Float32:
     var u = up
     comptime if limit != 0.0:
         g = min(g, limit)
-        u = max(min(u, limit), -limit)
+        u = clamp(u, -limit, limit)
     return g * recip(Float32(1.0) + exp(-g)) * u
 
 
@@ -76,11 +76,45 @@ def swigluoai[
         The activated value.
     """
     var g = min(gate, limit)
-    var u = max(min(up, limit), -limit)
+    var u = clamp(up, -limit, limit)
     # `g` is unbounded below. Scaling it by its sigmoid first keeps a huge
     # negative `g` at `g * 0`; `(u + 1) * g` first overflows to -inf, and
     # -inf * 0 is NaN.
     return g * recip(Float32(1.0) + exp(-(g * alpha))) * (u + Float32(1.0))
+
+
+@inline(.always)
+def situ[alpha: Float32, limit: Float32](gate: Float32, up: Float32) -> Float32:
+    """Computes the SiTU gated activation.
+
+    With ``beta = alpha`` and ``linear_beta = limit``, returns
+    ``beta * tanh(gate / beta) * sigmoid(gate) * u``, where ``u`` is
+    ``linear_beta * tanh(up / linear_beta)`` when ``limit != 0`` and ``up``
+    otherwise. Unlike the stock activations this uses IEEE fp32 division
+    rather than ``recip``, like the graph's elementwise SiTU chain: the
+    quantize consumes the value's bfloat16 rounding, so it must track the
+    chain within its transcendental ulps, which recip would exceed.
+
+    Parameters:
+        alpha: The gate's tanh scale (``beta``); non-zero, since the gate
+            is divided by it.
+        limit: The up half's soft saturation (``linear_beta``); 0 passes
+            ``up`` through unchanged.
+
+    Args:
+        gate: Gate projection value.
+        up: Up projection value.
+
+    Returns:
+        The activated value.
+    """
+    comptime assert alpha != 0.0, "situ needs a non-zero alpha (beta)"
+    var s = alpha * tanh(gate / alpha)
+    s = s * (Float32(1.0) / (Float32(1.0) + exp(-gate)))
+    var u = up
+    comptime if limit != 0.0:
+        u = limit * tanh(up / limit)
+    return s * u
 
 
 @inline(.always)
@@ -123,6 +157,8 @@ def _named_swiglu_activation[
             return swigluoai[alpha, limit](gate, up)
         case "gelu_tanh":
             return geglu_tanh(gate, up)
+        case "situ":
+            return situ[alpha, limit](gate, up)
         case _:
             comptime assert False, String(
                 "unsupported fused SwiGLU activation: ", name

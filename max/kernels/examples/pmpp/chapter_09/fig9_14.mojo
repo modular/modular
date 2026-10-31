@@ -27,8 +27,8 @@ comptime COARSE_FACTOR = 4
 
 # ========================== KERNEL CODE ==========================
 def histogram_kernel(
-    image: ImmPointer[UInt8, ImmutAnyOrigin],
-    bins: MutPointer[UInt32, MutAnyOrigin],
+    image: ImmPointer[UInt8, ImmUntrackedOrigin],
+    bins: MutPointer[UInt32, MutUntrackedOrigin],
     width: UInt32,
     height: UInt32,
 ):

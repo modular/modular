@@ -154,14 +154,17 @@ class NemotronHStateCache:
 
     @property
     def num_free_slots(self) -> int:
+        """How many slots no request holds."""
         return len(self._free_slots)
 
     @property
     def num_active_slots(self) -> int:
+        """How many slots a request holds."""
         return len(self._request_to_slot)
 
     @property
     def max_slots(self) -> int:
+        """How many slots the cache was built with."""
         return self._max_slots
 
     @property
@@ -209,6 +212,7 @@ class NemotronHStateCache:
         self._free_slots.add(slot)
 
     def contains(self, request_id: RequestID) -> bool:
+        """Whether a request holds a slot."""
         return request_id in self._request_to_slot
 
     def slot_idx_for(

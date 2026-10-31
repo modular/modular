@@ -87,7 +87,7 @@ ErrorTreeOr<TypedAttr> ParametricIREvaluator::interpretGeneratorWithResultSlot(
 
   ParametricIREvaluator nestedEvaluator(*this);
   nestedEvaluator.setErrorLoc(loc);
-  auto callee = extractSymbolConstantAttr(cast<TypedAttr>(calleeAttr));
+  auto callee = extractFuncSymbolGenerator(cast<TypedAttr>(calleeAttr));
   ErrorOr<std::pair<Region *, Operation *>> bodyOr =
       nestedEvaluator.lookupParametricFunctionBody(callee.getSymbol());
 
@@ -135,7 +135,7 @@ ErrorTreeOr<TypedAttr> ParametricIREvaluator::interpretGenerator(
   ParametricIREvaluator nestedEvaluator(*this);
   nestedEvaluator.setErrorLoc(loc);
 
-  auto callee = extractSymbolConstantAttr(cast<TypedAttr>(calleeAttr));
+  auto callee = extractFuncSymbolGenerator(cast<TypedAttr>(calleeAttr));
   auto bodyOr =
       nestedEvaluator.lookupParametricFunctionBody(callee.getSymbol());
   if (bodyOr.isError())
@@ -654,9 +654,11 @@ FailureOr<TypedAttr>
 ParametricIREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot) {
   auto symbol =
-      extractSymbolConstantAttr(getReboundAttribute(op.getOperands().front()));
-  if (hasUnresolvedParamValue(symbol))
+      extractFuncSymbolGenerator(getReboundAttribute(op.getOperands().front()));
+  if (!symbol)
     return failure();
+  assert(!hasUnresolvedParamValue(symbol) &&
+         "the symbol must be fully bound for calls");
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   auto gen = elaborator->oldSymTab.lookup<GeneratorOp>(name);
 
@@ -812,7 +814,7 @@ GeneratorOp ParametricIREvaluator::getGenerator(SymbolRefAttr symbol) {
 
 ErrorOr<CrossDeviceFunction>
 ParametricIREvaluator::compileAsm(MLIRContext *ctx, GeneratorOp func,
-                                  SymbolConstantAttr symbol, StringAttr name,
+                                  FuncSymbolAttr symbol, StringAttr name,
                                   TargetInfoAttr target, EmitAs emissionKind,
                                   EmissionOptions emissionOptions) {
   SymbolTable symtabCopy = elaborator->oldSymTab;

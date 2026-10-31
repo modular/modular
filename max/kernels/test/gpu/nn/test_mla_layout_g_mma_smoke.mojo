@@ -282,7 +282,7 @@ def qk_smoke_kernel[
         ACC_TYPE,  # d_type
         FP8_TYPE,  # a_type
         FP8_TYPE,  # b_type
-        Index[dtype=DType.uint32](QK_M, QK_N),
+        (UInt32(QK_M), UInt32(QK_N)),
         transpose_b=True,
     ]()
 
@@ -448,7 +448,7 @@ def pv_smoke_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=DType.uint32](PV_M, PV_N),
+        (UInt32(PV_M), UInt32(PV_N)),
         transpose_b=True,
     ]()
 

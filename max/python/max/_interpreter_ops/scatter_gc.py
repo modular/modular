@@ -240,8 +240,10 @@ class _ScatterFamily(gc_compile.GCFamilySpec):
     name = "scatter"
 
     def build_module(self) -> Module:
-        """Batched module: every supported (op, device, dtype, index), all
-        devices."""
+        """Batched module: every supported (op, device, dtype, index).
+
+        Covers all devices.
+        """
         module = Module()
         for device in self.sweep_devices():
             self.build_module_for_device(device, module)

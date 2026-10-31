@@ -21,15 +21,14 @@ test never reaches and a real checkpoint does.
 from __future__ import annotations
 
 import functools
-from typing import ClassVar
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.quant_linear import QuantizedMLP
-from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager
+from max.nn import Module
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_linear import QuantizedMLP
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.tensor import Tensor
 
 from ...deepseekV3_2_modulev3.layers.moe import (
     DeepseekV3_2ExpertParallelMoE,
@@ -42,13 +41,14 @@ __all__ = ["Glm5NextExpertParallelMoE", "Glm5NextMLP", "build_mlp"]
 
 
 class Glm5NextExpertParallelMoE(DeepseekV3_2ExpertParallelMoE):
-    """Expert-parallel MoE with the routed experts' SwiGLU in float32.
+    """Expert-parallel MoE with the routed experts' clamped SwiGLU in bfloat16.
 
-    DeepSeek-V3.2 keeps it in bfloat16 to use the fused NVFP4 SwiGLU, which
-    the clamp rules out anyway, so GLM takes the reference's float32.
+    The clamp and SwiGLU read the bfloat16 gate/up output and fuse into the
+    row-bounded FP8 quantize. A float32 gate/up cast over the EP receive
+    buffer cannot fuse and costs a full-buffer pass per MoE layer. This
+    matches the legacy EP path; the dense MLP and an unfused shared expert
+    keep float32.
     """
-
-    gate_up_accum_dtype: ClassVar[DType | None] = DType.float32
 
 
 class Glm5NextMLP(QuantizedMLP):
@@ -59,6 +59,7 @@ class Glm5NextMLP(QuantizedMLP):
         self.swiglu_limit = swiglu_limit
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the gated feed-forward over ``x``."""
         gate_up_weight = quant_ops.concat_weights(
             self.gate_proj.weight, self.up_proj.weight, axis=0
         )

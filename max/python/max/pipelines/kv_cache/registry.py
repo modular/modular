@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, Mock
 
 from max.driver import is_virtual_device_mode
 from max.engine import InferenceSession
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVConnectorType,
     compute_max_seq_len_fitting_in_cache,

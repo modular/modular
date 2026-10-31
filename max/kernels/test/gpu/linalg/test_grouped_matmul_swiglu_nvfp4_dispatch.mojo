@@ -370,18 +370,7 @@ def _test_swiglu_dispatch[
     var M = total_num_tokens
 
     print(
-        "  N=",
-        N,
-        " K=",
-        K,
-        " H=",
-        H,
-        " M=",
-        M,
-        " active=",
-        num_active_experts,
-        "/",
-        num_experts,
+        t"  N={N} K={K} H={H} M={M} active={num_active_experts}/{num_experts}",
         sep="",
     )
 
@@ -682,8 +671,8 @@ def _test_swiglu_dispatch[
             a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
         ](
             scaling_kind=UMMAKind.KIND_MXF4NVF4,
-            cluster_shape=Index(1, 1, 1),
-            mma_shape=Index(128, 8, 32),
+            cluster_shape=(Int(1), Int(1), Int(1)),
+            mma_shape=(Int(128), Int(8), Int(32)),
             block_swizzle_size=8,
             cta_group=1,
             AB_swapped=True,
@@ -807,23 +796,13 @@ def _test_swiglu_dispatch[
 
         if O_mismatch != 0:
             print(
-                "    O mismatch count =",
-                O_mismatch,
-                " first idx =",
-                first_bad_O_idx,
-                " (out of ",
-                O_size,
-                ")",
+                t"    O mismatch count = {O_mismatch}  first idx ="
+                t" {first_bad_O_idx}  (out of  {O_size} )"
             )
         if S_mismatch != 0:
             print(
-                "    S mismatch count =",
-                S_mismatch,
-                " first idx =",
-                first_bad_S_idx,
-                " (out of ",
-                S_size,
-                ")",
+                t"    S mismatch count = {S_mismatch}  first idx ="
+                t" {first_bad_S_idx}  (out of  {S_size} )"
             )
         if O_mismatch != 0 or S_mismatch != 0:
             raise Error(
@@ -911,18 +890,9 @@ def _test_swiglu_dispatch[
         var atol = Float32(0.5)  # half a fp4 bucket worth (loose ceiling)
         var rtol = Float32(0.5)
         print(
-            "    bytes mismatched:",
-            num_byte_mismatch,
-            "/",
-            O_size,
-            " nibbles mismatched:",
-            num_mismatch_nibbles,
-            "/",
-            num_total_nibbles,
-            " max abs diff:",
-            max_abs_diff,
-            " max rel diff:",
-            max_rel_diff,
+            t"    bytes mismatched: {num_byte_mismatch} / {O_size}  nibbles"
+            t" mismatched: {num_mismatch_nibbles} / {num_total_nibbles}  max"
+            t" abs diff: {max_abs_diff}  max rel diff: {max_rel_diff}"
         )
         if max_abs_diff > atol or max_rel_diff > rtol:
             raise Error(

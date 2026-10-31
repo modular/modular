@@ -8,14 +8,17 @@ package(default_visibility = [
 
 # The CPU half of the numerics harness: the config build, the weight-adapter
 # name contract and the staged trace, all on the tiny fixture and a CPU mesh,
-# plus the base graph's input tree staged on virtual GPUs (the tree Mach's
-# modulev3 registry entry wires). The GPU targets below are the real gates;
-# this one runs wherever bazel does.
+# plus the base graph's input tree and its fused-QKV op sites staged on
+# virtual GPUs (the tree Mach's modulev3 registry entry wires), and the
+# routed experts' per-device weight stacks. The GPU targets below are the
+# real gates; this one runs wherever bazel does.
 modular_py_test(
     name = "mimo_v2_modulev3",
     size = "medium",
     srcs = [
         "test_base_graph_tree.py",
+        "test_expert_stacks_cpu.py",
+        "test_fused_qkv_graph.py",
         "test_harness_cpu.py",
     ],
     ignore_extra_deps = [
@@ -31,16 +34,20 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":expert_stacks",
         ":mimo_v3_runner",
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
         "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("numpy"),
         requirement("transformers"),
     ],
 )
@@ -61,13 +68,14 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":expert_stacks",
         ":mimo_v3_runner",
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -78,24 +86,41 @@ modular_py_test(
     ],
 )
 
+# The routed experts' stack checks shared by the TP and EP CPU tests.
+modular_py_library(
+    name = "expert_stacks",
+    testonly = True,
+    srcs = ["expert_stacks.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
+        requirement("numpy"),
+        requirement("pytest"),
+    ],
+)
+
 modular_py_library(
     name = "mimo_v3_runner",
     testonly = True,
     srcs = ["mimo_v3_runner.py"],
     imports = ["."],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
         requirement("numpy"),
         requirement("transformers"),
     ],
@@ -143,6 +168,7 @@ modular_py_test(
     name = "mimo_v3_parity_gpu",
     size = "large",
     srcs = ["test_v2_v3_parity_gpu.py"],
+    data = ["//max/tests/integration/architectures/mimo_v2:tiny_goldens"],
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },
@@ -160,8 +186,11 @@ modular_py_test(
     deps = [
         ":mimo_v3_runner",
         "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/architectures/mimo_v2:mimo_runner",
         "//max/tests/integration/architectures/mimo_v2:tiny_fixture",
         requirement("numpy"),
+        requirement("transformers"),
     ],
 )

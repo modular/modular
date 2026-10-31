@@ -95,18 +95,9 @@ def test_expert_offset_beyond_int32[
         )
     )
     print(
-        "  expert-offset regression (",
-        path,
-        "): experts=",
-        NUM_EXPERTS,
-        " N=",
-        N,
-        " K=",
-        K,
-        " tokens/expert=",
-        tokens_per_expert,
-        " routed=",
-        num_active,
+        t"  expert-offset regression ( {path} ): experts= {NUM_EXPERTS}  N="
+        t" {N}  K= {K}  tokens/expert= {tokens_per_expert}  routed="
+        t" {num_active}"
     )
 
     # --- The expert stack: memset, then only the routed slices written ---

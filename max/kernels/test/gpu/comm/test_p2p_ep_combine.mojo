@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.atomic import Atomic, Ordering
 from std.random import randint, randn, seed
 from std.sys import size_of
+from std.sys.intrinsics import llvm_intrinsic
 
 from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
@@ -27,12 +29,21 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from comm.sync import enable_p2p
+from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    _SUPPORT_PDL_LAUNCH,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from layout import Coord, TileTensor, Idx
 from layout.tile_layout import row_major
 from shmem.ep_comm import (
     EP_NO_INPUT_SCALES,
     EP_NO_ROUTER_WEIGHTS,
+    EP_PDL_MAX_RANKS,
     BF16TokenFormat,
     EPLocalSyncCounters,
     combine_wait_kernel,
@@ -43,7 +54,6 @@ from shmem.ep_comm import (
 from std.testing import assert_equal
 from std.math import ceildiv
 from std.memory.alloc import unsafe_alloc
-from std.utils.index import IndexList
 
 
 def legalize_topk_ids[
@@ -72,6 +82,66 @@ def legalize_topk_ids[
             duplicate_idx = is_duplicate()
 
 
+@inline(.always)
+def _sleep_us(us: Int32):
+    comptime if _SUPPORT_PDL_LAUNCH:
+        # nanosleep takes nanoseconds and caps near 1 ms per call.
+        var left = Int(us)
+        while left > 0:
+            llvm_intrinsic["llvm.nvvm.nanosleep", NoneType](Int32(1_000_000))
+            left -= 1000
+
+
+def _late_fill[
+    dtype: DType
+](
+    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutAnyOrigin],
+    n: Int32,
+    delay_us: Int32,
+):
+    """Releases the dependent grid at entry, spins, then writes `dst`.
+
+    Stands in for the router or the grouped matmul. A PDL-launched consumer
+    that reads `dst` before its own `wait_on_dependent_grids` sees whatever
+    `dst` held when this kernel started, which the test sets to zeros.
+    """
+    launch_dependent_grids()
+    _sleep_us(delay_us)
+    var tid = thread_idx.x + block_idx.x * block_dim.x
+    var stride = grid_dim.x * block_dim.x
+    for i in range(tid, Int(n), stride):
+        dst[i] = src[i]
+
+
+def _probe_output[
+    dtype: DType
+](
+    buf: MutPointer[Scalar[dtype], MutAnyOrigin],
+    n: Int32,
+    sentinel: Scalar[dtype],
+    changed: MutPointer[Scalar[DType.uint32], MutAnyOrigin],
+    sleep_us: Int32,
+):
+    """Sets `changed[0]` if `buf` stops holding `sentinel` while this grid runs.
+
+    Stands in for a kernel that still reads a tensor the planner aliased with
+    `combine_wait`'s output. It waits for its predecessor, releases the
+    dependent at entry, sleeps, and then reads `buf`. The dependent's own PDL
+    wait is what keeps it from writing `buf` in the meantime.
+    """
+    wait_on_dependent_grids()
+    launch_dependent_grids()
+    _sleep_us(sleep_us)
+    var tid = thread_idx.x + block_idx.x * block_dim.x
+    var stride = grid_dim.x * block_dim.x
+    for i in range(tid, Int(n), stride):
+        if buf[i] != sentinel:
+            Atomic[Scalar[DType.uint32]].store[ordering=Ordering.RELAXED](
+                changed, UInt32(1)
+            )
+
+
 def test_combine[
     hidden_size: Int,
     top_k: Int,
@@ -84,6 +154,10 @@ def test_combine[
     comptime input_type = DType.bfloat16
     comptime n_local_experts = n_experts // n_ranks
     comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
+    # The same decision `ep.mojo` makes at launch: wider worlds run PDL-off.
+    comptime split_pdl_level = (
+        PDLLevel.ON if n_ranks <= EP_PDL_MAX_RANKS else PDLLevel.OFF
+    )
 
     comptime output_layout = row_major(
         (Idx[max_recv_num_tokens], Idx[hidden_size])
@@ -97,18 +171,9 @@ def test_combine[
     comptime num_bytes = combine_msg_bytes * top_k * n_tokens_per_rank
 
     print(
-        "Running ep_combine test: input_type:",
-        input_type,
-        "hidden_size:",
-        hidden_size,
-        "top_k:",
-        top_k,
-        "n_experts:",
-        n_experts,
-        "n_ranks:",
-        n_ranks,
-        "n_tokens_per_rank:",
-        n_tokens_per_rank,
+        t"Running ep_combine test: input_type: {input_type} hidden_size:"
+        t" {hidden_size} top_k: {top_k} n_experts: {n_experts} n_ranks:"
+        t" {n_ranks} n_tokens_per_rank: {n_tokens_per_rank}"
     )
 
     # fmt: off
@@ -394,6 +459,7 @@ def test_combine[
             host_args=(EP_NO_INPUT_SCALES,),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(split_pdl_level),
         )
 
     @inline(.always)
@@ -430,6 +496,7 @@ def test_combine[
             Int32(dev_idx),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(split_pdl_level),
         )
 
     @inline(.always)
@@ -439,13 +506,11 @@ def test_combine[
 
         @inline(.always)
         def store_output_2[
-            dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-            var output_2_tensor
-        }:
+            dtype: DType, width: SIMDLength, *, alignment: Int = 1
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_2_tensor}:
             output_2_tensor.store[
                 width=width, alignment=alignment * size_of[dtype]()
-            ](Coord(coords), rebind[SIMD[input_type, width]](val))
+            ](coords, rebind[SIMD[input_type, width]](val))
 
         comptime combine_wait = combine_wait_kernel[
             input_type,
@@ -469,6 +534,7 @@ def test_combine[
             host_args=(store_output_2, EP_NO_ROUTER_WEIGHTS),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(split_pdl_level),
         )
 
     @inline(.always)
@@ -527,7 +593,7 @@ def test_combine[
 
     @inline(.always)
     def call_fn_combine(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_combine_async(dev_id, cache_iter)
 
     def per_gpu_combine(i: Int) raises {mut results_b, imm}:
@@ -567,7 +633,7 @@ def test_combine[
 
     @inline(.always)
     def call_fn_combine_wait(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_combine_async_wait(dev_id, cache_iter)
 
     def per_gpu_combine_wait(i: Int) raises {mut results_b, imm}:
@@ -658,6 +724,177 @@ def test_combine[
 
     sync_parallelize(verify_results, n_ranks)
     print("All results verified successfully!")
+
+    # PDL ordering. The runs above sync the host between kernels and prepare
+    # their inputs up front, so they would pass even if the entry waits were
+    # missing. Here a late producer releases `dispatch_async` and
+    # `combine_async` at entry and only then publishes their inputs (the
+    # tokens, and the dispatched tokens the grouped matmul would produce), and
+    # the whole dispatch -> combine chain runs on one stream per GPU with no
+    # host sync. A kernel that reads an input before its own PDL wait sends
+    # zeros, which the same check as above reports. Above `EP_PDL_MAX_RANKS`
+    # ranks the kernels have no wait to test and launch without the attribute.
+    comptime if _SUPPORT_PDL_LAUNCH and n_ranks <= EP_PDL_MAX_RANKS:
+        print("Verifying PDL ordering...")
+        comptime input_elems = n_slots * n_tokens_per_rank * hidden_size
+        comptime output_elems = n_slots * max_recv_num_tokens * hidden_size
+
+        var ref_input_bufs = List[DeviceBuffer[input_type]](capacity=n_ranks)
+        var ref_output_bufs = List[DeviceBuffer[input_type]](capacity=n_ranks)
+        for dev_idx in range(n_ranks):
+            var ctx = list_of_ctx[dev_idx]
+            ref_input_bufs.append(
+                ctx.enqueue_create_buffer[input_type](input_elems)
+            )
+            ref_output_bufs.append(
+                ctx.enqueue_create_buffer[input_type](output_elems)
+            )
+            ctx.enqueue_copy(
+                ref_input_bufs[dev_idx], device_input_bufs_list[dev_idx]
+            )
+            # Load the producer on every device before a collective spins: a
+            # module load behind a spinning kernel would block the host and
+            # strand the peers.
+            ctx.enqueue_function[_late_fill[input_type]](
+                ref_output_bufs[dev_idx],
+                ref_output_bufs[dev_idx],
+                Int32(0),
+                Int32(0),
+                grid_dim=1,
+                block_dim=32,
+            )
+        for dev_idx in range(n_ranks):
+            list_of_ctx[dev_idx].synchronize()
+
+        @inline(.always)
+        def run_ordered_chain(dev_idx: Int, delay_us: Int) raises {imm}:
+            var ctx = list_of_ctx[dev_idx]
+            ctx.enqueue_memset(
+                device_input_bufs_list[dev_idx], Scalar[input_type](0)
+            )
+            ctx.enqueue_function[_late_fill[input_type]](
+                device_input_bufs_list[dev_idx],
+                ref_input_bufs[dev_idx],
+                Int32(input_elems),
+                Int32(delay_us + 1000 * dev_idx),
+                grid_dim=64,
+                block_dim=256,
+            )
+            run_dispatch_async(dev_idx, 0)
+            run_dispatch_async_wait(dev_idx, 0)
+            # Snapshot what dispatch delivered, blank it, and republish it from
+            # a late producer, as the grouped matmul would.
+            ctx.enqueue_copy(
+                ref_output_bufs[dev_idx], device_output_bufs_list[dev_idx]
+            )
+            ctx.enqueue_memset(
+                device_output_bufs_list[dev_idx], Scalar[input_type](0)
+            )
+            ctx.enqueue_function[_late_fill[input_type]](
+                device_output_bufs_list[dev_idx],
+                ref_output_bufs[dev_idx],
+                Int32(output_elems),
+                Int32(delay_us + 1000 * dev_idx),
+                grid_dim=64,
+                block_dim=256,
+            )
+            run_combine_async(dev_idx, 0)
+            run_combine_async_wait(dev_idx, 0)
+
+        # Rank `round % n_ranks` runs its producers a millisecond later than
+        # its peers, and the host enqueues the chains starting from rank
+        # `(round // n_ranks) % n_ranks`, so four rounds on two ranks cover
+        # each rank being late with each rank enqueued first.
+        for round in range(4):
+            var late_rank = round % n_ranks
+            var first_rank = (round // n_ranks) % n_ranks
+            for dev_idx in range(n_ranks):
+                clean_up(dev_idx)
+                list_of_ctx[dev_idx].enqueue_memset(
+                    device_output_2_bufs_list[dev_idx], Scalar[input_type](0)
+                )
+            for dev_idx in range(n_ranks):
+                list_of_ctx[dev_idx].synchronize()
+            for i in range(n_ranks):
+                var dev_idx = (first_rank + i) % n_ranks
+                run_ordered_chain(
+                    dev_idx, 2000 + (1000 if dev_idx == late_rank else 0)
+                )
+            for dev_idx in range(n_ranks):
+                list_of_ctx[dev_idx].synchronize()
+            sync_parallelize(verify_results, n_ranks)
+
+        # `combine_wait` writes an output tensor the planner may alias with a
+        # tensor its predecessor still reads, so its PDL wait must hold it off
+        # until that predecessor completes. A stand-in predecessor releases
+        # `combine_wait` at entry, sleeps, and then reads the output tensor,
+        # which is filled with a sentinel. It sees the sentinel unless
+        # `combine_wait` started writing before the predecessor completed.
+        var changed_bufs = List[DeviceBuffer[DType.uint32]](capacity=n_ranks)
+        for dev_idx in range(n_ranks):
+            var ctx = list_of_ctx[dev_idx]
+            changed_bufs.append(ctx.enqueue_create_buffer[DType.uint32](1))
+            # Load the probe on every device before a collective spins.
+            ctx.enqueue_function[_probe_output[input_type]](
+                device_output_2_bufs_list[dev_idx],
+                Int32(0),
+                Scalar[input_type](0),
+                changed_bufs[dev_idx],
+                Int32(0),
+                grid_dim=1,
+                block_dim=32,
+            )
+        for dev_idx in range(n_ranks):
+            list_of_ctx[dev_idx].synchronize()
+
+        comptime output_2_elems = (
+            n_slots * n_tokens_per_rank * top_k * hidden_size
+        )
+        for dev_idx in range(n_ranks):
+            var ctx = list_of_ctx[dev_idx]
+            clean_up(dev_idx)
+            ctx.enqueue_memset(
+                device_output_2_bufs_list[dev_idx], Scalar[input_type](1000)
+            )
+            ctx.enqueue_memset(changed_bufs[dev_idx], UInt32(0))
+        for dev_idx in range(n_ranks):
+            list_of_ctx[dev_idx].synchronize()
+        for dev_idx in range(n_ranks):
+            var ctx = list_of_ctx[dev_idx]
+            run_dispatch_async(dev_idx, 0)
+            run_dispatch_async_wait(dev_idx, 0)
+            run_combine_async(dev_idx, 0)
+            ctx.enqueue_function[_probe_output[input_type]](
+                device_output_2_bufs_list[dev_idx],
+                Int32(output_2_elems),
+                Scalar[input_type](1000),
+                changed_bufs[dev_idx],
+                Int32(2000),
+                grid_dim=64,
+                block_dim=256,
+                attributes=pdl_launch_attributes(split_pdl_level),
+            )
+            run_combine_async_wait(dev_idx, 0)
+        for dev_idx in range(n_ranks):
+            list_of_ctx[dev_idx].synchronize()
+        for dev_idx in range(n_ranks):
+            var ctx = list_of_ctx[dev_idx]
+            var host_changed = unsafe_alloc[Scalar[DType.uint32]](1)
+            ctx.enqueue_copy(host_changed, changed_bufs[dev_idx])
+            ctx.synchronize()
+            assert_equal(
+                host_changed[0],
+                0,
+                "combine_wait wrote its output before its predecessor"
+                " completed on dev "
+                + String(dev_idx),
+            )
+            host_changed.unsafe_free()
+        sync_parallelize(verify_results, n_ranks)
+
+        print("PDL ordering verified successfully!")
+        _ = ref_input_bufs^
+        _ = ref_output_bufs^
 
     for dev_idx in range(n_ranks):
         host_topk_ids_list[dev_idx].unsafe_free()

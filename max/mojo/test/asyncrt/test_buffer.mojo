@@ -52,7 +52,7 @@ def test_buffer() raises:
     var ctx = create_test_device_context()
 
     print("-------")
-    print("Running test_buffer(" + ctx.name() + "):")
+    print("Running test_buffer(" + ctx.device().get_name() + "):")
 
     _run_badbuf(ctx)
 

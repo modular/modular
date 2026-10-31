@@ -216,9 +216,10 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
       b.replaceOpWithNewOp<RefLoadOp>(loadConsume, loadConsume.getRef());
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
-      if (auto symbolCst = dyn_cast<SymbolConstantAttr>(call.getCallee())) {
-        b.replaceOpWithNewOp<KGEN::CallOp>(call, call.getResultTypes(),
-                                           symbolCst, call.getOperands(),
+      auto callee = FuncSymbolGenerator::dynCast(call.getCallee());
+      if (callee && callee.isFullyBound()) {
+        b.replaceOpWithNewOp<KGEN::CallOp>(call, call.getResultTypes(), callee,
+                                           call.getOperands(),
                                            call.getTailKindAttr());
       } else {
         b.replaceOpWithNewOp<KGEN::CallParamOp>(
@@ -918,11 +919,11 @@ static LogicalResult lowerAttributesAndTypes(
   auto *debugInfoDialect =
       op->getContext()->getLoadedDialect<DebugInfo::DebugInfoDialect>();
 
-  auto removeSingletonParams = [&](auto attr) -> decltype(attr) {
+  auto removeSingletonParams = [&](FuncSymbolAttr attr) -> FuncSymbolAttr {
     SymbolRefAttr flatRef =
         cast<SymbolRefAttr>(replacer.replace(attr.getSymbol()));
     // Check the name & the number of params to ensure we don't operate on
-    // SymbolConstantAttrs/FuncSymbolAttr that have already been processed.
+    // FuncSymbolAttrs that have already been processed.
     if (auto it = symbolDroppedParamDecls.find(flatRef.getLeafReference());
         it != symbolDroppedParamDecls.end() &&
         it->second.size() == attr.getParamValues().size()) {
@@ -930,9 +931,8 @@ static LogicalResult lowerAttributesAndTypes(
       for (auto [idx, value] : llvm::enumerate(attr.getParamValues()))
         if (!it->second[idx])
           remainingParams.push_back(cast<TypedAttr>(replacer.replace(value)));
-      return decltype(attr)::get(
-          flatRef,
-          cast<decltype(attr.getType())>(replacer.replace(attr.getType())),
+      return FuncSymbolAttr::get(
+          flatRef, cast<FuncType>(replacer.replace(attr.getType())),
           remainingParams);
     }
     return nullptr;
@@ -947,11 +947,6 @@ static LogicalResult lowerAttributesAndTypes(
         if (TypedAttr value =
                 singletonTypeHelper.getSingletonValue(attr.getType()))
           return std::make_pair(value, WalkResult::advance());
-
-        // Remove singleton parameter values from SymbolConstantAttr.
-        if (auto symCst = dyn_cast<SymbolConstantAttr>(attr))
-          if (auto newSymCst = removeSingletonParams(symCst))
-            return std::make_pair(newSymCst, WalkResult::skip());
 
         // Remove singleton parameter values from FuncSymbolAttr.
         if (auto funcSym = dyn_cast<FuncSymbolAttr>(attr))

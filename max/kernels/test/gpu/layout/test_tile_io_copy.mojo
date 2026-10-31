@@ -75,9 +75,11 @@ comptime _V_COLS = 16
 comptime _V_WIDTH = 4
 
 
-def dram_to_sram_to_dram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def dram_to_sram_to_dram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through shared memory using the free-function wrappers.
     """
@@ -94,9 +96,11 @@ def dram_to_sram_to_dram_kernel(
     copy_sram_to_dram[thread_layout](dst, smem)
 
 
-def dram_to_local_to_dram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def dram_to_local_to_dram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through registers using the free-function wrappers.
 
@@ -114,9 +118,11 @@ def dram_to_local_to_dram_kernel(
     copy_local_to_dram[thread_layout](dst, local)
 
 
-def sram_local_sram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def sram_local_sram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through shared -> local -> shared -> generic.
 
@@ -146,9 +152,11 @@ def sram_local_sram_kernel(
     copy_sram_to_dram[thread_layout](dst, smem_out)
 
 
-def swizzled_local_to_shared_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def swizzled_local_to_shared_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Swizzled roundtrip via the wrappers: GENERIC -> LOCAL -> SHARED
     (swizzled) -> GENERIC (swizzled).
@@ -175,9 +183,11 @@ def swizzled_local_to_shared_kernel(
     copy_sram_to_dram[thread_layout, swizzle=swizzle](dst, smem)
 
 
-def swizzled_vectorized_sram_to_dram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def swizzled_vectorized_sram_to_dram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """SHARED (swizzled) -> GENERIC with vectorized tiles.
 
@@ -201,9 +211,11 @@ def swizzled_vectorized_sram_to_dram_kernel(
     )
 
 
-def swizzled_vectorized_local_to_shared_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def swizzled_vectorized_local_to_shared_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """LOCAL -> SHARED (swizzled) with vectorized tiles.
 
@@ -243,9 +255,11 @@ def swizzled_vectorized_local_to_shared_kernel(
             dst_ptr[i] = smem.reshape[_V_ROWS * _V_COLS]()[swizzle(i)]
 
 
-def async_dram_to_sram_to_dram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_dram_to_sram_to_dram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip through shared memory using `copy_dram_to_sram_async` for the
     DRAM->SMEM leg.
@@ -270,9 +284,9 @@ def async_dram_to_sram_to_dram_kernel(
 
 
 def _run_roundtrip[
-    kernel_fn: def(
-        MutPointer[Float32, MutAnyOrigin],
-        MutPointer[Float32, MutAnyOrigin],
+    kernel_fn: def[src_origin: MutOrigin, dst_origin: MutOrigin](
+        MutPointer[Float32, src_origin],
+        MutPointer[Float32, dst_origin],
     ) thin -> None,
     num_elements: Int = _NUM_ELEMENTS,
     block_dim: Int = _BLOCK_DIM,
@@ -292,7 +306,7 @@ def _run_roundtrip[
     ctx.enqueue_copy(src_dev, src_host)
     ctx.enqueue_copy(dst_dev, dst_host)
 
-    ctx.enqueue_function[kernel_fn](
+    ctx.enqueue_function[kernel_fn[origin_of(src_dev), origin_of(dst_dev)]](
         src_dev, dst_dev, grid_dim=(1), block_dim=(block_dim)
     )
 
@@ -351,11 +365,13 @@ def test_async_dram_to_sram_to_dram(ctx: DeviceContext) raises:
 
 def _bounded_local_to_dram_kernel[
     ROWS: Int,
+    dst_origin: MutOrigin,
+    after_origin: MutOrigin,
     NUM_THREADS: Int = 32,
     SCOPE: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
-    after_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, dst_origin],
+    after_ptr: MutPointer[Float32, after_origin],
     valid0: Int32,
     valid1: Int32,
     row_stride: Int32,
@@ -423,7 +439,13 @@ def _check_bounded_local_to_dram[
     ctx.enqueue_copy(device, host)
     ctx.enqueue_copy(after_device, after_host)
     ctx.enqueue_function[
-        _bounded_local_to_dram_kernel[ROWS, NUM_THREADS, SCOPE]
+        _bounded_local_to_dram_kernel[
+            ROWS,
+            NUM_THREADS=NUM_THREADS,
+            SCOPE=SCOPE,
+            dst_origin=origin_of(device),
+            after_origin=origin_of(after_device),
+        ]
     ](
         device,
         after_device,

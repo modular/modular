@@ -47,6 +47,7 @@ from max.pipelines.context import (
     EOSTracker,
     InputError,
     LogProbabilities,
+    PixelContext,
     ProcessorInputs,
     SamplingParams,
     SamplingParamsInput,
@@ -101,6 +102,13 @@ _TOKENIZER_TEMPLATE_KEYS = frozenset(
         "tokenize",
         "tools",
     )
+)
+
+# The image part entries AutoProcessor reads and the message model drops.
+_INLINE_IMAGE_KEYS = ("image", "path", "url", "base64")
+_AUTO_PROCESSOR_HINT = (
+    "Pass the conversations through AutoProcessor, which moves them into "
+    "images."
 )
 
 _logger = logging.getLogger("max.pipelines")
@@ -366,6 +374,55 @@ def _encode_image(
     return buffer.getvalue(), image
 
 
+def _dict_parts(message: object) -> list[Mapping[object, object]]:
+    """Returns a dict message's dict content parts, or none for others."""
+    if not isinstance(message, Mapping):
+        return []
+    content = message.get("content")
+    if isinstance(content, str) or not isinstance(content, Sequence):
+        return []
+    return [part for part in content if isinstance(part, Mapping)]
+
+
+def _has_inline_image(message: object) -> bool:
+    return any(
+        part.get("type") == "image"
+        and any(part.get(key) is not None for key in _INLINE_IMAGE_KEYS)
+        for part in _dict_parts(message)
+    )
+
+
+def _image_rows(images: object, noun: str) -> list[list[bytes | Image.Image]]:
+    """Returns ``images`` as one list of images per ``noun``.
+
+    Raises:
+        TypeError: If ``images`` is not a list of lists of encoded bytes or
+            PIL images.
+    """
+    shape_error = TypeError(
+        f"images must be a list of image lists, one per {noun}, each image "
+        f"encoded bytes or a PIL image. Wrap one {noun}'s images as [images]."
+    )
+    flat_types = (bytes, bytearray, str, Image.Image)
+    # A bare image, or the flat list of PIL images Hugging Face takes, whose
+    # items don't iterate.
+    if isinstance(images, flat_types) or not isinstance(images, Iterable):
+        raise shape_error
+    rows: list[list[object]] = []
+    for row in images:
+        if isinstance(row, flat_types) or not isinstance(row, Iterable):
+            raise shape_error
+        rows.append(list(row))
+    if not all(
+        isinstance(image, (bytes, Image.Image)) for row in rows for image in row
+    ):
+        raise shape_error
+    return [
+        [image for image in row if isinstance(image, (bytes, Image.Image))]
+        for row in rows
+    ]
+
+
 def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
@@ -385,6 +442,17 @@ def _materialize_conversations(
             "messages must be a list of conversations, one per row. Wrap one "
             "conversation as [messages]."
         )
+    messages = [list(row) for row in messages]
+    for row, conversation in enumerate(messages):
+        if any(
+            part.get("type") == "image_url"
+            for message in conversation
+            for part in _dict_parts(message)
+        ):
+            raise ValueError(
+                f"Row {row} has an image_url part, which {caller} does not "
+                f"read. {_AUTO_PROCESSOR_HINT}"
+            )
     rows = [
         [
             message
@@ -397,26 +465,7 @@ def _materialize_conversations(
     if images is None:
         row_images: list[list[bytes | Image.Image]] = [[] for _ in rows]
     else:
-        shape_error = TypeError(
-            "images must be a list of image lists, one per row, each image "
-            "encoded bytes or a PIL image. Wrap one row's images as [images]."
-        )
-        image_rows = list(images)
-        # Hugging Face takes a flat list of PIL images, whose items don't
-        # iterate.
-        if any(
-            isinstance(row, (bytes, bytearray, str))
-            or not isinstance(row, Iterable)
-            for row in image_rows
-        ):
-            raise shape_error
-        row_images = [list(row) for row in image_rows]
-        if not all(
-            isinstance(image, (bytes, Image.Image))
-            for row in row_images
-            for image in row
-        ):
-            raise shape_error
+        row_images = _image_rows(images, "row")
         if len(row_images) != len(rows):
             raise ValueError(
                 f"images has {_plural(len(row_images), 'row')}, but messages "
@@ -473,6 +522,14 @@ def _materialize_conversations(
     for row, (num_parts, row_entries) in enumerate(
         zip(image_parts, row_images, strict=True)
     ):
+        # Checked whatever the image count, since a matching count would
+        # otherwise run the row on a different image.
+        if any(map(_has_inline_image, messages[row])):
+            raise ValueError(
+                f'Row {row} has an image part with an "image", "path", "url" '
+                f'or "base64" entry, which {caller} does not read. '
+                f"{_AUTO_PROCESSOR_HINT}"
+            )
         if len(row_entries) != num_parts:
             raise ValueError(
                 f"Row {row} has {_plural(num_parts, 'image part')} but "
@@ -754,6 +811,13 @@ def _unsupported(
     return ValueError(message)
 
 
+def _holds_video(context_type: type[PixelContext]) -> bool:
+    # Only a video model's context carries a frame count.
+    return any(
+        field.name == "num_frames" for field in dataclasses.fields(context_type)
+    )
+
+
 def _check_supported(
     pipeline_config: PipelineConfig, caller: str = "generate()"
 ) -> type[TextContext]:
@@ -767,6 +831,14 @@ def _check_supported(
     """
     context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
     arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config)
+    if issubclass(context_type, PixelContext) and not _holds_video(
+        context_type
+    ):
+        raise ValueError(
+            f"{caller} generates text, and the model uses "
+            f"{context_type.__name__}. Use generate_images() for image "
+            "generation models."
+        )
     if not issubclass(context_type, TextContext):
         raise _unsupported(
             pipeline_config,
@@ -944,6 +1016,7 @@ def _check_output_options(
     synchronous: bool,
     output_logits: bool,
     output_logprobs: int,
+    caller: str,
 ) -> None:
     """Raises if the pipeline cannot return the requested outputs."""
     if not 0 <= output_logprobs <= _MAX_TOP_LOGPROBS:
@@ -960,11 +1033,15 @@ def _check_output_options(
             "tokens to a row."
         )
     if output_logits and not synchronous:
+        advice = (
+            "Load the AutoModel without enable_overlap_scheduler=True."
+            if caller == "AutoModel"
+            else "Use AutoModel, which turns the overlap scheduler off."
+        )
         raise ValueError(
             "output_logits needs a synchronous pipeline, but this pipeline "
             "has overlap active, so each step returns the tokens sampled "
-            "from the previous step's logits. Use AutoModel, which turns the "
-            "overlap scheduler off."
+            f"from the previous step's logits. {advice}"
         )
     # The pipeline checks this only after the rows have claimed KV.
     if output_logprobs and isinstance(pipeline, _OverlapSource):
@@ -1197,12 +1274,15 @@ class GenerateIterator:
             ``images`` is not a list of lists of encoded bytes or PIL
             images.
         ValueError: If the request needs a feature GenerateIterator leaves to
-            ``max serve``: LoRA, a model that does not generate text, a block
-            diffusion model, video inputs, device graph capture with
+            ``max serve``: LoRA, a model that generates neither text nor
+            images, a video model, a block diffusion model, video inputs,
+            device graph capture with
             ``data_parallel_degree > 1`` on a warmed-up pipeline, or a batch
             that only fits by scheduling or chunked prefill (more rows than
             the planned max batch size, or a replica's prompts over its
-            per-replica prefill budget or the batch total-token cap). Also
+            per-replica prefill budget or the batch total-token cap). An
+            image generation model raises it pointing to
+            :func:`~max.pipelines.lib.generate_images.generate_images`. Also
             raised for a prompt with no
             room to generate within the planned max length, an invalid
             sampling value, penalties on a pipeline built without
@@ -1215,10 +1295,12 @@ class GenerateIterator:
             than ``messages``, images or video on an architecture that takes
             text only, a row with more images than the tokenizer's
             ``max_images_per_request``, a row whose image count differs from
-            its image parts, ``images``, ``chat_template_kwargs`` or
-            ``attention_mask`` without the matching prompt argument, or a
-            ``chat_template_kwargs`` key the tokenizer sets itself. Also
-            raised for ``output_logprobs`` outside ``[0, 7]``,
+            its image parts, an ``image_url`` part or an image part with its
+            own image, ``images``,
+            ``chat_template_kwargs`` or ``attention_mask`` without the
+            matching prompt argument, or a ``chat_template_kwargs`` key the
+            tokenizer sets itself. Also raised for ``output_logprobs``
+            outside ``[0, 7]``,
             ``output_logprobs`` on a model that does not compute log
             probabilities, ``output_logits`` on a pipeline that is not
             synchronous, ``output_logits`` or ``output_logprobs`` with
@@ -1361,7 +1443,7 @@ class GenerateIterator:
         _check_graph_capture(pipeline, dp_degree, caller)
         self._start(pipeline, contexts, dp_degree)
         _check_output_options(
-            pipeline, self._synchronous, output_logits, output_logprobs
+            pipeline, self._synchronous, output_logits, output_logprobs, caller
         )
         if output_logits:
             self._logits_recorders = [_LogitsRecorder() for _ in contexts]

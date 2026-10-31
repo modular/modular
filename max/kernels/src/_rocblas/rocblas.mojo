@@ -14,7 +14,7 @@
 
 from std.complex import ComplexFloat32, ComplexFloat64
 
-from max.gpu.host._legacy._amdgpu_hip import hipStream_t
+from max.gpu.host import hipStream_t
 
 from .types import (
     Algorithm,
@@ -46011,10 +46011,10 @@ def rocblas_gemm_ex(
     b_type: DataType,
     ldb: Int32,
     beta: OpaquePointer[_],
-    c: OptionalPointer[NoneType, _],
+    c: Optional[Pointer[NoneType, _]],
     c_type: DataType,
     ldc: Int32,
-    d: OptionalPointer[NoneType, _],
+    d: Optional[Pointer[NoneType, _]],
     d_type: DataType,
     ldd: Int32,
     compute_type: DataType,

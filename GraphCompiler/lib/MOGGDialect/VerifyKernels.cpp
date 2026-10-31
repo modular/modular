@@ -39,6 +39,28 @@ template <typename Func, typename... Args>
   return ret;
 }
 
+/// Emits an error at the Mojo location of `arg` of `decl`'s `kind` function. A
+/// shape function lives in its own decl, so its errors point at the struct.
+static mlir::InFlightDiagnostic
+emitMojoArgumentError(KernelDeclOp decl, KernelFunctionKind kind,
+                      const KernelDeclOperandAdaptor &arg) {
+  if (!arg.sourceDescriptor)
+    return mlir::emitError(decl.getMojoFunctionLocation(kind));
+  return mlir::emitError(
+      decl.getMojoArgLocation(kind, arg.sourceDescriptor->position));
+}
+
+/// Whether `arg` is declared as an output tensor, wherever it sits.
+static bool isDeclaredOutput(const KernelDeclOperandAdaptor &arg) {
+  const auto *tensor =
+      std::get_if<KernelDeclTensorAdaptor>(&arg.underlyingType);
+  if (!tensor)
+    return false;
+  if (tensor->traitContract)
+    return tensor->traitContract->role == TensorArgRole::output;
+  return isOutputIOSpec(tensor->ioSpec);
+}
+
 //===----------------------------------------------------------------------===//
 // KernelDeclAdaptor-based verification (mogg.kernel.decl path)
 //===----------------------------------------------------------------------===//
@@ -56,7 +78,7 @@ LogicalResult declVerifyShapeFunctionReturnsShape(
 }
 
 // Return `s` with its first ASCII letter uppercased, for error messages that
-// start with a role label like "execute".
+// start with a kernel function name like "execute".
 static std::string capitalize(llvm::StringRef s) {
   if (s.empty())
     return "";
@@ -67,21 +89,24 @@ static std::string capitalize(llvm::StringRef s) {
 
 /// Walk the input argument lists of `lhs` and `rhs` in parallel, skipping
 /// launch args (DeviceContext / DeviceGraphBuilder) from either side, and
-/// require pairwise compatibility. `lhsKind` / `rhsKind` are lowercase role
-/// labels used in error messages (e.g. "execute" / "shape").
+/// require pairwise compatibility. `lhsKind` / `rhsKind` name the functions in
+/// error messages.
 ///
 /// A pair is compatible when types match exactly, or when the lhs side has a
 /// `MutableInputTensor` and the rhs side has a non-mutable tensor (shape /
 /// build_graph cannot mutate their inputs, so a relaxed match is allowed).
 /// Adaptor equality ignores the `stable` flag on purpose, so a build_graph
 /// `StableTensor` / `StableVariadicTensors` argument aligns with the plain
-/// execute argument at the same position; `declVerifyStableTensorArguments`
-/// owns the rules for where stable arguments may appear.
+/// shape-function argument at the same position;
+/// `declVerifyStableTensorArguments` owns the rules for where stable
+/// arguments may appear.
 LogicalResult verifyInputArgumentsAlign(KernelDeclOp decl,
                                         const KernelDeclFunctionAdaptor &lhs,
-                                        llvm::StringRef lhsKind,
+                                        KernelFunctionKind lhsKind,
                                         const KernelDeclFunctionAdaptor &rhs,
-                                        llvm::StringRef rhsKind) {
+                                        KernelFunctionKind rhsKind) {
+  llvm::StringRef lhsName = stringifyKernelFunctionKind(lhsKind);
+  llvm::StringRef rhsName = stringifyKernelFunctionKind(rhsKind);
   auto skipLaunchArg =
       [](const llvm::SmallVector<KernelDeclOperandAdaptor> &inputs,
          uint64_t &idx) -> std::optional<KernelDeclOperandAdaptor> {
@@ -109,12 +134,12 @@ LogicalResult verifyInputArgumentsAlign(KernelDeclOp decl,
     };
 
     if (!isCompatibleArgs()) {
-      return decl->emitError()
-             << capitalize(rhsKind) << " function and " << lhsKind
+      return emitMojoArgumentError(decl, lhsKind, *lhsArgOpt)
+             << capitalize(rhsName) << " function and " << lhsName
              << " function input argument types do not match. "
-             << capitalize(lhsKind) << " function input at position "
+             << capitalize(lhsName) << " function input at position "
              << lhsArgOpt->sourceDescriptor->position << " is a "
-             << lhsArgOpt->underlyingType << " but corresponding " << rhsKind
+             << lhsArgOpt->underlyingType << " but corresponding " << rhsName
              << " function argument at position " << rhsIndex << " is a "
              << rhsArgOpt->underlyingType;
     }
@@ -127,7 +152,7 @@ LogicalResult verifyInputArgumentsAlign(KernelDeclOp decl,
 
   if (!lhsEnd || !rhsEnd) {
     std::stringstream errorMessage;
-    errorMessage << capitalize(lhsKind) << " and " << rhsKind.str()
+    errorMessage << capitalize(lhsName) << " and " << rhsName.str()
                  << " functions do not have the same input tensors. ";
     auto appendUnmatchedInputs =
         [&](const llvm::SmallVector<KernelDeclOperandAdaptor> &inputs,
@@ -137,16 +162,25 @@ LogicalResult verifyInputArgumentsAlign(KernelDeclOp decl,
             ++idx;
           }
         };
+    // Point at the first input the other function lacks.
+    const KernelDeclFunctionAdaptor &extra = lhsEnd ? rhs : lhs;
+    KernelFunctionKind extraKind = lhsEnd ? rhsKind : lhsKind;
+    uint64_t extraIndex = lhsEnd ? rhsIndex : lhsIndex;
     if (lhsEnd) {
-      errorMessage << capitalize(rhsKind) << " function inputs at positions (";
+      errorMessage << capitalize(rhsName) << " function inputs at positions (";
       appendUnmatchedInputs(rhs.inputArguments, rhsIndex);
-      errorMessage << ") do not appear in the " << lhsKind.str() << " function";
+      errorMessage << ") do not appear in the " << lhsName.str() << " function";
     } else {
-      errorMessage << capitalize(lhsKind) << " function inputs at positions (";
+      errorMessage << capitalize(lhsName) << " function inputs at positions (";
       appendUnmatchedInputs(lhs.inputArguments, lhsIndex);
-      errorMessage << ") do not appear in the " << rhsKind.str() << " function";
+      errorMessage << ") do not appear in the " << rhsName.str() << " function";
     }
-    return decl->emitError(errorMessage.str());
+    std::optional<KernelDeclOperandAdaptor> firstExtra =
+        skipLaunchArg(extra.inputArguments, extraIndex);
+    if (!firstExtra)
+      return decl->emitError(errorMessage.str());
+    return emitMojoArgumentError(decl, extraKind, *firstExtra)
+           << errorMessage.str();
   }
 
   return success();
@@ -159,33 +193,114 @@ LogicalResult declVerifyShapeFunctionInputsMatchExecuteFunction(
     return success();
 
   if (adaptor.executeFunction.has_value() &&
-      verifyInputArgumentsAlign(decl, *adaptor.executeFunction, "execute",
-                                *shapeFunction, "shape")
+      verifyInputArgumentsAlign(decl, *adaptor.executeFunction,
+                                KernelFunctionKind::Execute, *shapeFunction,
+                                KernelFunctionKind::Shape)
           .failed())
     return failure();
 
   if (adaptor.buildGraphFunction.has_value() &&
       verifyInputArgumentsAlign(decl, *adaptor.buildGraphFunction,
-                                "build_graph", *shapeFunction, "shape")
+                                KernelFunctionKind::BuildGraph, *shapeFunction,
+                                KernelFunctionKind::Shape)
           .failed())
     return failure();
 
   return success();
 }
 
-/// build_graph must align with execute modulo their launch arguments
-/// (DeviceContext vs DeviceGraphBuilder). Same tensor signature is required,
-/// except that a build_graph argument may be the slot-backed (`StableTensor` /
-/// `StableVariadicTensors`) form of the execute argument at the same position:
-/// the adaptor equality used by `verifyInputArgumentsAlign` ignores `stable`.
+/// `build_graph` takes the same arguments as `execute`: a recording stub hands
+/// both entry points the same values. The signatures are compared position by
+/// position, with two exceptions:
+///
+/// - The `DeviceContext` of `execute` is a `DeviceGraphBuilder` on
+///   `build_graph`.
+///
+/// - And a `build_graph` tensor may be the slot-backed
+///   (`StableTensor` / `StableVariadicTensors`) form of the `execute` tensor
+///   at the same position, as long as that tensor is not fused: a slot
+///   publishes the address of a tensor in memory, and a fused input is a
+///   compute lambda with no address.
 LogicalResult
 declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
                                    const KernelDeclAdaptor &adaptor) {
   if (!adaptor.executeFunction.has_value() ||
       !adaptor.buildGraphFunction.has_value())
     return success();
-  return verifyInputArgumentsAlign(decl, *adaptor.executeFunction, "execute",
-                                   *adaptor.buildGraphFunction, "build_graph");
+  StringRef executeName =
+      stringifyKernelFunctionKind(KernelFunctionKind::Execute);
+  StringRef buildGraphName =
+      stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph);
+  std::string contract =
+      (buildGraphName + " takes the same arguments as " + executeName +
+       ", with the DeviceContext replaced by a DeviceGraphBuilder")
+          .str();
+  auto positionOf = [](const KernelDeclOperandAdaptor &arg) -> uint64_t {
+    return arg.sourceDescriptor ? arg.sourceDescriptor->position : 0;
+  };
+  auto describe = [](const KernelDeclOperandAdaptor &arg) -> std::string {
+    std::string out;
+    llvm::raw_string_ostream os(out);
+    if (std::optional<IOSpec> ioSpec = arg.getIoSpec())
+      os << (arg.isStableTensorType() ? "stable " : "")
+         << (arg.isVariadicTensorType() ? "variadic " : "")
+         << toString(*ioSpec);
+    else
+      os << arg.underlyingType;
+    return out;
+  };
+  // Tensor equality ignores the `stable` bit; everything else must agree.
+  auto sameArgument = [](const KernelDeclOperandAdaptor &executeArg,
+                         const KernelDeclOperandAdaptor &buildGraphArg) {
+    if (!executeArg.isTensorType())
+      return executeArg == buildGraphArg;
+    return executeArg.isVariadicTensorType() ==
+               buildGraphArg.isVariadicTensorType() &&
+           executeArg.getIoSpec() == buildGraphArg.getIoSpec() &&
+           executeArg.getTraitContract() == buildGraphArg.getTraitContract();
+  };
+
+  // `execute` is the reference, so errors point at the `build_graph` side.
+  auto compare =
+      [&](StringRef kind, ArrayRef<KernelDeclOperandAdaptor> executeArgs,
+          ArrayRef<KernelDeclOperandAdaptor> buildGraphArgs) -> LogicalResult {
+    if (executeArgs.size() != buildGraphArgs.size())
+      return mlir::emitError(
+                 decl.getMojoFunctionLocation(KernelFunctionKind::BuildGraph))
+             << executeName << " declares " << executeArgs.size() << " " << kind
+             << "s but " << buildGraphName << " declares "
+             << buildGraphArgs.size() << "; " << contract;
+    for (auto [executeArg, buildGraphArg] :
+         llvm::zip(executeArgs, buildGraphArgs)) {
+      if (executeArg.isContextType() && buildGraphArg.isBuilderType())
+        continue;
+      if (buildGraphArg.isStableTensorType() && executeArg.isFusedTensorType())
+        return emitMojoArgumentError(decl, KernelFunctionKind::BuildGraph,
+                                     buildGraphArg)
+               << "the " << kind << " at position " << positionOf(buildGraphArg)
+               << " of " << buildGraphName
+               << " reads a stable address slot, but the " << kind
+               << " at position " << positionOf(executeArg) << " of "
+               << executeName
+               << " is fused; a slot publishes the address of a tensor in "
+                  "memory, and a fused input is a functor with none";
+      if (!sameArgument(executeArg, buildGraphArg))
+        return emitMojoArgumentError(decl, KernelFunctionKind::BuildGraph,
+                                     buildGraphArg)
+               << "the " << kind << " at position " << positionOf(executeArg)
+               << " is " << describe(executeArg) << " on " << executeName
+               << " but " << describe(buildGraphArg) << " on " << buildGraphName
+               << "; " << contract;
+    }
+    return success();
+  };
+
+  if (compare("input", adaptor.executeFunction->inputArguments,
+              adaptor.buildGraphFunction->inputArguments)
+          .failed())
+    return failure();
+  return compare("output", adaptor.executeFunction->outputArguments,
+                 adaptor.buildGraphFunction->outputArguments);
 }
 
 /// Slot-backed tensor arguments (`StableTensor` / `StableVariadicTensors`)
@@ -201,7 +316,7 @@ declVerifyStableTensorArguments(KernelDeclOp decl,
   };
 
   auto rejectStable = [&](const std::optional<KernelDeclFunctionAdaptor> &func,
-                          StringRef kind) -> LogicalResult {
+                          KernelFunctionKind kind) -> LogicalResult {
     if (!func.has_value())
       return success();
     for (const auto &args : {func->inputArguments, func->outputArguments})
@@ -209,15 +324,20 @@ declVerifyStableTensorArguments(KernelDeclOp decl,
         if (arg.isStableTensorType())
           return decl->emitError()
                  << "stable tensor arguments (StableTensor / "
-                    "StableVariadicTensors) are only supported on build_graph "
-                    "functions (argument at position "
-                 << positionOf(arg) << " of the " << kind << " function)";
+                    "StableVariadicTensors) are only supported on "
+                 << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
+                 << " functions (argument at position " << positionOf(arg)
+                 << " of the " << stringifyKernelFunctionKind(kind)
+                 << " function)";
     return success();
   };
 
-  if (rejectStable(adaptor.executeFunction, "execute").failed() ||
-      rejectStable(adaptor.elementwiseFunction, "elementwise").failed() ||
-      rejectStable(adaptor.tileElementwiseFunction, "tile_elementwise")
+  if (rejectStable(adaptor.executeFunction, KernelFunctionKind::Execute)
+          .failed() ||
+      rejectStable(adaptor.elementwiseFunction, KernelFunctionKind::Elementwise)
+          .failed() ||
+      rejectStable(adaptor.tileElementwiseFunction,
+                   KernelFunctionKind::TileElementwise)
           .failed())
     return failure();
 
@@ -243,8 +363,6 @@ declVerifyStableTensorArguments(KernelDeclOp decl,
   return success();
 }
 
-/// A build_graph method records nodes against a DeviceGraphBuilder, so the
-/// signature must explicitly accept one.
 LogicalResult declVerifyBuildGraphHasBuilder(KernelDeclOp decl,
                                              const KernelDeclAdaptor &adaptor) {
   if (!adaptor.buildGraphFunction.has_value())
@@ -287,30 +405,50 @@ LogicalResult
 declVerifyOutputsAppearBeforeInputs(KernelDeclOp decl,
                                     const KernelDeclAdaptor &adaptor) {
   auto outputsBeforeInputs =
-      [&decl](const std::optional<KernelDeclFunctionAdaptor> &func)
-      -> LogicalResult {
+      [&decl](const std::optional<KernelDeclFunctionAdaptor> &func,
+              KernelFunctionKind kind) -> LogicalResult {
     if (!func.has_value())
       return success();
-    int64_t indexOfFirstInput = std::numeric_limits<int64_t>::max();
-    for (const auto &arg : func->inputArguments) {
-      indexOfFirstInput =
-          std::min<int64_t>(indexOfFirstInput, arg.sourceDescriptor->position);
-    }
-    int64_t indexOfLastOutput = std::numeric_limits<int64_t>::min();
-    for (const auto &arg : func->outputArguments) {
-      indexOfLastOutput =
-          std::max<int64_t>(indexOfLastOutput, arg.sourceDescriptor->position);
-    }
-    if (indexOfFirstInput < indexOfLastOutput) {
-      decl->emitError()
-          << "Outputs must appear before inputs in the function signature";
+    auto position = [](const KernelDeclOperandAdaptor &arg) {
+      return arg.sourceDescriptor->position;
+    };
+    // Only leading outputs are classified as outputs, so an output after an
+    // input shows up among the inputs; its declared role still marks it.
+    const KernelDeclOperandAdaptor *firstInput = nullptr;
+    for (const auto &arg : func->inputArguments)
+      if (!isDeclaredOutput(arg) &&
+          (!firstInput || position(arg) < position(*firstInput)))
+        firstInput = &arg;
+    if (!firstInput)
+      return success();
+    // Blame the first output that comes after an input.
+    const KernelDeclOperandAdaptor *lateOutput = nullptr;
+    auto consider = [&](const KernelDeclOperandAdaptor &arg) {
+      if (position(arg) > position(*firstInput) &&
+          (!lateOutput || position(arg) < position(*lateOutput)))
+        lateOutput = &arg;
+    };
+    for (const auto &arg : func->outputArguments)
+      consider(arg);
+    for (const auto &arg : func->inputArguments)
+      if (isDeclaredOutput(arg))
+        consider(arg);
+    if (lateOutput) {
+      emitMojoArgumentError(decl, kind, *lateOutput)
+          << "Outputs must appear before inputs in the function signature: "
+          << "output '" << lateOutput->sourceDescriptor->sourceName.getValue()
+          << "' comes after input '"
+          << firstInput->sourceDescriptor->sourceName.getValue() << "'";
       return failure();
     }
     return success();
   };
 
-  if (outputsBeforeInputs(adaptor.executeFunction).failed() ||
-      outputsBeforeInputs(adaptor.buildGraphFunction).failed())
+  if (outputsBeforeInputs(adaptor.executeFunction, KernelFunctionKind::Execute)
+          .failed() ||
+      outputsBeforeInputs(adaptor.buildGraphFunction,
+                          KernelFunctionKind::BuildGraph)
+          .failed())
     return failure();
   return success();
 }
@@ -323,38 +461,44 @@ LogicalResult declVerifyContextsAppearLastInSignature(
     const std::optional<KernelDeclFunctionAdaptor> &shapeFunction) {
   const auto launchArgsAreLast =
       [&decl](const std::optional<KernelDeclFunctionAdaptor> &func,
-              llvm::StringRef argLower,
+              KernelFunctionKind kind, llvm::StringRef argLower,
               llvm::StringRef argTitle) -> LogicalResult {
     if (!func.has_value())
       return success();
-    if (llvm::count_if(func->inputArguments,
-                       [](const KernelDeclOperandAdaptor &arg) {
-                         return arg.isLaunchArgument();
-                       }) > 1) {
-      decl->emitError() << "There can be at most one " << argLower;
-      return failure();
-    }
+    const KernelDeclOperandAdaptor *launchArg = nullptr;
     int64_t indexOfLastArgument = std::numeric_limits<int64_t>::min();
-    int64_t indexOfLaunchArgument = std::numeric_limits<int64_t>::max();
     for (const auto &arg : func->inputArguments) {
-      if (arg.isLaunchArgument())
-        indexOfLaunchArgument = arg.sourceDescriptor->position;
+      if (arg.isLaunchArgument()) {
+        if (launchArg) {
+          emitMojoArgumentError(decl, kind, arg)
+              << "There can be at most one " << argLower;
+          return failure();
+        }
+        launchArg = &arg;
+      }
       indexOfLastArgument = std::max<int64_t>(indexOfLastArgument,
                                               arg.sourceDescriptor->position);
     }
-    if (indexOfLaunchArgument < indexOfLastArgument) {
-      decl->emitError() << argTitle
-                        << " argument must be the last argument "
-                           "in the function signature";
+    if (launchArg &&
+        static_cast<int64_t>(launchArg->sourceDescriptor->position) <
+            indexOfLastArgument) {
+      emitMojoArgumentError(decl, kind, *launchArg)
+          << argTitle
+          << " argument must be the last argument "
+             "in the function signature";
       return failure();
     }
     return success();
   };
 
-  if (launchArgsAreLast(adaptor.executeFunction, "context", "Context")
+  if (launchArgsAreLast(adaptor.executeFunction, KernelFunctionKind::Execute,
+                        "context", "Context")
           .failed() ||
-      launchArgsAreLast(shapeFunction, "context", "Context").failed() ||
-      launchArgsAreLast(adaptor.buildGraphFunction, "graph builder",
+      launchArgsAreLast(shapeFunction, KernelFunctionKind::Shape, "context",
+                        "Context")
+          .failed() ||
+      launchArgsAreLast(adaptor.buildGraphFunction,
+                        KernelFunctionKind::BuildGraph, "graph builder",
                         "Graph builder")
           .failed())
     return failure();
@@ -457,7 +601,7 @@ LogicalResult declVerifyTensorArgsAreBorrowed(
 LogicalResult declVerifyTraitArgFunctionKinds(KernelDeclOp decl,
                                               KernelDeclAdaptor &adaptor) {
   auto rejectTraitArgs = [&decl](std::optional<KernelDeclFunctionAdaptor> &func,
-                                 StringRef kind) -> LogicalResult {
+                                 KernelFunctionKind kind) -> LogicalResult {
     if (!func.has_value())
       return success();
     auto sig = func->attr.getSignature();
@@ -465,9 +609,15 @@ LogicalResult declVerifyTraitArgFunctionKinds(KernelDeclOp decl,
     for (size_t i = 0, n = sig.getNumArguments(); i < n; ++i) {
       if (isTraitBoundTensorArg(sig.getArgument(i))) {
         decl->emitError()
-            << "trait-bound tensor arguments are not supported on " << kind
-            << " functions yet (only `execute`, `execute_device` and "
-               "`execute_configuration`)";
+            << "trait-bound tensor arguments are not supported on "
+            << stringifyKernelFunctionKind(kind) << " functions yet (only `"
+            << stringifyKernelFunctionKind(KernelFunctionKind::Execute)
+            << "`, `"
+            << stringifyKernelFunctionKind(KernelFunctionKind::ExecuteDevice)
+            << "` and `"
+            << stringifyKernelFunctionKind(
+                   KernelFunctionKind::ExecuteConfiguration)
+            << "`)";
         ok = false;
       }
     }
@@ -475,11 +625,16 @@ LogicalResult declVerifyTraitArgFunctionKinds(KernelDeclOp decl,
   };
 
   bool ok = true;
-  if (rejectTraitArgs(adaptor.buildGraphFunction, "build_graph").failed())
+  if (rejectTraitArgs(adaptor.buildGraphFunction,
+                      KernelFunctionKind::BuildGraph)
+          .failed())
     ok = false;
-  if (rejectTraitArgs(adaptor.elementwiseFunction, "elementwise").failed())
+  if (rejectTraitArgs(adaptor.elementwiseFunction,
+                      KernelFunctionKind::Elementwise)
+          .failed())
     ok = false;
-  if (rejectTraitArgs(adaptor.tileElementwiseFunction, "tile_elementwise")
+  if (rejectTraitArgs(adaptor.tileElementwiseFunction,
+                      KernelFunctionKind::TileElementwise)
           .failed())
     ok = false;
   return ok ? success() : failure();
@@ -579,20 +734,28 @@ LogicalResult declVerifyDeclarative(KernelDeclOp decl,
   auto error = [&] {
     return decl->emitError() << "kernel '" << decl.getRegistration() << "': ";
   };
+  StringRef executeName =
+      stringifyKernelFunctionKind(KernelFunctionKind::Execute);
+  StringRef deviceName =
+      stringifyKernelFunctionKind(KernelFunctionKind::ExecuteDevice);
+  StringRef configurationName =
+      stringifyKernelFunctionKind(KernelFunctionKind::ExecuteConfiguration);
   if (adaptor.executeDeviceFunction && decl.getExecute()) {
-    return error() << "a kernel has either 'execute' or 'execute_device'";
+    return error() << "a kernel has either '" << executeName << "' or '"
+                   << deviceName << "'";
   }
   if (!adaptor.executeDeviceFunction || !adaptor.executeConfigurationFunction) {
-    return error() << "a declarative kernel needs both 'execute_device' and "
-                      "'execute_configuration'";
+    return error() << "a declarative kernel needs both '" << deviceName
+                   << "' and '" << configurationName << "'";
   }
 
   const KernelDeclFunctionAdaptor &executeDevice =
       *adaptor.executeDeviceFunction;
   if (executeDevice.attr.getSignature().isThrows())
-    return error() << "'execute_device' runs on the device and must not raise";
+    return error() << "'" << deviceName
+                   << "' runs on the device and must not raise";
   if (executeDevice.outputResult)
-    return error() << "'execute_device' must not return a value";
+    return error() << "'" << deviceName << "' must not return a value";
 
   // `execute_configuration` takes its operands by `Tensor`, which has no io
   // role, so all of them count as inputs; compare the operands in order.
@@ -620,25 +783,24 @@ LogicalResult declVerifyDeclarative(KernelDeclOp decl,
     }
     return success();
   };
-  if (failed(checkOperands("execute_device", deviceOperands)) ||
-      failed(checkOperands("execute_configuration", configurationOperands)))
+  if (failed(checkOperands(deviceName, deviceOperands)) ||
+      failed(checkOperands(configurationName, configurationOperands)))
     return failure();
 
   if (deviceOperands.size() != configurationOperands.size()) {
-    return error() << "'execute_configuration' takes "
-                   << configurationOperands.size()
-                   << " argument(s) but 'execute_device' takes "
-                   << deviceOperands.size()
+    return error() << "'" << configurationName << "' takes "
+                   << configurationOperands.size() << " argument(s) but '"
+                   << deviceName << "' takes " << deviceOperands.size()
                    << "; both take the kernel's operands";
   }
   for (size_t i = 0, e = deviceOperands.size(); i < e; ++i) {
     bool deviceTensor = deviceOperands[i]->isTensorType();
     if (deviceTensor != configurationOperands[i]->isTensorType()) {
       return error() << "operand " << i << " is a "
-                     << (deviceTensor ? "tensor" : "scalar")
-                     << " in 'execute_device' but a "
-                     << (deviceTensor ? "scalar" : "tensor")
-                     << " in 'execute_configuration'";
+                     << (deviceTensor ? "tensor" : "scalar") << " in '"
+                     << deviceName << "' but a "
+                     << (deviceTensor ? "scalar" : "tensor") << " in '"
+                     << configurationName << "'";
     }
   }
   return success();
@@ -1033,16 +1195,6 @@ struct VerifyKernelsPass : public impl::VerifyKernelsBase<VerifyKernelsPass> {
               .failed())
         continue;
 
-      if (setFlagIfFailed(failed, declVerifyExecuteMatchesBuildGraph, decl,
-                          adaptor)
-              .failed())
-        continue;
-
-      if (setFlagIfFailed(failed, declVerifyStableTensorArguments, decl,
-                          adaptor)
-              .failed())
-        continue;
-
       if (setFlagIfFailed(failed, declVerifyExecuteFunctionDoesNotReturnATensor,
                           decl, adaptor)
               .failed())
@@ -1055,6 +1207,16 @@ struct VerifyKernelsPass : public impl::VerifyKernelsBase<VerifyKernelsPass> {
 
       if (setFlagIfFailed(failed, declVerifyContextsAppearLastInSignature, decl,
                           adaptor, shapeFnAdaptor)
+              .failed())
+        continue;
+
+      if (setFlagIfFailed(failed, declVerifyExecuteMatchesBuildGraph, decl,
+                          adaptor)
+              .failed())
+        continue;
+
+      if (setFlagIfFailed(failed, declVerifyStableTensorArguments, decl,
+                          adaptor)
               .failed())
         continue;
 

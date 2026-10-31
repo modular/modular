@@ -30,11 +30,12 @@ from typing import Any
 
 import numpy as np
 import pytest
+from max._kv_core import JengaBlockPool
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheGroupId, MHAKVCacheParams
-from max.nn.kv_cache.cache_params import KVConnectorType, KVHashAlgo
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheGroupId, MHAKVCacheParams
+from max.nn.legacy.kv_cache.cache_params import KVConnectorType, KVHashAlgo
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors import tier_connector
@@ -45,6 +46,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
+    KVProbe,
     KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache import (
@@ -133,6 +135,7 @@ class ScriptedConnector:
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         self._calls.append(("lookup", list(block_hashes), replica_idx, hint))
         return {
@@ -147,12 +150,16 @@ class ScriptedConnector:
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         return CompletedLookup(
             self.lookup(block_hashes, replica_idx=replica_idx, hint=hint)
         )
 
     def defers_lookup(self, replica_idx: int = 0) -> bool:
+        return False
+
+    def probe_is_lookup(self) -> bool:
         return False
 
     def load_lookup(
@@ -176,6 +183,14 @@ class ScriptedConnector:
         replica_idxs: Sequence[int],
         hint: bytes | None = None,
     ) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        return None
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
         return None
 
     def load(
@@ -294,6 +309,14 @@ def create_manager(
         max_batch_size=4,
         max_seq_len=5 * PAGE,
     )
+
+
+@pytest.fixture(autouse=True)
+def require_memory_owner_allocations(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raw_allocation(pool: JengaBlockPool, leaf_id: str) -> None:
+        raise AssertionError("connector allocation bypassed its memory owner")
+
+    monkeypatch.setattr(JengaBlockPool, "alloc_block", raw_allocation)
 
 
 def make_manager(
@@ -461,7 +484,8 @@ def test_a_host_only_hit_touches_once_after_the_load(
     Nothing is on the device, so the prefix is pulled from the connector. The
     touch carries the root-anchored run the request reused, not the uncached
     tail past it, and fires after the load so that no touch the load makes
-    itself can invert it (CLIN-1533).
+    itself can invert it (CLIN-1533). It waits for the step, once the forward
+    has launched, so the allocation does not pay for it.
     """
     mgr, connector = make_manager(monkeypatch)
     hashes = leave_prompt_in_the_connector(mgr, connector)
@@ -472,8 +496,34 @@ def test_a_host_only_hit_touches_once_after_the_load(
     mgr.alloc(ctx)
 
     assert ctx.cached_prefix_external_length == PROMPT_PAGES * PAGE
-    assert call_names(connector) == ["lookup", "load", "touch"]
+    assert call_names(connector) == ["lookup", "load"]
+
+    run(mgr, ctx)
+
     assert calls_named(connector, "touch") == [("touch", hashes, 0)]
+
+
+def test_a_release_sends_the_admission_touch_before_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request released before its step still has its admission touched.
+
+    The queued touch goes out first, so the release's re-ranking stays the
+    most recent.
+    """
+    mgr, connector = make_manager(monkeypatch)
+    hashes = leave_prompt_in_the_connector(mgr, connector)
+    ctx = make_ctx(PROMPT)
+    mgr.claim(ctx)
+    mgr.alloc(ctx)
+    assert calls_named(connector, "touch") == []
+
+    mgr.release(ctx)
+
+    assert calls_named(connector, "touch") == [
+        ("touch", hashes, 0),
+        ("touch", hashes, 0),
+    ]
 
 
 # ===--------------------------------------------------------------------=== #
@@ -505,6 +555,7 @@ def test_a_peer_copy_touches_the_full_sequence_for_the_serving_replica(
 
     assert second.cached_prefix_length == PROMPT_PAGES * PAGE
     assert second.cached_prefix_external_length == 0
+    run(mgr, second, replica_idx=1)
     assert calls_named(connector, "touch") == [("touch", hashes, 1)]
     assert calls_named(connector, "load") == []
     metrics = mgr.take_metrics_aggregated()
@@ -536,7 +587,7 @@ def test_a_peer_page_is_served_by_the_connector_when_copies_are_off(
 
     assert second.cached_prefix_length == PROMPT_PAGES * PAGE
     assert second.cached_prefix_external_length == PROMPT_PAGES * PAGE
-    assert call_names(connector) == ["lookup", "load", "touch"]
+    assert call_names(connector) == ["lookup", "load"]
     assert mgr.take_metrics_aggregated().cross_replica_blocks_copied == 0
 
 
@@ -651,14 +702,14 @@ def test_a_failure_the_scheduler_already_saw_still_blocks_the_commit(
 # ===--------------------------------------------------------------------=== #
 
 
-def test_an_offload_stops_at_the_first_evicted_page(
+def test_a_release_offloads_its_pages_before_freeing_them(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pages evicted before the offload ran are left out, with their tail.
+    """A release sends what the request committed while it still holds it.
 
     The first request's four pages are committed but not yet sent when it
-    releases them and a second request takes two of them back. What reaches
-    the connector is the run up to the first page that is gone.
+    releases them, and a second request then takes every page back. The pages
+    reached the connector before they were freed, so none is lost.
     """
     # Five allocable pages: the first request holds all five.
     reference, reference_connector = make_manager(
@@ -674,29 +725,13 @@ def test_an_offload_stops_at_the_first_evicted_page(
     first = make_ctx(PROMPT)
     forward(mgr, first)
     mgr.release(first)
-    # One free page, then the tails of the released prefix: two are evicted.
-    squatter = make_ctx(3 * PAGE, offset=1000)
-    mgr.claim(squatter)
-    mgr.alloc(squatter)
-    run(mgr, squatter)
-
-    assert len(calls_named(connector, "offload")) == 1
-    assert offloaded_hashes(connector) == hashes[:2]
-
-
-def test_an_offload_of_pages_that_are_all_evicted_sends_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    mgr, connector = make_manager(monkeypatch, num_huge_blocks=6)
-    first = make_ctx(PROMPT)
-    forward(mgr, first)
-    mgr.release(first)
     squatter = make_ctx(5 * PAGE, offset=1000)
     mgr.claim(squatter)
     mgr.alloc(squatter)
     mgr.runtime_inputs([[squatter]])
 
-    assert calls_named(connector, "offload") == []
+    assert len(calls_named(connector, "offload")) == 1
+    assert offloaded_hashes(connector) == hashes
 
 
 def test_runs_reach_the_connector_in_commit_order(

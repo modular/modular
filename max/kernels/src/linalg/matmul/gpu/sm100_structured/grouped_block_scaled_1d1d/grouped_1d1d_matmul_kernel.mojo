@@ -652,7 +652,7 @@ struct Grouped1D1DMatmulKernel[
     # Static N dimension (expert output size)
     static_N: Int,
     # Cluster shape
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     # Programmatic dependent launch level.
     pdl_level: PDLLevel = PDLLevel(),
     # When True, treats adjacent matmul-N column pairs (2i, 2i+1) as
@@ -732,10 +732,10 @@ struct Grouped1D1DMatmulKernel[
         cluster_shape: 3D `(x, y, z)` cluster shape passed to the
             `nvvm.cluster_dim` metadata (defaults to `(1, 1, 1)`).
         pdl_level: Programmatic dependent launch level controlling
-            cross-grid ordering fences (defaults to `PDLLevel()`). Under
-            `OVERLAP_AT_BEGINNING` the load warp reads the routing tensors
-            and loads weight data before its wait, so the caller must make
-            both final before this grid launches.
+            cross-grid ordering fences (defaults to `PDLLevel()`). Every
+            level above `OFF` waits on the previous grid before reading any
+            tensor, routing included, and releases the next grid right
+            after the wait.
         fuse_swiglu: When `True`, treats adjacent matmul-N column pairs
             `(2i, 2i+1)` as `(gate, up)` and emits packed FP4/FP8 plus a
             5D scale tile instead of the BF16 GMEM store (defaults to
@@ -893,7 +893,11 @@ struct Grouped1D1DMatmulKernel[
         Self.sfb_dtype,
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -982,7 +986,11 @@ struct Grouped1D1DMatmulKernel[
         a_type=Self.a_type,
         accum_type=Self.accum_type,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         opc=Self.opc,
         c_swizzle=Self.config.c_swizzle,
         transpose_c=Self.config.AB_swapped,
@@ -1523,7 +1531,13 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -1734,7 +1748,7 @@ struct Grouped1D1DMatmulKernel[
         fence_mbarrier_init()
         cluster_sync()
 
-        # SAFE (PDLLevel.ON) tier: block-wide PDL fence fires after all SMEM
+        # Block-wide PDL fence fires after all SMEM
         # / barrier init but before any warp touches GMEM. Orders every
         # warp's subsequent _compute_iter0_ctx read of a_offsets /
         # expert_ids / expert_scales, the scheduler's direct reads, and all
@@ -1743,16 +1757,20 @@ struct Grouped1D1DMatmulKernel[
         # Past the fence, the CTA also releases the next grid. That grid's
         # CTAs then take SMs as ours retire instead of launching after our
         # last CTA, and its own wait still orders it after our writes.
-        comptime if Self.pdl_level == PDLLevel.ON:
+        #
+        # Nothing above this point may read a tensor an earlier grid writes:
+        # the routing tensors (`a_offsets`, `expert_ids`, `a_scale_offsets`)
+        # are often produced by the grid right before this one (the EP
+        # dispatch callback), and the expert id picks which weights to load.
+        # Under programmatic launch this grid can be resident while that
+        # grid is still running, so hoisting the first weight loads over the
+        # fence is unsound. A late-published routing table made it hang.
+        comptime assert (
+            Self.pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+        ), "this kernel always waits on the previous grid; use ON"
+        comptime if Self.pdl_level > PDLLevel.OFF:
             wait_on_dependent_grids()
             launch_dependent_grids()
-        # OVERLAP_AT_BEGINNING: only the load warp runs ahead of the fence.
-        # Before its own wait it reads the routing tensors and loads weight
-        # data, which the caller guarantees are final at launch. Scales and
-        # activations load after the wait.
-        comptime if Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
-            if not Self.WarpRole.is_load():
-                wait_on_dependent_grids()
 
         var mma_op = Self.MmaOp()
 
@@ -1768,8 +1786,7 @@ struct Grouped1D1DMatmulKernel[
                 var sched_ci: Int = 0
                 var sched_phase = UInt32(0)
                 # Iter 0: compute inline (no scheduler, no mbarrier). The load
-                # warp never uses the expert scale, and under
-                # OVERLAP_AT_BEGINNING it may not read it before its wait.
+                # warp never uses the expert scale.
                 var ctx = Self._compute_iter0_ctx[read_expert_scale=False](
                     _num_active_experts,
                     a_offsets,
@@ -1778,9 +1795,6 @@ struct Grouped1D1DMatmulKernel[
                 )
                 var prefetched_ctx = ctx
                 var has_prefetched_ctx = False
-                # The first tile fills every stage with weight data before the
-                # PDL wait, then adds the scales and activations.
-                var pdl_first_tile = True
                 # Per-tile counter for the load warp's pipeline trace.
                 # DCEs to nothing when `swiglu_enable_trace=False`.
                 var tile_idx_load: Int = 0
@@ -1804,67 +1818,18 @@ struct Grouped1D1DMatmulKernel[
                                 UInt64(global_perf_counter_ns()),
                             )
 
-                    var k_begin = 0
-                    comptime if Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
-                        if pdl_first_tile:
-                            k_begin = min(
-                                num_k_iters, Self.num_group_pipeline_stages
-                            )
-                            for k_tile in range(k_begin):
-                                with producer.acquire() as tiles:
-                                    Self.load_input_tiles(
-                                        a_tma_op,
-                                        b_tma_op,
-                                        sfa_tma_op,
-                                        sfb_tma_op,
-                                        tiles,
-                                        peer_cta_coord,
-                                        ctx,
-                                        a_scale_offsets,
-                                        UInt32(
-                                            k_tile * Self.config.k_group_size
-                                        ),
-                                        elect_one_cta,
-                                        a_multicast_mask,
-                                        b_multicast_mask,
-                                        load_weights=True,
-                                        load_activations=False,
-                                        split_weight_scales=True,
-                                    )
-                            wait_on_dependent_grids()
-                            # The first tile starts the ring at stage 0.
-                            for k_tile in range(k_begin):
-                                Self.load_input_tiles(
-                                    a_tma_op,
-                                    b_tma_op,
-                                    sfa_tma_op,
-                                    sfb_tma_op,
-                                    producer.tiles_at(UInt32(k_tile)),
-                                    peer_cta_coord,
-                                    ctx,
-                                    a_scale_offsets,
-                                    UInt32(k_tile * Self.config.k_group_size),
-                                    elect_one_cta,
-                                    a_multicast_mask,
-                                    b_multicast_mask,
-                                    load_weights=False,
-                                    load_activations=True,
-                                    split_weight_scales=True,
-                                )
-                            pdl_first_tile = False
-
                     var next_ready = True
-                    if num_k_iters > k_begin:
+                    if num_k_iters > 0:
                         next_ready = producer.try_acquire()
 
-                    for k_tile in range(k_begin, num_k_iters):
+                    for k_tile in range(num_k_iters):
                         with producer.acquire_if_needed(next_ready) as tiles:
                             # T_LOAD_START tile i: AFTER producer-slot
                             # acquire, just before the first actual TMA
                             # issue. Real-work start.
                             comptime if Self.swiglu_enable_trace:
                                 if (
-                                    k_tile == k_begin
+                                    k_tile == 0
                                     and tile_idx_load < SWIGLU_MAX_TRACED_TILES
                                     and lane_id() == 0
                                 ):
@@ -2216,9 +2181,6 @@ struct Grouped1D1DMatmulKernel[
                     tile_idx_epi += 1
 
                     ctx = Self._consume_sched_ctx(smem, sched_ci, sched_phase)
-
-                comptime if Self.pdl_level > PDLLevel.ON:
-                    launch_dependent_grids()
 
         # ===== SFB TMA LOAD WARP (MMA_N < 64 only) =====
         # Dedicated warp that loads SFB scale factors from GMEM to SMEM.
@@ -2745,17 +2707,23 @@ struct Grouped1D1DMatmulKernel[
         load_activations: Bool = True,
         wr_mbar: Optional[MbarPtr] = None,
         split_weight_scales: Bool = False,
+        b_peer_rows: Int = Self.BN,
     ):
         """Load A, B, SFA, SFB tiles using TMA.
 
-        When PDL splits loads around `wait_on_dependent_grids`, the weight
-        loads (A + SFA if AB_swapped, B + SFB otherwise) can issue before
-        the wait since weights are static across grids. The activation
-        loads (the other pair) must come after. Set `load_weights=True,
-        load_activations=False` for the pre-wait call, and the inverse
-        for the post-wait call. `expect_bytes` is issued during the
-        weight phase (which covers the first call when both phases
-        happen, or the only call when the split is not used).
+        A caller can split the stage's loads so the weight side (A + SFA if
+        AB_swapped, B + SFB otherwise) issues first and the activation side
+        (the other pair) follows: `load_weights=True, load_activations=False`
+        for the first call, and the inverse for the second. `expect_bytes` is
+        issued during the weight phase (which covers the first call when both
+        phases happen, or the only call when the split is not used).
+
+        This kernel always loads both sides in one call. Splitting around
+        `wait_on_dependent_grids` is only sound for a caller whose tile
+        coordinates (expert id, token offsets) do not come from a
+        predecessor grid, because they pick which weights to load, and whose
+        weights and weight scales are loaded straight from the checkpoint,
+        never written by a predecessor grid.
 
         The phase flags are runtime so a single instantiation of this
         function covers all three use-cases (both, weights-only,
@@ -2818,6 +2786,11 @@ struct Grouped1D1DMatmulKernel[
                 with the activations instead of with the weights, so a
                 pre-wait weight call reads only weight data (defaults to
                 `False`).
+            b_peer_rows: Token rows each CTA of a pair feeds the UMMA when
+                `AB_swapped`. A 2-CTA UMMA of width N takes N / 2 rows from
+                each CTA, so a caller that narrows a tile's UMMA N below
+                `MMA_N` passes N / 2 here and the peer's rows start there
+                (defaults to `BN`).
         """
         comptime assert (
             not split_txn
@@ -2855,7 +2828,7 @@ struct Grouped1D1DMatmulKernel[
             # loads a different portion of the token range.
             b_gmem_n_coord = (
                 peer_rank_m * Self.b_tma_rows
-                + peer_rank_n * Self.BN
+                + peer_rank_n * b_peer_rows
                 + Int(m_coord)
             )
         else:
@@ -3084,6 +3057,7 @@ struct Grouped1D1DMatmulKernel[
     def mma[
         tiles_origin: MutOrigin,
         //,
+        partial_k_group: Bool = False,
     ](
         tiles: ConsumerTiles[
             tiles_origin,
@@ -3097,6 +3071,7 @@ struct Grouped1D1DMatmulKernel[
         iter_idx: UInt32,
         k_start: UInt32,
         sfb_tmem_adj: UInt32,
+        k_end: UInt32 = 0,
     ):
         """Execute MMA operations.
 
@@ -3109,6 +3084,8 @@ struct Grouped1D1DMatmulKernel[
         Parameters:
             tiles_origin: Memory origin of the consumer tiles payload
                 (inferred).
+            partial_k_group: Whether the group can run past the last
+                k-tile, so its k-tiles from `k_end` on are skipped.
 
         Args:
             tiles: Consumer tiles holding the A, B, SFA, and SFB
@@ -3129,30 +3106,40 @@ struct Grouped1D1DMatmulKernel[
                 tile, computed by `_compute_sfb_tmem_adj`, that
                 accounts for the SFB layout offset at this `(m, n,
                 m_start)` position.
+            k_end: The tile's k-tile count. Read only with
+                `partial_k_group`.
         """
         if elect_one_sync():
             comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
-                var a_tt, b_tt, sfa_tt, sfb_tt = tiles.payload().get_tile[
-                    Self.config.k_group_size
-                ](tiles.stage(), jj)
-                var tile_idx = (
-                    Int(tiles.stage()) * Self.config.k_group_size + jj
-                )
-                var sfa_tmem_offset = UInt32(tmem_region.sfa(tile_idx).col_addr)
-                var sfb_tmem_offset = UInt32(tmem_region.sfb(tile_idx).col_addr)
-                var is_first_k = (iter_idx + j) == k_start
-                mma_op.mma(
-                    a_tt,
-                    b_tt,
-                    sfa_tt,
-                    sfb_tt,
-                    tmem_addr,
-                    sfa_tmem_offset,
-                    sfb_tmem_offset,
-                    init_c=is_first_k,
-                    sfb_tmem_adj=sfb_tmem_adj,
-                )
+                var live = True
+                comptime if partial_k_group and jj > 0:
+                    live = iter_idx + j < k_end
+                if live:
+                    var a_tt, b_tt, sfa_tt, sfb_tt = tiles.payload().get_tile[
+                        Self.config.k_group_size
+                    ](tiles.stage(), jj)
+                    var tile_idx = (
+                        Int(tiles.stage()) * Self.config.k_group_size + jj
+                    )
+                    var sfa_tmem_offset = UInt32(
+                        tmem_region.sfa(tile_idx).col_addr
+                    )
+                    var sfb_tmem_offset = UInt32(
+                        tmem_region.sfb(tile_idx).col_addr
+                    )
+                    var is_first_k = (iter_idx + j) == k_start
+                    mma_op.mma(
+                        a_tt,
+                        b_tt,
+                        sfa_tt,
+                        sfb_tt,
+                        tmem_addr,
+                        sfa_tmem_offset,
+                        sfb_tmem_offset,
+                        init_c=is_first_k,
+                        sfb_tmem_adj=sfb_tmem_adj,
+                    )
             mma_op.commit(tiles.mbar())
 
     # ========== Epilogue ==========
@@ -3228,10 +3215,9 @@ struct Grouped1D1DMatmulKernel[
             "fused SwiGLU+quant requires BM % 32 == 0 (one whole SF block"
             " per warp slice post-SwiGLU)"
         )
-        comptime assert threads_per_row == 4, (
-            "fused SwiGLU+quant expects threads_per_row=4 (FragmentCoords);"
-            " got "
-            + String(threads_per_row)
+        comptime assert threads_per_row == 4, String(
+            t"fused SwiGLU+quant expects threads_per_row=4 "
+            t"(FragmentCoords); got {threads_per_row}"
         )
         comptime assert (
             Self.config.AB_swapped
@@ -3990,11 +3976,22 @@ struct Grouped1D1DMatmulKernel[
                         rows_bf[2 * mtx] = pair_bf[0]
                         rows_bf[2 * mtx + 1] = pair_bf[1]
                     var lane_hi, lane_lo = divmod(UInt32(lane_v), UInt32(8))
-                    var row_token = UInt32(r * 8) + lane_lo
                     var row_feature = lane_hi * 8 + warp_row_offset
-                    var row_idx = row_token * UInt32(BM) + row_feature + base
+                    # The swizzle maps whole 1024-element patterns to
+                    # themselves and `base` starts on one, so only the
+                    # offset within a pattern is swizzled. The repeats then
+                    # add immediates instead of each keeping an address.
+                    comptime row_step = r * 8 * BM
+                    comptime row_lo = row_step % 1024
+                    var row_idx = (
+                        SWIZZLE_BF(
+                            lane_lo * UInt32(BM) + row_feature + UInt32(row_lo)
+                        )
+                        + UInt32(row_step - row_lo)
+                        + base
+                    )
                     st_matrix[simd_width=4, transpose=True](
-                        smem_bf16_ptr.unsafe_offset(Int(SWIZZLE_BF(row_idx))),
+                        smem_bf16_ptr.unsafe_offset(Int(row_idx)),
                         bitcast[DType.float32, 4](rows_bf),
                     )
                 else:
@@ -4199,6 +4196,19 @@ struct Grouped1D1DMatmulKernel[
                 # execute a uniform iteration count (comptime for); the per-store
                 # bounds check skips out-of-range tokens.
                 var stage_m_offset = m_abs + UInt32(loop_stage) * UInt32(stageN)
+                # Iteration `it` reads whole token rows past iteration 0's.
+                # Their part in whole 1024-element swizzle patterns passes
+                # through the swizzle, so the iterations share this thread's
+                # swizzled offsets and add immediates.
+                comptime assert (
+                    total_threads % n_threads_per_token == 0
+                ), "a token's threads divide the epilogue threads"
+                var lane_token, lane_hid = divmod(
+                    tid_within_epi, UInt32(n_threads_per_token)
+                )
+                var lane_row = lane_token * UInt32(BM) + lane_hid * UInt32(
+                    2 * src_width
+                )
 
                 comptime for it in range(coop_iters):
                     var linear_var = Int(tid_within_epi) + it * total_threads
@@ -4208,7 +4218,6 @@ struct Grouped1D1DMatmulKernel[
                     )
                     var m_global = stage_m_offset + token_idx
                     var k_post = hid_idx * UInt32(src_width)
-                    var k_raw = 2 * k_post
 
                     # The bf16 XOR swizzle keeps only 8-bf16 contiguity (bits
                     # 0..2), so a wider single load would cross a swizzle
@@ -4216,19 +4225,22 @@ struct Grouped1D1DMatmulKernel[
                     # then deinterleave for the (gate, up) stride-2 split.
                     comptime BF16_LOAD_W = 8
                     comptime n_loads = (2 * src_width) // BF16_LOAD_W
-                    var smem_base = (
-                        UInt32(token_idx) * UInt32(BM)
-                        + UInt32(k_raw)
+                    comptime it_off = (
+                        UInt32(it * (total_threads // n_threads_per_token) * BM)
                         + scratch_base
                     )
+                    comptime it_lo = it_off % 1024
                     var pair_bf = SIMD[.bfloat16, 2 * src_width]()
                     comptime for li in range(n_loads):
+                        var smem_idx = SWIZZLE_BF(
+                            lane_row + it_lo + UInt32(li * BF16_LOAD_W)
+                        ) + (it_off - it_lo)
                         # Without the alignment the load splits into
                         # 2-byte LDS.
                         var chunk = smem_bf16_ptr.unsafe_load[
                             width=BF16_LOAD_W,
                             alignment=BF16_LOAD_W * size_of[BFloat16](),
-                        ](Int(SWIZZLE_BF(smem_base + UInt32(li * BF16_LOAD_W))))
+                        ](Int(smem_idx))
                         comptime for ci in range(BF16_LOAD_W):
                             pair_bf[li * BF16_LOAD_W + ci] = chunk[ci]
                     var pair = pair_bf.cast[.float32]()

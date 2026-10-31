@@ -83,6 +83,7 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import SharedMemBarrier
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -356,7 +357,7 @@ struct BlackwellMatmulSM100Kernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     # Cluster shape (must match config, needed for LLVM metadata)
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     # Optional features
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
@@ -526,7 +527,11 @@ struct BlackwellMatmulSM100Kernel[
         Self.a_type,
         Self.b_type,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -539,11 +544,7 @@ struct BlackwellMatmulSM100Kernel[
 
     comptime Scheduler = TileScheduler[
         num_stages=Self.num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
-            Self.config.cluster_shape[0],
-            Self.config.cluster_shape[1],
-            Self.config.cluster_shape[2],
-        ),
+        cluster_shape=Self.config.cluster_shape,
         block_swizzle_size=Self.config.block_swizzle_size,
         rasterize_order=Self.config.raster_order,
     ]
@@ -745,7 +746,11 @@ struct BlackwellMatmulSM100Kernel[
         a_type=Self.a_type,
         accum_type=Self.accum_type,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         opc=Self.opc,
         c_swizzle=Self.config.c_swizzle,
         transpose_c=Self.config.AB_swapped,
@@ -762,7 +767,11 @@ struct BlackwellMatmulSM100Kernel[
         a_type=Self.a_type,
         accum_type=Self.accum_type,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         opc=Self.opc,
         c_swizzle=Self.config.c_swizzle,
         transpose_c=Self.config.AB_swapped,
@@ -833,7 +842,11 @@ struct BlackwellMatmulSM100Kernel[
             Self.a_type,
             Self.accum_type,
             Self.config.block_tile_shape,
-            Self.config.mma_shape,
+            (
+                Self.config.mma_shape[0],
+                Self.config.mma_shape[1],
+                Self.config.mma_shape[2],
+            ),
             Self.opc,
             Self.config.c_swizzle,
             Self.config.AB_swapped,
@@ -1527,11 +1540,7 @@ struct BlackwellMatmulSM100Kernel[
 
     comptime WorkIter = WorkIterator[
         Self.num_clc_pipeline_stages,
-        Index[dtype=DType.uint32](
-            Self.config.cluster_shape[0],
-            Self.config.cluster_shape[1],
-            Self.config.cluster_shape[2],
-        ),
+        Self.config.cluster_shape,
         Self.config.raster_order,
         Self.config.block_swizzle_size,
     ]
@@ -1704,7 +1713,13 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_ops, `nvvm.grid_constant`)
@@ -1767,7 +1782,13 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_ops, `nvvm.grid_constant`)
@@ -1836,7 +1857,13 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_ops, `nvvm.grid_constant`)
@@ -2024,13 +2051,11 @@ struct BlackwellMatmulSM100Kernel[
                     comptime assert (
                         Self.config.prefetch_tiles_n
                         <= Self.num_group_pipeline_stages
-                    ), (
-                        "prefetch_tiles_n ("
-                        + String(Self.config.prefetch_tiles_n)
-                        + ") must not exceed num_group_pipeline_stages ("
-                        + String(Self.num_group_pipeline_stages)
-                        + "); Phase 1 would fill the ring before barriers can"
-                        " fire."
+                    ), String(
+                        t"prefetch_tiles_n ({Self.config.prefetch_tiles_n})"
+                        t" must not exceed num_group_pipeline_stages ("
+                        t"{Self.num_group_pipeline_stages}); Phase 1 would "
+                        t"fill the ring before barriers can fire."
                     )
                     with input_pipeline.producer() as producer:
                         for current in load_iter:
@@ -2044,7 +2069,9 @@ struct BlackwellMatmulSM100Kernel[
                                 Int(current.k_start),
                             )
 
-                            # Phase 1: prefetch A (weight) tiles before PDL wait
+                            # Phase 1: prefetch the weight tiles before the PDL
+                            # wait. The weight must be loaded straight from the
+                            # checkpoint, never written by a predecessor grid.
                             var prefetch_stages = StaticTuple[
                                 UInt32, Self.config.prefetch_tiles_n
                             ]()
@@ -2458,7 +2485,13 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -2548,7 +2581,11 @@ struct BlackwellMatmulSM100Kernel[
             Self.a_type,
             Self.b_type,
             Self.config.block_tile_shape,
-            Self.config.mma_shape,
+            (
+                Self.config.mma_shape[0],
+                Self.config.mma_shape[1],
+                Self.config.mma_shape[2],
+            ),
             accum_type=Self.config.accum_type,
             cta_group=Self.config.cta_group,
             cluster_shape=Self.config.cluster_shape,
@@ -2561,11 +2598,7 @@ struct BlackwellMatmulSM100Kernel[
         var scheduler = TileSchedulerSplitK[
             num_stages=Self.config.num_clc_pipeline_stages,
             reduction_tile_shape=Index(Self.BM, Self.MMA_N, Self.BK),
-            cluster_shape=Index[dtype=DType.uint32](
-                Self.config.cluster_shape[0],
-                Self.config.cluster_shape[1],
-                Self.config.cluster_shape[2],
-            ),
+            cluster_shape=Self.config.cluster_shape,
             block_swizzle_size=Self.config.block_swizzle_size,
             rasterize_order=Self.config.raster_order,
             num_split_k=Self.config.num_split_k,
@@ -2809,10 +2842,10 @@ struct BlackwellMatmulSM100FallbackKernel[
     c_type: DType,
     c_layout: TensorLayout,
     c_engine: TensorEngine,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
@@ -2931,7 +2964,13 @@ struct BlackwellMatmulSM100FallbackKernel[
     # ========== Kernel Entry Point ==========
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__name(
         t"sm100_matmul_fallback_{Self.a_type}_{Self.b_type}_{Self.c_type}_nt{Self.num_threads}",
@@ -2959,7 +2998,13 @@ struct BlackwellMatmulSM100FallbackKernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__name(
         t"sm100_matmul_fallback_compute_fn_{Self.a_type}_{Self.b_type}_{Self.c_type}_nt{Self.num_threads}",

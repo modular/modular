@@ -39,7 +39,7 @@ struct MissingCall(def(Bool) -> Int):
 
 
 # expected-error @below {{'WrongReturnType' does not implement all requirements for 'def(String) -> Int'}}
-# expected-note @below {{no '__call__' candidates have type 'def(WrongReturnType, String) capturing thin -> Int'}}
+# expected-note @below {{no '__call__' candidates have type 'def(WrongReturnType, String) thin -> Int'}}
 struct WrongReturnType(def(String) -> Int):
     # expected-note @below {{candidate declared here with type 'def(self: WrongReturnType, x: String) thin -> Bool'}}
     def __call__(self, x: String) -> Bool:

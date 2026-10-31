@@ -576,12 +576,8 @@ def main() raises:
     print("  q_block_size:", cfg.q_block_size)
     print("  cache_busting:", cfg.cache_busting)
     print(
-        "  seq_len:     ",
-        seq_len,
-        " cache_seq_len:",
-        cache_seq_len,
-        " batch_size:",
-        batch_size,
+        t"  seq_len:      {seq_len}  cache_seq_len: {cache_seq_len} "
+        t" batch_size: {batch_size}"
     )
 
     var m = Bench()

@@ -38,7 +38,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     out_type: DType,
     num_experts: Int,
     expert_shape: IndexList[2],
-    umma_shape: IndexList[3] = Index(64, 64, 32),
+    umma_shape: Tuple[Int, Int, Int] = (64, 64, 32),
     use_epilogue: Bool = False,
     scales_type: DType = .float32,
     persistent: Bool = True,
@@ -49,7 +49,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     ctx: DeviceContext,
 ) raises:
     comptime BLOCK_SCALE_K = 128
-    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    comptime block_tile_shape = (umma_shape[0], umma_shape[1], 128)
     comptime transpose_b = True
 
     comptime a_type = in_type
@@ -68,24 +68,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, M)
 
     print(
-        "== test_grouped_sm100_blockwise_scaled_fp8_matmul",
-        a_type,
-        "problem shape: (",
-        total_num_tokens,
-        "x",
-        N,
-        "x",
-        K,
-        ")",
-        "block_tile_shape: (",
-        block_tile_shape[0],
-        "x",
-        block_tile_shape[1],
-        "x",
-        block_tile_shape[2],
-        ")",
-        "transpose_b:",
-        transpose_b,
+        t"== test_grouped_sm100_blockwise_scaled_fp8_matmul {a_type} problem"
+        t" shape: ( {total_num_tokens} x {N} x {K} ) block_tile_shape: ("
+        t" {block_tile_shape[0]} x {block_tile_shape[1]} x"
+        t" {block_tile_shape[2]} ) transpose_b: {transpose_b}"
     )
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
@@ -221,7 +207,9 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_K, BLOCK_SCALE_K
+        ),
     ](
         c_device_ref_tt,
         a_device_tt,
@@ -238,7 +226,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     ctx.synchronize()
 
     comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(1, 1, 1),
+        cluster_shape=(Int(1), Int(1), Int(1)),
         mma_shape=umma_shape,
         cta_group=1,
         AB_swapped=False,
@@ -317,14 +305,14 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
             persistent=False,
         ](1, [128], [0], ctx)
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
             persistent=False,
             use_epilogue=True,
         ](1, [100], [0], ctx)
@@ -332,7 +320,7 @@ def main() raises:
             .float8_e4m3fn,
             .float32,
             num_experts=4,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
             persistent=False,
         ](2, [20, 40], [2, 0], ctx)
 
@@ -340,7 +328,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](1, [128], [0], ctx)
 
         # Single expert, last M-tile partial (100 mod 64 != 0).
@@ -348,7 +336,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](1, [100], [0], ctx)
 
         # Qwen3-VL-30B-A3B FP8 gate_up shape (N=1536, K=2048), two experts
@@ -361,7 +349,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=2,
-            expert_shape=Index(1536, 2048),
+            expert_shape=(1536, 2048),
         ](2, [707, 709], [0, 1], ctx)
 
         # Misaligned per-expert offset against the production umma_shape
@@ -371,8 +359,8 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=2,
-            expert_shape=Index(256, 256),
-            umma_shape=Index(64, 128, 32),
+            expert_shape=(256, 256),
+            umma_shape=(Int(64), Int(128), Int(32)),
         ](2, [5, 11], [0, 1], ctx)
 
         # total_m stride misalignment: total_num_tokens=7 with fp32 scales
@@ -384,14 +372,14 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=2,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](2, [3, 4], [0, 1], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](1, [256], [0], ctx)
 
         # Simple expert routing
@@ -399,14 +387,14 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](1, [256], [2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(4096, 7168),
+            expert_shape=(4096, 7168),
         ](2, [128, 256], [0, 2], ctx)
 
         # Unaligned grouped matmul
@@ -414,63 +402,63 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(1280, 1024),
+            expert_shape=(1280, 1024),
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .float32,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .float32,
             num_experts=1,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](1, [512], [0], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .float32,
             num_experts=6,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .float32,
             num_experts=6,
-            expert_shape=Index(1280, 1024),
+            expert_shape=(1280, 1024),
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(4096, 7168),
+            expert_shape=(4096, 7168),
         ](2, [8, 64], [0, 2], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](4, [20, 4, 4, 40], [0, 3, 2, 4], ctx)
 
         # bf16 scales tests
@@ -478,7 +466,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
             scales_type=.bfloat16,
         ](1, [128], [0], ctx)
 
@@ -486,7 +474,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
             scales_type=.bfloat16,
         ](1, [256], [0], ctx)
 
@@ -494,7 +482,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(4096, 7168),
+            expert_shape=(4096, 7168),
             scales_type=.bfloat16,
         ](2, [128, 256], [0, 2], ctx)
 
@@ -502,7 +490,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
             scales_type=.bfloat16,
         ](4, [24, 1504, 296, 32], [0, 3, 2, 4], ctx)
 
@@ -510,6 +498,6 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(1280, 1024),
+            expert_shape=(1280, 1024),
             scales_type=.bfloat16,
         ](4, [24, 1504, 296, 32], [0, 3, 2, 4], ctx)

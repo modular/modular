@@ -155,3 +155,18 @@ def test_out_address_space_in_initializer(space):
         "        pass\n"
     )
     assert_mojo_format(source, expected)
+
+
+@pytest.mark.parametrize("space", ["", " "])
+@pytest.mark.parametrize("argument", ["NoneType", "value: NoneType"])
+def test_ref_origin_in_function_type(space, argument):
+    """Any space between ref and [origin] is removed in function types."""
+    source = (
+        "struct Foo[O: Origin]:\n"
+        f"    var foo: def(ref{space}[Self.O] {argument}) thin\n"
+    )
+    expected = (
+        "struct Foo[O: Origin]:\n"
+        f"    var foo: def(ref[Self.O] {argument}) thin\n"
+    )
+    assert_mojo_format(source, expected)

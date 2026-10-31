@@ -10,20 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Registers GPT-OSS with the ModuleV3 registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..gpt_oss.memory_planner import GptOssMemoryPlanner
 from . import weight_adapters
-from .batch_processor import GptOssModuleV3BatchProcessor
-from .model import GptOssModel
+from .gpt_oss import GptOss
 from .model_config import GptOssConfig
 
 gpt_oss_modulev3_arch = SupportedArchitecture(
@@ -35,7 +31,7 @@ gpt_oss_modulev3_arch = SupportedArchitecture(
     ],
     default_encoding=GptOssConfig.DEFAULT_ENCODING,
     supported_encodings=GptOssConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=GptOssModel,
+    modules={GraphRole.DECODER: GptOss},
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
     context_type=TextContext,
@@ -45,7 +41,6 @@ gpt_oss_modulev3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=GptOssConfig,
-    batching=GptOssModuleV3BatchProcessor,
     memory_planner=GptOssMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,

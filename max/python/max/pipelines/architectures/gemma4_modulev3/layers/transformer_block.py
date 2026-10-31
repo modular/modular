@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.sharding import DeviceMapping, Replicated
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, Replicated
 
 from .rms_norm import Gemma4RMSNorm
 
@@ -63,6 +63,7 @@ class Gemma4TransformerBlock(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         residual = x
         attn_out = self.self_attn(
             self.input_layernorm(x),

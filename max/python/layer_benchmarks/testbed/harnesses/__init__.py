@@ -11,8 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Built-in harness implementations. Importing this module registers all
-harnesses with the global registry."""
+"""Built-in harness implementations.
+
+Importing this package registers every harness module with the global
+``HARNESS_REGISTRY``.
+"""
 
 import testbed.harnesses.attention_with_rope
 import testbed.harnesses.gemma3_attention

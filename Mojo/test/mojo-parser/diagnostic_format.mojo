@@ -31,7 +31,7 @@
 
 # Test that JSON format with MLIR diagnostics is an error.
 # RUN: not %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=true %s 2>&1 | FileCheck %s --check-prefix=ERROR
-# ERROR: error: --diagnostic-format=json is incompatible with --use-mlir-diagnostics=true
+# ERROR: {"kind":"error","message":"--diagnostic-format=json is incompatible with --use-mlir-diagnostics=true"}
 
 
 def main():

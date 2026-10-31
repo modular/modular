@@ -16,6 +16,7 @@ from layout import Coord, TileTensor, row_major
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 
 struct BoxCoords[dtype: DType](TrivialRegisterPassable):
@@ -78,7 +79,7 @@ def fill_scores[
 ):
     comptime assert scores.flat_rank == 3
     var num_boxes = len(scores_list) // batch_size // num_classes
-    var shape = IndexList[3](batch_size, num_classes, num_boxes)
+    var shape = Index(batch_size, num_classes, num_boxes)
     for i in range(len(scores_list)):
         var coords = linear_offset_to_coords(i, shape)
         scores[coords[0], coords[1], coords[2]] = scores_list[i]
@@ -97,7 +98,7 @@ def test_case[
     scores_list: Span[Scalar[dtype], ...],
 ):
     # Create boxes tensor
-    var boxes_shape = IndexList[3](batch_size, num_boxes, 4)
+    var boxes_shape = Index(batch_size, num_boxes, 4)
     var boxes_storage = List(
         length=boxes_shape.flattened_length(), fill=Scalar[dtype](0)
     )
@@ -108,7 +109,7 @@ def test_case[
     fill_boxes[dtype](batch_size, box_list, boxes)
 
     # Create scores tensor
-    var scores_shape = IndexList[3](batch_size, num_classes, num_boxes)
+    var scores_shape = Index(batch_size, num_classes, num_boxes)
     var scores_storage = List(
         length=scores_shape.flattened_length(), fill=Scalar[dtype](0)
     )
@@ -125,7 +126,7 @@ def test_case[
         iou_threshold,
         score_threshold,
     )
-    var idxs_shape = IndexList[2](shape[0], shape[1])
+    var idxs_shape = Index(shape[0], shape[1])
     var idxs_storage = List(length=idxs_shape.flattened_length(), fill=Int64(0))
     var selected_idxs = TileTensor(
         idxs_storage,

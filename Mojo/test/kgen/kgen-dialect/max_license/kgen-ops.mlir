@@ -176,15 +176,11 @@ kgen.generator @call_param
   // CHECK: kgen.param.declare idx2 = <to_builtin(:scalar<index> mul(from_builtin(resultIndex), 3))>
   kgen.param.declare idx2 = <add(resultIndex, resultIndex, resultIndex)>
 
-  // Call a kgen.symbol.constant with unbound parameters.
-  // CHECK: kgen.call_param[(!kgen.simd<42, dt>) -> (): @calleeRemap<:dtype dt, 42>](%arg1)
-  kgen.call_param[(!kgen.simd<42, dt>) -> (): bind_params(:<dtype, index>(!kgen.simd<*(0,1), *(0,0)>)->() @calleeRemap, :dtype dt, :index 42)](%arg1)
-
-  // Call a kgen.symbol.constant with parameters bound in symbol.constant.
+  // Call a function symbol with parameters bound in the symbol.
   // CHECK: kgen.call_param[(!kgen.simd<42, dt>) -> ():
   // CHECK-SAME: @calleeRemap<:dtype dt, 42>](%arg1)
   kgen.call_param[(!kgen.simd<42, dt>)->():
-                      #kgen.symbol.constant<@calleeRemap<:dtype dt, 42>>]
+                      @calleeRemap<:dtype dt, 42>]
      (%arg1)
 
   hlcf.return
@@ -405,15 +401,6 @@ kgen.generator @param_declare_dependent<fn: <index>(!pop.array<*(0,0), i1>) -> (
   hlcf.return
 }
 
-// CHECK-LABEL: kgen.func @stage_closure
-kgen.func @stage_closure() {
-  // CHECK: %0 = kgen.stage_closure = () capturing {
-  %0 = kgen.stage_closure = () capturing -> () {
-    hlcf.return
-  }
-  hlcf.return
-}
-
 kgen.func @closure1(%arg0: index) -> index {
   %idx4 = index.constant 4
   hlcf.return %idx4 : index
@@ -424,17 +411,17 @@ kgen.func @closure2(%arg0: index, %arg1: index) -> index {
   hlcf.return %idx4 : index
 }
 
-// CHECK-LABEL: kgen.generator @create_create_closure
-kgen.generator @create_create_closure<fn: (index) -> index>(%arg0: index) {
-  // CHECK: kgen.create_closure[(index) -> index: @closure1](%arg0)
-  %0 = kgen.create_closure[(index) -> index: @closure1](%arg0)
-  // CHECK: kgen.create_closure[(index, index) -> index: @closure2](%arg0)
-  %1 = kgen.create_closure[(index, index) -> index: @closure2](%arg0)
+// CHECK-LABEL: kgen.generator @create_create_func_ptr
+kgen.generator @create_create_func_ptr<fn: (index) -> index>(%arg0: index) {
+  // CHECK: kgen.create_func_ptr[(index) -> index: @closure1]()
+  %0 = kgen.create_func_ptr[(index) -> index: @closure1]()
+  // CHECK: kgen.create_func_ptr[(index, index) -> index: @closure2]()
+  %1 = kgen.create_func_ptr[(index, index) -> index: @closure2]()
 
-  // CHECK: kgen.create_closure[(index) -> index: fn](%arg0)
-  %2 = kgen.create_closure[(index) -> index: fn](%arg0)
-  // CHECK: call_indirect %2() : () capturing -> index
-  kgen.call_indirect %2() : () capturing -> index
+  // CHECK: kgen.create_func_ptr[(index) -> index: fn]()
+  %2 = kgen.create_func_ptr[(index) -> index: fn]()
+  // CHECK: call_indirect %2(%arg0) : (index) -> index
+  kgen.call_indirect %2(%arg0) : (index) -> index
 
   hlcf.return
 }

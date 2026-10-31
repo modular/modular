@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Register the GLM-5.1 ``ModuleV3`` text-generation architecture."""
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
@@ -23,6 +25,7 @@ from ..deepseekV3_modulev3.batch_processor import (
 from ..deepseekV3_modulev3.memory_planner import (
     DeepseekV3ModuleV3MemoryPlanner,
 )
+from ..glm5_1.arch import glm_format_spec
 from ..glm5_1.reasoning import (
     GlmReasoningParser,  # noqa: F401  registers "glm45"
 )
@@ -59,6 +62,7 @@ glm5_1_modulev3_arch = SupportedArchitecture(
     config=Glm5_1Config,
     memory_planner=DeepseekV3ModuleV3MemoryPlanner,
     tool_parser="glm45",
+    format_spec=glm_format_spec,
     reasoning_parser="glm45",
     default_structured_output_backend="xgrammar",
     default_structured_output_any_whitespace=True,

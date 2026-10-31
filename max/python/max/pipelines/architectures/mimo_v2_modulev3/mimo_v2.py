@@ -15,34 +15,35 @@
 from __future__ import annotations
 
 import enum
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import (
+from max.graph import TensorValue, ops
+from max.nn import (
     Embedding,
     Module,
     ModuleList,
     RMSNorm,
     as_subgraph,
 )
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mesh_axis import DP
-from max.experimental.nn.common_layers.rotary_embedding import (
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mesh_axis import DP
+from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
-from max.experimental.nn.norm import rms_norm
-from max.experimental.sharding import DeviceMapping, Replicated, Sharded
-from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers, EPConfig
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers, EPConfig
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.norm import rms_norm
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
 from ..deepseekV3_modulev3.deepseekV3 import (
     split_replicated_batch,
@@ -101,29 +102,6 @@ def select_parallelism_mode(
     return ParallelismMode.TP_EP
 
 
-def _gather_last_rows(
-    h: Tensor, input_row_offsets: Tensor, *, per_replica: bool
-) -> Tensor:
-    """Gathers each request's last row from the ragged batch.
-
-    Under data parallelism ``input_row_offsets`` is rebased into each
-    replica's local frame, so its values address only that replica's own
-    rows; the gather runs per shard, never through the auto-sharded
-    ``F.gather``, which would reshard the offsets across replicas. With
-    replicated (TP) rows the offsets are replicated on the mesh, so the
-    plain gather places itself.
-    """
-    if not per_replica:
-        return F.gather(h, input_row_offsets[1:] - 1, axis=0)
-
-    def _body(h: TensorValue, offsets: TensorValue) -> TensorValue:
-        return ops.gather(h, offsets[1:] - 1, axis=0)
-
-    # The rule-less body runs on each device's own rows; the result keeps
-    # h's placements, so the head can gather it onto the mesh.
-    return F.functional(_body)(h, input_row_offsets).rebind_mapping(h.mapping)
-
-
 class MiMoV2RMSNorm(RMSNorm):
     """RMSNorm that scales in float32 before the cast, as the reference does.
 
@@ -133,6 +111,7 @@ class MiMoV2RMSNorm(RMSNorm):
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` by its RMS, scaling by the weight."""
         return rms_norm(x, self.weight, self.eps, multiply_before_cast=True)
 
 
@@ -255,6 +234,15 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
                 f"count ({len(config.devices)}); dp x tp meshes are not "
                 "supported yet."
             )
+        # Each DP replica holds every QKV chunk, a layout the fusion has no
+        # parity check for.
+        if self.dp_attention and (
+            config.fused_sliding_qkv or config.fused_full_qkv
+        ):
+            raise NotImplementedError(
+                "MiMo-V2 fused chunked QKV preparation is not supported "
+                "with data-parallel attention."
+            )
         # Both directions of the wiring: an EP mode without its batch
         # manager would silently build the tensor-parallel MoE, and a
         # batch manager without an EP mode is a wiring error too. DP
@@ -340,6 +328,11 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
                 has_sinks=config.sinks[group],
                 quant_config=config.quant.dense,
                 data_parallel=self.dp_attention,
+                fused_qkv=(
+                    config.fused_sliding_qkv
+                    if group == SLIDING
+                    else config.fused_full_qkv
+                ),
             )
             group_layer_counts[group] += 1
             mlp: MiMoV2MLP | MiMoV2MoE
@@ -407,6 +400,96 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
             )
         return tokens.to(mesh), input_row_offsets.to(mesh)
 
+    def _split_replica_batch(
+        self,
+        h: Tensor,
+        input_row_offsets: Tensor,
+        host_row_offsets: Tensor | None,
+        data_parallel_splits: Tensor | None,
+    ) -> tuple[Tensor, Tensor]:
+        """Splits the merged batch over the one-device replicas.
+
+        One replica per device: the batch axis is the only sharded axis,
+        as the DeepSeek ModuleV3 port's DP forward does -- each replica
+        gets its own rows, with the offsets rebased into its local frame.
+
+        Args:
+            h: The replicated residual stream over the merged batch.
+            input_row_offsets: The merged batch's ragged offsets.
+            host_row_offsets: The merged offsets on the host, whose bounds
+                the split slices in int64.
+            data_parallel_splits: Per-replica request boundaries.
+        """
+        assert host_row_offsets is not None
+        assert data_parallel_splits is not None
+        mesh = self.norm.weight.mesh
+        batch_placement = tuple(
+            Sharded(0) if name == "dp" else Replicated()
+            for name in mesh.axis_names
+        )
+        return split_replicated_batch(
+            h,
+            input_row_offsets,
+            # The split helper slices bounds in int64, so the host offsets
+            # cross as int64, as MiniMax-M2's graph passes them.
+            host_row_offsets.cast(DType.int64),
+            data_parallel_splits,
+            DeviceMapping(mesh, batch_placement),
+        )
+
+    def _gather_trailing_rows(
+        self,
+        h: Tensor,
+        input_row_offsets: Tensor,
+        *,
+        per_replica: bool,
+        distance: Tensor | None = None,
+    ) -> Tensor:
+        """Gathers each request's trailing rows from the ragged batch.
+
+        ``distance`` counts back from each request's last row: a ``[count]``
+        range gathers the trailing ``count`` rows, ``None`` the last row
+        alone. Under data parallelism ``input_row_offsets`` is rebased into
+        each replica's local frame, so its values address only that
+        replica's own rows; the gather runs per shard, never through the
+        auto-sharded ``F.gather``, which would reshard the offsets across
+        replicas. With replicated (TP) rows the offsets are replicated on
+        the mesh, so the plain gather places itself.
+
+        Args:
+            h: The rows to gather from.
+            input_row_offsets: Ragged offsets of ``h``'s batch.
+            per_replica: Whether the offsets are rebased per replica.
+            distance: How far back each gathered row sits from its
+                request's last row, as a ``[count]`` range the caller
+                traces; ``None`` gathers the last row alone.
+        """
+        if not per_replica:
+            if distance is None:
+                return F.gather(h, input_row_offsets[1:] - 1, axis=0)
+            indices = (input_row_offsets[1:].unsqueeze(-1) - distance).reshape(
+                (-1,)
+            )
+            return F.gather(h, indices, axis=0)
+
+        def _last(h: TensorValue, offsets: TensorValue) -> TensorValue:
+            return ops.gather(h, offsets[1:] - 1, axis=0)
+
+        def _trailing(
+            h: TensorValue, offsets: TensorValue, dist: TensorValue
+        ) -> TensorValue:
+            indices = (ops.unsqueeze(offsets[1:], -1) - dist).reshape((-1,))
+            return ops.gather(h, indices, axis=0)
+
+        # The rule-less bodies run on each device's own rows; the result
+        # keeps h's placements, so the head can gather it onto the mesh.
+        rows = (
+            F.functional(_last)(h, input_row_offsets)
+            if distance is None
+            else F.functional(_trailing)(h, input_row_offsets, distance)
+        )
+        return rows.rebind_mapping(h.mapping)
+
     def forward(
         self,
         tokens: Tensor,
@@ -414,6 +497,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *kv_inputs: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the language graph over tokens and its KV inputs."""
         if self.return_logits == ReturnLogits.VARIABLE:
             # Only `verify` builds the variable-logits range, from a host
             # count. This graph's count would land on the device, which
@@ -446,23 +530,10 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
 
         h = self.embed_tokens(tokens)
         if self.dp_attention:
-            assert data_parallel_splits is not None
-            assert host_row_offsets is not None
-            # One replica per device: the batch axis is the only sharded
-            # axis, as the DeepSeek ModuleV3 port's DP forward does.
-            mesh = self.norm.weight.mesh
-            batch_placement = tuple(
-                Sharded(0) if name == "dp" else Replicated()
-                for name in mesh.axis_names
-            )
-            h, input_row_offsets = split_replicated_batch(
-                h,
-                input_row_offsets,
-                # The split helper slices bounds in int64, so the host
-                # offsets cross as int64, as MiniMax-M2's graph passes them.
-                host_row_offsets.cast(DType.int64),
-                data_parallel_splits,
-                DeviceMapping(mesh, batch_placement),
+            # The forward and the spec target's verify split through the
+            # same helper, so the two cannot drift.
+            h, input_row_offsets = self._split_replica_batch(
+                h, input_row_offsets, host_row_offsets, data_parallel_splits
             )
         freqs_cis = {
             group: rope.freqs_cis.cast(h.dtype).to(h.mesh)
@@ -500,13 +571,13 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
                     " under data parallelism"
                 )
             all_logits = self._logits(h)
-            last = _gather_last_rows(
+            last = self._gather_trailing_rows(
                 all_logits, input_row_offsets, per_replica=False
             ).local_shards[0]
             logits = all_logits.local_shards[0]
             offsets = row_offsets
         else:
-            last_rows = _gather_last_rows(
+            last_rows = self._gather_trailing_rows(
                 h, input_row_offsets, per_replica=self.dp_attention
             )
             if self.dp_attention:
@@ -520,3 +591,145 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
         return ModuleV3Outputs(
             next_token_logits=last, logits=logits, logit_offsets=offsets
         )
+
+
+class MiMoV2SpecTarget(MiMoV2):
+    """MiMo-V2 as a speculative target: a verify pass, not a forward.
+
+    The base module returns neither variable logits nor hidden states: its
+    ``F.range`` count would land on the device, and its per-device taps are a
+    speculative-decode concern. Both are built here instead, where the verify
+    hands the count in from the host and the taps reach the drafter's ``fc``
+    without leaving the graph.
+
+    Under data-parallel attention the verify splits the merged batch over
+    the one-device replicas with the base forward's split helper, and the
+    EP batch manager threads the routed experts' dispatch buffers through
+    every MoE layer, as the base forward does.
+    """
+
+    def __init__(
+        self,
+        config: MiMoV2Config,
+        ep_batch_manager: EPBatchManager | None = None,
+    ) -> None:
+        if not config.target_layer_ids:
+            raise ValueError(
+                "MiMo-V2 DFlash: the spec target captures its taps at the"
+                " drafter's target_layer_ids, which are unset."
+            )
+        if config.target_layer_ids != sorted(config.target_layer_ids):
+            raise ValueError(
+                "MiMo-V2 DFlash: the target captures its taps in layer order;"
+                f" got target_layer_ids {config.target_layer_ids}."
+            )
+        # Build with the base's narrow ABI and widen after: the base module
+        # refuses hidden states at build, and the verify pass is the only
+        # consumer of the wide ones. The base's NONE guard narrows the
+        # attributes to the literal, so the widening needs the cast comments.
+        super().__init__(
+            replace(
+                config,
+                return_logits=ReturnLogits.LAST_TOKEN,
+                return_hidden_states=ReturnHiddenStates.NONE,
+            ),
+            ep_batch_manager,
+        )
+        self.return_logits = ReturnLogits.VARIABLE
+        self.return_hidden_states = ReturnHiddenStates.SELECTED_LAYERS
+        self.target_layer_ids = list(config.target_layer_ids)
+        self._target_layers = set(self.target_layer_ids)
+
+    def verify(
+        self,
+        tokens: Tensor,
+        return_n_logits: Tensor,
+        input_row_offsets: Tensor,
+        kv_by_group: Mapping[str, Sequence[PagedCacheValues]],
+        comm: EPCommBuffers | None = None,
+        host_merged_offsets: Tensor | None = None,
+        data_parallel_splits: Tensor | None = None,
+    ) -> tuple[Tensor, list[Tensor]]:
+        """Runs the target over the merged rows, at verify width.
+
+        Args:
+            tokens: The single-device merged tokens, ``[merged_seq_len]``.
+            return_n_logits: How many trailing rows of each request score
+                logits; a host tensor, as the logit range needs.
+            input_row_offsets: The single-device ragged offsets.
+            kv_by_group: The target's caches, one per device per KV group,
+                keyed ``sliding_attention`` and ``full_attention``.
+            comm: The EP communication buffers, when the routed experts
+                serve expert parallelism.
+            host_merged_offsets: The merged offsets on the host, under data
+                parallelism; the split helper slices its bounds in int64.
+            data_parallel_splits: Per-replica batch boundaries, under data
+                parallelism.
+
+        Returns:
+            The ``[batch * count, vocab]`` float32 logits and the residual
+            stream after each tapped layer, in layer order. The logits are
+            replicated over the whole batch; the taps are replicated over
+            tensor parallelism and sharded per replica under data
+            parallelism.
+        """
+        tokens, input_row_offsets = self._place(tokens, input_row_offsets)
+        h = self.embed_tokens(tokens)
+        if self.dp_attention:
+            assert host_merged_offsets is not None
+            assert data_parallel_splits is not None
+            # The base forward's own split, so the two cannot drift: each
+            # replica verifies its own rows against its own cache.
+            h, input_row_offsets = self._split_replica_batch(
+                h, input_row_offsets, host_merged_offsets, data_parallel_splits
+            )
+        freqs_cis = {
+            group: rope.freqs_cis.cast(h.dtype).to(h.mesh)
+            for group, rope in self.ropes.items()
+        }
+        taps: list[Tensor] = []
+        for i, layer in enumerate(self.layers):
+            group = self._layer_groups[i]
+            h = layer(
+                h,
+                kv_by_group[group],
+                freqs_cis[group],
+                input_row_offsets,
+                comm,
+            )
+            if i in self._target_layers:
+                taps.append(h)
+        # The count is a host tensor, so `F.range` takes it; a device count
+        # it would reject. Each request scores its trailing `count` rows.
+        count = return_n_logits[0]
+        distance = F.range(
+            count,
+            0,
+            -1,
+            out_dim="return_n_logits_range",
+            dtype=DType.int64,
+            device=h.mesh,
+        )
+        # The base forward's own trailing-rows gather, at the verify's
+        # distance: rebased per replica under data parallelism, where the
+        # replicas' rows then gather onto the whole batch as the base's
+        # last rows do.
+        rows = self._gather_trailing_rows(
+            h,
+            input_row_offsets,
+            per_replica=self.dp_attention,
+            distance=distance,
+        )
+        if self.dp_attention:
+            rows = F.allgather(rows)
+        logits = self._logits(rows)
+        return logits, taps
+
+    def draft_logits(self, h: Tensor) -> Tensor:
+        """The target's head over the drafter's own final-norm output.
+
+        The drafter normalizes its block before this head reads it, so the
+        target's final norm must not run again.
+        """
+        logits = self.lm_head(h)
+        return F.allgather(logits, tensor_axis=-1).cast(DType.float32)

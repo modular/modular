@@ -56,7 +56,6 @@ bool fromJSON(const json::Value &value, KGEN::CompilationOptions &result,
          o.map("targetCpu", result.targetCpu) &&
          o.map("targetFeatures", result.targetFeatures) &&
          o.map("saveTempsPrefix", result.saveTempsPrefix) &&
-         o.map("searchPaths", result.searchPaths) &&
          o.map("enableLLVMPerFunctionSplitting",
                result.enableLLVMPerFunctionSplitting) &&
          o.map("enableParallelLLC", result.enableParallelLLC);
@@ -73,7 +72,6 @@ json::Value toJSON(const KGEN::CompilationOptions &value) {
       {"relocModel", static_cast<int64_t>(value.relocModel)},
       {"debugInfoLanguage", static_cast<int64_t>(value.debugInfoLanguage)},
       {"saveTempsPrefix", value.saveTempsPrefix},
-      {"searchPaths", value.searchPaths},
       {"enableLLVMPerFunctionSplitting", value.enableLLVMPerFunctionSplitting},
       {"enableParallelLLC", value.enableParallelLLC}};
 }

@@ -29,7 +29,6 @@ import argparse
 import json
 import logging
 import re
-import shutil
 import sys
 from collections.abc import Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
@@ -38,6 +37,10 @@ from pathlib import Path
 
 import numpy as np
 import torch  # type: ignore
+from max.pipelines.weights.checkpoint_files import (
+    copy_auxiliary_files,
+    write_quantization_config,
+)
 from max.pipelines.weights.fp4_quantization import (
     FP4Format,
     nvfp4_quantization_config,
@@ -209,16 +212,6 @@ def _quantization_config(
     if isinstance(fmt, FP4Format):
         return nvfp4_quantization_config(fmt, ignored)
     return mxfp6_quantization_config(fmt, ignored)
-
-
-def _copy_auxiliary_files(src: Path, dst: Path) -> None:
-    """Copies tokenizer, generation, and other non-weight files."""
-    for path in src.iterdir():
-        if path.is_dir() or path.suffix == ".safetensors":
-            continue
-        if path.name in (_WEIGHT_INDEX, "config.json"):
-            continue
-        shutil.copy2(path, dst / path.name)
 
 
 def _iter_shard_tensors(
@@ -400,9 +393,8 @@ def quantize_checkpoint(
         )
     )
 
-    config["quantization_config"] = _quantization_config(fmt, ignored)
-    (dst / "config.json").write_text(json.dumps(config, indent=2))
-    _copy_auxiliary_files(src, dst)
+    write_quantization_config(src, dst, _quantization_config(fmt, ignored))
+    copy_auxiliary_files(src, dst)
 
     return stats
 

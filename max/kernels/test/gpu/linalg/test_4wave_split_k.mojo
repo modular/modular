@@ -103,16 +103,8 @@ def test_4wave_split_k[
                 if printed < 10:
                     var row, col = divmod(i, N)
                     print(
-                        "Mismatch at (",
-                        row,
-                        ",",
-                        col,
-                        "): actual=",
-                        actual,
-                        " expected=",
-                        expected,
-                        " rel_err=",
-                        rel_err,
+                        t"Mismatch at ( {row} , {col} ): actual= {actual} "
+                        t" expected= {expected}  rel_err= {rel_err}"
                     )
                     printed += 1
                 errors += 1
@@ -214,16 +206,8 @@ def test_4wave_split_k_epilogue[
                 if printed < 10:
                     var row, col = divmod(i, N)
                     print(
-                        "Mismatch at (",
-                        row,
-                        ",",
-                        col,
-                        "): actual=",
-                        actual,
-                        " expected=",
-                        expected,
-                        " rel_err=",
-                        rel_err,
+                        t"Mismatch at ( {row} , {col} ): actual= {actual} "
+                        t" expected= {expected}  rel_err= {rel_err}"
                     )
                     printed += 1
                 errors += 1
@@ -249,14 +233,10 @@ def test_4wave_split_k_epilogue[
 def main() raises:
     with DeviceContext() as ctx:
         print(
-            "Running AMD 4-wave split-K Tests (FP8): M=",
-            TEST_M,
-            " N=",
-            TEST_N,
-            " K=",
-            TEST_K,
-            " num_splits=",
-            TEST_NUM_SPLITS,
+            (
+                t"Running AMD 4-wave split-K Tests (FP8):"
+                t" M={TEST_M} N={TEST_N} K={TEST_K} num_splits={TEST_NUM_SPLITS}"
+            ),
             sep="",
         )
 

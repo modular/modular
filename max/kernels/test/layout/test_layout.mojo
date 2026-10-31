@@ -34,7 +34,7 @@ from layout.layout import (
 )
 from std.testing import assert_equal, assert_raises
 
-from std.utils import IndexList
+from std.utils.coord import coord
 
 
 # CHECK-LABEL: test_layout_basic
@@ -89,34 +89,33 @@ def test_layout_basic() raises:
         Layout.row_major[2](),
     )
 
-    # test index list construction
+    # test coordinate construction
     assert_equal(
-        Layout.row_major(IndexList[2](2, 3)),
+        Layout.row_major(coord[2, 3]),
         Layout.row_major(2, 3),
     )
 
     # testing col major
     assert_equal(
-        Layout.col_major[3]((3, 64, 128)),
+        Layout.col_major(coord[3, 64, 128]),
         Layout(IntTuple(3, 64, 128), IntTuple(1, 3, 192)),
     )
 
     assert_equal(
-        Layout.col_major[3]((UNKNOWN_VALUE, 64, 128)),
+        Layout.col_major(coord[UNKNOWN_VALUE, 64, 128]),
         Layout(
             IntTuple(UNKNOWN_VALUE, 64, 128),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
         ),
     )
 
-    var idx_list = IndexList[3](32, 8, 16)
     assert_equal(
-        Layout.col_major[3](idx_list),
+        Layout.col_major(coord[32, 8, 16]),
         Layout(IntTuple(32, 8, 16), IntTuple(1, 32, 256)),
     )
 
     assert_equal(
-        Layout.col_major[3]((UNKNOWN_VALUE, 8, 16)),
+        Layout.col_major(coord[UNKNOWN_VALUE, 8, 16]),
         Layout(
             IntTuple(UNKNOWN_VALUE, 8, 16),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),

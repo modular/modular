@@ -21,40 +21,41 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer
+from max.driver import Buffer, Device
+from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.compilation import CompiledCallable
 from max.graph.buffer_utils import cast_tensor_to
-from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import ImageMetadata
-from max.pipelines.lib.vision_encoder_cache import concat_device_buffers
-
-from ..deepseekV3_modulev3.batch_processor import (
-    DeepseekV3ModuleV3BatchProcessor,
+from max.pipelines.lib.module_registration import DecoderBatchProcessor
+from max.pipelines.lib.vision_encoder_cache import (
+    VisionEncodeResult,
+    concat_device_buffers,
 )
+from max.tensor.compilation import CompiledCallable
+
 from .context import KimiK2_5TextAndVisionContext
-from .inputs import KimiK2_5ModelInputs
 from .memory_planner import _vision_encoder_token_budget, _vision_merge_sq
 from .model_config import KimiK2_5Config
 
 logger = logging.getLogger("max.pipelines")
 
 
-class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
-    """Ragged batching for Kimi-K2.5 models.
+class KimiK2_5BatchProcessor(DecoderBatchProcessor):
+    """Batches text for the Kimi K2.5 decoder and encodes its images.
 
-    Vision is cached by the pipeline-owned ``VisionEncoderCache`` between
-    prep and execute; this processor only builds the text inputs and runs
-    the chunked vision encode (see :meth:`encode_uncached_chunked`).
+    The framework batches the text. The pipeline's vision cache selects each
+    batch's new images, and this encodes them in token-bounded chunks on the
+    first device (see :meth:`encode_uncached_chunked`).
     """
 
-    _model_config: KimiK2_5Config | None = None
     _vision_model: CompiledCallable[Any, Any] | None = None
     _session: InferenceSession | None = None
+    _empty_vision_embeddings: list[Buffer] | None = None
 
-    def bind_model_config(self, model_config: KimiK2_5Config) -> None:
-        """Wire the finalized Kimi-K2.5 config from ``load_model``."""
-        self._model_config = model_config
+    @property
+    def _model_config(self) -> KimiK2_5Config:
+        assert isinstance(self.config, KimiK2_5Config)
+        return self.config
 
     def bind_vision_encoder(
         self,
@@ -66,40 +67,40 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
         self._vision_model = vision_model
         self._session = session
 
-    def prepare_initial_token_inputs(  # type: ignore[override]
+    def pack_vision_inputs(
         self,
-        replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> KimiK2_5ModelInputs:
-        """Prepare inputs for the first execution pass of KimiK2.5.
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> None:
+        """Packs nothing: :meth:`vision_execute` packs each chunk itself."""
+        return
 
-        Images are selected, encoded (see :meth:`encode_uncached_chunked`),
-        and cached by the pipeline-owned ``VisionEncoderCache`` between prep
-        and execute; this processor only builds the text inputs.
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: None,
+    ) -> VisionEncodeResult:
+        """Encodes the cache-selected images, in per-image order."""
+        embeddings, token_counts = self.encode_uncached_chunked(selection)
+        return VisionEncodeResult(
+            embeddings=embeddings, per_image_token_counts=token_counts
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device ``[0, hidden]`` image embeddings for non-vision steps.
+
+        Cached: every text-only and decode step asks for them.
         """
-        assert self._model_config is not None, (
-            "model_config must be bound; call bind_model_config() after"
-            " load_model()"
-        )
-        assert self._vision_model is not None
-        assert self._session is not None
-
-        base = super().prepare_initial_token_inputs(
-            replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-        )
-        return KimiK2_5ModelInputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            return_n_logits=base.return_n_logits,
-            kv_cache_inputs=base.kv_cache_inputs,
-            batch_context_lengths=base.batch_context_lengths,
-            data_parallel_splits=base.data_parallel_splits,
-            input_row_offsets_i64=base.input_row_offsets_i64,
-            ep_inputs=base.ep_inputs,
-        )
+        if self._empty_vision_embeddings is None:
+            hidden_size = self._model_config.llm_config.hidden_size
+            host = Buffer.zeros(shape=[0, hidden_size], dtype=DType.bfloat16)
+            self._empty_vision_embeddings = [host.to(d) for d in devices]
+        return self._empty_vision_embeddings
 
     def _collect_uncached_image_inputs(
         self,

@@ -32,10 +32,11 @@ from std.math.constants import log2e
 
 import max.gpu.primitives.warp as warp
 from max.gpu import WARP_SIZE, block_idx, lane_id, warp_id
-from max.gpu.sync import barrier
+from max.gpu.sync import barrier, syncwarp
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
+    launch_dependent_grids,
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
@@ -48,16 +49,14 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from nn.attention.mha_utils import OptionalPointer, as_optional_reg
 
 
-# The kernels below already wait on dependent grids and the decode producer
-# already triggers them, but neither has an effect unless the consumer launch
-# opts in. Opting in makes that whole contract live for the first time, and a
-# rare illegal-address abort at context teardown tracks with it, so the level
-# stays off until the mechanism is settled. Enabling it is a source edit: the
-# define cannot be set through the build, because the package that reads it is
-# precompiled and `mojo precompile` takes no `-D`.
-comptime MLA_DECODE_COMBINE_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
-    "MLA_DECODE_COMBINE_PDL", False
-]() else PDLLevel.OFF
+# PDL for the MLA decode -> combine chain is always on: both launches attach
+# `pdl_launch_attributes(PDLLevel.ON)` unconditionally and both kernels wait on
+# their predecessors before touching their inputs. They release their own
+# dependents (the W_UV batched matmul) before that wait. Historically this
+# chain was opt-in through the `MLA_DECODE_COMBINE_PDL` define (then: a rare
+# illegal-address abort at context teardown tracked with it). The define cannot
+# be set through the build anyway, because this package is precompiled and
+# `mojo precompile` takes no `-D`, so enabling it was always a source edit.
 
 
 # ===----------------------------------------------------------------------=== #
@@ -246,7 +245,17 @@ def mla_combine_kernel[
             strides used to index the split, batch, sequence, and head
             dimensions.
     """
-    # PDL: Wait for the MLA decode kernel (dependent kernel) to complete.
+    # PDL: release the grids that consume the combined output (the W_UV
+    # batched matmul) on entry, then wait for the MLA decode kernel.
+    # `launch_dependent_grids()` only lets a successor be scheduled; its own
+    # `wait_on_dependent_grids()` still blocks until this whole grid has
+    # completed and its stores are visible (PTX ISA `griddepcontrol.wait`), so
+    # releasing before `output` is written cannot expose it unwritten. The
+    # successor may now be resident while decode still runs. It cannot starve
+    # decode: this grid launches only after every decode CTA has started (decode
+    # releases on entry), and the successor launches only after every
+    # CTA of this grid has started.
+    launch_dependent_grids()
     wait_on_dependent_grids()
 
     comptime ParamsType = CombineParams[
@@ -666,7 +675,17 @@ def mla_combine_kernel_split_parallel[
             and the derived strides used to index the split, batch,
             sequence, and head dimensions.
     """
-    # PDL: Wait for the MLA decode kernel (dependent kernel) to complete.
+    # PDL: release the grids that consume the combined output (the W_UV
+    # batched matmul) on entry, then wait for the MLA decode kernel.
+    # `launch_dependent_grids()` only lets a successor be scheduled; its own
+    # `wait_on_dependent_grids()` still blocks until this whole grid has
+    # completed and its stores are visible (PTX ISA `griddepcontrol.wait`), so
+    # releasing before `output` is written cannot expose it unwritten. The
+    # successor may now be resident while decode still runs. It cannot starve
+    # decode: this grid launches only after every decode CTA has started (decode
+    # releases on entry), and the successor launches only after every
+    # CTA of this grid has started.
+    launch_dependent_grids()
     wait_on_dependent_grids()
 
     comptime NUM_WARPS = 8
@@ -863,6 +882,15 @@ def mla_combine_kernel_split_parallel[
                 )
                 smem_result.unsafe_store(smem_my_base + elem_offset, merged)
 
+            # The lanes above read this warp's own `smem_m`/`smem_l` slot, and
+            # the lane-0 store below overwrites that same slot with the merged
+            # value for the partner warp's next step. Both sides are this warp,
+            # so the ordering has to be a warp sync: `barrier()` cannot go here
+            # (only the `warp_idx < stride` warps reach it) and post-Volta lanes
+            # do not run in lockstep, so the read is not ordered before the
+            # store by construction.
+            syncwarp()
+
             # Update merged (m, l).
             if lane_idx == 0:
                 smem_m[warp_idx] = new_m
@@ -1042,7 +1070,7 @@ def launch_mla_combine_kernel_split_parallel[
         params,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(MLA_DECODE_COMBINE_PDL_LEVEL),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1164,7 +1192,7 @@ def launch_mla_combine_kernel[
         params,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(MLA_DECODE_COMBINE_PDL_LEVEL),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

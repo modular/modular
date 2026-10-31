@@ -11,8 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Muse Glimmer processor: token ids plus image patches, in the shape
-:class:`~max.pipelines.lib.TextAndVisionTokenizer` reads."""
+"""Muse Glimmer processor: token ids plus image patches.
+
+The output has the shape :class:`~max.pipelines.lib.TextAndVisionTokenizer`
+reads.
+"""
 
 from __future__ import annotations
 
@@ -59,9 +62,11 @@ class MuseGlimmerProcessor:
         add_special_tokens: bool = True,
         **unused_kwargs: Any,
     ) -> dict[str, Any]:
-        """Encodes ``text`` and grows each ``<|patch|>`` into
-        ``<|image_start|>``, ``h * w / 4`` patch tokens and ``<|image_end|>``,
-        as transformers' ``replace_image_token`` does.
+        """Encodes ``text`` and expands every ``<|patch|>``.
+
+        Each placeholder grows into ``<|image_start|>``, ``h * w / 4`` patch
+        tokens and ``<|image_end|>``, as transformers' ``replace_image_token``
+        does.
 
         Returns:
             ``input_ids`` as ``[ids]``, ``pixel_values`` as ``[[per-image

@@ -7,15 +7,13 @@ modular_py_library(
     srcs = glob(["*.py"]),
     ignore_extra_deps = [
         # Hooks added for convenience for when we want to print the model layers
-        "//max/python/max/nn/hooks",
+        "//max/python/max/nn/legacy/hooks",
     ],
     ignore_unresolved_imports = [
         # Private tool parsers are imported at runtime, not directly
         "tool_parsers",
         # Private Kimi K3 arch is imported at runtime, not directly
         "kimi_k3",
-        # Private Kimi K3 ModuleV3 arch is imported at runtime, not directly
-        "kimi_k3_modulev3",
         # Private Kimi K3 spec-decode family and draft, imported at runtime
         "kimi_k3_spec",
         # Private MiniMax-M3 arch is imported at runtime, not directly
@@ -33,6 +31,6 @@ modular_py_library(
         requirement("transformers"),  # Used in hf_config_shims.py
         "//max/python/max/pipelines/lib",
         # Hooks added for convenience for when we want to print the model layers
-        "//max/python/max/nn/hooks",
+        "//max/python/max/nn/legacy/hooks",
     ],
 )

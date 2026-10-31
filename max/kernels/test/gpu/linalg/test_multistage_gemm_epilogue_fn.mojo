@@ -36,7 +36,7 @@ def test_epilogue_fn[
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that the closure-value overloads store exactly what the
     legacy path computes, passed through the closure."""
-    print(a_type, "->", c_type, m, "x", N, "x", K, config.num_k_partitions)
+    print(t"{a_type} -> {c_type} {m} x {N} x {K} {config.num_k_partitions}")
 
     var a_dev = ctx.enqueue_create_buffer[a_type](m * K)
     var b_dev = ctx.enqueue_create_buffer[a_type](N * K)
@@ -97,16 +97,8 @@ def test_compute_fn[
     """Checks that a compute closure's result is what the kernel stores
     into `c`, at the index the closure was given."""
     print(
-        "compute:",
-        a_type,
-        "->",
-        c_type,
-        m,
-        "x",
-        N,
-        "x",
-        K,
-        config.num_k_partitions,
+        t"compute: {a_type} -> {c_type} {m} x {N} x"
+        t" {K} {config.num_k_partitions}"
     )
 
     var a_dev = ctx.enqueue_create_buffer[a_type](m * K)
@@ -176,8 +168,8 @@ def main() raises:
         comptime split_k_config = MatmulConfig[
             .float32, .float32, .float32, True
         ](
-            block_tile_shape=Index(16, 16, 64),
-            warp_tile_shape=Index(16, 16, 64),
+            block_tile_shape=(Int(16), Int(16), Int(64)),
+            warp_tile_shape=(Int(16), Int(16), Int(64)),
             mma_shape=_amdgpu_get_mma_shape[.float32, True](),
             num_pipeline_stages=1,
             num_k_partitions=4,

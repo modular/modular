@@ -13,6 +13,7 @@
 
 # RUN: %mojo %s | FileCheck %s --check-prefix=NO_ARGS
 # RUN: %mojo %s --arg1 --arg2=10 --arg3="arg3" | FileCheck %s --check-prefix=ARGS
+# RUN: %mojo %s -o | FileCheck %s --check-prefix=TRAILING
 
 from std.sys import argv
 
@@ -24,6 +25,9 @@ def main() raises:
     # ARGS: --arg1
     # ARGS: --arg2=10
     # ARGS: --arg3=arg3
+
+    # TRAILING: exec_argv.mojo
+    # TRAILING-NEXT: -o
 
     for i in range(argv().__len__()):
         print(argv()[i])

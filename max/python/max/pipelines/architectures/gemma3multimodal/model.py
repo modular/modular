@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Gemma 3 multimodal pipeline model."""
 
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -182,8 +183,7 @@ class Gemma3_MultiModalModel(
 
     @property
     def vision_model(self) -> Model:
-        """The compiled and initialized MAX Engine vision model ready for
-        inference."""
+        """The compiled and initialized MAX Engine vision model ready for inference."""
         return self._models[GraphRole.VISION]
 
     @classmethod
@@ -276,9 +276,11 @@ class Gemma3_MultiModalModel(
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        """If required, execute the vision model, then continue to execute the
-        language model.  Either pass through image embeddings or create an empty
-        placeholder."""
+        """Runs the vision tower, then the language model.
+
+        The image embeddings are spliced into the token embeddings, and an empty
+        placeholder stands in when the batch has no images.
+        """
         model_inputs = cast(Gemma3MultiModalModelInputs, model_inputs)
 
         input_row_offsets = model_inputs.input_row_offsets

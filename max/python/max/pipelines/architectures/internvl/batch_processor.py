@@ -21,8 +21,8 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -54,6 +54,12 @@ class InternVLBatchProcessor(
         config: ArchConfig,
         runtime: BatchProcessorRuntime,
     ) -> None:
+        """Builds the ragged batching and its vision stacker.
+
+        The empty embedding and token-index buffers stay unbuilt until
+        :meth:`empty_image_embeddings` or :meth:`empty_image_token_indices`
+        runs.
+        """
         super().__init__(config, runtime)
         self._stacker = VisionStacker()
         self._devices = list(runtime.devices)
@@ -85,6 +91,11 @@ class InternVLBatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """Returns the ragged KV symbolic inputs.
+
+        Signal buffers are included only when ``device_refs`` holds more than
+        one device.
+        """
         return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,
@@ -144,6 +155,12 @@ class InternVLBatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InternVLInputs:
+        """Builds the graph inputs for one batch of contexts.
+
+        Stacks the pixel values of the contexts that need encoding, offsets each
+        context's image token indices into the batch, and reports the active
+        lengths as cumulative row offsets.
+        """
         from .model import InternVLInputs
 
         if len(replica_batches) > 1:
@@ -183,6 +200,7 @@ class InternVLBatchProcessor(
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
     ) -> ModelOutputs:
+        """Unpacks the model's buffers into logits and hidden states."""
         return process_ragged_kv_outputs(
             outputs,
             return_logits=self.runtime.return_logits,

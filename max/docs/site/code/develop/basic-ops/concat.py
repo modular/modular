@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/basic-ops.mdx
 
-import max.experimental.functional as F
-from max.experimental.tensor import Tensor
+import max.functional as F
+from max.tensor import Tensor
 
 a = Tensor([[1, 2], [3, 4]])
 b = Tensor([[5, 6], [7, 8]])

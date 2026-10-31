@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/eager-execution.mdx
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 a = Tensor([1.0, 2.0, 3.0])
 b = Tensor([4.0, 5.0, 6.0])

@@ -68,7 +68,7 @@ def test_repeat_interleave_1d(ctx: DeviceContext) raises:
     # CHECK: 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0
     print()
     for i in range(10):
-        print(output[i], ", ", sep="", end="")
+        print(t"{output[i]}, ", end="")
     print()
 
 
@@ -98,7 +98,7 @@ def test_repeat_interleave_1d_broadcast_repeats(ctx: DeviceContext) raises:
     # CHECK: 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0,
     print()
     for i in range(8):
-        print(output[i], ", ", sep="", end="")
+        print(t"{output[i]}, ", end="")
     print()
 
 
@@ -137,7 +137,7 @@ def test_repeat_interleave_2d_axis_0(ctx: DeviceContext) raises:
     print()
     for i in range(5):
         for j in range(2):
-            print(output[i, j], ", ", sep="", end="")
+            print(t"{output[i, j]}, ", end="")
         print()
     print()
 
@@ -171,7 +171,7 @@ def test_repeat_interleave_2d_axis_1(ctx: DeviceContext) raises:
     print()
     for i in range(2):
         for j in range(5):
-            print(output[i, j], ", ", sep="", end="")
+            print(t"{output[i, j]}, ", end="")
         print()
     print()
 
@@ -219,7 +219,7 @@ def test_repeat_interleave_3d(ctx: DeviceContext) raises:
     for i in range(2):
         for j in range(5):
             for k in range(2):
-                print(output[i, j, k], ", ", sep="", end="")
+                print(t"{output[i, j, k]}, ", end="")
             print()
         print("=====")
     print()

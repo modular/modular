@@ -36,11 +36,11 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.comm import (
+from max.nn.legacy.comm import (
     Signals,  # noqa: F401  (kept for parity; unused single-GPU)
 )
-from max.nn.kv_cache import KVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -82,6 +82,7 @@ class NemotronHInputs(Llama3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         assert self.slot_idx is not None
         assert self.conv_pools is not None
         assert self.ssm_pools is not None
@@ -265,6 +266,7 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
         }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the graphs over the prepared inputs."""
         assert isinstance(model_inputs, NemotronHInputs)
         assert model_inputs.kv_cache_inputs is not None
 
@@ -294,6 +296,7 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
         kv_cache_inputs: Any = None,
         return_n_logits: int = 1,
     ) -> NemotronHInputs:
+        """Builds the first step's inputs from the replica batches."""
         if len(replica_batches) != 1:
             raise ValueError("Nemotron-H does not support data parallelism > 1")
         context_batch = replica_batches[0]
@@ -336,6 +339,7 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
         )
 
     def release(self, request_id: RequestID) -> None:
+        """Returns the request's state slot to the cache."""
         if self._state_cache is not None:
             self._state_cache.release(request_id)
 

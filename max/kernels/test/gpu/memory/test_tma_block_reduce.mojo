@@ -40,10 +40,10 @@ from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 
-from layout import TileTensor, Coord, row_major
+from layout import TileTensor, Coord, row_major, Idx
 
 
 @inline(.always)
@@ -93,8 +93,9 @@ def global_reduction_kernel[
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, _rank: Int](idx: IndexList[_rank]) -> SIMD[dtype, width],
+    out_origin: MutOrigin,
 ](
-    d_out: MutPointer[Scalar[accum_type], MutAnyOrigin],
+    d_out: MutPointer[Scalar[accum_type], out_origin],
     num_cols_dev: Int32,
     input_fn: InputFnType,
 ):
@@ -123,15 +124,16 @@ def tma_reduction_kernel[
     dtype: DType,
     accum_type: DType,
     simd_width: Int,
+    data_origin: MutOrigin,
+    out_origin: MutOrigin,
 ](
     descriptor: TMADescriptor,
     rows_dev: Int32,
     cols_dev: Int32,
-    d_data: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    d_out: MutPointer[Scalar[accum_type], MutAnyOrigin],
+    d_data: MutPointer[Scalar[dtype], data_origin],
+    d_out: MutPointer[Scalar[accum_type], out_origin],
 ):
     # `Int` is not device-passable; widen the fixed-width args.
-    var rows = Int(rows_dev)
     var cols = Int(cols_dev)
     var shmem = external_memory[
         Scalar[dtype], address_space=.SHARED, alignment=128
@@ -153,7 +155,7 @@ def tma_reduction_kernel[
             shmem,
             descriptor_ptr,
             mbar,
-            Index(0, block_offset),
+            (Idx[0], block_offset),
         )
 
     # Wait for TMA to complete (expected_bytes transferred).
@@ -204,18 +206,24 @@ def test_tma_block_reduce[
 
     # Define the kernel launch function for benchmarking
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext) raises {mut d_data, imm} -> None:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {mut d_data, mut d_out, imm} -> None:
         comptime if use_tma:
-            var tma_desc = create_tma_descriptor[dtype, 2](
+            var tma_desc = create_tma_descriptor[dtype](
                 d_data,
                 (rows, cols),
-                (cols, 1),
-                (1, cols),
+                (cols, Idx[1]),
+                (Idx[1], cols),
             )
             # Calculate shared memory size needed per row.
             var shared_mem_bytes = cols * size_of[dtype]()
             comptime kernel = tma_reduction_kernel[
-                dtype, accum_type, simd_width
+                dtype,
+                accum_type,
+                simd_width,
+                origin_of(d_data),
+                origin_of(d_out),
             ]
             ctx.enqueue_function[kernel](
                 tma_desc,
@@ -245,6 +253,7 @@ def test_tma_block_reduce[
                 simd_width,
                 max_warps_per_block,
                 type_of(input_fn_2d),
+                origin_of(d_out),
             ]
 
             ctx.enqueue_function[kernel](
@@ -268,15 +277,7 @@ def test_tma_block_reduce[
         var total_time = ctx.execution_time(kernel_launch, num_iters)
         var avg_time_ms = Float64(total_time) / Float64(num_iters) * 1e6
 
-        print(
-            "  Average kernel time for:",
-            rows,
-            "x",
-            cols,
-            ":",
-            avg_time_ms,
-            "ms",
-        )
+        print(t"  Average kernel time for: {rows} x {cols} : {avg_time_ms} ms")
     else:
         # Single run for correctness testing.
         kernel_launch(ctx)

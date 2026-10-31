@@ -27,16 +27,16 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.conv import Conv2d
-from max.experimental.sharding import AxisAssignment, replicated_rows
-from max.experimental.sharding.types import TensorLayout
-from max.experimental.tensor import Tensor
-from max.nn.kernels import (
+from max.nn import Module
+from max.nn.conv import Conv2d
+from max.nn.legacy.kernels import (
     learnable_2d_interp_pos_emb as _learnable_2d_interp_pos_emb,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import AxisAssignment, replicated_rows
+from max.tensor.sharding.types import TensorLayout
 
 
 def _learnable_2d_interp_pos_emb_rule(

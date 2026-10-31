@@ -57,7 +57,9 @@ def mandelbrot_kernel[
     return iters
 
 
-def mandelbrot(out_ptr: MutPointer[Scalar[int_type], MutAnyOrigin]):
+def mandelbrot[
+    out_origin: MutOrigin
+](out_ptr: MutPointer[Scalar[int_type], out_origin]):
     # Each task gets a row.
     var row = global_idx.x
     if row >= height:
@@ -95,8 +97,8 @@ def run_mandelbrot(ctx: DeviceContext) raises:
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
     @inline(.always)
-    def run_mandelbrot(ctx: DeviceContext) raises {imm}:
-        ctx.enqueue_function[mandelbrot](
+    def run_mandelbrot(ctx: DeviceContext) raises {mut out_device}:
+        ctx.enqueue_function[mandelbrot[origin_of(out_device)]](
             out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),
             block_dim=(BLOCK_SIZE,),

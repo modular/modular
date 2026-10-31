@@ -29,13 +29,10 @@ from _tiny_config import (
 )
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental.nn import Module
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import Shape
 from max.graph.weights import WeightData
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn import Module
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )
@@ -61,6 +58,9 @@ from max.pipelines.architectures.nemotron_h_modulev3.weight_adapters import (
     stack_bf16_experts,
     stack_nvfp4_experts,
 )
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import DeviceMesh
 
 # E4M3 encodings of 0.5, 1, 2 and 4.
 _E4M3 = {0.5: 0x30, 1.0: 0x38, 2.0: 0x40, 4.0: 0x48}

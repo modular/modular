@@ -19,6 +19,7 @@ writes the wrong elements fails.
 
 from __future__ import annotations
 
+import platform
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -110,6 +111,10 @@ def test_integer_mean(session: InferenceSession, rows: int) -> None:
     np.testing.assert_array_equal(result.to_numpy(), expected)
 
 
+@pytest.mark.skipif(
+    platform.machine() in ["arm64", "aarch64"],
+    reason="aarch64 CPUs reject f16 graphs, so this case cannot compile",
+)
 @pytest.mark.parametrize("dim", ["n", 70000])
 def test_half_mean_of_long_axis(
     session: InferenceSession, dim: str | int

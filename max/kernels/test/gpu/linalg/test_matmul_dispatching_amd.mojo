@@ -18,6 +18,7 @@ Covers the same shapes as test_ping_pong_shapes.mojo but goes through
 the production dispatch path instead of calling ping_pong_matmul directly.
 """
 
+from std.math import isfinite
 from std.sys import get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -107,6 +108,7 @@ def test_dispatch_dynamic_m[
     for i in range(c_size):
         var actual = c_host_ptr[i].cast[.float32]()
         var expected = c_ref_host_ptr[i].cast[.float32]()
+        assert_true(isfinite(actual) and isfinite(expected))
         var abs_err = abs(actual - expected)
         var ref_mag = max(abs(expected), Float32(1.0))
         var rel_err = abs_err / ref_mag
@@ -118,16 +120,8 @@ def test_dispatch_dynamic_m[
             errors += 1
 
     print(
-        "  M=",
-        m,
-        " errors=",
-        errors,
-        "/",
-        c_size,
-        " max_abs=",
-        max_abs_err,
-        " max_rel=",
-        max_rel_err,
+        t"  M= {m}  errors= {errors} / {c_size}  max_abs= {max_abs_err} "
+        t" max_rel= {max_rel_err}"
     )
 
     assert_true(errors == 0, msg=String("FAILED:", errors, "errors"))
@@ -201,16 +195,10 @@ def test_dispatch_compute_fn[
             errors += 1
             if errors <= 5:
                 print(
-                    "  MISMATCH [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "]: got",
-                    c_host_ptr[i],
-                    "expected",
-                    expected,
+                    t"  MISMATCH [ {i // N} , {i % N} ]: got"
+                    t" {c_host_ptr[i]} expected {expected}"
                 )
-    print("  compute_fn M=", m, " N=", N, " K=", K, " errors=", errors)
+    print(t"  compute_fn M= {m}  N= {N}  K= {K}  errors= {errors}")
     assert_true(errors == 0, msg=String("COMPUTE_FN FAILED:", errors))
 
 
@@ -312,14 +300,8 @@ def test_oob_diagnostic[
             if oob_writes <= 5:
                 var row, col = divmod(i, N)
                 print(
-                    "  OOB WRITE [",
-                    row,
-                    ",",
-                    col,
-                    "]: expected sentinel",
-                    sentinel,
-                    "got",
-                    val,
+                    t"  OOB WRITE [ {row} , {col} ]: expected sentinel"
+                    t" {sentinel} got {val}"
                 )
     if oob_writes > 5:
         print("  ... and", oob_writes - 5, "more OOB writes")
@@ -334,6 +316,7 @@ def test_oob_diagnostic[
     for i in range(c_valid_size):
         var actual = c_host_ptr[i].cast[.float32]()
         var expected = c_ref_host_ptr[i].cast[.float32]()
+        assert_true(isfinite(actual) and isfinite(expected))
         var abs_err = abs(actual - expected)
         var ref_mag = max(abs(expected), Float32(1.0))
         var rel_err = abs_err / ref_mag
@@ -348,35 +331,16 @@ def test_oob_diagnostic[
             if accuracy_errors <= 5:
                 var row, col = divmod(i, N)
                 print(
-                    "  ACCURACY [",
-                    row,
-                    ",",
-                    col,
-                    "]: got",
-                    actual,
-                    "expected",
-                    expected,
-                    "abs=",
-                    abs_err,
-                    "rel=",
-                    rel_err,
+                    t"  ACCURACY [ {row} , {col} ]: got {actual} expected"
+                    t" {expected} abs= {abs_err} rel= {rel_err}"
                 )
     if accuracy_errors > 5:
         print("  ... and", accuracy_errors - 5, "more accuracy errors")
 
     print(
-        "\n    oob_writes=",
-        oob_writes,
-        "/",
-        c_alloc_size - c_valid_size,
-        " accuracy_errors=",
-        accuracy_errors,
-        "/",
-        c_valid_size,
-        " max_abs=",
-        max_abs_err,
-        " max_rel=",
-        max_rel_err,
+        t"\n    oob_writes= {oob_writes} / {c_alloc_size - c_valid_size} "
+        t" accuracy_errors= {accuracy_errors} / {c_valid_size}  max_abs="
+        t" {max_abs_err}  max_rel= {max_rel_err}"
     )
 
     assert_true(
@@ -523,14 +487,8 @@ def test_oob_epilogue[
                 oob_writes += 1
                 if oob_writes <= 5:
                     print(
-                        "  OOB WRITE [",
-                        row,
-                        ",",
-                        col,
-                        "]: expected sentinel",
-                        sentinel,
-                        "got",
-                        val,
+                        t"  OOB WRITE [ {row} , {col} ]: expected sentinel"
+                        t" {sentinel} got {val}"
                     )
     if oob_writes > 5:
         print("  ... and", oob_writes - 5, "more OOB writes")
@@ -546,6 +504,7 @@ def test_oob_epilogue[
         for col in range(N):
             var actual = out_host_ptr[row * alloc_N + col].cast[.float32]()
             var expected = c_ref_host_ptr[row * N + col].cast[.float32]()
+            assert_true(isfinite(actual) and isfinite(expected))
             var abs_err = abs(actual - expected)
             var ref_mag = max(abs(expected), Float32(1.0))
             var rel_err = abs_err / ref_mag
@@ -559,36 +518,17 @@ def test_oob_epilogue[
                 accuracy_errors += 1
                 if accuracy_errors <= 5:
                     print(
-                        "  ACCURACY [",
-                        row,
-                        ",",
-                        col,
-                        "]: got",
-                        actual,
-                        "expected",
-                        expected,
-                        "abs=",
-                        abs_err,
-                        "rel=",
-                        rel_err,
+                        t"  ACCURACY [ {row} , {col} ]: got {actual} expected"
+                        t" {expected} abs= {abs_err} rel= {rel_err}"
                     )
     if accuracy_errors > 5:
         print("  ... and", accuracy_errors - 5, "more accuracy errors")
 
     var sentinel_count = alloc_M * alloc_N - M * N
     print(
-        "\n    oob_writes=",
-        oob_writes,
-        "/",
-        sentinel_count,
-        " accuracy_errors=",
-        accuracy_errors,
-        "/",
-        c_size,
-        " max_abs=",
-        max_abs_err,
-        " max_rel=",
-        max_rel_err,
+        t"\n    oob_writes= {oob_writes} / {sentinel_count}  accuracy_errors="
+        t" {accuracy_errors} / {c_size}  max_abs= {max_abs_err}  max_rel="
+        t" {max_rel_err}"
     )
 
     assert_true(
@@ -621,7 +561,8 @@ def test_oob_epilogue_dynamic_m[
     Allocates with padding above M for OOB detection.
     """
     comptime b_type = a_type
-    comptime sentinel = Float32(-999.0)
+    # -999 rounds to -1000 in bf16; use an exactly representable sentinel.
+    comptime sentinel = Float32(-992.0 if c_type == .bfloat16 else -999.0)
     comptime poison = Float32(99.0)
 
     # Pad M up to next multiple of 256 + 256 buffer
@@ -714,14 +655,8 @@ def test_oob_epilogue_dynamic_m[
             oob_writes += 1
             if oob_writes <= 3:
                 print(
-                    "  OOB [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "]: sentinel",
-                    sentinel,
-                    "got",
-                    val,
+                    t"  OOB [ {i // N} , {i % N} ]: sentinel {sentinel} got"
+                    t" {val}"
                 )
 
     # Check accuracy
@@ -734,6 +669,7 @@ def test_oob_epilogue_dynamic_m[
     for i in range(c_size):
         var actual = out_host_ptr[i].cast[.float32]()
         var expected = c_ref_host_ptr[i].cast[.float32]()
+        assert_true(isfinite(actual) and isfinite(expected))
         var abs_err = abs(actual - expected)
         var ref_mag = max(abs(expected), Float32(1.0))
         var rel_err = abs_err / ref_mag
@@ -745,18 +681,8 @@ def test_oob_epilogue_dynamic_m[
             accuracy_errors += 1
 
     print(
-        "  M=",
-        m,
-        " oob=",
-        oob_writes,
-        " acc_err=",
-        accuracy_errors,
-        "/",
-        c_size,
-        " max_abs=",
-        max_abs_err,
-        " max_rel=",
-        max_rel_err,
+        t"  M= {m}  oob= {oob_writes}  acc_err= {accuracy_errors} / {c_size} "
+        t" max_abs= {max_abs_err}  max_rel= {max_rel_err}"
     )
 
     assert_true(oob_writes == 0, msg=String("OOB:", oob_writes))
@@ -775,6 +701,33 @@ def main() raises:
     with DeviceContext() as ctx:
         print("Testing _matmul_gpu AMD dispatch paths")
         print("=" * 60)
+
+        var router_m: List[Int] = [1, 2, 3, 4, 5, 8, 13, 16, 17, 32]
+        for m in router_m:
+            test_dispatch_dynamic_m[.float32, .float32, 288, 4096](ctx, m)
+            test_dispatch_dynamic_m[.float32, .float32, 256, 6144](ctx, m)
+            test_dispatch_dynamic_m[.float32, .float32, 128, 6144](ctx, m)
+            test_dispatch_dynamic_m[.float32, .float32, 24, 16384](ctx, m)
+            test_dispatch_dynamic_m[.float32, .float32, 32, 4096](ctx, m)
+            test_dispatch_dynamic_m[.float32, .float32, 64, 2048](ctx, m)
+            test_dispatch_dynamic_m[.float32, .float32, 576, 2048](ctx, m)
+            test_dispatch_dynamic_m[.float32, .float32, 580, 2048](ctx, m)
+            # N=896 stays on tiled GEMM for M>1, including cache-resident weights.
+            test_dispatch_dynamic_m[.float32, .float32, 896, 7168](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 32, 2880](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 128, 2816](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 128, 4096](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 256, 6144](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 288, 4096](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 384, 7168](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 576, 2048](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 576, 7168](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .float32, 288, 4096](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 2048, 2048](ctx, m)
+            test_dispatch_dynamic_m[.bfloat16, .bfloat16, 6144, 4096](ctx, m)
+
+        test_oob_epilogue_dynamic_m[.float32, .float32, 288, 4096](ctx, 8)
+        test_oob_epilogue_dynamic_m[.bfloat16, .bfloat16, 32, 4096](ctx, 8)
 
         # ============================================================
         # BF16 tests (N=4096, K=4096)
@@ -1067,6 +1020,8 @@ def main() raises:
         # before its own store into c.
         # ============================================================
         print("\nCompute closure through _matmul_gpu:")
+        test_dispatch_compute_fn[.float32, .float32, 288, 4096](ctx, 8)
+        test_dispatch_compute_fn[.bfloat16, .bfloat16, 128, 4096](ctx, 8)
         test_dispatch_compute_fn[.bfloat16, .bfloat16, 4096, 4096](ctx, 100)
         test_dispatch_compute_fn[.float8_e4m3fn, .float32, 256, 192](ctx, 256)
         test_dispatch_compute_fn[.float8_e4m3fn, .float32, 3000, 16384](

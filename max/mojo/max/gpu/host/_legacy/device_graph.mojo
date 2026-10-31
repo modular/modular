@@ -69,13 +69,13 @@ comptime _DeviceGraphBuilderPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceGraphBuilderCpp, origin]
+] = Optional[Pointer[_DeviceGraphBuilderCpp, origin]]
 
 comptime _DeviceGraphPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceGraphCpp, origin]
+] = Optional[Pointer[_DeviceGraphCpp, origin]]
 
 
 struct _DeviceGraphMemoryPoolCpp:
@@ -86,7 +86,7 @@ comptime _DeviceGraphMemoryPoolPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceGraphMemoryPoolCpp, origin]
+] = Optional[Pointer[_DeviceGraphMemoryPoolCpp, origin]]
 
 
 @fieldwise_init
@@ -362,10 +362,7 @@ struct DeviceGraphCache(Movable):
         var key = Self._closure_key(build)
 
         if case .Some(ctx) = ctx:
-            try:
-                key.write(t"Device({ctx.id()})", "|")
-            except e:
-                pass
+            key.write(t"Device({ctx.device().id})", "|")
 
         # Every contribution is separated, so no set of inputs can spell the
         # same key as a different set by running together -- inputs writing
@@ -883,7 +880,7 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         comptime for i in range(N):
             var ctx = ctxs[i]
             var key = DeviceGraphCache._closure_key(build_for)
-            key.write(t"|Device({ctx.id()})|")
+            key.write(t"|Device({ctx.device().id})|")
             key.write(key_for[i]())
 
             def build(mut b: DeviceGraphBuilder[_]) raises {imm}:
@@ -1760,7 +1757,6 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 
         var gpu_kernel = DeviceFunction[
             FuncType.__call__,
-            TypeList.of[Trait=AnyType, FuncType](),
             target=launch_target,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](self._ctx, func_attribute=func_attribute)
@@ -1865,7 +1861,6 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 
         var gpu_kernel = DeviceFunction[
             FuncType.__call__,
-            TypeList.of[Trait=AnyType, FuncType](),
             target=launch_target,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](self._ctx, func_attribute=func_attribute)
@@ -2614,7 +2609,7 @@ struct _DeviceGraphBuilderEnqueuer[
 
     @inline(.always)
     def enqueue[
-        args_origin: MutOrigin, //
+        args_origin: ImmOrigin, //
     ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
@@ -2625,7 +2620,7 @@ struct _DeviceGraphBuilderEnqueuer[
         num_attributes: Int,
         args: Pointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalPointer[mut=True, UInt64, _],
+        arg_sizes: Optional[MutPointer[UInt64, _]],
     ) -> _CString[]:
         """Adds a kernel-dispatch node to the borrowed graph builder.
 
@@ -2664,7 +2659,12 @@ struct _DeviceGraphBuilderEnqueuer[
             shared_mem_bytes,
             attributes,
             num_attributes,
-            args,
+            # TODO(MSTDL-1904): Do backends really need these to be mutable? I
+            #   hope none are mutating kernel arguments. For each backend, none
+            #   specifically say they mutate these, and the API docs frequently
+            #   imply they simply copy these values, but the C function
+            #   signatures also don't specifically *promise* they're `const`.
+            args.unsafe_mut_cast[True](),
             arg_count,
             arg_sizes,
             dep_args.ids,

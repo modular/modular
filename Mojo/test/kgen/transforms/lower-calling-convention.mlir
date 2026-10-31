@@ -20,20 +20,6 @@ kgen.func @none_func_other_results(%arg0: i32, %arg1: i64) -> (i32, !kgen.none, 
   hlcf.return %arg0, %none, %arg1 : i32, !kgen.none, i64
 }
 
-// CHECK-LABEL: kgen.func @none_stage_closure
-// CHECK-SAME: -> !kgen.generator<() -> ()>
-kgen.func @none_stage_closure() -> !kgen.generator<() -> !kgen.none> {
-  // CHECK: kgen.stage_closure = () {
-  %0 = kgen.stage_closure = () -> !kgen.none {
-    %none = kgen.param.constant: none = <#kgen.none>
-    // CHECK: return
-    // CHECK-NOT: !kgen.none
-    hlcf.return %none : !kgen.none
-  }
-  // CHECK: return %0 : !kgen.generator<() -> ()>
-  hlcf.return %0 : !kgen.generator<() -> !kgen.none>
-}
-
 // CHECK-LABEL: @early_return_loop
 kgen.func @early_return_loop() -> !kgen.none {
   %0 = kgen.param.constant:none = <#kgen.none>
@@ -172,15 +158,18 @@ kgen.func @byrefresult_fun(%arg0: index, %arg1: !kgen.pointer<none>) -> !kgen.sc
   %0 = kgen.param.constant: scalar<si32> = <42>
   hlcf.return %0 : !kgen.scalar<si32>
 }
+// CHECK-LABEL: kgen.func @byrefresult_fun_reg_stub(
+// CHECK-SAME: [[ARG0:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> imm_mem, [[ARG1:%.*]]: !kgen.pointer<none>, [[ARG2:%.*]]: !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) {
+// CHECK-NEXT: [[V1:%.*]] = pop.pointer.bitcast [[ARG0]] : !kgen.pointer<struct<(index) memoryOnly>> to !kgen.pointer<index>
+// CHECK-NEXT: [[V2:%.*]] = pop.load [[V1]] : !kgen.pointer<index>
+// CHECK-NEXT: [[V3:%.*]] = pop.pointer.bitcast [[ARG2]] : !kgen.pointer<struct<(scalar<si32>) memoryOnly>> to !kgen.pointer<scalar<si32>>
+// CHECK-NEXT: [[V4:%.*]] = kgen.call @byrefresult_fun([[V2]], [[ARG1]]) : (index, !kgen.pointer<none>) -> !kgen.scalar<si32>
+// CHECK-NEXT: pop.store [[V4]], [[V3]] : !kgen.pointer<scalar<si32>>
+// CHECK-NEXT: hlcf.return
+
 // CHECK-LABEL: kgen.func @byrefresult_create_reg_stub
 kgen.func @byrefresult_create_reg_stub() -> !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> imm_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none> {
-  // CHECK: kgen.stage_closure = ([[ARG0:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> imm_mem, [[ARG1:%.*]]: !kgen.pointer<none>, [[ARG2:%.*]]: !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) {
-  // CHECK-NEXT: [[V1:%.*]] = pop.pointer.bitcast [[ARG0]] : !kgen.pointer<struct<(index) memoryOnly>> to !kgen.pointer<index>
-  // CHECK-NEXT: [[V2:%.*]] = pop.load [[V1]] : !kgen.pointer<index>
-  // CHECK-NEXT: [[V3:%.*]] = pop.pointer.bitcast [[ARG2]] : !kgen.pointer<struct<(scalar<si32>) memoryOnly>> to !kgen.pointer<scalar<si32>>
-  // CHECK-NEXT: [[V4:%.*]] = kgen.call @byrefresult_fun([[V2]], [[ARG1]]) : (index, !kgen.pointer<none>) -> !kgen.scalar<si32>
-  // CHECK-NEXT: pop.store [[V4]], [[V3]] : !kgen.pointer<scalar<si32>>
-  // CHECK-NEXT: hlcf.return
+  // CHECK: kgen.create_func_ptr[{{.*}}: @byrefresult_fun_reg_stub]()
   %0 = kgen.create_reg_stub [(index, !kgen.pointer<none>) -> !kgen.scalar<si32>: @byrefresult_fun] : <(!kgen.pointer<struct<(index) memoryOnly>> imm_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
   hlcf.return %0 : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> imm_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
 }
@@ -191,7 +180,7 @@ kgen.func @noargs_fun() -> !kgen.none {
 }
 // CHECK-LABEL kgen.func @noargs_create_reg_stub
 kgen.func @noargs_create_reg_stub() -> !kgen.generator<() -> !kgen.none> {
-  // CHECK: kgen.create_closure[() -> (): @noargs_create_reg_stub]()
+  // CHECK: kgen.create_func_ptr[() -> (): @noargs_create_reg_stub]()
   %0 = kgen.create_reg_stub [() -> !kgen.none: @noargs_create_reg_stub] : <() -> !kgen.none>
   hlcf.return %0 : !kgen.generator<() -> !kgen.none>
 }

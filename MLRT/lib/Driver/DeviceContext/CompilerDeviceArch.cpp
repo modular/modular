@@ -20,20 +20,22 @@
 // DeviceContext implementation is Mojo-backed (it reaches `@mojo//:std`), which
 // would form a build-time bootstrap cycle; the legacy C++ DeviceContext runtime
 // is not linked either. This TU provides just that one static by `dlopen`ing
-// the driver plugin named in `MODULAR_DRIVER_PLUGINS` and querying device 0's
-// compute capability over the `M_driver_*` C ABI directly. It returns the
-// `vendor:sm_<cc>` form `ObjectCompiler` expects (an arch starting with `sm_`).
+// the accelerator plugin named in `MODULAR_DRIVER_PLUGINS` and reading device
+// 0's `arch` property over the `M_driver_*` C ABI directly. It returns the
+// `vendor:arch` form `ObjectCompiler` expects, as the HAL runtime's
+// `getAcceleratorArchOrEmpty` does.
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/Driver/DeviceContext/HALDeviceContext.h"
 
 #include "HAL/M_driver_api.h"
 #include "MLRT/Driver/DeviceContext/DeviceAPINames.h"
+#include "MLRT/Driver/DeviceContext/DriverPluginSpec.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Process.h"
 
-#include <cstdint>
 #include <dlfcn.h>
 #include <optional>
 #include <string>
@@ -43,76 +45,74 @@ namespace Driver {
 
 namespace {
 
-// CUDA `CU_DEVICE_ATTRIBUTE_*` codes, mirroring `Device::Attribute` in
-// DeviceContext.h and the Mojo `DeviceAttribute`.
-constexpr int32_t kComputeCapabilityMajor = 75;
-constexpr int32_t kComputeCapabilityMinor = 76;
-
-// `dlopen`s the plugin from `MODULAR_DRIVER_PLUGINS`
-// ("Name@/path/to/plugin.so"), queries device 0's compute capability, and
-// returns "nvidia:sm_<cc>" (with the `a` variant for cc >= 90). Returns "" when
-// no plugin/device is available (e.g. a GPU-less build host); callers then fall
-// back to an explicit target arch, exactly as with the previous legacy
-// DeviceContext implementation.
-std::string queryAcceleratorArch() {
-  std::optional<std::string> spec =
-      llvm::sys::Process::GetEnv("MODULAR_DRIVER_PLUGINS");
-  if (!spec || spec->empty())
-    return {};
-
-  // The spec is "Name@/path/to/plugin.so"; the path follows the '@' (or is the
-  // whole string when there is no '@').
-  llvm::StringRef soPath(*spec);
-  if (size_t at = soPath.find('@'); at != llvm::StringRef::npos)
-    soPath = soPath.substr(at + 1);
-
+// "<vendor>:<arch>" of device 0 when the plugin's api has a Mojo vendor, or ""
+// when it has no device. `std::nullopt` when the plugin doesn't load or has no
+// Mojo vendor, so the caller tries the next.
+std::optional<std::string> queryPluginArch(llvm::StringRef soPath) {
   void *lib = ::dlopen(std::string(soPath).c_str(), RTLD_NOW);
   if (!lib)
-    return {};
+    return std::nullopt;
+  auto closeLib = llvm::scope_exit([&] { ::dlclose(lib); });
 
   auto create = reinterpret_cast<M_driver_create_func_ptr_t>(
       ::dlsym(lib, "M_driver_create"));
   auto destroy = reinterpret_cast<M_driver_destroy_func_ptr_t>(
       ::dlsym(lib, "M_driver_destroy"));
+  auto property = reinterpret_cast<M_driver_property_func_ptr_t>(
+      ::dlsym(lib, "M_driver_property"));
   auto deviceGet = reinterpret_cast<M_driver_device_get_func_ptr_t>(
       ::dlsym(lib, "M_driver_device_get"));
-  auto deviceAttribute = reinterpret_cast<M_driver_device_attribute_func_ptr_t>(
-      ::dlsym(lib, "M_driver_device_attribute"));
-  if (!create || !destroy || !deviceGet || !deviceAttribute) {
-    ::dlclose(lib);
-    return {};
-  }
+  auto deviceProperty = reinterpret_cast<M_driver_device_property_func_ptr_t>(
+      ::dlsym(lib, "M_driver_device_property"));
+  if (!create || !destroy || !property || !deviceGet || !deviceProperty)
+    return std::nullopt;
 
   M_driver_version version{M_DRIVER_INTERFACE_VERSION_MAJOR,
                            M_DRIVER_INTERFACE_VERSION_MINOR,
                            M_DRIVER_INTERFACE_VERSION_PATCH};
   M_driver_driver_t driver = nullptr;
-  if (create(&version, &driver) != M_DRIVER_STATUS_SUCCESS || !driver) {
-    ::dlclose(lib);
-    return {};
-  }
+  if (create(&version, &driver) != M_DRIVER_STATUS_SUCCESS || !driver)
+    return std::nullopt;
+  auto destroyDriver = llvm::scope_exit([&] { destroy(driver); });
 
-  std::string arch;
+  // Plugins spell their api in any case ("CUDA", "Metal", "cpu").
+  const char *apiName = nullptr;
+  if (property(driver, M_DRIVER_PROPERTY_API, &apiName) !=
+          M_DRIVER_STATUS_SUCCESS ||
+      !apiName)
+    return std::nullopt;
+  std::string api = canonicalDeviceAPI(llvm::StringRef(apiName).lower()).str();
+  if (!hasMojoVendor(api))
+    return std::nullopt;
+
   M_driver_device_t device = nullptr;
-  int32_t major = 0;
-  int32_t minor = 0;
-  if (deviceGet(driver, /*device_id=*/0, &device) == M_DRIVER_STATUS_SUCCESS &&
-      device &&
-      deviceAttribute(device, kComputeCapabilityMajor, &major) ==
-          M_DRIVER_STATUS_SUCCESS &&
-      deviceAttribute(device, kComputeCapabilityMinor, &minor) ==
-          M_DRIVER_STATUS_SUCCESS) {
-    // The HAL backend is CUDA-only today, so the arch is the CUDA `sm_<cc>`
-    // form; cc >= 90 uses the "a" variant. Mirrors the Mojo HAL `arch_name`.
-    int cc = major * 10 + minor;
-    arch = "nvidia:sm_" + std::to_string(cc);
-    if (cc >= 90)
-      arch += "a";
-  }
+  char archName[M_DRIVER_DEVICE_PROPERTY_MAX_LEN + 1] = {};
+  if (deviceGet(driver, /*device_id=*/0, &device) != M_DRIVER_STATUS_SUCCESS ||
+      !device ||
+      deviceProperty(device, M_DRIVER_DEVICE_PROPERTY_ARCH, archName) !=
+          M_DRIVER_STATUS_SUCCESS ||
+      archName[0] == '\0')
+    return std::string();
+  return (llvm::Twine(apiToVendorPrefix(api)) + ":" + archName).str();
+}
 
-  destroy(driver);
-  ::dlclose(lib);
-  return arch;
+// The arch of the first plugin in `MODULAR_DRIVER_PLUGINS` whose api has a Mojo
+// vendor. Returns "" when there's none; callers then fall back to an explicit
+// target arch.
+std::string queryAcceleratorArch() {
+  std::optional<std::string> spec =
+      llvm::sys::Process::GetEnv("MODULAR_DRIVER_PLUGINS");
+  if (!spec)
+    return {};
+  for (const DriverPluginEntry &plugin : parseDriverPluginSpec(*spec)) {
+    // A bare path names no api, so only the plugin can say whether it's the
+    // CPU's.
+    if (plugin.name.equals_insensitive("cpu"))
+      continue;
+    if (std::optional<std::string> arch = queryPluginArch(plugin.path))
+      return *arch;
+  }
+  return {};
 }
 
 } // namespace

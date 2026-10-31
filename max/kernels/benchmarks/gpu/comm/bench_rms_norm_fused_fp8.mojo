@@ -226,15 +226,13 @@ def bench_rms_norm_fused_fp8[
 
             @inline(.always)
             def input_fn_fused[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) {var data_ptr_offset} -> SIMD[
-                in_dtype, width
-            ]:
+                width: Int
+            ](coords: Coord) {var data_ptr_offset} -> SIMD[in_dtype, width]:
                 var data_buf_offset = TileTensor(
                     data_ptr_offset, row_major(Coord(shape))
                 )
                 return data_buf_offset.load[width=width, alignment=width](
-                    Coord(coords)
+                    coords
                 )
 
             var fused_output_tt = TileTensor(
@@ -257,7 +255,7 @@ def bench_rms_norm_fused_fp8[
                 rank,
             ](
                 input_fn_fused,
-                shape,
+                Coord(shape),
                 fused_output_tt,
                 gamma_tensor,
                 epsilon,
@@ -366,13 +364,11 @@ def bench_rms_norm_fused_fp8[
 
     @inline(.always)
     def input_fn_fused_verify[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var data_base_ptr_verify} -> SIMD[
-        in_dtype, width
-    ]:
+        width: Int
+    ](coords: Coord) {var data_base_ptr_verify} -> SIMD[in_dtype, width]:
         var data_ptr = data_base_ptr_verify
         var data_buf = TileTensor(data_ptr, row_major(Coord(shape)))
-        return data_buf.load[width=width](Coord(coords))
+        return data_buf.load[width=width](coords)
 
     var fused_output_tt_verify = TileTensor(
         fused_verify_base_ptr,
@@ -393,7 +389,7 @@ def bench_rms_norm_fused_fp8[
         rank,
     ](
         input_fn_fused_verify,
-        shape,
+        Coord(shape),
         fused_output_tt_verify,
         gamma_tensor,
         epsilon,
@@ -450,16 +446,8 @@ def bench_rms_norm_fused_fp8[
             num_errors += 1
             if num_errors <= 10:  # Print first 10 errors
                 print(
-                    "Mismatch at index",
-                    i,
-                    ": separate =",
-                    fp8_val,
-                    ", fused =",
-                    fused_val,
-                    ", diff =",
-                    diff,
-                    ", rel =",
-                    rel_diff,
+                    t"Mismatch at index {i} : separate = {fp8_val} , fused ="
+                    t" {fused_val} , diff = {diff} , rel = {rel_diff}"
                 )
 
     var mean_abs_diff = sum_abs_diff / Float64(rows * cols)
@@ -467,7 +455,7 @@ def bench_rms_norm_fused_fp8[
 
     print("\nVerification Statistics:")
     print("  Total elements:", rows * cols)
-    print("  Exact matches:", num_exact, "(", percent_exact, "%)")
+    print(t"  Exact matches: {num_exact} ( {percent_exact} %)")
     print("  Max absolute diff:", max_diff)
     print("  Max relative diff:", max_rel_diff)
     print("  Mean absolute diff:", mean_abs_diff)
@@ -478,25 +466,17 @@ def bench_rms_norm_fused_fp8[
     if num_errors > 0:
         if error_rate > 0.05:  # More than 5% errors is concerning
             print(
-                "\nVerification FAILED:",
-                num_errors,
-                "mismatches (",
-                error_rate * 100.0,
-                "%) exceed threshold (rtol=",
-                rtol,
-                ", atol=",
-                atol,
-                ")",
+                t"\nVerification FAILED: {num_errors} mismatches ("
+                t" {error_rate * 100.0} %) exceed threshold (rtol= {rtol} ,"
+                t" atol= {atol} )"
             )
             raise Error("Output verification failed - too many mismatches")
         else:
             # Small number of mismatches might be due to FP8 scaling differences
             print(
-                "\nVerification PASSED with warnings:",
-                num_errors,
-                "minor mismatches (",
-                error_rate * 100.0,
-                "%) likely due to FP8 scaling differences",
+                t"\nVerification PASSED with warnings: {num_errors} minor"
+                t" mismatches ( {error_rate * 100.0} %) likely due to FP8"
+                t" scaling differences"
             )
     else:
         print(

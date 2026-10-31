@@ -40,7 +40,7 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Type, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 COLS = 6144  # M3 hidden size; the fuse threshold is bytes = rows*COLS*2.
 EPS = 1e-6
@@ -220,6 +220,8 @@ def _check(
 @pytest.mark.parametrize(
     "num_gpus, shard_rows, regime",
     [
+        # 2 GPUs is the only world size where the graph op enables PDL.
+        (2, 2, "fused"),  # 4 gathered rows -> below threshold -> fused kernel
         (4, 2, "fused"),  # 8 gathered rows -> below threshold -> fused kernel
         (4, 128, "two_launch"),  # 512 gathered rows -> above -> two-launch
     ],

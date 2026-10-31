@@ -25,7 +25,9 @@ def run_insert[
     var output_buffer = ctx.enqueue_create_buffer[dtype](width)
     output_buffer.enqueue_fill(0)
 
-    def kernel(output: MutPointer[Scalar[dtype], MutAnyOrigin]):
+    def kernel[
+        output_origin: MutOrigin
+    ](output: MutPointer[Scalar[dtype], output_origin]):
         if global_idx.x != 0:
             return
         var vec = SIMD[dtype, width]()
@@ -34,7 +36,9 @@ def run_insert[
         var sub = SIMD[dtype, input_width](Scalar[dtype](100))
         output.unsafe_store(0, vec.insert[offset=offset](sub))
 
-    ctx.enqueue_function[kernel](output_buffer, grid_dim=1, block_dim=1)
+    ctx.enqueue_function[kernel[origin_of(output_buffer)]](
+        output_buffer, grid_dim=1, block_dim=1
+    )
     ctx.enqueue_copy(output_host, output_buffer)
     ctx.synchronize()
 

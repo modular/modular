@@ -40,15 +40,16 @@ import numpy.typing as npt
 from max.driver import Accelerator, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.tensor import Tensor
 from max.pipelines.audio import AudioExecutorOutputs
 from max.pipelines.context import AudioContext
+from max.pipelines.lib.memory_estimation import FreeMemory
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.modeling.base import TensorStruct
 from max.profiler import traced
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.tensor import Tensor
 
 from . import denoise
 from .autoregressive import (
@@ -157,11 +158,7 @@ class MiniMaxMusic3Executor(
     def _must_stage(checkpoint: Checkpoint, device: Device) -> bool:
         """Whether the components have to take turns on this device."""
         weights = checkpoint.weight_bytes()
-        # A card that reports no free memory is reporting nothing, not a full
-        # card, so fall back to its capacity as the memory estimator does.
-        free = int(device.stats["free_memory"]) or int(
-            device.stats["total_memory"]
-        )
+        free = FreeMemory.from_stats(device).hi
         staged = weights + ACTIVATION_HEADROOM > free
         logger.info(
             "MiniMax Music 3: %s of weights against %s free, %s residency.",
@@ -238,8 +235,9 @@ class MiniMaxMusic3Executor(
 
     @traced(message="MiniMaxMusic3Executor.execute")
     def execute(self, inputs: MiniMaxMusic3Inputs) -> AudioExecutorOutputs:
-        """Runs the language model, diffusion, and vocoder stages, returning
-        the finished stereo waveform.
+        """Runs the language model, diffusion and vocoder stages.
+
+        The result is the finished stereo waveform.
         """
         seed = _read(inputs.seed)
         conditioning = self._generate(inputs, seed)
@@ -389,8 +387,11 @@ class MiniMaxMusic3Executor(
         return self._diffusion
 
     def _vocoder_stage(self) -> ChunkedVocoder:
-        """The waveform decoder, which stays float32 -- it is small, and it is
-        the one component whose rounding would be audible rather than diffuse."""
+        """The waveform decoder, which stays float32.
+
+        It is small, and it is the one component whose rounding would be audible
+        rather than diffuse.
+        """
         if self._vocoder is None:
             self._evict(keep="vocoder")
             self._vocoder = ChunkedVocoder(

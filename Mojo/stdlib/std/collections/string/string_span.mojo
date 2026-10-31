@@ -47,9 +47,9 @@ from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
-from std.memory import unsafe_memcmp, pack_bits, MaybeUninit
-from std.utils._nicheable import NicheIndex, UnsafeNicheable, _FieldNiche
-from std.python import Python, PythonObject
+from std.memory import unsafe_memcmp, pack_bits
+from std.utils._nicheable import _FieldNicheable
+from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
 
 
@@ -96,6 +96,7 @@ print(format_string.format("bats", 6))     # => bats: 6
 
 struct StringSpan[origin: ImmOrigin](
     Boolable,
+    ConvertibleToPython,
     Defaultable,
     Equatable,
     FloatableRaising,
@@ -105,8 +106,8 @@ struct StringSpan[origin: ImmOrigin](
     KeyElement,
     PathLike,
     TrivialRegisterPassable,
-    UnsafeNicheable,
     Writable,
+    _FieldNicheable,
 ):
     """An immutable, non-owning view into encoded string data.
 
@@ -516,25 +517,26 @@ struct StringSpan[origin: ImmOrigin](
         except:
             raise cpython.get_error()
 
-    comptime _Niche = _FieldNiche[Self, "_slice"]
+    comptime _KgenNichedFieldName = "_slice".value
 
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def niche_count() -> Int:
-        return Self._Niche.niche_count()
+    comptime ConversionToPythonErrorType = Error
+    """The error type raised if conversion to a PythonObject fails."""
 
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
-        Self._Niche.write_niche[index](memory)
+    def to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a `PythonObject`.
 
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
-        return Self._Niche.classify_niche(memory)
+        Returns:
+            A `PythonObject` representing this value.
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
+        """
+        ref cpy = Python().cpython()
+        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # be valid UTF-8.
+        var unicode = cpy.PyUnicode_DecodeUTF8(self)
+        if not unicode:
+            raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=unicode)
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
@@ -2110,7 +2112,7 @@ struct StringSpan[origin: ImmOrigin](
         python newline character. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-        `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
+        `"\\r\\n"` and `"\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
         Parameters:
             single_character: Whether to evaluate the stringslice as a single
@@ -2143,7 +2145,7 @@ struct StringSpan[origin: ImmOrigin](
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-        `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
+        `"\\r\\n"` and `"\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
         Args:
             keepends: If True, line breaks are kept in the resulting strings.
@@ -2691,8 +2693,8 @@ def _unsafe_strlen(ptr: ImmPointer[Byte, _], max: Int = Int.MAX) -> Int:
 @inline(.always)
 def _memchr[
     dtype: DType, //
-](source: ImmSpan[Scalar[dtype], _], char: Scalar[dtype]) -> OptionalPointer[
-    Scalar[dtype], source.origin
+](source: ImmSpan[Scalar[dtype], _], char: Scalar[dtype]) -> Optional[
+    Pointer[Scalar[dtype], source.origin]
 ]:
     if (
         __is_run_in_comptime_interpreter
@@ -2714,8 +2716,8 @@ def _memchr_impl[
 ](
     source: ImmSpan[Scalar[dtype], _],
     char: Scalar[dtype],
-) -> OptionalPointer[
-    Scalar[dtype], source.origin
+) -> Optional[
+    Pointer[Scalar[dtype], source.origin]
 ]:
     var haystack = source.unsafe_ptr()
     var length = len(source)
@@ -2744,7 +2746,7 @@ def _memmem[
 ](
     haystack_span: ImmSpan[Scalar[dtype], _],
     needle_span: ImmSpan[Scalar[dtype], _],
-) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
+) -> Optional[Pointer[Scalar[dtype], haystack_span.origin]]:
     if (
         __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
@@ -2781,7 +2783,7 @@ def _memmem_impl[
 ](
     haystack_span: ImmSpan[Scalar[dtype], _],
     needle_span: ImmSpan[Scalar[dtype], _],
-) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
+) -> Optional[Pointer[Scalar[dtype], haystack_span.origin]]:
     var haystack: Pointer[
         Scalar[dtype], haystack_span.origin
     ] = haystack_span.unsafe_ptr()
@@ -2850,8 +2852,8 @@ def _memrchr[
 ](
     source: ImmSpan[Scalar[dtype], _],
     char: Scalar[dtype],
-) -> OptionalPointer[
-    Scalar[dtype], source.origin
+) -> Optional[
+    Pointer[Scalar[dtype], source.origin]
 ]:
     var base: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
     for i in reversed(range(len(source))):
@@ -2866,7 +2868,7 @@ def _memrmem[
 ](
     haystack: ImmSpan[Scalar[dtype], _],
     needle: ImmSpan[Scalar[dtype], _],
-) -> OptionalPointer[Scalar[dtype], haystack.origin]:
+) -> Optional[Pointer[Scalar[dtype], haystack.origin]]:
     var hp: Pointer[Scalar[dtype], haystack.origin] = haystack.unsafe_ptr()
     if not needle:
         return hp

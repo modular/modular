@@ -20,7 +20,6 @@ from nn.attention.mha_mask import (
     MHAMask,
     TileMaskStatus,
 )
-from std.utils.index import Index
 from std.testing import assert_equal, assert_true
 
 
@@ -32,8 +31,8 @@ def compute_total_iters0[
     while (
         mask.status(
             seq_id,
-            Index[dtype=.int32](Int(q_row), Int(kv_row)),
-            Index[dtype=.int32](BM, BN),
+            (Int(q_row), Int(kv_row)),
+            (Int(BM), Int(BN)),
         )
         == TileMaskStatus.FULL_MASK
     ):
@@ -46,8 +45,8 @@ def compute_total_iters0[
         if (
             mask.status(
                 seq_id,
-                Index[dtype=.int32](Int(q_row), Int(kv_row)),
-                Index[dtype=.int32](BM, BN),
+                (Int(q_row), Int(kv_row)),
+                (Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -67,8 +66,8 @@ def compute_total_iters1[
             Int(
                 mask.status(
                     seq_id,
-                    Index[dtype=.int32](Int(q_row), Int(kv_row)),
-                    Index[dtype=.int32](BM, BN),
+                    (Int(q_row), Int(kv_row)),
+                    (Int(BM), Int(BN)),
                 )
                 != TileMaskStatus.FULL_MASK
             )
@@ -82,8 +81,8 @@ def status[
 ](mask: MaskType, q_row: UInt32, kv_row: UInt32) -> TileMaskStatus:
     return mask.status(
         UInt32(0),
-        Index[dtype=.int32](q_row, kv_row),
-        Index[dtype=.int32](BM, BN),
+        (Int(q_row), Int(kv_row)),
+        (Int(BM), Int(BN)),
     )
 
 
@@ -124,13 +123,7 @@ def test_mask[
                     print(mask_ends[i], end="")
                 print("]")
                 print("q_row num_keys kv_row =", q_row, end, kv_row)
-                print(
-                    "mask_status, ref_mask = ",
-                    mask_status,
-                    ", ",
-                    ref_mask,
-                    sep="",
-                )
+                print(t"mask_status, ref_mask = {mask_status}, {ref_mask}")
             assert_equal(mask_status, ref_mask)
             kv_row += UInt32(BN)
     if kv_row < end:

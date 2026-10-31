@@ -1452,12 +1452,8 @@ def _flash_attention_kv_cache[
     comptime depth_dim = cache_t.kv_params.head_size
     comptime cache_type = cache_t.dtype
 
-    comptime assert cache_type == dtype, (
-        "Expected cache dtype ("
-        + String(cache_type)
-        + ") to match input dtype ("
-        + String(dtype)
-        + ")"
+    comptime assert cache_type == dtype, String(
+        t"Expected cache dtype ({cache_type}) to match input dtype ({dtype})"
     )
 
     def input_k_fn[

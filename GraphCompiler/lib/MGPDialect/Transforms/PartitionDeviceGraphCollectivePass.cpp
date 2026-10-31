@@ -206,6 +206,20 @@ LogicalResult partitionStagingOp(DeviceGraphStagingOp stagingOp,
 
         StableAddrState stableState(stableIndices, builderArg);
 
+        // Device graphs have no notion of cross-device execution-order
+        // dependencies. Cross-device chains only have meaning in the presence
+        // of distributed operations, which ensure synchronization with their
+        // peers internally.
+        auto remapRemoteChains = [&](AsyncRoutineOp compiledRegion) {
+          for (Value operand : compiledRegion.getOperands()) {
+            if (!isa<M::MEF::ChainType>(operand.getType()) ||
+                mapper.contains(operand))
+              continue;
+            Value dummyChain = M::MOGG::ChainDummyOp::create(builder, loc);
+            mapper.map(operand, dummyChain);
+          }
+        };
+
         for (Operation &op : stagingOp.getBodyBlock().without_terminator()) {
           if (auto stable = dyn_cast<DeviceGraphStableCreateOp>(&op)) {
             if (stable.getDevice() != device)
@@ -240,6 +254,9 @@ LogicalResult partitionStagingOp(DeviceGraphStagingOp stagingOp,
           // the staging body, which is erased once the collective is built.
           if (opDev != device && !isHostOp)
             continue;
+
+          if (!isHostOp)
+            remapRemoteChains(compiledRegion);
 
           // An operand is available here when it is a staging input (mapped
           // up front), a result already cloned into this region, or a stable

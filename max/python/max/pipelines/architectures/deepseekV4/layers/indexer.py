@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """The DeepSeek-V4 lightning indexer.
 
 Reference: ``inference/model.py`` class ``Indexer``. Only ``compress_ratio == 4``
@@ -59,9 +58,9 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.kernels import indexer_score_ragged, top_k_per_row
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.kernels import indexer_score_ragged, top_k_per_row
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 from ..model_config import DeepseekV4Config
 from .compressor import DeepseekV4Compressor
@@ -107,8 +106,10 @@ class DeepseekV4Indexer(Module):
         )
 
     def shard_heads(self, num_devices: int) -> None:
-        """Declares the reference's tensor-parallel split: ``wq_b`` and
-        ``weights_proj`` per head. The compressor is shared and stays whole.
+        """Splits ``wq_b`` and ``weights_proj`` per head.
+
+        That is the reference's tensor-parallel split; the compressor is shared
+        and stays whole.
         """
         if self.n_heads % num_devices:
             raise ValueError(

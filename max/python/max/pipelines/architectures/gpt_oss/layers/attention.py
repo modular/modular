@@ -20,20 +20,20 @@ from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.attention import MHAMaskVariant, num_heads_for_device
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant, num_heads_for_device
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.rotary_embedding import YarnRotaryEmbedding
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.rotary_embedding import YarnRotaryEmbedding
+from max.nn.legacy.stacked_linear import StackedLinear
 
 
 class GptOssAttention(Module, Shardable):
@@ -84,8 +84,11 @@ class GptOssAttention(Module, Shardable):
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
+            layer_type: Whether this layer is a sliding-window or a full
+                attention layer.
+            local_window_size: The number of tokens a sliding layer attends
+                over.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -142,6 +145,7 @@ class GptOssAttention(Module, Shardable):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
@@ -192,6 +196,7 @@ class GptOssAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter

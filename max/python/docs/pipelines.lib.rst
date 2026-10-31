@@ -18,6 +18,7 @@ Submodules
    :nosignatures:
 
    max.pipelines.lib.arch_lookup
+   max.pipelines.lib.graph_specs
    max.pipelines.lib.interfaces
    max.pipelines.lib.log_probabilities
    max.pipelines.lib.pipeline_parallel
@@ -29,6 +30,8 @@ Submodules
    pipelines.lib.arch_lookup
    pipelines.lib.auto_processor
    pipelines.lib.generate
+   pipelines.lib.generate_images
+   pipelines.lib.graph_specs
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
    pipelines.lib.pipeline_parallel
@@ -89,6 +92,23 @@ Tokenizers
    AudioGenerationTokenizer
    PixelGenerationTokenizer
 
+Weight transform
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   Bitcast
+   CheckpointRole
+   Ignore
+   WeightEntry
+   WeightNaming
+   WeightRenaming
+   WeightRule
+   WeightTransform
+
 Utilities
 ---------
 
@@ -102,7 +122,6 @@ Utilities
    MemoryPlan
    ModelManifest
    RetrievedPipeline
-   Speculator
    VisionPreprocessCache
    WeightPathParser
 
@@ -114,6 +133,7 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   apply_weight_entries
    build_eos_tracker_for_request
    convert_max_config_value
    deep_merge_max_configs

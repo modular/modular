@@ -19,7 +19,9 @@ import math
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.sharding import (
+from max.graph import ShapeLike
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
@@ -30,9 +32,7 @@ from max.experimental.sharding import (
     Unknown,
     visualize,
 )
-from max.experimental.sharding.visualize import _grid, _svg
-from max.experimental.tensor import Tensor
-from max.graph import ShapeLike
+from max.tensor.sharding.visualize import _grid, _svg
 
 
 def mesh(*shape: int) -> DeviceMesh:

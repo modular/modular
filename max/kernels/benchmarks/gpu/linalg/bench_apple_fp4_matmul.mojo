@@ -179,26 +179,12 @@ def _bench_fp4_shape(
     var matprealloc_sec = (perf_counter() - t3) / Float64(hot)
 
     print(
-        "  ",
-        m,
-        "x",
-        n,
-        "x",
-        k,
-        ":  adaptive",
-        adaptive_sec * 1000.0,
-        "ms (",
-        flops / (adaptive_sec * 1e12),
-        "TF/s) | fused",
-        fused_sec * 1000.0,
-        "ms | mat-alloc",
-        matalloc_sec * 1000.0,
-        "ms | mat-prealloc",
-        matprealloc_sec * 1000.0,
-        "ms | fused/mat-alloc",
-        fused_sec / matalloc_sec,
-        "| alloc-overhead-ms",
-        (matalloc_sec - matprealloc_sec) * 1000.0,
+        t"   {m} x {n} x {k} :  adaptive {adaptive_sec * 1000.0} ms ("
+        t" {flops / (adaptive_sec * 1e12)} TF/s) | fused"
+        t" {fused_sec * 1000.0} ms | mat-alloc {matalloc_sec * 1000.0} ms |"
+        t" mat-prealloc {matprealloc_sec * 1000.0} ms | fused/mat-alloc"
+        t" {fused_sec / matalloc_sec} | alloc-overhead-ms"
+        t" {(matalloc_sec - matprealloc_sec) * 1000.0}"
     )
 
     _ = act_host^

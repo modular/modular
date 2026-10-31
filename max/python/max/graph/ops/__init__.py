@@ -46,11 +46,15 @@ Shapes are aligned from the trailing dimension, and each pair of dimensions
 must either match exactly, be ``1``, or be absent. Size-1 dimensions (and
 any missing leading dimensions) are stretched to match the corresponding
 dimension of the other input. If the shapes can't be reconciled under
-these rules, MAX raises an error."""
+these rules, MAX raises an error.
+"""
 
 from __future__ import annotations
 
 # Import types for type annotations
+import types as _types
+
+from .._api_boundary import register_api_boundaries as _register_api_boundaries
 from ..value import TensorValue, TensorValueLike
 from . import (
     allreduce,
@@ -59,12 +63,13 @@ from . import (
     random,
     reducescatter,
 )
-from .allgather import allgather
+from .allgather import allgather, allgather_rows_slice
 from .allgather_rms_norm import (
     allgather_rms_norm,
     allgather_rms_norm_quant_mxfp6,
     allgather_rms_norm_quant_mxfp8,
 )
+from .allreduce_rms_norm import allreduce_rms_norm
 from .argsort import argsort
 from .band_part import band_part
 from .bottom_k import bottom_k
@@ -186,3 +191,14 @@ def max(  # type: ignore[no-redef]
         raise ValueError("Axis not allowed for elementwise max.")
     axis = -1 if axis is None else axis
     return _reduce_max(x, axis=axis) if y is None else _elementwise_max(x, y)
+
+
+# Each op is where a caller's code ends and MAX's begins (see `_api_boundary`),
+# including the ones only a submodule exports, such as `ops.random.normal`.
+_register_api_boundaries(globals(), __name__)
+for _value in list(globals().values()):
+    if isinstance(_value, _types.ModuleType) and _value.__name__.startswith(
+        f"{__name__}."
+    ):
+        _register_api_boundaries(vars(_value), __name__)
+del _value

@@ -51,6 +51,7 @@ from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
+from std.utils.coord import Coord
 
 
 def launch_grouped_gemm_with_templates[
@@ -173,24 +174,15 @@ def test_existing_kernel_single_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
-    cluster_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test existing block-scaled kernel with a single problem.
 
     This establishes that the kernel and tensor setup work correctly.
     """
     print("\n--- Testing existing kernel (single group baseline) ---")
-    print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " cta_group=",
-        cta_group,
-    )
+    print(t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group}")
 
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
 
@@ -358,21 +350,9 @@ def test_existing_kernel_single_group[
     var avg_diff = sum_diff / Float32(c_size)
 
     if max_diff < 0.1:
-        print(
-            "  PASSED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  PASSED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
     else:
-        print(
-            "  FAILED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  FAILED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
         raise Error("Test failed - kernel output does not match cuBLAS")
 
 
@@ -387,24 +367,15 @@ def test_grouped_kernel_single_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
-    cluster_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with a single group (should behave like non-grouped).
 
     This tests the grouped infrastructure with trivial grouping.
     """
     print("\n--- Testing grouped kernel (single group) ---")
-    print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " cta_group=",
-        cta_group,
-    )
+    print(t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group}")
 
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
     comptime max_groups = 1
@@ -670,21 +641,9 @@ def test_grouped_kernel_single_group[
     var avg_diff = sum_diff / Float32(c_size)
 
     if max_diff < 0.1:
-        print(
-            "  PASSED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  PASSED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
     else:
-        print(
-            "  FAILED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  FAILED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
         raise Error("Grouped kernel output does not match cuBLAS")
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
@@ -703,8 +662,8 @@ def test_grouped_kernel_multi_group_same_ptr[
     num_groups: Int,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
-    cluster_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with multiple groups using same pointers.
 
@@ -716,16 +675,8 @@ def test_grouped_kernel_multi_group_same_ptr[
         "\n--- Testing grouped kernel (", num_groups, " groups, same ptr) ---"
     )
     print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " num_groups=",
-        num_groups,
-        " cta_group=",
-        cta_group,
+        t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  num_groups= {num_groups} "
+        t" cta_group= {cta_group}"
     )
 
     # Allocate matrices (same as single-group)
@@ -981,9 +932,9 @@ def test_grouped_kernel_multi_group_same_ptr[
     var avg_diff = sum_diff / Float32(c_size)
 
     if max_diff < 0.1:
-        print("  PASSED (max_diff=", max_diff, ", avg_diff=", avg_diff, ")")
+        print(t"  PASSED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
     else:
-        print("  FAILED (max_diff=", max_diff, ", avg_diff=", avg_diff, ")")
+        print(t"  FAILED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
         raise Error(
             "Grouped kernel (multi-group same ptr) does not match cuBLAS"
         )
@@ -1003,8 +954,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
-    cluster_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with 2 groups using different pointers per group.
 
@@ -1012,16 +963,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
     A, B, C, SFA, SFB tensors with different base addresses.
     """
     print("\n--- Testing grouped kernel (2 groups, different ptrs) ---")
-    print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " cta_group=",
-        cta_group,
-    )
+    print(t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group}")
 
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
     comptime max_groups = 2
@@ -1395,8 +1337,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
     print("\n--- Baseline test passed ---")
@@ -1409,8 +1351,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](
         ctx,
         Idx[256],  # Same as baseline
@@ -1428,8 +1370,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[512], Idx[256], Idx[128])
 
     # Test 4: Larger N dimension (more N tiles)
@@ -1440,8 +1382,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[512], Idx[128])
 
     # Test 5: Larger K dimension (more K iterations)
@@ -1452,8 +1394,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[256])
 
     # Test 6: All dimensions larger
@@ -1464,8 +1406,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[512], Idx[512], Idx[256])
 
     # Test 7: Minimum tile size (single tile per dimension)
@@ -1476,8 +1418,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[128], Idx[128], Idx[128])
 
     # Test 8: Many K iterations
@@ -1488,8 +1430,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[512])
 
     print("\n--- Multi-group test (same pointers) ---")
@@ -1504,8 +1446,8 @@ def main() raises:
         num_groups=2,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
     # Test 10: Four groups with same size and same pointers
@@ -1517,8 +1459,8 @@ def main() raises:
         num_groups=4,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
     print("\n--- Multi-group test (different pointers) ---")
@@ -1532,8 +1474,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape=Index(128, 128, 32),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(Int(128), Int(128), Int(32)),
+        cluster_shape=(Int(1), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
     # 2SM tests - using run_2sm() production kernel
@@ -1550,10 +1492,12 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,  # 2SM mode
-        mma_shape=Index(
-            256, 128, 32
+        mma_shape=(
+            Int(256),
+            Int(128),
+            Int(32),
         ),  # mma[0]=256 for BM=128, mma[1]=128 for BN=128
-        cluster_shape=Index(2, 1, 1),  # 2 CTAs per cluster
+        cluster_shape=(Int(2), Int(1), Int(1)),  # 2 CTAs per cluster
     ](ctx, Idx[256], Idx[256], Idx[128])
 
     # Test 13: 2SM with multiple tiles (512x512)
@@ -1564,8 +1508,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(Int(256), Int(128), Int(32)),
+        cluster_shape=(Int(2), Int(1), Int(1)),
     ](ctx, Idx[512], Idx[512], Idx[256])
 
     # Test 14: 2SM multi-group (same pointers)
@@ -1577,8 +1521,8 @@ def main() raises:
         num_groups=2,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(Int(256), Int(128), Int(32)),
+        cluster_shape=(Int(2), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
     # Test 15: 2SM multi-group (different pointers)
@@ -1589,8 +1533,8 @@ def main() raises:
         scales_dtype,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape=Index(256, 128, 32),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(Int(256), Int(128), Int(32)),
+        cluster_shape=(Int(2), Int(1), Int(1)),
     ](ctx, Idx[256], Idx[256], Idx[128])
 
     print("\n" + "=" * 60)

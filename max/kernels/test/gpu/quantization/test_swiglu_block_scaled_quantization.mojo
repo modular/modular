@@ -38,10 +38,13 @@ from linalg.swiglu_activation import (
 
 
 def _gated_activation[
-    activation: swiglu_activation_type, N: Int
+    activation: swiglu_activation_type,
+    N: Int,
+    h_origin: MutOrigin,
+    gate_up_origin: MutOrigin,
 ](
-    h: MutPointer[BFloat16, MutAnyOrigin],
-    gate_up: MutPointer[BFloat16, MutAnyOrigin],
+    h: MutPointer[BFloat16, h_origin],
+    gate_up: MutPointer[BFloat16, gate_up_origin],
     rows: Int32,
 ):
     var i = Int(global_idx.x)
@@ -111,7 +114,9 @@ def test_swiglu_quantize_matches_unfused[
                     v *= 1000
                 t[row, col] = v.cast[DType.bfloat16]()
 
-    ctx.enqueue_function[_gated_activation[activation, N]](
+    ctx.enqueue_function[
+        _gated_activation[activation, N, origin_of(h), origin_of(gate_up)]
+    ](
         h,
         gate_up,
         Int32(m),
@@ -125,12 +130,12 @@ def test_swiglu_quantize_matches_unfused[
         TileTensor(
             out_ref.unsafe_ptr().unsafe_bitcast[Scalar[out_dtype]](),
             out_layout,
-        ).as_unsafe_any_origin(),
+        ),
         TileTensor(
             sf_ref.unsafe_ptr().unsafe_bitcast[Scalar[scales_dtype]](),
             scales_layout,
-        ).as_unsafe_any_origin(),
-        TileTensor(h, h_layout).as_unsafe_any_origin(),
+        ),
+        TileTensor(h, h_layout).as_imm(),
         num_cols=N,
         num_cols_padded=N,
     )
@@ -140,12 +145,12 @@ def test_swiglu_quantize_matches_unfused[
         TileTensor(
             out_fused.unsafe_ptr().unsafe_bitcast[Scalar[out_dtype]](),
             out_layout,
-        ).as_unsafe_any_origin(),
+        ),
         TileTensor(
             sf_fused.unsafe_ptr().unsafe_bitcast[Scalar[scales_dtype]](),
             scales_layout,
-        ).as_unsafe_any_origin(),
-        TileTensor(gate_up, gate_up_layout).as_unsafe_any_origin(),
+        ),
+        TileTensor(gate_up, gate_up_layout).as_imm(),
         Float32(1.0),
         ctx,
     )
@@ -154,14 +159,14 @@ def test_swiglu_quantize_matches_unfused[
     with out_ref.map_to_host() as a, out_fused.map_to_host() as b:
         for i in range(len(a)):
             if a[i] != b[i]:
-                print("M =", m, "N =", N, "output byte", i, a[i], "vs", b[i])
+                print(t"M = {m} N = {N} output byte {i} {a[i]} vs {b[i]}")
                 raise Error("fused output differs from the unfused path")
     with sf_ref.map_to_host() as a, sf_fused.map_to_host() as b:
         for i in range(len(a)):
             if a[i] != b[i]:
-                print("M =", m, "N =", N, "scale byte", i, a[i], "vs", b[i])
+                print(t"M = {m} N = {N} scale byte {i} {a[i]} vs {b[i]}")
                 raise Error("fused scales differ from the unfused path")
-    print("fused matches unfused:", out_dtype, "M =", m, "N =", N)
+    print(t"fused matches unfused: {out_dtype} M = {m} N = {N}")
 
 
 def test_swiglu_quantize_rejects_unpacked_fp4_output(
@@ -186,14 +191,12 @@ def test_swiglu_quantize_rejects_unpacked_fp4_output(
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
             activation=get_swiglu_activation["silu"],
         ](
-            TileTensor(out, row_major(Idx[m], Idx[N])).as_unsafe_any_origin(),
+            TileTensor(out, row_major(Idx[m], Idx[N])),
             TileTensor(
                 sf.unsafe_ptr().unsafe_bitcast[Scalar[NVFP4_SF_DTYPE]](),
                 scales_layout,
-            ).as_unsafe_any_origin(),
-            TileTensor(
-                gate_up, row_major(Idx[m], Idx[2 * N])
-            ).as_unsafe_any_origin(),
+            ),
+            TileTensor(gate_up, row_major(Idx[m], Idx[2 * N])).as_imm(),
             Float32(1.0),
             ctx,
         )

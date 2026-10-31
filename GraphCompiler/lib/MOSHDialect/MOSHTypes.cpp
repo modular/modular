@@ -29,7 +29,8 @@ using namespace MOSH;
 // ShapeType
 //===----------------------------------------------------------------------===//
 
-LogicalResult ShapeType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ShapeType::printValue(AsmPrinter &p, TypedAttr value,
+                                    KGEN::KGENParamPrinter &printer) const {
   if (!llvm::isa<KGEN::ParamDeclRefAttr, ShapeAttr>(value))
     return failure();
   printShapeTypedAttr(p, value);

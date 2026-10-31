@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MHAKVCacheParams,
@@ -200,6 +200,15 @@ def linear_state_regions(
     Sharded here: a device holds only its own slice of the heads.
 
     Args:
+        num_linear_layers: How many linear-attention layers the model has.
+        key_head_dim: Head width of the linear layers' key projection.
+        num_key_heads: How many key heads the linear layers have.
+        value_head_dim: Head width of the linear layers' value projection.
+        num_value_heads: How many value heads the linear layers have.
+        conv_kernel_dim: Width of the convolution kernel the linear layers
+            run.
+        dtype: Element type of the state buffers.
+        num_devices: How many devices the state is sharded over.
         ring_len: Record capacity of the speculative verify ring, or zero to
             declare no ring. One of :data:`COMPILED_RING_LENS`.
 
@@ -244,7 +253,7 @@ def linear_state_regions(
 
     num_key_heads_per_device = num_key_heads // num_devices
     ring_row_records = num_key_heads_per_device * ring_len
-    record_stride = _ring_record_stride(
+    record_stride = ring_record_stride(
         record_elements=key_head_dim
         + (num_value_heads // num_key_heads) * (value_head_dim + 1),
         bytes_per_element=num_linear_layers
@@ -264,7 +273,7 @@ def linear_state_regions(
     return (*regions, ring)
 
 
-def _ring_record_stride(
+def ring_record_stride(
     *, record_elements: int, bytes_per_element: int, page_multiple_of: int
 ) -> int:
     """Returns the padded stride of one ring record.

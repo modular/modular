@@ -19,6 +19,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/StringExtras.h"
 #include "Support/max_license/Tracy/Tracy.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -491,9 +492,10 @@ MemoryManagerFreeList::~MemoryManagerFreeList() {
   flushToParent();
 }
 
-void MemoryManager::PendingFrees::add(DeviceEventRef event,
-                                      MemoryManagerFreeList *fl, int bufferId) {
-  records_.push_back({++nextSeq_, std::move(event), fl, bufferId});
+void MemoryManager::PendingFrees::add(
+    llvm::SmallVector<DeviceEventRef, 2> events, MemoryManagerFreeList *fl,
+    int bufferId) {
+  records_.push_back({++nextSeq_, std::move(events), fl, bufferId});
   syncCount();
 }
 
@@ -519,7 +521,8 @@ MemoryManager::PendingFrees::collect(const MemoryManagerFreeList *fl) const {
   llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>> out;
   for (const Record &record : records_) {
     if (fl == nullptr || record.fl == fl)
-      out.emplace_back(record.seq, record.event);
+      for (const DeviceEventRef &event : record.events)
+        out.emplace_back(record.seq, event);
   }
   return out;
 }
@@ -564,19 +567,26 @@ MemoryManager::drainCompletedFrees(const MemoryManagerFreeList *only) {
   }
 
   llvm::SmallVector<uint64_t> completed;
+  // A record completes only once every one of its events has.
+  llvm::SmallDenseSet<uint64_t> blocked;
   ErrorOrSuccess firstError = success();
   for (auto &[seq, event] : candidates) {
-    // Each record has its own event, so a busy stream must not block recovery
+    // Each record has its own events, so a busy stream must not block recovery
     // of an idle one -- keep going past a failed query and report it below.
     ErrorOr<bool> ready = event->isReady();
     if (ready.isError()) {
       if (!firstError.isError())
         firstError = ready.takeError();
+      blocked.insert(seq);
       continue;
     }
     if (*ready)
       completed.push_back(seq);
+    else
+      blocked.insert(seq);
   }
+  llvm::erase_if(completed,
+                 [&](uint64_t seq) { return blocked.contains(seq); });
   if (completed.empty())
     return firstError;
 
@@ -603,8 +613,7 @@ void MemoryManagerFreeList::logMsg(llvm::Twine msg, size_t info,
   memoryManager_.logErr("[" + label_ + "] " + msg, info, size);
 }
 
-void MemoryManagerFreeList::flushToParent() {
-  std::lock_guard<std::mutex> lock(memoryManager_.mu_);
+void MemoryManagerFreeList::flushCachedToParentLocked() {
   LOG_MSG("Flush all to parent");
   // The caller waited for these records' events and the loop below migrates the
   // same buffers, so they are redundant; leaving one queued would let a later
@@ -614,6 +623,43 @@ void MemoryManagerFreeList::flushToParent() {
   for (int i = 0; i < kNumFreeBufferLists; ++i) {
     flushFreeBuffersToParent(i);
   }
+}
+
+bool MemoryManagerFreeList::deferCachedToParent() {
+  std::lock_guard<std::mutex> lock(memoryManager_.mu_);
+  if (empty() || ctx_->isGraphCapturing() || ctx_->isBaseStreamCapturing())
+    return false;
+  // Recorded under `mu_`, so they follow the device work of every free made so
+  // far, even one racing this call.
+  ErrorOr<DeviceEventRef> event = ctx_->enqueueEvent();
+  ErrorOr<DeviceEventRef> baseEvent =
+      event.isError() ? DeviceEventRef() : ctx_->enqueueBaseStreamEvent();
+  if (event.isError() || baseEvent.isError())
+    return false;
+  // Gather both lists into the non-primary one under a single record, which
+  // replaces any record already queued: its events precede these.
+  if (!handlerPending_)
+    primaryFreeBuffers_ = (primaryFreeBuffers_ + 1) & (kNumFreeBufferLists - 1);
+  handlerPending_ = true;
+  const int primary = primaryFreeBuffers_;
+  const int gated = (primary + 1) & (kNumFreeBufferLists - 1);
+  primaryFreeBuffers_ = gated;
+  while (MemoryManager::Desc *desc = freeBuffers_[primary]) {
+    removeFromFreeList(desc);
+    addToFreeList(desc);
+  }
+  primaryFreeBuffers_ = primary;
+  memoryManager_.pendingFrees_.cancel(this);
+  llvm::SmallVector<DeviceEventRef, 2> events = {event.takeValue()};
+  if (*baseEvent)
+    events.push_back(baseEvent.takeValue());
+  memoryManager_.pendingFrees_.add(std::move(events), this, gated);
+  return true;
+}
+
+void MemoryManagerFreeList::flushToParent() {
+  std::lock_guard<std::mutex> lock(memoryManager_.mu_);
+  flushCachedToParentLocked();
   // Reassign the parent freelist as the allocator-of-record for any descriptor
   // still in use that was originally allocated through this freelist. Without
   // this, `desc->allocatedBy_` becomes a dangling pointer once this freelist
@@ -1329,8 +1375,13 @@ bool MemoryManager::allocateChunk() {
     // Limit to available GPU memory.
     ErrorOr<Device::MemInfo> memInfo = device().getMemoryInfo();
     if (!memInfo.isError()) {
-      remainingBudget = std::min((*memInfo).free, remainingBudget);
-      currentDeviceFree = humanMemorySize((*memInfo).free);
+      // Unmeasured free memory caps the chunk at the device's capacity.
+      remainingBudget =
+          std::min((*memInfo).free.value_or((*memInfo).total), remainingBudget);
+      if ((*memInfo).free)
+        currentDeviceFree = humanMemorySize(*(*memInfo).free);
+      else
+        currentDeviceFree = "unknown";
       currentDeviceTotal = humanMemorySize((*memInfo).total);
     }
   }
@@ -2092,8 +2143,9 @@ void MemoryManager::growChunkSizeTo(size_t newChunkSize) {
       logErr("growing_chunk_size_to(" + TWINE(chunkSize_) + ")");
     } else {
       ErrorOr<Device::MemInfo> memInfo = device().getMemoryInfo();
-      logErr("growing_chunk_size_to(" + TWINE(chunkSize_) +
-             ", free: " + TWINE((*memInfo).free) +
+      logErr("growing_chunk_size_to(" + TWINE(chunkSize_) + ", free: " +
+             TWINE((*memInfo).free ? std::to_string(*(*memInfo).free)
+                                   : std::string("unknown")) +
              ", total: " + TWINE((*memInfo).total) + ")");
     }
   }
@@ -2373,7 +2425,19 @@ ErrorOr<void *> MemoryManagerFreeList::allocate(size_t size,
           desc = allocateDesc(wrappedSize);
         }
       }
-      // Both steps above only poll once: they recover frees whose gating event
+      // Still nothing: a drain only reaches frees that were queued behind an
+      // event, and a free made while its list already had one in flight is
+      // not. On a long-lived side-stream view nothing may queue them again, so
+      // ask the context to return what its idle views hold.
+      if (desc == nullptr && ctx_->flushIdleStreamViews() &&
+          wrappedSize <= memoryManager_.chunkSize_) {
+        LOG_MSG("alloc miss: flushed idle stream views (size " +
+                TWINE(wrappedSize) + ")");
+        (void)memoryManager_.drainCompletedFrees();
+        std::lock_guard<std::mutex> lock(memoryManager_.mu_);
+        desc = allocateDesc(wrappedSize);
+      }
+      // The steps above only poll once: they recover frees whose gating event
       // has already fired. A free still gated on in-flight work is invisible to
       // them by construction, and that is exactly what the snapshot counts as
       // recoverable_by_sync. Giving up on it fails an allocation the budget can
@@ -2904,12 +2968,13 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
 
   freeDesc(desc);
 
-  // Skip the deferral during graph capture, matching the immediate free in
-  // CUDADeviceContext::memFree: an event recorded into a capturing stream
-  // becomes a graph node and reports ready before the graph has ever run. The
-  // blocks stay put and migrate on a later free or at teardown.
+  // Skip the deferral during graph capture on this or the base stream, matching
+  // the immediate free in CUDADeviceContext::memFree: an event recorded into a
+  // capturing stream becomes a graph node and reports ready before the graph
+  // has ever run. The blocks stay put and migrate on a later free or at
+  // teardown.
   if ((ctx_ != nullptr) && !handlerPending_ && !disableFlush_ &&
-      !ctx_->isGraphCapturing()) {
+      !ctx_->isGraphCapturing() && !ctx_->isBaseStreamCapturing()) {
     // Free the list preceding the next primary so that we can keep buffers
     // cached for an extended period.
     // primaryFreeBuffers + 0: current primary
@@ -2923,7 +2988,11 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
     handlerPending_ = true;
 
     ErrorOr<DeviceEventRef> event = ctx_->enqueueEvent();
-    if (event.isError()) {
+    // A side-stream view's results are read on the base stream after the
+    // region joins it, so the base stream gates their reuse too.
+    ErrorOr<DeviceEventRef> baseEvent =
+        event.isError() ? DeviceEventRef() : ctx_->enqueueBaseStreamEvent();
+    if (event.isError() || baseEvent.isError()) {
       // Undo the rotation: `handlerPending_` is only cleared by a completed
       // drain, so leaving it set would stop this freelist deferring for the
       // rest of the process. Safe to unwind because `mu_` has been held
@@ -2931,9 +3000,12 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
       primaryFreeBuffers_ = (primaryFreeBuffers_ + kNumFreeBufferLists - 1) &
                             (kNumFreeBufferLists - 1);
       handlerPending_ = false;
-      return event.takeError();
+      return event.isError() ? event.takeError() : baseEvent.takeError();
     }
-    memoryManager_.pendingFrees_.add(event.takeValue(), this, toFreeId);
+    llvm::SmallVector<DeviceEventRef, 2> events = {event.takeValue()};
+    if (*baseEvent)
+      events.push_back(baseEvent.takeValue());
+    memoryManager_.pendingFrees_.add(std::move(events), this, toFreeId);
     LOG_MSG("Queued deferred free id: " + TWINE(toFreeId));
   }
 
@@ -2943,32 +3015,38 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
   return success();
 }
 
+static bool memoryManagerOnlyMode(const Device &device) {
+  return (device.api() != Device::cpuAPI) &&
+         DeviceContext::configAsBool("memory_manager_only", false);
+}
+
+MemoryManager *MemoryManager::disabled(Device &device, size_t alignment) {
+  return new MemoryManager(
+      /*device=*/device,
+      /*maxSize=*/0,
+      /*chunkSize=*/0,
+      /*alignment=*/alignment,
+      /*isHost=*/false,
+      /*useOnlyMemoryManagerMode=*/memoryManagerOnlyMode(device));
+
+  // TODO (GEX-3475): useOnlyMemoryManagerMode should not be required.
+}
+
 MemoryManager *MemoryManager::onDevice(Device &device, Device::MemInfo memInfo,
                                        size_t alignment, int64_t memoryLimit,
                                        int64_t largeAllocAlignmentOverride) {
-  bool useOnlyMemoryManagerMode =
-      (device.api() != Device::cpuAPI) &&
-      DeviceContext::configAsBool("memory_manager_only", false);
-
-  auto disabledMemoryManager = [&device, alignment,
-                                useOnlyMemoryManagerMode]() -> MemoryManager * {
-    return new MemoryManager(
-        /*device=*/device,
-        /*maxSize=*/0,
-        /*chunkSize=*/0,
-        /*alignment=*/alignment,
-        /*isHost=*/false,
-        /*useOnlyMemoryManagerMode=*/useOnlyMemoryManagerMode);
-
-    // TODO (GEX-3475): useOnlyMemoryManagerMode should not be required.
+  auto disabledMemoryManager = [&device, alignment]() {
+    return disabled(device, alignment);
   };
 
-  // Do not use memory manager if memory manager has been disabled by the
-  // calling code (empty memInfo).
-  // This is for example the case for CPU Device: We are relying on malloc
-  // optimizations instead.
-  if (memInfo.free == 0 || memoryLimit == 0)
+  if (memoryLimit == 0)
     return disabledMemoryManager();
+
+  if (!memInfo.free)
+    llvm::errs() << "DeviceContext.MemoryManager: free device memory is "
+                    "unknown, sizing against total memory ("
+                 << humanMemorySize(memInfo.total) << ").\n";
+  size_t freeMemory = memInfo.free.value_or(memInfo.total);
 
   // Determine cache size
   bool isDefaultCacheSize = false;
@@ -2985,26 +3063,26 @@ MemoryManager *MemoryManager::onDevice(Device &device, Device::MemInfo memInfo,
 
   // If there's no provided size or if the provided size is larger than
   // the free memory, use a percentage of the available memory
-  if (isDefaultCacheSize || maxCacheSize > memInfo.free) {
+  if (isDefaultCacheSize || maxCacheSize > freeMemory) {
     // By default use 90% of the available memory
     int64_t percentMemoryLimit =
         DeviceContext::configAsInt("memory_manager_size_percent", 90);
     if (percentMemoryLimit == 0) // User has explicitly set to 0 => disable
       return disabledMemoryManager();
 
-    if (maxCacheSize > memInfo.free)
+    if (maxCacheSize > freeMemory)
       llvm::errs() << "DeviceContext.MemoryManager: Requested maximum memory "
                       "manager size ("
                    << humanMemorySize(maxCacheSize)
                    << ") does not fit into available free memory ("
-                   << humanMemorySize(memInfo.free) << "), using "
+                   << humanMemorySize(freeMemory) << "), using "
                    << percentMemoryLimit << "% of all free memory instead.\n";
 
-    maxCacheSize = (memInfo.free * percentMemoryLimit) / 100;
+    maxCacheSize = (freeMemory * percentMemoryLimit) / 100;
   }
 
   // Ensure the cache size is aligned
-  // TODO: Check that memInfo.free is not violated by this alignment.
+  // TODO: Check that freeMemory is not violated by this alignment.
   maxCacheSize = llvm::alignToPowerOf2(maxCacheSize, 256 * KB);
 
   // Get chunk size as percentage of max cache size. Limit to between 1 and 100.
@@ -3102,13 +3180,13 @@ MemoryManager *MemoryManager::onDevice(Device &device, Device::MemInfo memInfo,
       /*chunkSize=*/chunkSize,
       /*alignment=*/alignment,
       /*isHost=*/false,
-      /*useOnlyMemoryManagerMode=*/useOnlyMemoryManagerMode,
+      /*useOnlyMemoryManagerMode=*/memoryManagerOnlyMode(device),
       /*vmmEnabled=*/vmmEnabled,
       /*vmmPageSize=*/vmmPageSize,
       /*largeAllocAlignment=*/largeAllocAlignment);
 
   if (result->doLog_) {
-    result->logErr("initial memInfo(free: " + humanMemorySize(memInfo.free) +
+    result->logErr("initial memInfo(free: " + humanMemorySize(freeMemory) +
                    ", total: " + humanMemorySize(memInfo.total) + ")");
   }
   return result;

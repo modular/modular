@@ -120,10 +120,10 @@ static void propagateTrivialParameters(Region *region,
     // GeneratorUser ops need concretize callee to be called when the callee
     // attr is updated.
     if (auto generatorUser = dyn_cast<GeneratorUserOpInterface>(op)) {
-      if (auto symCst =
-              dyn_cast<SymbolConstantAttr>(generatorUser.getCallee())) {
+      auto callee = FuncSymbolGenerator::dynCast(generatorUser.getCallee());
+      if (callee && callee.isFullyBound()) {
         IRRewriter b{OpBuilder(op)};
-        generatorUser.concretizeCallee(b, symCst);
+        generatorUser.concretizeCallee(b, callee);
       }
     }
   }

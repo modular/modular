@@ -96,18 +96,7 @@ def _test_swiglu_interleave[
     var M = total_num_tokens
 
     print(
-        "  N=",
-        N,
-        " K=",
-        K,
-        " H=",
-        H,
-        " M=",
-        M,
-        " active=",
-        num_active_experts,
-        "/",
-        num_experts,
+        t"  N={N} K={K} H={H} M={M} active={num_active_experts}/{num_experts}",
         sep="",
     )
 
@@ -519,12 +508,8 @@ def _test_swiglu_interleave[
 
     if bf16_mismatch_count != 0:
         print(
-            "    BF16 mismatch count =",
-            bf16_mismatch_count,
-            " first @ m=",
-            first_bad_m,
-            " i=",
-            first_bad_i,
+            t"    BF16 mismatch count = {bf16_mismatch_count}  first @ m="
+            t" {first_bad_m}  i= {first_bad_i}"
         )
         raise Error(
             "BF16 sanity check failed: permuted matmul disagrees with REF"
@@ -629,23 +614,13 @@ def _test_swiglu_interleave[
 
     if O_mismatch != 0:
         print(
-            "    O mismatch count =",
-            O_mismatch,
-            " first idx =",
-            first_bad_O_idx,
-            " (out of ",
-            O_size,
-            ")",
+            t"    O mismatch count = {O_mismatch}  first idx ="
+            t" {first_bad_O_idx}  (out of  {O_size} )"
         )
     if S_mismatch != 0:
         print(
-            "    S mismatch count =",
-            S_mismatch,
-            " first idx =",
-            first_bad_S_idx,
-            " (out of ",
-            S_size,
-            ")",
+            t"    S mismatch count = {S_mismatch}  first idx ="
+            t" {first_bad_S_idx}  (out of  {S_size} )"
         )
     if O_mismatch != 0 or S_mismatch != 0:
         raise Error(

@@ -14,32 +14,48 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import ClassVar
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from types import MappingProxyType
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.common_layers.quant_ops import routed_weight_dtype
+from max.nn.legacy.comm.ep import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
 )
 from max.pipelines.kv_cache import cache_dtype_for_encoding
-from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib import (
+    GraphRole,
+    KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
+)
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
     ArchConfigWithVisionCache,
     ArchVLConfigWithTextSubconfig,
+    ModelOutputConfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelDeploymentConfig,
+    ModuleRuntime,
+)
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 from ..deepseekV3_modulev3.model_config import DeepseekV3Config
+from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 
 
 class _KimiK2_5VisionCacheConfig:
@@ -144,6 +160,9 @@ class KimiK2_5TextConfig(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration, or none to read it
+                from ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized DeepseekV3Config instance.
@@ -235,6 +254,7 @@ class KimiK2_5TextConfig(
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The checkpoint's ``max_position_embeddings``."""
         # DeepseekV3Config does not inherit ArchConfigWithStoredKVParams, so the
         # VLM mixin cannot delegate max_seq_len to this class directly.
         return ArchConfigWithStoredKVParams.calculate_max_seq_len(
@@ -326,6 +346,7 @@ class VisionConfig:
                 ``text_hidden_size`` from ``text_config.hidden_size`` when
                 ``hf_vision_config`` does not carry the attribute directly
                 (such as moonshotai/Kimi-VL-A3B-Instruct vs nvidia/Kimi-K2.5-NVFP4).
+            max_seq_len: The maximum sequence length the config allows.
 
         Note: dtype fields will be set to defaults and should be updated
         via finalize() once state_dict is available.
@@ -393,8 +414,17 @@ class KimiK2_5Config(
     ArchVLConfigWithTextSubconfig,
     ArchConfigWithKVCache,
     ArchConfigWithVisionCache,
+    ExpertParallelDeploymentConfig,
 ):
     """Configuration for Kimi-K2.5 models."""
+
+    takes_batch_context_lengths: ClassVar[bool] = True
+    weight_prefixes: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {
+            GraphRole.DECODER: "language_model.",
+            GraphRole.VISION: "vision_encoder.",
+        }
+    )
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
@@ -447,8 +477,170 @@ class KimiK2_5Config(
         """Returns the KV cache parameters from the embedded LLM config."""
         return self.llm_config.get_kv_params()
 
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
+    ) -> KVCacheParamInterface:
+        """Returns the text tower's MLA cache layout."""
+        del allow_kv_head_replication
+        return KimiK2_5TextConfig.construct_kv_params(
+            huggingface_config=huggingface_config.text_config,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns the config completed with the checkpoint's quantization.
+
+        FP8 and NVFP4 checkpoints carry a quant config. An NVFP4 Kimi
+        checkpoint may leave its shared experts and first dense MLPs in
+        bf16 (such as nvidia/Kimi-K2.6-NVFP4), which this detects so the
+        quantized MoE loads them at the right dtype. The decoder returns
+        only the last token's logits, whatever ``outputs`` asks for.
+
+        Args:
+            huggingface_config: The checkpoint's multimodal configuration.
+            state_dict: The adapted checkpoint weights.
+            outputs: The outputs the pipeline requires.
+        """
+        del outputs
+        llm = self.llm_config
+        quant_config = None
+        dense_mlp_layers_without_quant = llm.dense_mlp_layers_without_quant
+        if self.dtype in (
+            DType.float8_e4m3fn,
+            DType.uint8,
+            DType.float4_e2m1fn,
+        ):
+            quant_config = parse_quant_config(
+                huggingface_config.text_config, state_dict, self.dtype
+            )
+            shared_experts_weight_dtype, dense_mlp_layers_without_quant = (
+                infer_kimi_nvfp4_weight_flags(
+                    state_dict,
+                    first_k_dense_replace=llm.first_k_dense_replace,
+                    quant_config=quant_config,
+                )
+            )
+            if (
+                quant_config is not None
+                and shared_experts_weight_dtype is not None
+            ):
+                quant_config = replace(
+                    quant_config,
+                    shared_experts_weight_dtype=shared_experts_weight_dtype,
+                )
+        correction_bias_dtype = llm.correction_bias_dtype
+        if llm.topk_method == "noaux_tc":
+            for key, value in state_dict.items():
+                if key.endswith("e_score_correction_bias"):
+                    correction_bias_dtype = value.dtype
+                    break
+        return replace(
+            self,
+            llm_config=replace(
+                llm,
+                quant_config=quant_config,
+                dense_mlp_layers_without_quant=dense_mlp_layers_without_quant,
+                # Kimi K2.5 keeps the whole attention block, o_proj included,
+                # in bf16: the checkpoint's modelopt ``ignore`` list covers
+                # all of ``self_attn``, unlike DeepSeek-V3 NVFP4.
+                mla_o_proj_quantized=False,
+                correction_bias_dtype=correction_bias_dtype,
+            ),
+        )
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        """Sizes the expert-parallel buffers for ``runtime``.
+
+        Tokens dispatch in the checkpoint's FP8 or NVFP4 format when it is
+        quantized, else in bf16.
+        """
+        llm = self.llm_config
+        quant_config = llm.quant_config
+        quantized_dispatch = quant_config is not None and (
+            self.dtype.is_float8() or quant_config.is_nvfp4
+        )
+        fused_shared_expert = llm.n_shared_experts == 1
+        if quant_config is not None:
+            fused_shared_expert = (
+                fused_shared_expert
+                and quant_config.shared_experts_use_quant(
+                    routed_weight_dtype(quant_config)
+                )
+            )
+        n_devices = len(runtime.mesh.devices)
+        return EPConfig(
+            dispatch_dtype=(
+                self.dtype if quantized_dispatch else DType.bfloat16
+            ),
+            dispatch_quant_config=(
+                quant_config if quantized_dispatch else None
+            ),
+            combine_dtype=DType.bfloat16,
+            hidden_size=llm.hidden_size,
+            top_k=llm.num_experts_per_tok,
+            n_experts=llm.n_routed_experts,
+            max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=runtime.max_batch_input_tokens,
+                ep_size=runtime.ep_size,
+                data_parallel_degree=runtime.data_parallel_degree,
+                use_allreduce=runtime.ep_use_allreduce,
+            ),
+            n_gpus_per_node=n_devices,
+            n_nodes=runtime.ep_size // n_devices,
+            fused_shared_expert=fused_shared_expert,
+            use_allreduce=runtime.ep_use_allreduce,
+        )
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Returns the config placed on the deployment's mesh.
+
+        The MLA prefill buffers are sized from the batch's planned KV
+        context, and expert parallelism takes the started config.
+
+        Raises:
+            NotImplementedError: If data parallelism runs over fewer
+                replicas than devices.
+        """
+        n_devices = len(runtime.mesh.devices)
+        if 1 < runtime.data_parallel_degree != n_devices:
+            raise NotImplementedError(
+                f"data_parallel_degree={runtime.data_parallel_degree} must "
+                f"equal the device count ({n_devices}); dp x tp meshes are "
+                "not supported yet."
+            )
+        llm = self.llm_config
+        return replace(
+            self,
+            llm_config=replace(
+                llm,
+                mesh=runtime.mesh,
+                ep_config=runtime.ep,
+                max_batch_context_length=(
+                    runtime.max_batch_total_tokens
+                    or llm.max_batch_context_length
+                ),
+            ),
+        )
+
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """How many layers the text tower has."""
         # Delegate to KimiK2_5TextConfig for language model parameters.
         llm_config = getattr(
             huggingface_config, "text_config", huggingface_config
@@ -468,6 +660,9 @@ class KimiK2_5Config(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration, or none to read it
+                from ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Qwen3VLConfig instance with fields initialized from config.
@@ -503,6 +698,9 @@ class KimiK2_5Config(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace model configuration.
+            llm_config: The text config to read the language model settings
+                from, or none to build one.
+            max_seq_len: The maximum sequence length the config allows.
             llm_config: Pre-initialized DeepseekV3 configuration.
 
         Returns:

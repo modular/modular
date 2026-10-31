@@ -50,7 +50,6 @@ from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv, exp
 from std.sys import llvm_intrinsic
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from layout import TensorEngine, TileTensor
@@ -390,7 +389,7 @@ def naive_fa_decode_apple_core[
             if j < end:
                 var s = _apple_simd_sum(partials[kk]) * scale
                 scores[kk] = mask_functor.mask(
-                    Index(batch_id, head_id, score_row, j), s
+                    (Int(batch_id), Int(head_id), Int(score_row), Int(j)), s
                 )
 
         var m_tile = scores.reduce_max()

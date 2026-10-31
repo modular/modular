@@ -34,6 +34,7 @@ from std.random import seed
 
 from max.gpu.host import DeviceContext
 from layout import (
+    Coord,
     TileTensor,
     row_major,
 )
@@ -66,19 +67,8 @@ def _run_one[
     comptime scale_type = DType.float32
 
     print(
-        "== test_blockwise_fp8_bk64",
-        name,
-        " problem: (M=",
-        M,
-        ", N=",
-        N,
-        ", K=",
-        K,
-        ") granularity: (1,",
-        n_g,
-        ",",
-        k_g,
-        ")",
+        t"== test_blockwise_fp8_bk64 {name}  problem: (M= {M} , N= {N} , K="
+        t" {K} ) granularity: (1, {n_g} , {k_g} )"
     )
 
     var a_size = M * K
@@ -128,7 +118,7 @@ def _run_one[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=True,
-        scales_granularity_mnk=Index(1, n_g, k_g),
+        scales_granularity_mnk=Coord[Int, Int, Int](1, n_g, k_g),
     ](
         c_ref_tt,
         a_tt,
@@ -176,14 +166,7 @@ def _run_one[
                 ndiff += 1
                 if ndiff <= 3:
                     print(
-                        "  diff @ (",
-                        mi,
-                        ",",
-                        ni,
-                        ") got=",
-                        got,
-                        " ref=",
-                        ref_val,
+                        t"  diff @ ( {mi} , {ni} ) got= {got}  ref= {ref_val}"
                     )
     if ndiff > 0:
         raise Error(

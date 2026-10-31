@@ -37,42 +37,42 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.attention.multi_latent_attention import (
+from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
     TensorParallelLatentAttentionWithRope,
 )
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
     TensorParallelLatentAttentionWithRopeFp8,
 )
-from max.nn.comm.ep import EPBatchManager, EPConfig
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.graph_groups import BatchContext, EPLBProfile
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import BatchContext, EPLBProfile
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.moe import MoE, MoEQuantized
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.moe import MoE, MoEQuantized
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import (
+from max.nn.legacy.transformer import (
     DecoderOutputs,
     ReturnHiddenStates,
     ReturnLogits,
     forward_sequential_layers,
     logits_outputs,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
@@ -190,7 +190,7 @@ def deepseek_logits_postprocess(
     avoid an unused vocab-sized GEMM + collective per step.
 
     Returns:
-        The named outputs; see :func:`~max.nn.transformer.logits_outputs`.
+        The named outputs; see :func:`~max.nn.legacy.transformer.logits_outputs`.
     """
     if is_data_parallel_attention:
         last_token_per_dev: list[TensorValue] = []
@@ -325,6 +325,8 @@ def deepseek_logits_postprocess(
 
 
 class DeepseekV3DecoderLayer(Module):
+    """One DeepSeek-V3 decoder layer."""
+
     def __init__(
         self,
         rope: RotaryEmbedding,
@@ -452,8 +454,7 @@ class DeepseekV3DecoderLayer(Module):
         )
 
     def _get_mlp(self, config: DeepseekV3Config, layer_idx: int) -> MLP | MoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP or MoE layer the TransformerBlock uses for a layer.
 
         Args:
             config: Configuration object containing model parameters
@@ -539,7 +540,7 @@ class DeepseekV3DecoderLayer(Module):
             )
             # ``config.dtype`` is the packed-weight / graph encoding dtype
             # (e.g. uint8 for ``float4_e2m1fnx2``). Unquantized dense MLPs use
-            # BF16 tensors; :class:`~max.nn.Linear` only switches to uint8 when
+            # BF16 tensors; :class:`~max.nn.legacy.Linear` only switches to uint8 when
             # ``quant_config.is_fp4`` is true.
             mlp_weight_dtype = (
                 config.dtype if dense_quant is not None else DType.bfloat16
@@ -584,6 +585,7 @@ class DeepseekV3DecoderLayer(Module):
         eplb_counter_buffers: list[BufferValue] | None = None,
         layer_idx_per_device: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
+        """Runs the layer over the hidden states."""
         num_devices = len(kv_collections)
 
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
@@ -874,6 +876,7 @@ class DeepseekV3(Module):
         ep_inputs: list[Value[Any]] | None = None,
         eplb_counter_buffers_per_layer: list[list[BufferValue]] | None = None,
     ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         return self._process_hidden_states(
@@ -1052,6 +1055,7 @@ class DeepseekV3(Module):
         self,
         kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, taken from the input tree."""
         return tuple(tree.leaves(self.input_tree(kv_params)))
 
     def trace(
@@ -1062,8 +1066,9 @@ class DeepseekV3(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the graph, whose inputs are the leaves of
-        :meth:`input_tree` for the config's KV cache parameters.
+        """Traces the graph over the leaves of :meth:`input_tree`.
+
+        The leaves carry the config's KV cache parameters.
 
         Adapts the flat graph inputs to :meth:`__call__`: splits off the
         signal buffers, unflattens the KV cache, and stages the row offsets

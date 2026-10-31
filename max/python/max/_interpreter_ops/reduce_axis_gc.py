@@ -291,8 +291,10 @@ class _ReduceAxisFamily(gc_compile.GCFamilySpec):
     name = "reduce_axis"
 
     def build_module(self) -> Module:
-        """Batched module: every supported (op, device, dtype, variant), all
-        devices."""
+        """Batched module: every supported (op, device, dtype, variant).
+
+        Covers all devices.
+        """
         module = Module()
         for device in self.sweep_devices():
             self.build_module_for_device(device, module)
@@ -301,8 +303,7 @@ class _ReduceAxisFamily(gc_compile.GCFamilySpec):
     def build_module_for_device(
         self, device: Device, module: Module | None = None
     ) -> Module:
-        """Per-slot counterpart of :meth:`build_module`: one *device*
-        only."""
+        """Per-slot counterpart of :meth:`build_module`: one *device* only."""
         if module is None:
             module = Module()
         for op_type, spec in _REDUCE_OPS.items():

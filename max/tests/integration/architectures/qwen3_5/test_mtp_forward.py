@@ -41,8 +41,8 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferValue, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
 )

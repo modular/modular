@@ -20,8 +20,8 @@ from typing import ClassVar, Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -198,6 +198,7 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The language model's hidden layer count."""
         # Delegate to Llama3Config for language model parameters.
         llm_config = getattr(
             huggingface_config, "text_config", huggingface_config
@@ -217,6 +218,9 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration to read the HuggingFace
+                config from. Defaults to ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Qwen3VLConfig instance with fields initialized from config.
@@ -251,6 +255,7 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace model configuration.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Qwen3VLConfig instance ready for finalization.

@@ -31,14 +31,15 @@ adjusts them (heading demotion, empty-section removal, sidebar stub population).
 ## RST file organization
 
 Each Python module has one flat RST file (for example, `nn.rst`,
-`nn.attention.rst`, `pipelines.rst`). There are two documentation patterns:
+`nn.legacy.attention.rst`, `pipelines.rst`). There are two documentation
+patterns:
 
 - **Explicit autosummary** (most files): uses `.. automodule::` with
   `:no-members:`, then groups members into semantic sections with
   `.. autosummary::` directives referencing templates in
   `_templates/autosummary/` (`class.rst`, `function.rst`).
 - **Automodule with :members:** (for example, `graph.ops.rst`,
-  `nn.kernels.rst`, `experimental.functional.rst`): documents all public
+  `nn.legacy.kernels.rst`, `functional.rst`): documents all public
   members automatically without explicit listing.
 
 `index.rst` lists all module pages in its toctree. Module pages that have
@@ -122,7 +123,7 @@ Read these when you need to understand or modify the doc build:
 - `conf.py.in` -- Sphinx config: warning suppression (`SuppressionFilter`),
   autodoc hooks (`skip_imported_for_modules`), monkey-patch for `__all__`
   filtering in autosummary.
-- `max/docs/site/post-process-docs.py` -- Runs after Sphinx generates
+- `max/docs/site/scripts/post-process-docs.py` -- Runs after Sphinx generates
   markdown. Demotes headings, removes empty sections, populates
   `__AUTOGEN:prefix__` stubs in `sidebars.json` with generated page paths.
 - `max/docs/site/sidebars.json` -- Docusaurus sidebar definition. Each
@@ -172,7 +173,3 @@ packages are in scope and which are excluded.
 - **`finfo` on `DType`**: `finfo` is monkey-patched onto `DType` in
   `dtype_extension.py`. There is an explicit skip in `conf.py.in` to prevent
   it from appearing inside `DType`'s member list (it has its own page).
-- **`PACKED_PAGE_STRIDE` on macOS**: that constant and `packed_page_stride`
-  generate filenames that differ only by case. `conf.py.in` renames the
-  constant's generated page to `PACKED_PAGE_STRIDE-data` on macOS, in
-  `use_macos_autosummary_filenames`. Linux keeps both natural filenames.

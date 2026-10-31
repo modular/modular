@@ -34,7 +34,6 @@ from std.net._sys.inet import (
     in_port_t,
 )
 from std.net._sys.unix import (
-    F_DUPFD_CLOEXEC,
     F_GETFL,
     F_SETFL,
     IPV6_MULTICAST_HOPS,
@@ -93,6 +92,7 @@ from std.net._sys.unix import (
     time_t,
     timeval,
 )
+from std.sys._libc import FcntlCommands
 
 comptime CABI_INCLUDES: List[StaticString] = [
     "<fcntl.h>",
@@ -182,6 +182,6 @@ comptime CABI_CONSTANTS = [
     AbiConstant("IPV6_V6ONLY", IPV6_V6ONLY),
     AbiConstant("F_GETFL", F_GETFL),
     AbiConstant("F_SETFL", F_SETFL),
-    AbiConstant("F_DUPFD_CLOEXEC", F_DUPFD_CLOEXEC),
+    AbiConstant("F_DUPFD_CLOEXEC", FcntlCommands.F_DUPFD_CLOEXEC),
 ]
 """The constants to check."""

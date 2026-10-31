@@ -10,8 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Qwen3.5 with the pipeline registry."""
 
 import dataclasses
+from pathlib import Path
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.qwen3vl_moe.context import (
@@ -53,6 +55,7 @@ qwen3_5_arch = SupportedArchitecture(
     batching=Qwen3_5BatchProcessor,
     multi_gpu_supported=True,
     tool_parser="qwen3_5",
+    format_spec=Path(__file__).parent / "formatspec.json",
     reasoning_parser="qwen3_5",
     memory_planner=Qwen3_5MemoryPlanner,
     # A warmup probe's state pages are freed with its KV, so a sweep of probes

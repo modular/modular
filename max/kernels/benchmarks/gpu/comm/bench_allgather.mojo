@@ -259,17 +259,8 @@ def bench_allgather[
     # See: https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md
     var busbw = gbps * Float64(ngpus - 1) / Float64(ngpus)
     print(
-        "|",
-        name,
-        "| slowest mean time",
-        max_time,
-        "ms |",
-        "algbw:",
-        gbps,
-        "GB/s |",
-        "busbw:",
-        busbw,
-        "GB/s |",
+        t"| {name} | slowest mean time {max_time} ms | algbw: {gbps} GB/s |"
+        t" busbw: {busbw} GB/s |"
     )
 
     # Copy results back and verify the benchmarked outputs directly.
@@ -291,12 +282,8 @@ def bench_allgather[
                 var expected = _per_gpu_value[dtype](src_idx, j)
                 if verify_host[j] != expected:
                     print(
-                        "Verification failed at GPU",
-                        gpu_idx,
-                        "source",
-                        src_idx,
-                        "index",
-                        j,
+                        t"Verification failed at GPU {gpu_idx} source"
+                        t" {src_idx} index {j}"
                     )
                     print("Value:", verify_host[j])
                     print("Expected:", expected)

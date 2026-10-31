@@ -13,7 +13,8 @@
 """Inkling attention: qkvr projection, K/V short convolutions, relative bias.
 
 Reference: ``nvidia/ops/qkvr_prep.py`` and ``nvidia/attention.py`` at vLLM
-v0.26.0."""
+v0.26.0.
+"""
 
 from __future__ import annotations
 
@@ -28,13 +29,13 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_ragged
+from max.nn.legacy.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.stacked_linear import StackedLinear
 
 from ..model_config import InklingTextConfig
 from .short_convolution import (
@@ -173,9 +174,10 @@ class InklingAttention(Module, Shardable):
         v_layer_row: TensorValue,
         cache_layer_idx: TensorValue,
     ) -> TensorValue:
-        """Runs the block over one ragged batch. ``cache_layer_idx`` is an
-        operand, not a folded constant, so every layer of one attention flavor
-        can share a compiled subgraph.
+        """Runs the block over one ragged batch.
+
+        ``cache_layer_idx`` is an operand, not a folded constant, so every layer
+        of one attention flavor can share a compiled subgraph.
         """
         q_dim, k_dim, v_dim, _ = self.out_dims
 
@@ -230,8 +232,10 @@ class InklingAttention(Module, Shardable):
         return self.wo_ud(attn_out.reshape([x.shape[0], q_dim]))
 
     def _relative_bias(self, r: TensorValue) -> TensorValue:
-        """Maps the head-major relative branch to
-        ``[total_tokens, num_heads, extent]``, unscaled."""
+        """Maps the relative branch to ``[total_tokens, num_heads, extent]``.
+
+        The result is unscaled.
+        """
         total_tokens = r.shape[0]
         rows = r.reshape([total_tokens * self.num_heads, self.d_rel])
         return (rows @ self.rel_logits_proj).reshape(
@@ -240,15 +244,19 @@ class InklingAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Splits the heads across devices: qkvr column-parallel, ``wo_ud``
-        row-parallel, norms and relative-logits projection replicated.
-        Column/row-parallel are the Megatron terms; in MAX terms,
-        ``ShardingStrategy.rowwise`` splits the stored ``[out, in]``
-        weight's rows, so it is what implements column-parallel."""
+        """Splits the heads across devices.
+
+        ``qkvr`` is column-parallel and ``wo_ud`` row-parallel; the norms and
+        the relative-logits projection are replicated. Column- and row-parallel
+        are the Megatron terms: in MAX terms ``ShardingStrategy.rowwise`` splits
+        the rows of the stored ``[out, in]`` weight, which is what implements
+        column-parallel.
+        """
         num_devices = strategy.num_devices
         if strategy.is_tensor_parallel:
             if self.num_heads % num_devices or self.num_kv_heads % num_devices:
@@ -315,7 +323,10 @@ class InklingAttention(Module, Shardable):
 
 
 def _scale_rows(x: TensorValue, factor: TensorValue) -> TensorValue:
-    """Scales each token's rows in float32 with a round-trip cast, matching
-    the reference's precision on a bf16 tensor."""
+    """Scales each token's rows by ``factor``.
+
+    The product is computed in float32 with a round-trip cast, matching the
+    reference's precision on a bf16 tensor.
+    """
     rows = ops.reshape(factor, [factor.shape[0]] + [1] * (x.rank - 1))
     return ops.cast(ops.cast(x, _TAU_DTYPE) * rows, x.dtype)

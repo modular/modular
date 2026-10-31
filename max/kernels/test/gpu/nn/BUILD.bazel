@@ -3,6 +3,9 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
+# Also run against the HAL `DeviceContext`, with its driver plugin staged.
+exports_files(["attention/test_dsmem_cluster_smoke.mojo"])
+
 _EXTRA_CONSTRAINTS = {
     # The MXFP4 indexer's windowed kept-block score hooks; SM100 scorer only.
     "test_mla_index_windowed_keep.mojo": select({
@@ -14,7 +17,33 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # PDL grid controls are a no-op below SM90, where the test would pass under
+    # plain stream ordering without exercising PDL.
+    "test_fused_qk_rms_norm_rope_pdl_race.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # PDL (griddepcontrol) is a compile-time no-op below SM90, where the test
+    # would only exercise stream ordering.
+    "test_rowwise_pdl_race.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mha_decode_register_owners.mojo": ["//:nvidia_gpu"],
+    # PDL needs SM90+; below that the launches serialize and the test cannot fail.
+    "test_mha_fallback_pdl_wait.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # PDL (griddepcontrol) + llvm.nvvm.nanosleep: NVIDIA SM90+ only.
+    "test_mla_index_kpool_pdl.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_online_softmax_correction.mojo": ["//:nvidia_gpu"],
     "test_mha_p_fragment_scatter_amd.mojo": ["//:amd_gpu"],
     "test_mha_p_fragment_scatter_nvidia.mojo": ["//:nvidia_gpu"],
@@ -111,6 +140,8 @@ _EXTRA_CONSTRAINTS = {
     "test_attention_fp8_tail_stress_amd.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv3d.mojo": ["//:mi355_gpu"],
+    # `mhc_pre` projects on the gfx950-only bf16 16x16x32 MFMA.
+    "test_mhc_pre.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -191,6 +222,18 @@ _EXTRA_CONSTRAINTS = {
         "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mla_prefill_sparse_fp8_amd_determinism.mojo": select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_rows_bf16_amd.mojo": select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_bf16_key_amd.mojo": select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mla_prefill_sparse_kv_fp8_gather.mojo": select({
         "//:b200_gpu": [],
         "//:mi355_gpu": [],
@@ -262,6 +305,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_decode_split_policy.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_combine_pdl.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -354,6 +401,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: GEX-2562
+    # Programmatic dependent launch is an SM90+ feature; elsewhere the test
+    # would only repeat the unfused comparison.
+    "test_moe_routing_pdl.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # The router's warp-bitonic top-k and lane-group reductions have never
     # been exercised on Metal; opt out until someone confirms them there.
     "test_sink_gate_router.mojo": select({
@@ -395,6 +448,16 @@ _EXTRA_CONSTRAINTS = {
     # SM100 FA4 1Q attention-sink double-count regression. SM100-only
     # (exercises the FA4 `fa4_softmax` 1Q warp-specialized path).
     "attention/test_mha_sm100_1q_sink.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # SM100 FA4 tile configs for a 192-wide key with a 128-wide value.
+    "attention/test_mha_sm100_split_kv_config.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # SM100 FA4 workspace split-K combine under PDL. B200-only.
+    "attention/test_fa4_splitk_combine_pdl.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -569,6 +632,7 @@ _EXTRA_DEPS = {
     "test_row_mean_of_squares.mojo": ["//max:builtin_kernels"],
     "test_row_mean_of_squares_qk.mojo": ["//max:builtin_kernels"],
     "test_rowwise_determinism.mojo": ["//max:builtin_kernels"],
+    "test_rowwise_pdl_race.mojo": ["//max:builtin_kernels"],
     "test_topk_gpu.mojo": ["//max:max_mojo"],
     "test_topk_gpu_fi.mojo": ["//max:max_mojo"],
     "test_topk_softmax_sample_topk_arr.mojo": ["//max:max_mojo"],
@@ -621,6 +685,7 @@ _GPU_MEMORY = {
     "test_mla_decode_qkv_fp8_tail_stress.mojo": "3",
     "test_mla_decode_sparse_kv_bf16.mojo": "3",
     "test_mla_decode_sparse_kv_fp8_gather.mojo": "4",
+    "test_mla_decode_sparse_rows_bf16_amd.mojo": "8",
     "test_mla_decode_split_policy.mojo": "4",
     "test_mla_index_fp8.mojo": "3",
     "test_mla_prefill_blockwise_fp8.mojo": "4",
@@ -737,6 +802,10 @@ _FILECHECK_TESTS = [
             # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
             # declared explicitly below.
             "attention/test_mha_sm100_ws_layout_e_v_alignment.mojo",
+            # Fused non-dividing-group (9, 6) tail-row canary: uses
+            # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
+            # declared explicitly below.
+            "attention/test_mha_sm100_ws_bm32_fuse_gqa_tail_rows.mojo",
             # TEMPORARY (sub_rows gate): restored from a3b3414cd32^.
             "attention/test_mha_sm100_ws_shared_key_build.mojo",
             "attention/test_mha_sm100_ws_shared_key.mojo",
@@ -823,6 +892,34 @@ mojo_test(
     name = "attention/test_mha_sm100_ws_layout_e_v_alignment.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_ws_layout_e_v_alignment.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# SM100 FA4 WS BM=32 `fuse_gqa` for groups 9 and 6 (which do not divide
+# MMA_M=32): poisons shared memory before each launch and checks the fused output
+# against the naive oracle and a zero-filled control. Declared explicitly for the
+# `//max:kv_cache` dep. B200-only.
+mojo_test(
+    name = "attention/test_mha_sm100_ws_bm32_fuse_gqa_tail_rows.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_ws_bm32_fuse_gqa_tail_rows.mojo"],
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = True,
     exec_properties = {
@@ -1869,5 +1966,43 @@ mojo_test(
                 "FP8_INDEX_Q_INTERLEAVE=0",
             ],
         ),
+        # K tiles loaded evict-first, which launches choose only for decode
+        # shapes larger than L2.
+        (
+            "test_mla_index_mxfp4_k_evict_first",
+            [
+                "-D",
+                "FP8_INDEX_K_EVICT_FIRST=1",
+            ],
+        ),
     ]
 ]
+
+# The BF16 sparse MLA rows test at 16 heads per device, where the split
+# heuristic takes its other branch. The catch-all target runs 32 heads.
+mojo_test(
+    name = "test_mla_decode_sparse_rows_bf16_amd_h16.mojo.test",
+    size = "large",
+    srcs = ["test_mla_decode_sparse_rows_bf16_amd.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "NUM_HEADS=16",
+    ],
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "test_mla_decode_sparse_rows_bf16_amd.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)

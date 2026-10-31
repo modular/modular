@@ -12,6 +12,7 @@ filegroup(
     srcs = ["config.json"],
     visibility = [
         "//max/tests/integration/architectures/deepseekV41:__pkg__",
+        "//max/tests/integration/architectures/deepseekV41_modulev3:__pkg__",
         "//max/tests/integration/kv_cache:__pkg__",
     ],
 )

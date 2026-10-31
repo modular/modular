@@ -37,6 +37,7 @@ from max.driver import DLPackArray
 from max.dtype import DType
 
 from . import ops
+from ._api_boundary import register_api_boundaries as _register_api_boundaries
 from .dim import Dim, DimLike
 from .shape import Shape, ShapeLike
 from .type import (
@@ -794,11 +795,11 @@ class TensorValue(Value[mo.TensorType]):
         :func:`~max.graph.ops.transfer_to` and is typically used inside
         :meth:`forward` to route activation tensors between devices.
 
-        This is distinct from :meth:`~max.experimental.nn.Module.to`, which is a
+        This is distinct from :meth:`~max.nn.Module.to`, which is a
         **pre-compilation** host-side operation that moves stored weight
         tensors before the graph is built. If you want to place a module's
         weights and computation on a device, use ``Module.to(device)`` before
-        calling :meth:`~max.experimental.nn.Module.compile`.
+        calling :meth:`~max.nn.Module.compile`.
 
         The following example demonstrates how to move a tensor from one device to another:
 
@@ -1377,3 +1378,9 @@ def _is_strong_tensor_value_like(obj: Any) -> TypeGuard[StrongTensorValueLike]:
 
 def _is_tensor_value_like(obj: Any) -> TypeGuard[TensorValueLike]:
     return _is_strong_tensor_value_like(obj) or isinstance(obj, _numeric)
+
+
+# A value's operators and methods create ops (see `_api_boundary`).
+for _cls in (Value, BufferValue, TensorValue):
+    _register_api_boundaries(vars(_cls), "max.graph")
+del _cls

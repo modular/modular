@@ -234,6 +234,10 @@ def _selection_case[
     var ids = ctx.enqueue_create_host_buffer[.int32](rows * top_k)
     ctx.enqueue_copy(dst_buf=ids, src_buf=d_ids)
     ctx.synchronize()
+    # The hook holds raw pointers, so keep its buffers alive past the kernels.
+    _ = d_bmax^
+    _ = d_pos^
+    _ = d_live^
     var bad = 0
     for r in range(rows):
         if not _check_kept(ids, r, top_k, bmax, num_blocks, Int(pos[r]), 1):
@@ -242,16 +246,7 @@ def _selection_case[
                     "  selection row", r, "kept", len(_kept_ids(ids, r, top_k))
                 )
             bad += 1
-    print(
-        "SELECT blocks=",
-        num_blocks,
-        "k=",
-        top_k,
-        "poison=",
-        poison,
-        "bad=",
-        bad,
-    )
+    print(t"SELECT blocks= {num_blocks} k= {top_k} poison= {poison} bad= {bad}")
     return bad
 
 
@@ -449,6 +444,9 @@ def _indexer_case[
     var ids = ctx.enqueue_create_host_buffer[.int32](len(d_ids))
     ctx.enqueue_copy(dst_buf=ids, src_buf=d_ids)
     ctx.synchronize()
+    _ = d_scratch^
+    _ = d_live^
+    _ = d_pos^
 
     # The reference's block maxima: `-inf` for a block with no key below the
     # row's bound.
@@ -511,6 +509,7 @@ def _indexer_case[
     var out = ctx.enqueue_create_host_buffer[.int32](total * TOKEN_TOP_K)
     ctx.enqueue_copy(dst_buf=out, src_buf=d_out)
     ctx.synchronize()
+    _ = d_flags^
     var sel_bad = 0
     for t in range(total):
         if not _check_masked_selection(
@@ -522,26 +521,10 @@ def _indexer_case[
     if sel_bad > 0:
         failures += 1
     print(
-        "CASE kpool=",
-        kpool,
-        "blocks=",
-        num_blocks,
-        "k=",
-        topk_blocks,
-        "rows=",
-        total,
-        "window=",
-        window_rows,
-        "poison=",
-        poison,
-        "min_kept=",
-        min_kept,
-        "id_bad=",
-        id_bad,
-        "sel_bad=",
-        sel_bad,
-        "->",
-        "FAIL" if failures > 0 else "ok",
+        t"CASE kpool= {kpool} blocks= {num_blocks} k= {topk_blocks} rows="
+        t" {total} window= {window_rows} poison= {poison} min_kept="
+        t" {min_kept} id_bad= {id_bad} sel_bad= {sel_bad} ->"
+        t""" {"FAIL" if failures > 0 else "ok"}"""
     )
     return failures
 

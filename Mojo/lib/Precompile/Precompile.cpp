@@ -143,23 +143,46 @@ writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, StringRef bitcodeFile) {
                             resourceName);
 }
 
-ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
-    ModuleOp theModule, LIT::PackageOp parsedPackageOp, StringRef sourceName,
-    StringRef outputName, ArrayRef<std::string> bitcodeLibs) {
-  // Add the dependencies of the package to the package itself. Every top-level
-  // package other than the one being compiled is an imported precompiled
-  // dependency (in the precompile flow, dependencies are always provided as
-  // `.mojoc` files), so record each as a link dependency.
-  SmallVector<FlatSymbolRefAttr> dependencies;
-  for (LIT::PackageOp package : theModule.getOps<LIT::PackageOp>()) {
+/// Collects the link dependencies of \p parsedPackageOp among the packages in
+/// \p scope, whose import path is \p scopePath. Every package at an import root
+/// or within a namespace, other than the one being compiled, is an imported
+/// precompiled dependency (in the precompile flow, dependencies are always
+/// provided as `.mojoc` files), so each is recorded by its import path. A
+/// namespace only groups packages, so it is never a dependency itself.
+static void
+collectLinkDependencies(Region &scope, ArrayRef<StringAttr> scopePath,
+                        LIT::PackageOp parsedPackageOp, StringRef sourceName,
+                        StringRef outputName,
+                        SmallVectorImpl<SymbolRefAttr> &dependencies) {
+  for (LIT::PackageOp package : scope.getOps<LIT::PackageOp>()) {
+    SmallVector<StringAttr> path(scopePath);
+    path.push_back(package.getSymNameAttr());
+    if (package.getIsNamespace()) {
+      collectLinkDependencies(package.getBodyRegion(), path, parsedPackageOp,
+                              sourceName, outputName, dependencies);
+      continue;
+    }
     // A package is never its own link dependency, under either its parse-time
     // (source directory) name or its output name: a recorded self-dependency
     // dangles once the package is renamed for output.
-    if (package == parsedPackageOp || package.getSymName() == sourceName ||
-        package.getSymName() == outputName)
+    if (package == parsedPackageOp ||
+        (path.size() == 1 && (package.getSymName() == sourceName ||
+                              package.getSymName() == outputName)))
       continue;
-    dependencies.push_back(FlatSymbolRefAttr::get(package.getSymNameAttr()));
+    SmallVector<FlatSymbolRefAttr> nested;
+    for (StringAttr component : ArrayRef(path).drop_front())
+      nested.push_back(FlatSymbolRefAttr::get(component));
+    dependencies.push_back(SymbolRefAttr::get(path.front(), nested));
   }
+}
+
+ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
+    ModuleOp theModule, LIT::PackageOp parsedPackageOp, StringRef sourceName,
+    StringRef outputName, ArrayRef<std::string> bitcodeLibs) {
+  SmallVector<SymbolRefAttr> dependencies;
+  collectLinkDependencies(theModule.getBodyRegion(), /*scopePath=*/{},
+                          parsedPackageOp, sourceName, outputName,
+                          dependencies);
   if (!dependencies.empty()) {
     parsedPackageOp.setDependenciesAttr(
         LinkDependencyArrayAttr::get(theModule.getContext(), dependencies));

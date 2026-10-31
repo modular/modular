@@ -54,6 +54,7 @@ from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from std.utils.index import IndexList
 from std.testing import assert_almost_equal, assert_true
 from std.collections import Set
+from std.utils.index import Index
 
 
 def _score_paged_sm100[
@@ -319,25 +320,11 @@ def test_mla_index_fp8_paged_variable_lengths[
         max_cache_len = max(max_cache_len, cache_lens[i])
 
     print(
-        "test_mla_index_fp8_paged_variable_lengths with params:",
-        "num_heads:",
-        num_heads,
-        "depth:",
-        depth,
-        "page_size:",
-        page_size,
-        "mask:",
-        mask_name,
-        "batch_size:",
-        batch_size,
-        "total_seq_len:",
-        total_seq_len,
-        "max_seq_len:",
-        max_seq_len,
-        "max_cache_len:",
-        max_cache_len,
-        "top_k:",
-        top_k,
+        t"test_mla_index_fp8_paged_variable_lengths with params: num_heads:"
+        t" {num_heads} depth: {depth} page_size: {page_size} mask:"
+        t" {mask_name} batch_size: {batch_size} total_seq_len:"
+        t" {total_seq_len} max_seq_len: {max_seq_len} max_cache_len:"
+        t" {max_cache_len} top_k: {top_k}"
     )
 
     assert (
@@ -407,7 +394,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_ptr)
 
     # K blocks: [num_blocks, 1, num_layers, page_size, num_heads, head_size]
-    var k_shape = IndexList[6](
+    var k_shape = Index(
         num_blocks,
         1,  # MLA uses single kv
         num_layers,
@@ -423,7 +410,7 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     # K scale blocks
     comptime head_dim_granularity = 1
-    var ks_shape = IndexList[6](
+    var ks_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -455,7 +442,7 @@ def test_mla_index_fp8_paged_variable_lengths[
                 ks_tail_host[i] = Float32(-log(1.0 - min(u, 0.999999)))
 
     # Page lookup tables
-    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_shape = Index(batch_size, pages_per_seq)
 
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
@@ -1269,39 +1256,8 @@ struct _SelStats(Copyable, Movable):
         selected scores sit against the peak, the less any disagreement means.
         """
         print(
-            "SELGATE fold=",
-            _FOLD_DTYPE,
-            " nh=",
-            num_heads,
-            " rows=",
-            total_seq_len,
-            " top_k=",
-            top_k,
-            " exp_tail=",
-            exp_score_tail,
-            " score_max_rel=",
-            score_max_rel,
-            " slots=",
-            self.slots,
-            " below=",
-            self.below,
-            " rows_below=",
-            self.rows_below,
-            " count_mismatch=",
-            self.count_mismatch,
-            " deficit_mean=",
-            self.deficit_sum / Float64(max(self.rows, 1)),
-            " deficit_max=",
-            self.deficit_max,
-            " gap_max=",
-            self.gap_max,
-            " spread_min=",
-            self.spread_min,
-            " fp=",
-            self.fp_a,
-            ":",
-            self.fp_b,
-            sep="",
+            t"SELGATE"
+            t" fold={_FOLD_DTYPE} nh={num_heads} rows={total_seq_len} top_k={top_k} exp_tail={exp_score_tail} score_max_rel={score_max_rel} slots={self.slots} below={self.below} rows_below={self.rows_below} count_mismatch={self.count_mismatch} deficit_mean={self.deficit_sum / Float64(max(self.rows, 1))} deficit_max={self.deficit_max} gap_max={self.gap_max} spread_min={self.spread_min} fp={self.fp_a}:{self.fp_b}"
         )
         # A wall, not an expectation: the limit sits two orders of magnitude
         # above what either fold arm forfeits, so it fires only on a broken
@@ -1510,19 +1466,10 @@ def test_mla_index_frozen_metadata_equivalence[
     assert frozen_cache_len >= max_cache_len
 
     print(
-        "test_mla_index_frozen_metadata_equivalence with params:",
-        "num_heads:",
-        num_heads,
-        "mask:",
-        mask_name,
-        "batch_size:",
-        batch_size,
-        "max_cache_len:",
-        max_cache_len,
-        "frozen_cache_len:",
-        frozen_cache_len,
-        "top_k:",
-        top_k,
+        t"test_mla_index_frozen_metadata_equivalence with params: num_heads:"
+        t" {num_heads} mask: {mask_name} batch_size:"
+        t" {batch_size} max_cache_len: {max_cache_len} frozen_cache_len:"
+        t" {frozen_cache_len} top_k: {top_k}"
     )
 
     comptime kv_params = KVCacheStaticParams(
@@ -1561,7 +1508,7 @@ def test_mla_index_frozen_metadata_equivalence[
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_lens[i])
 
-    var k_shape = IndexList[6](
+    var k_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -1576,7 +1523,7 @@ def test_mla_index_frozen_metadata_equivalence[
         rand(k_block_host.as_span())
 
     comptime head_dim_granularity = 1
-    var ks_shape = IndexList[6](
+    var ks_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -1590,7 +1537,7 @@ def test_mla_index_frozen_metadata_equivalence[
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
-    var paged_lut_shape = IndexList[2](batch_size, lut_pages_per_seq)
+    var paged_lut_shape = Index(batch_size, lut_pages_per_seq)
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
@@ -1795,27 +1742,12 @@ def test_mla_index_chunked_equivalence[
     var num_chunks = ceildiv(total_seq_len, rows_per_chunk)
 
     print(
-        "test_mla_index_chunked_equivalence with params:",
-        "num_heads:",
-        num_heads,
-        "mask:",
-        mask_name,
-        "batch_size:",
-        batch_size,
-        "total_seq_len:",
-        total_seq_len,
-        "max_seq_len:",
-        max_seq_len,
-        "max_cache_len:",
-        max_cache_len,
-        "top_k:",
-        top_k,
-        "scores_dtype:",
-        scores_dtype,
-        "rows_per_chunk:",
-        rows_per_chunk,
-        "chunks:",
-        num_chunks,
+        t"test_mla_index_chunked_equivalence with params: num_heads:"
+        t" {num_heads} mask: {mask_name} batch_size:"
+        t" {batch_size} total_seq_len: {total_seq_len} max_seq_len:"
+        t" {max_seq_len} max_cache_len: {max_cache_len} top_k:"
+        t" {top_k} scores_dtype: {scores_dtype} rows_per_chunk:"
+        t" {rows_per_chunk} chunks: {num_chunks}"
     )
 
     assert_true(
@@ -1862,7 +1794,7 @@ def test_mla_index_chunked_equivalence[
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_lens[i])
 
-    var k_shape = IndexList[6](
+    var k_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -1877,7 +1809,7 @@ def test_mla_index_chunked_equivalence[
         rand(k_block_host.as_span())
 
     comptime head_dim_granularity = 1
-    var ks_shape = IndexList[6](
+    var ks_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -1891,7 +1823,7 @@ def test_mla_index_chunked_equivalence[
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
-    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_shape = Index(batch_size, pages_per_seq)
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )

@@ -24,7 +24,7 @@ comptime N = 8
 # Launched with `host_args=`: `cb` is bit-copied in host layout.
 def read_host_closure[
     CbType: ImplicitlyCopyable & RegisterPassable & def(Int) -> Float32
-](dst: MutPointer[Float32, MutAnyOrigin], n: Int32, cb: CbType):
+](dst: MutPointer[Float32, MutUntrackedOrigin], n: Int32, cb: CbType):
     var i = global_idx.x
     if i >= Int(n):
         return

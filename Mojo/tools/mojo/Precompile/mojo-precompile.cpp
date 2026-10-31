@@ -30,6 +30,7 @@
 #include "Support/Config.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/OptionMarshalling.h"
 
 #include "Support/Filesystem/Paths.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -61,13 +62,8 @@ using namespace M::KGEN;
 //===----------------------------------------------------------------------===//
 
 #define DRIVER_OPTIONS_PATH "Precompile/PrecompileOptions.inc"
+#include "Precompile/PrecompileOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct PrecompileOptTable : public llvm::opt::OptTable {
-  PrecompileOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // parsePrecompileArgs
@@ -88,8 +84,12 @@ struct PrecompileArgs {
   std::string inputPath;
   /// The path to which to output a `.mojoc` file.
   std::string outputPath;
+  /// The options that the driver acts on itself.
+  DriverOptions driverOptions;
   /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
+  /// Parser options common to all Mojo builds.
+  FrontendOptions frontendOptions;
   /// The MLIR context used for compilation.
   MLIRContext ctx{MLIRContext::Threading::DISABLED};
 };
@@ -176,19 +176,9 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  if (auto err = parseCompilationOptions(
-          state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
-          options::OPT_I, /*optimizationLevelId=*/{}, /*debugLevelId=*/{},
-          /*sanitizeId=*/{}, /*sharedLibasan=*/{}, /*externalLibasan=*/{},
-          /*bitcodeLibs=*/{}, /*debugInfoLanguageId=*/{}, /*numThreadsId=*/{},
-          /*stdLibPath=*/{}, /*loopUnrollingWarnThresholdId=*/{},
-          /*elaborationErrorLimitId=*/{},
-          /*elaborationErrorIncludePreludeId=*/{},
-          /*elaborationErrorVerbose=*/{}, /*elaborationMaxDepth=*/{},
-          /*ignoreIncompatiblePrecompiledFileErrorsId=*/
-          options::OPT_ignore_incompatible_precompiled_file_errors,
-          /*fpModeId=*/{}, options::OPT_ignore_deprecated))
-    return err.takeError();
+  configureSourceMgr(state, pkgArgs.driverOptions, sourceMgr);
+  initializeCompilation(pkgArgs.ctx);
+  setWarningPolicy(state, pkgArgs.frontendOptions);
 
   // Precompiled files are built with the intention of being agnostic, so use
   // conservative compilation settings as a default.
@@ -213,32 +203,28 @@ static int precompile(const State &subcommandState) {
 
   // Parse command line arguments.
   State state = subcommandState;
-  PrecompileOptTable options;
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
+  options::Table optTable;
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(optTable, options::helpTexts(), args))
+    return *exitCode;
 
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
-#include "Precompile/PrecompileOptionsHelpText.inc"
-    );
-  } else if (args.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
-#include "Precompile/PrecompileOptionsHelpHiddenText.inc"
-    );
+  PrecompileArgs precompileArgs;
+  {
+    DriverOptions &driverOptions = precompileArgs.driverOptions;
+    KGEN::FrontendOptions &frontendOptions = precompileArgs.frontendOptions;
+    KGEN::CompilationOptions &compilationOptions =
+        precompileArgs.compileOptions;
+    MarshallingErrors errors;
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
+#include "Precompile/PrecompileOptions.inc"
+#undef MOJO_OPTION_WITH_MARSHALLING
+    if (int result = state.rejectInvalidArguments(args, errors))
+      return result;
   }
 
-  if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format, options::OPT_disable_warnings,
-          options::OPT_werror, options::OPT_wno_error))
-    return result;
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
-    return result;
-
   llvm::SourceMgr sourceMgr;
-  sourceMgr.setDiagHandler(getDiagHandler(state.diagnosticFormat));
-  PrecompileArgs precompileArgs;
   if (auto err = parsePrecompileArgs(state, args, sourceMgr, precompileArgs))
     return state.reportError(err.getError());
 
@@ -268,28 +254,21 @@ static int precompile(const State &subcommandState) {
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &precompileArgs.ctx);
-  if (args.hasArg(options::OPT_bitcode_libs)) {
-    precompileArgs.compileOptions.bitcodeLibs = llvm::to_vector_of<std::string>(
-        args.getAllArgValues(options::OPT_bitcode_libs));
-  }
 
   ScopedMLIRWarningHandler warningHandler(
-      &precompileArgs.ctx, precompileArgs.compileOptions.disableWarnings,
-      precompileArgs.compileOptions.warningsAsErrors);
+      &precompileArgs.ctx, precompileArgs.frontendOptions.disableWarnings,
+      precompileArgs.frontendOptions.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
-      state, args, precompileArgs.compileOptions, &precompileArgs.ctx,
-      cpuDevice, options::OPT_diagnose_missing_doc_strings,
-      options::OPT_max_notes,
-      /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
-      options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit, options::OPT_export_fixit,
-      /*timingScope=*/nullptr,
-      [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
+      state, precompileArgs.driverOptions, /*tagEnvironment=*/false,
+      precompileArgs.compileOptions, precompileArgs.frontendOptions,
+      &precompileArgs.ctx, cpuDevice, /*timingScope=*/nullptr,
+      [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
             ctx, precompileArgs.inputPath, precompileArgs.sourceName, sourceMgr,
-            parserConfig, ts);
+            &precompileArgs.ctx, precompileArgs.compileOptions, parserOptions,
+            ts);
         return moduleOp;
       });
   if (failed(module))
@@ -299,7 +278,7 @@ static int precompile(const State &subcommandState) {
     // Only --experimental-fixit returns a null module (after applying fixes).
     // --experimental-export-fixit continues normal execution after writing
     // YAML.
-    assert(args.hasArg(options::OPT_fixit));
+    assert(precompileArgs.driverOptions.applyFixIts);
     return EXIT_SUCCESS;
   }
 

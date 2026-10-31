@@ -27,8 +27,8 @@ comptime _TAG = 0x5A5A_1234
 
 
 def _read_back_kernel[
-    L: TensorLayout
-](layout: L, tag: Int64, dst: Pointer[Int64, MutAnyOrigin]):
+    L: TensorLayout, dst_origin: MutOrigin
+](layout: L, tag: Int64, dst: Pointer[Int64, dst_origin]):
     comptime for i in range(L.rank):
         dst[unsafe_offset=i] = Int64(layout.shape[i]().value())
         dst[unsafe_offset=L.rank + i] = Int64(layout.stride[i]().value())
@@ -42,7 +42,9 @@ def _check_launch(layout: Some[TensorLayout], expected: List[Int]) raises:
     with DeviceContext() as ctx:
         var out_dev = ctx.enqueue_create_buffer[.int64](count)
         out_dev.enqueue_fill(-1)
-        ctx.enqueue_function[_read_back_kernel[L]](
+        ctx.enqueue_function[
+            _read_back_kernel[L, dst_origin=origin_of(out_dev)]
+        ](
             layout,
             Int64(_TAG),
             out_dev.unsafe_ptr(),

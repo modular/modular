@@ -67,6 +67,46 @@ Note the corpus is exempted from the unreferenced-files lint by a pattern in
 unused pattern — so emptying the corpus entirely means dropping the exemption
 in the same change.
 
+## Sliced all-gather
+
+The `allgather_rows_slice` target requires peer-to-peer (P2P) access across at
+least two GPUs. Pass a comma-separated device list with `--gpu`; a single index
+still selects one device for other targets. Corpus replay skips collective
+entries when the selected list is too short, and an explicitly selected
+collective reports an error instead.
+
+```bash
+python3 max/kernels/test/gpu/fuzz/fuzz.py --target allgather_rows_slice \
+    --gpu 0,1 --oracle ref --budget 24 --seed 12345
+python3 max/kernels/test/gpu/fuzz/fuzz.py --target allgather_rows_slice \
+    --gpu 0,1 --oracle memcheck --budget 16
+python3 max/kernels/test/gpu/fuzz/fuzz.py --target allgather_rows_slice \
+    --gpu 0,1 --replay-corpus
+```
+
+Every oracle compares output bits with the original host source slices,
+including NaN payloads, signed zeros, infinities, and subnormals. Each output
+starts with the complement of its expected bits, so missing writes fail.
+The target varies row blocks, column widths, repeated launches, and device
+launch order while reusing signals across nonempty, empty, and nonempty
+views of the same allocations. Generation includes empty shards and
+16 KiB copy-chunk boundaries.
+
+The spec encodes rows as `rows_per_rank` and columns as `col_units`.
+Columns equal `(8 / gcd(8, max(1, rows_per_rank))) * (col_units + 1)` for
+16-bit elements, so every generated or shrunk case has divisible rows and
+16-byte-aligned blocks. `repeats` means additional launches after the first;
+`order` selects forward, reverse, or rotating device order. `data_seed`
+controls raw input bits.
+
+The default build uses two GPUs and bfloat16. Build with
+`--mojocopt=-D --mojocopt=slice_allgather_gpus=4` or `=8` to test larger
+collectives, and `--mojocopt=-D --mojocopt=slice_allgather_fp16=1` for float16.
+Then run with `--no-build` and the matching device list. Finish each campaign
+before rebuilding the same target. Corpus anchors describe the default build.
+Run this manual target on a multi-GPU machine outside the single-GPU
+nightly lanes.
+
 ## Oracles
 
 Select with `--oracle`:

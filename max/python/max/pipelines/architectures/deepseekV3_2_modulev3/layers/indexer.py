@@ -14,22 +14,20 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     mla_fp8_index_top_k_physical,
     quantize_dynamic_scaled_float8,
     rope_ragged,
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
-from max.experimental.nn.norm import LayerNorm
-from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.quant_config import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_linear import QuantizedLinear
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -37,11 +35,35 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.nn.norm import LayerNorm
+from max.tensor import Tensor
+from max.tensor.sharding.mappings import DeviceMapping
+from max.tensor.sharding.placements import Sharded
+
+
+def _scales_mapping(mapping: DeviceMapping) -> DeviceMapping:
+    """The placements of the scales for an activation mapped as ``mapping``.
+
+    ``quantize_dynamic_scaled_float8`` returns scales as
+    ``[head_dim // block_size, M_padded]``, so the extent that varies from one
+    rank to the next is axis 1, not axis 0. Copying the activation's mapping
+    claims the wrong axis once ``M`` is sharded, as it is under data
+    parallelism. ``Replicated`` is kept as it is: there every rank's scales
+    buffer holds every column, which is the tensor-parallel case.
+    """
+    return DeviceMapping(
+        mapping.mesh,
+        tuple(
+            Sharded(1) if placement == Sharded(0) else placement
+            for placement in mapping.placements
+        ),
+    )
 
 
 def act_quant(
     x: Tensor, quant_config: QuantConfig, block_size: int = 128
 ) -> tuple[Tensor, Tensor]:
+    """Quantizes the activation's last axis and returns its scales."""
     *x_dims, head_dim = x.shape
     x = x.reshape((-1, head_dim))
     assert int(head_dim) % block_size == 0
@@ -56,7 +78,8 @@ def act_quant(
     )
     # Both outputs take the input's placements; the scales have a different
     # shape than the quantized tensor, which a placements-only mapping allows.
-    x_scales = x_scales.rebind_mapping(x.mapping)
+    # The scales' per-rank extent is axis 1, so a shard of ``M`` moves there.
+    x_scales = x_scales.rebind_mapping(_scales_mapping(x.mapping))
     x = x_q.rebind_mapping(x.mapping)
     num_rows = x.shape[0]
     x = x.reshape((*x_dims, head_dim))
@@ -183,7 +206,8 @@ class Indexer(
         mla_collection: PagedCacheValues,
         mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
     ) -> Tensor:
-        """
+        """Runs the indexer over the activations and the normed queries.
+
         Args:
             x: Tensor of shape (total_seq_len, dim) Input activations.
             qr: Tensor of shape (total_seq_len, q_lora_rank) Pre-normed queries.

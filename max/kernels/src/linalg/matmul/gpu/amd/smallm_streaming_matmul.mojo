@@ -73,7 +73,7 @@ def _smallm_preshuffle_b_kernel[
     comptime iters = k_per_warp // _MFMA_K
     comptime region = iters * WARP_SIZE * 8
 
-    var vec = Int(global_idx.x)
+    var vec = global_idx.x
     var vecs_per_row = k_static // 8
     if vec >= Int(n) * vecs_per_row:
         return
@@ -122,7 +122,7 @@ def _smallm_shuffle_a_kernel[
     comptime region = iters * WARP_SIZE * 8
     comptime rows = m_tiles * _TILE_N
 
-    var vec = Int(global_idx.x)
+    var vec = global_idx.x
     var vecs_per_row = k_static // 8
     if vec >= rows * vecs_per_row:
         return

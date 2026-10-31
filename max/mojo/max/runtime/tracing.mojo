@@ -22,16 +22,16 @@ from std.sys.defines import get_defined_int, is_defined
 
 import std.logger.logger as logger
 
-import max.gpu.host._legacy._tracing as gpu_tracing
 from max.gpu.host import DeviceContext
-from max.gpu.host._legacy._tracing import Color
-from max.gpu.host._legacy._tracing import _end_range as _end_gpu_range
-from max.gpu.host._legacy._tracing import _is_enabled as _gpu_is_enabled
-from max.gpu.host._legacy._tracing import (
+from max.gpu.host import Color
+from max.gpu.host import _end_range as _end_gpu_range
+from max.gpu.host import _is_enabled as _gpu_is_enabled
+from max.gpu.host import (
     _is_enabled_details as _gpu_is_enabled_details,
 )
-from max.gpu.host._legacy._tracing import _mark as _mark_gpu
-from max.gpu.host._legacy._tracing import _start_range as _start_gpu_range
+from max.gpu.host import RangeID as _GPURangeID
+from max.gpu.host import _mark as _mark_gpu
+from max.gpu.host import _start_range as _start_gpu_range
 
 from std.utils import IndexList, Variant
 from std.os import abort
@@ -41,18 +41,15 @@ comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
 
 
 def get_safe_task_id(ctx: DeviceContext.Generic) -> OptionalReg[Int]:
-    """Safely extract task_id from DeviceContext, returning None if null/invalid.
+    """Returns the task ID for the device behind a `DeviceContext`.
 
     Args:
         ctx: The device context to extract the task ID from.
 
     Returns:
-        An OptionalReg containing the task ID if valid, None otherwise.
+        An OptionalReg containing the device's ID.
     """
-    try:
-        return OptionalReg(Int(ctx.id()))
-    except:
-        return None
+    return OptionalReg(Int(ctx.device().id))
 
 
 def get_safe_task_id(ctx: Optional[DeviceContext]) -> OptionalReg[Int]:
@@ -472,6 +469,7 @@ struct _BridgeState(TrivialRegisterPassable):
     """Which runtime-gated tracing bridges `_enter_bridges` engaged."""
 
     var range_opened: Bool
+    var label_pushed: Bool
     var tool_pushed: Bool
     var tracy_enabled: Bool
     var tracy_ctx: UInt64
@@ -494,15 +492,16 @@ def _enter_bridges(
     `Trace.__enter__` is inlined into every `with Trace[...]` site, so the
     backend calls that do not depend on the trace parameters live here and
     are emitted once. The order matters and matches the profiler contracts
-    documented on `Trace.__enter__`: the MAX profiler range and the
-    external profiler annotation are additive, while an enabled Tracy zone
-    is exclusive and the caller stops after it.
+    documented on `Trace.__enter__`: the MAX profiler range, the
+    device-graph capture label and the external profiler annotation are
+    additive, while an enabled Tracy zone is exclusive and the caller stops
+    after it.
 
     Args:
         name: The span name; the bridges copy what they need during the call.
         color: The span color, or 0 when unspecified.
-        record_range: Whether the MAX profiler range bridge applies at this
-            trace level.
+        record_range: Whether the MAX profiler range and the device-graph
+            capture label apply at this trace level.
         push_tool: Whether the external profiler annotation bridge applies at
             this trace level in this build.
 
@@ -510,13 +509,27 @@ def _enter_bridges(
         Which bridges engaged, for `_exit_bridges` to pair.
     """
     var state = _BridgeState(
-        range_opened=False, tool_pushed=False, tracy_enabled=False, tracy_ctx=0
+        range_opened=False,
+        label_pushed=False,
+        tool_pushed=False,
+        tracy_enabled=False,
+        tracy_ctx=0,
     )
     if record_range and _is_range_recording():
         external_call["KGEN_CompilerRT_RangeBegin", NoneType](
             name.unsafe_ptr(), name.byte_length(), color
         )
         state.range_opened = True
+    # Name the kernels this op launches into a device graph being captured,
+    # so a profiler can attribute them when the graph is replayed without
+    # running this span again.
+    if record_range:
+        state.label_pushed = (
+            external_call["KGEN_CompilerRT_CaptureLabelPush", Int](
+                name.unsafe_ptr(), name.byte_length()
+            )
+            != 0
+        )
     if push_tool:
         state.tool_pushed = (
             external_call[
@@ -533,7 +546,11 @@ def _enter_bridges(
 
 
 def _exit_bridges(
-    *, range_opened: Bool, tool_pushed: Bool, tracy_ctx: UInt64
+    *,
+    range_opened: Bool,
+    label_pushed: Bool,
+    tool_pushed: Bool,
+    tracy_ctx: UInt64,
 ) -> Bool:
     """Pairs the bridges `_enter_bridges` engaged.
 
@@ -543,6 +560,8 @@ def _exit_bridges(
     """
     if range_opened:
         external_call["KGEN_CompilerRT_RangeEnd", NoneType]()
+    if label_pushed:
+        external_call["KGEN_CompilerRT_CaptureLabelPop", NoneType]()
     # Pop-iff-pushed: popping without a matching push would close an
     # unrelated outer range on this thread's vendor annotation stack.
     if tool_pushed:
@@ -605,6 +624,11 @@ struct Trace[
     open range. Keep profiler-visible scopes on one thread and uncopied.
     """
 
+    var _label_pushed: Bool
+    """True iff `__enter__` pushed a device-graph capture label; `__exit__`
+    pops it. Same single-thread and no-copy caveats as `_range_opened`.
+    """
+
     var _tool_pushed: Bool
     """True iff `__enter__` pushed an external profiler annotation range;
     `__exit__` pops it.
@@ -656,6 +680,8 @@ struct Trace[
         self._tracy_ctx = 0
         # Set in __enter__ iff a MAX profiler range was opened.
         self._range_opened = False
+        # Set in __enter__ iff a device-graph capture label was pushed.
+        self._label_pushed = False
         # Set in __enter__ iff an external profiler annotation range was
         # pushed.
         self._tool_pushed = False
@@ -822,6 +848,7 @@ struct Trace[
                 push_tool=push_tool,
             )
         self._range_opened = bridges.range_opened
+        self._label_pushed = bridges.label_pushed
         self._tool_pushed = bridges.tool_pushed
         self._tracy_ctx = bridges.tracy_ctx
         if bridges.tracy_enabled:
@@ -919,10 +946,12 @@ struct Trace[
             self._emit_op_log("COMPLETE")
             return
 
-        # Pair whatever __enter__ engaged (see _range_opened, _tool_pushed).
+        # Pair whatever __enter__ engaged (see _range_opened, _label_pushed,
+        # _tool_pushed).
         # A Tracy zone ends the span here, mirroring __enter__.
         if _exit_bridges(
             range_opened=self._range_opened,
+            label_pushed=self._label_pushed,
             tool_pushed=self._tool_pushed,
             tracy_ctx=self._tracy_ctx,
         ):
@@ -930,7 +959,7 @@ struct Trace[
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
             try:
-                _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+                _end_gpu_range(_GPURangeID(self.event_id))
             except:
                 abort("GPU tracing failure")
             return

@@ -33,7 +33,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def simple_init() -> Bool:
@@ -52,9 +52,9 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -72,8 +72,8 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({B},"
         t" {M}, {N}, {K})"
-        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
-        t" {cluster_shape[1]}, {cluster_shape[2]})"
+        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=(Int({cluster_shape[0]}),"
+        t" Int( {cluster_shape[1]}), Int({cluster_shape[2]}))"
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
@@ -130,8 +130,10 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(b_device, b_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -202,10 +204,8 @@ def main() raises:
         # 1SM (cta_group=1) tests with 128x128x16 and 64x128x16 MMA shapes
         comptime for bm in [64, 128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(
-                    cta_group * bm, cta_group * bn, MMA_K
-                )
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (cta_group * bm, cta_group * bn, MMA_K)
 
                 # Basic
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
@@ -214,7 +214,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                 ](
                     ctx,
@@ -231,7 +231,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                 ](
                     ctx,
@@ -248,7 +248,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                 ](
                     ctx,
@@ -261,10 +261,8 @@ def main() raises:
         # swapAB tests (1SM)
         comptime for bm in [64, 128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(
-                    cta_group * bm, cta_group * bn, MMA_K
-                )
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (cta_group * bm, cta_group * bn, MMA_K)
 
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
                     dtype,
@@ -272,7 +270,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                     swapAB=True,
                 ](
@@ -289,7 +287,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                     swapAB=True,
                 ](

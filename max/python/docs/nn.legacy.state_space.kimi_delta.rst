@@ -1,0 +1,34 @@
+:title: max.nn.legacy.state_space.kimi_delta
+:type: module
+:lang: python
+:wrapper_class: rst-module-autosummary
+
+max.nn.legacy.state\_space.kimi\_delta
+======================================
+
+.. automodule:: max.nn.legacy.state_space.kimi_delta
+   :no-members:
+
+.. currentmodule:: max.nn.legacy.state_space.kimi_delta
+
+Type aliases
+------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   KdaBetaMode
+   KdaGateMode
+   KdaStateLayout
+
+Constants
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   KDA_GATE_LOWER_BOUND

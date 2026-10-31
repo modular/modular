@@ -1148,7 +1148,7 @@ def main() raises -> None:
     comptime N = 6 * Nc
     comptime K = 2 * Kc
     comptime L = 5 * Kc
-    print("Multiplying M =", M, "; N =", N, "; K =", K, "; L =", L, "\n")
+    print(t"Multiplying M = {M} ; N = {N} ; K = {K} ; L = {L} \n")
     comptime assert Kc == Nc, "b2b requires Kc == Nc"
     var do_benchmark: Bool = False
     var args = argv()

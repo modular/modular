@@ -36,7 +36,7 @@ from max.gpu import (
     lane_id,
     warp_id,
 )
-from max.gpu.sync import barrier
+from max.gpu.sync import barrier, schedule_barrier
 from max.gpu.host import (
     DeviceAttribute,
     DeviceContext,
@@ -875,6 +875,10 @@ def gemv_split_k[
     check_bounds_m: Bool = True,
     check_bounds_n: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
+    small_m_static_k: Bool = False,
+    small_m_k_chunk: Int = 0,
+    expert_major_grid: Bool = False,
+    act_wide_k: Bool = False,
 ](
     output: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
@@ -905,6 +909,14 @@ def gemv_split_k[
         check_bounds_m: Whether to guard M-tail rows.
         check_bounds_n: Whether to guard N-tail columns.
         pdl_level: Programmatic dependent launch level.
+        small_m_static_k: Stage all static-K fragments for small-M GEMV.
+        small_m_k_chunk: K fragments per pipelined chunk; zero stages all K.
+        expert_major_grid: Swap the grid axes: block x walks the weight
+            rows (grid x is then `ceildiv(n, tile_n)`) and block y the M
+            blocks. The launcher must pass the matching grid order.
+        act_wide_k: Give each lane `2 * simd_width` consecutive K per staged
+            block in the static-K small-M path, so a bf16 activation row
+            loads as one 16 B vector. See `_gemv_split_k_impl`.
 
     Args:
         output: Output tensor, shape (m, n), row-major.
@@ -927,6 +939,10 @@ def gemv_split_k[
         check_bounds_m=check_bounds_m,
         check_bounds_n=check_bounds_n,
         pdl_level=pdl_level,
+        small_m_static_k=small_m_static_k,
+        small_m_k_chunk=small_m_k_chunk,
+        expert_major_grid=expert_major_grid,
+        act_wide_k=act_wide_k,
     ](output, act, weight, m, n, k, no_epilogue_fn, no_compute_fn)
 
 
@@ -955,6 +971,7 @@ def gemv_split_k_epilogue_fn[
     check_bounds_m: Bool = True,
     check_bounds_n: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
+    small_m_static_k: Bool = False,
 ](
     output: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
@@ -987,6 +1004,7 @@ def gemv_split_k_epilogue_fn[
         check_bounds_m: Whether to guard M-tail rows.
         check_bounds_n: Whether to guard N-tail columns.
         pdl_level: Programmatic dependent launch level.
+        small_m_static_k: Stage static-K fragments before accumulation.
 
     Args:
         output: Output tensor, shape (m, n), row-major. Only its shape is
@@ -1011,6 +1029,7 @@ def gemv_split_k_epilogue_fn[
         check_bounds_m=check_bounds_m,
         check_bounds_n=check_bounds_n,
         pdl_level=pdl_level,
+        small_m_static_k=small_m_static_k,
     ](output, act, weight, m, n, k, epilogue_fn, no_compute_fn)
 
 
@@ -1039,6 +1058,7 @@ def gemv_split_k_compute_fn[
     check_bounds_m: Bool = True,
     check_bounds_n: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
+    small_m_static_k: Bool = False,
 ](
     output: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
@@ -1072,6 +1092,7 @@ def gemv_split_k_compute_fn[
         check_bounds_m: Whether to guard M-tail rows.
         check_bounds_n: Whether to guard N-tail columns.
         pdl_level: Programmatic dependent launch level.
+        small_m_static_k: Stage static-K fragments before accumulation.
 
     Args:
         output: Output tensor, shape (m, n), row-major.
@@ -1095,6 +1116,7 @@ def gemv_split_k_compute_fn[
         check_bounds_m=check_bounds_m,
         check_bounds_n=check_bounds_n,
         pdl_level=pdl_level,
+        small_m_static_k=small_m_static_k,
     ](output, act, weight, m, n, k, no_epilogue_fn, compute_fn)
 
 
@@ -1102,7 +1124,11 @@ def gemv_split_k_compute_fn[
 @inline(.always)
 def gemv_split_k_pdl_prefetch_enabled[
     pdl_level: PDLLevel,
+    static_m: Int,
     static_n: Int,
+    static_k: Int,
+    a_type: DType,
+    b_type: DType,
     *,
     target_is_nvidia: Bool = True,
 ]() -> Bool:
@@ -1112,12 +1138,37 @@ def gemv_split_k_pdl_prefetch_enabled[
     The caller supplies `target_is_nvidia` because `is_nvidia_gpu()` reads
     the compiler's target triple, which is the host triple while compiling
     host code such as a test's `main`.
+
+    The peel needs a PDL level and a static N. It applies at N <= 4096, and
+    at N >= 7168 with K >= 7168 when both operands are bf16 and M is dynamic,
+    the only wide-N launches where it measured as a win.
+
+    Parameters:
+        pdl_level: Programmatic dependent launch level of the launch.
+        static_m: Static M of the activation, or -1 when M is dynamic.
+        static_n: Static N of the output, or -1 when N is dynamic.
+        static_k: Static K of the activation, or -1 when K is dynamic.
+        a_type: Activation element type.
+        b_type: Weight element type.
+        target_is_nvidia: Whether the kernel compiles for an NVIDIA GPU.
+
+    Returns:
+        True when the weight loads are peeled above the PDL wait.
     """
     return (
         pdl_level > PDLLevel.OFF
         and target_is_nvidia
         and static_n > -1
-        and static_n <= 4096
+        and (
+            static_n <= 4096
+            or (
+                static_m == -1
+                and a_type == .bfloat16
+                and b_type == .bfloat16
+                and static_n >= 7168
+                and static_k >= 7168
+            )
+        )
     )
 
 
@@ -1148,6 +1199,10 @@ def _gemv_split_k_impl[
     check_bounds_m: Bool,
     check_bounds_n: Bool,
     pdl_level: PDLLevel,
+    small_m_static_k: Bool = False,
+    small_m_k_chunk: Int = 0,
+    expert_major_grid: Bool = False,
+    act_wide_k: Bool = False,
 ](
     output: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
@@ -1161,8 +1216,7 @@ def _gemv_split_k_impl[
     """GEMV with tiling in K dimension.
     Assuming the B (weight) matrix is transposed i.e. row major N x K, this kernel
     implements a vector (1 x K) times a matrix (N x K).
-    The impl can actually handle M > 1 but it's only optimal for tiny M. We use
-    it for M = 1 only.
+    The kernel also serves small-M GEMMs when the dispatch selects this path.
 
     The launch grid covers ceildiv(m, tile_m) * tile_m rows and
     ceildiv(n, tile_n) * tile_n columns, so the final blocks read and write
@@ -1205,6 +1259,24 @@ def _gemv_split_k_impl[
             not a multiple of `tile_n`.
         pdl_level: Programmatic dependent launch level for PDL
             barriers.
+        small_m_static_k: Stage static-K fragments before accumulation.
+        small_m_k_chunk: K fragments per pipelined chunk; zero stages all K.
+        expert_major_grid: Read block x as the N-tile index and block y as
+            the M-tile index, so consecutive linear block ids walk the
+            weight rows (grid `(ceildiv(n, tile_n), ceildiv(m, tile_m))`).
+        act_wide_k: In the static-K small-M path, give each lane
+            `2 * simd_width` consecutive K per staged block instead of
+            `simd_width`, so a bf16 activation row is one 16 B load per
+            block and its matching fp32 weight is two adjacent 16 B loads
+            per lane. Each row accumulates into a per-lane
+            `SIMD[accum_type, simd_width]` register accumulator that folds
+            into the scalar partial once after the K loop, replacing the
+            per-fragment `reduce_add`. AMD-only, mixed bf16-activation x
+            fp32-weight only: the K-to-lane map and the summation order
+            differ from the default path, so the result is no longer
+            bit-identical to the fp32 GEMV (still exact fp32 FMA of the
+            widened bf16). Requires the chunked stage
+            (`small_m_k_chunk > 0`).
 
     Args:
         output: Output tensor, shape (m, n), row-major.
@@ -1220,6 +1292,24 @@ def _gemv_split_k_impl[
     var _m = Int(m)
     var _n = Int(n)
     var _k = Int(k)
+    comptime assert small_m_k_chunk == 0 or small_m_static_k
+    # The static-K small-M stage buffers every weight fragment through an
+    # LDS tile, so a streaming load hint cannot apply on that path.
+    comptime assert not (small_m_static_k and weight_non_temporal)
+    # `act_wide_k` reshapes only the static-K small-M staging below; fail
+    # fast on any other combination instead of silently ignoring the flag.
+    comptime if act_wide_k:
+        comptime assert (
+            small_m_static_k
+        ), "act_wide_k requires the static-K small-M path"
+        comptime assert is_amd_gpu(), "act_wide_k is an AMDgfx K-to-lane map"
+        comptime assert (
+            a_type == .bfloat16 and b_type == .float32
+        ), "act_wide_k is for the mixed bf16 x fp32 GEMV"
+        comptime assert accum_type == .float32, "act_wide_k accumulates in fp32"
+        comptime assert (
+            small_m_k_chunk > 0
+        ), "act_wide_k requires a chunked stage (small_m_k_chunk > 0)"
     comptime assert output.flat_rank == 2, "output must be of rank 2"
     comptime assert act.flat_rank == 2, "act must be of rank 2"
     comptime assert weight.flat_rank == 2, "weight must be of rank 2"
@@ -1228,10 +1318,23 @@ def _gemv_split_k_impl[
     # tile_n represents how many rows each thread will process of the weight matrix.
     # Nvidia vectorized load is 16B.
     comptime tile_k = simd_width * num_threads
+    # The default grid is M-major (`(ceildiv(m, tile_m), ceildiv(n, tile_n))`):
+    # consecutive linear block ids walk the M blocks of one weight row, which
+    # spreads them across XCDs, so at small m each XCD misses the weight row
+    # separately. `expert_major_grid` flips the launch to
+    # `(ceildiv(n, tile_n), ceildiv(m, tile_m))`: the M blocks sharing a
+    # weight row sit one full grid-x span apart, which keeps them on the
+    # same XCD, and the second block's weight read hits L2 instead of paying
+    # a second DRAM miss. Every launch site must pass the grid order that
+    # matches this compile-time value.
     # which rows of the activation matrix each thread will process
-    var tile_id_m = block_idx.x * tile_m
+    var tile_id_m = (
+        block_idx.y if comptime (expert_major_grid) else block_idx.x
+    ) * tile_m
     # which rows of the weight matrix each thread will process
-    var tile_id_n = block_idx.y * tile_n
+    var tile_id_n = (
+        block_idx.x if comptime (expert_major_grid) else block_idx.y
+    ) * tile_n
     var tid = thread_idx.x
     var tile_w = tt_stack_allocation[
         dtype=b_type,
@@ -1257,7 +1360,10 @@ def _gemv_split_k_impl[
         Safe to call before the PDL wait: the weight operand is static
         across grids. Activations must not be loaded here.
         """
-        var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, k_tile)
+        var weight_tile = weight.tile[tile_n, tile_k](
+            block_idx.x if comptime (expert_major_grid) else block_idx.y,
+            k_tile,
+        )
         comptime for i in range(tile_n):
             comptime if check_bounds_n:
                 if i + tile_id_n >= _n:
@@ -1281,7 +1387,10 @@ def _gemv_split_k_impl[
         predecessor's output. Same arithmetic and reduction order in both
         call sites, so results are bit-identical either way.
         """
-        var act_tile = act.tile[tile_m, tile_k](block_idx.x, k_tile)
+        var act_tile = act.tile[tile_m, tile_k](
+            block_idx.y if comptime (expert_major_grid) else block_idx.x,
+            k_tile,
+        )
         comptime for i in range(tile_m):
             comptime if check_bounds_m:
                 if i + tile_id_m >= _m:
@@ -1305,31 +1414,48 @@ def _gemv_split_k_impl[
     # PDL weight prefetch: iteration 0's weight fragments issue before the
     # PDL wait; the activation -- the predecessor's output -- is consumed
     # only after it. CONTRACT: like the SM100 matmul's `prefetch_tiles_n`,
-    # this assumes the B operand is a graph constant (model weights frozen
-    # at load time), never written by a PDL predecessor. Callers whose B is
-    # produced in-graph (runtime dequant, materialized transpose, LoRA
-    # merge, decode-time `q @ K^T`) must not enable PDL here -- the
-    # dispatcher's M<=64 transpose_b path sends any such matmul to this
-    # kernel, so the contract lives in the launch, not the kernel.
+    # B must be a weight loaded straight from the checkpoint and never
+    # written by a predecessor grid. A value the graph computes each call (a
+    # cast, concat, derived parameter or sharded view) is not one. Callers
+    # cannot disable PDL on this path (`_matmul_gpu` hard-codes the level
+    # for GEMV), so the requirement is on the caller's graph.
     #
-    # Gated to narrow-N shapes. The peel's HBM traffic scales with the grid:
-    # at wide N thousands of blocks prefetch concurrently and contend with
-    # the predecessor's tail, and the pair regresses +7% to +10% versus
-    # serialized at N>=16384 (measured), so those shapes keep the
-    # wait-first order. The N<=4096 bound is empirical for M=1 decode
-    # (block count still varies with tile_n and M); `has_N` comes from the
-    # caller's static shape.
-    comptime has_static_n = output.static_shape[1] > -1
+    # Gated to shapes where the peel measured as a win (B200, bf16, M=1
+    # decode). The peel's HBM traffic scales with the grid: at wide N
+    # thousands of blocks prefetch concurrently and contend with the
+    # predecessor's tail. Wide-N shapes with shallow K regress (+2% to +14%
+    # for N>=6144 at K<=5120, +14% for the 128256x4096 LM head), so they keep
+    # the wait-first order. Narrow N (<=4096) keeps the earlier gate. Wide N
+    # wins (-3% to -8%, up to N=28672) once K>=7168, i.e. 7+ K-iterations at
+    # 128 threads, where the peeled iteration is a small share of the loop,
+    # but only with a dynamic M, which is what graph launches pass. With a
+    # static M the kernel already starts faster and the peel regresses most of
+    # those shapes by +1.0 to +1.4 us (7168x16384 still wins). The bounds are
+    # empirical (block count still varies with tile_n and M); `has_N` comes
+    # from the caller's static shape.
     # NVIDIA-only: `wait_on_dependent_grids` lowers to nothing on other
     # targets, so the peel there would only reshuffle the K-loop schedule
     # (and shift `num_k_iters` parity) with no overlap to gain.
     comptime gemv_pdl_prefetch = gemv_split_k_pdl_prefetch_enabled[
         pdl_level,
+        act.static_shape[0],
         output.static_shape[1],
+        act.static_shape[1],
+        a_type,
+        b_type,
         target_is_nvidia=is_nvidia_gpu(),
     ]()
+    # OVERLAP_AT_BEGINNING releases the dependent grid on entry, before this
+    # grid's own wait: the dependent's wait still blocks until this grid has
+    # completed and flushed its stores, so the release only decides when the
+    # dependent is scheduled. It does not need this grid's predecessor to
+    # finish first, so a GEMV -> GEMV chain overlaps all three launches.
+    comptime release_on_entry = pdl_level == PDLLevel.OVERLAP_AT_BEGINNING
 
     comptime if pdl_level > PDLLevel.OFF:
+        comptime if release_on_entry:
+            launch_dependent_grids()
+
         comptime if gemv_pdl_prefetch:
             if tid * simd_width < _k:
                 _load_weight_frags(0)
@@ -1353,7 +1479,151 @@ def _gemv_split_k_impl[
 
         iteration += 1
 
-    comptime if unroll_factor == 1:
+    comptime if small_m_static_k:
+        comptime assert is_amd_gpu() and tile_n == 1
+        comptime static_k = act.static_shape[1]
+        comptime assert static_k > 0 and static_k % tile_k == 0
+        # K columns each lane owns per staged block. `act_wide_k` doubles it
+        # so a bf16 activation row is one 16 B load per block (against two
+        # adjacent 16 B weight loads per lane) instead of one 8 B load per
+        # 4-K fragment; the wider map halves the activation VMEM
+        # instructions and address registers of a block.
+        comptime lane_k = (2 * simd_width) if act_wide_k else simd_width
+        comptime frag_k = lane_k * num_threads
+        comptime k_iters = static_k // frag_k
+        comptime if act_wide_k:
+            comptime assert (
+                static_k % frag_k == 0
+            ), "act_wide_k needs K divisible by 2 * simd_width * num_threads"
+        # Per-row SIMD accumulator over the lane's K window: position l
+        # holds the partial for K offsets l and l + simd_width of the
+        # lane's `lane_k` consecutive K. Read only on the `act_wide_k` map;
+        # it must sit at this scope so the shared staging loops and the
+        # fold below can reach it.
+        var acc_wide = tt_stack_allocation[
+            dtype=accum_type, address_space=.LOCAL
+        ](row_major[tile_m, simd_width]()).fill(0)
+
+        @inline(.always)
+        def _accum_wide_row(
+            i: Int,
+            act_vec: SIMD[a_type, lane_k],
+            weight_vec: SIMD[b_type, lane_k],
+        ) {mut acc_wide}:
+            var acc_row = acc_wide.load[simd_width]((i, Idx[0]))
+            comptime for g in range(lane_k // simd_width):
+                acc_row += (
+                    act_vec.slice[simd_width, offset=g * simd_width]().cast[
+                        accum_type
+                    ]()
+                    * weight_vec.slice[
+                        simd_width, offset=g * simd_width
+                    ]().cast[accum_type]()
+                )
+            acc_wide.store((i, Idx[0]), acc_row)
+
+        comptime if small_m_k_chunk > 0:
+            comptime assert small_m_k_chunk in (1, 2)
+            comptime assert k_iters % small_m_k_chunk == 0
+            comptime num_chunks = k_iters // small_m_k_chunk
+            var weights = tt_stack_allocation[
+                dtype=b_type, address_space=.LOCAL
+            ](row_major[2 * small_m_k_chunk, lane_k]())
+            var activations = tt_stack_allocation[
+                dtype=a_type, address_space=.LOCAL
+            ](row_major[2 * small_m_k_chunk, tile_m, lane_k]())
+            comptime for phase in range(num_chunks + 1):
+                comptime if phase < num_chunks:
+                    comptime for j in range(small_m_k_chunk):
+                        comptime q = phase * small_m_k_chunk + j
+                        comptime slot = (phase % 2) * small_m_k_chunk + j
+                        var weight_tile = weight.tile[1, frag_k](
+                            block_idx.x if comptime (
+                                expert_major_grid
+                            ) else block_idx.y,
+                            q,
+                        )
+                        weights.store(
+                            (slot, Idx[0]),
+                            weight_tile.load[lane_k, non_temporal=False](
+                                (0, tid * lane_k)
+                            ),
+                        )
+                        comptime for i in range(tile_m):
+                            var row = min(tile_id_m + i, _m - 1)
+                            var act_tile = act.tile[1, frag_k](row, q)
+                            var act_vec = act_tile.vectorize[1, lane_k]()[
+                                0, tid
+                            ]
+                            activations.store((slot, i, Idx[0]), act_vec)
+                comptime if phase > 0:
+                    comptime for j in range(small_m_k_chunk):
+                        comptime slot = ((phase - 1) % 2) * small_m_k_chunk + j
+                        var weight_vec = rebind[SIMD[b_type, lane_k]](
+                            weights.load[lane_k]((slot, 0))
+                        )
+                        comptime for i in range(tile_m):
+                            var act_vec = rebind[SIMD[a_type, lane_k]](
+                                activations.load[lane_k]((slot, i, 0))
+                            )
+                            comptime if act_wide_k:
+                                _accum_wide_row(i, act_vec, weight_vec)
+                            else:
+                                acc[i, 0] = _dot_accum(
+                                    act_vec, weight_vec, acc[i, 0]
+                                )
+        else:
+            var weights = tt_stack_allocation[
+                dtype=b_type, address_space=.LOCAL
+            ](row_major[k_iters, lane_k]())
+            var activations = tt_stack_allocation[
+                dtype=a_type, address_space=.LOCAL
+            ](row_major[k_iters, tile_m, lane_k]())
+            comptime for q in range(k_iters):
+                var weight_tile = weight.tile[1, frag_k](
+                    block_idx.x if comptime (
+                        expert_major_grid
+                    ) else block_idx.y,
+                    q,
+                )
+                weights.store(
+                    (q, Idx[0]),
+                    weight_tile.load[lane_k, non_temporal=False](
+                        (0, tid * lane_k)
+                    ),
+                )
+                comptime for i in range(tile_m):
+                    var row = min(tile_id_m + i, _m - 1)
+                    var act_tile = act.tile[1, frag_k](row, q)
+                    var act_vec = act_tile.vectorize[1, lane_k]()[0, tid]
+                    activations.store((q, i, Idx[0]), act_vec)
+
+            comptime for q in range(k_iters):
+                var weight_vec = rebind[SIMD[b_type, lane_k]](
+                    weights.load[lane_k]((q, 0))
+                )
+                comptime for i in range(tile_m):
+                    var act_vec = rebind[SIMD[a_type, lane_k]](
+                        activations.load[lane_k]((q, i, 0))
+                    )
+                    comptime if act_wide_k:
+                        _accum_wide_row(i, act_vec, weight_vec)
+                    else:
+                        acc[i, 0] = _dot_accum(act_vec, weight_vec, acc[i, 0])
+        # Keep every row's loads and FMAs ahead of the row reductions; without
+        # this the scheduler sinks later rows' loads past earlier reductions
+        # and the kernel pays several full load round trips. Scoped to
+        # tile_m <= 4: pinning the 8-row staged fragments ahead of the
+        # reductions pushes the kernel past the 128-VGPR occupancy cliff,
+        # so 8-row launches keep the default schedule.
+        comptime if tile_m <= 4:
+            schedule_barrier()
+        comptime if act_wide_k:
+            # One reduction per row after every K block is consumed -- the
+            # scalar per-thread partial the cross-lane stage below expects.
+            comptime for i in range(tile_m):
+                acc[i, 0] = acc_wide.load[simd_width]((i, Idx[0])).reduce_add()
+    elif unroll_factor == 1:
         # Simple loop — no ceildiv, no main_iters/remainder split.
         # Produces minimal PTX with fewest registers on NVIDIA. Under PDL the
         # peeled iteration 0 above already ran, so start at the next tile.
@@ -1443,11 +1713,11 @@ def _gemv_split_k_impl[
                 comptime for ni in range(tile_n):
                     output[row, col + ni] = out[ni]
 
-    comptime if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF and not release_on_entry:
         launch_dependent_grids()
 
 
-def router_gate_use_mixed_gemv(m: Int) -> Bool:
+def router_gate_use_mixed_gemv(m: Int, max_m: Int = 64) -> Bool:
     """Returns whether runtime `m` should take the fused mixed router GEMV.
 
     Only tiny-M (decode) rows use the single-launch mixed GEMV. `m == 0`
@@ -1456,12 +1726,102 @@ def router_gate_use_mixed_gemv(m: Int) -> Bool:
 
     Args:
         m: The runtime row count of the router-gate activation.
+        max_m: The largest `m` that still takes the fused path. The default is
+            the MI355X (gfx950) window.
 
     Returns:
         True if the fused mixed GEMV should be launched for this `m`.
     """
-    comptime max_m = 64
     return m > 0 and m <= max_m
+
+
+@fieldwise_init
+struct _RouterGateGemvConfig(Copyable, Equatable, ImplicitlyCopyable, Movable):
+    """One `gemv_split_k` launch configuration of an AMD router-gate band.
+
+    Fields mirror `gemv_split_k`'s tiling parameters; see its docstring for
+    what each controls. Returned by `_amd_router_gate_896x7168_config`.
+    """
+
+    var tile_m: Int
+    var tile_n: Int
+    var num_threads: Int
+    var unroll_factor: Int
+    var weight_non_temporal: Bool
+    var small_m_static_k: Bool
+    var small_m_k_chunk: Int
+    var expert_major_grid: Bool
+    var act_wide_k: Bool
+
+
+# Cold-weight launch table for the `[896, 7168]` router gate (Kimi K3) on
+# MI355X, swept over every legal `gemv_split_k` config against a cold
+# >512 MiB weight ring. Rows are `(max_m, tile_m, tile_n, num_threads,
+# unroll_factor, weight_non_temporal, small_m_static_k, small_m_k_chunk,
+# expert_major_grid, act_wide_k)`, ordered by ascending `max_m`; the
+# first row whose `max_m` covers `m` wins.
+# `_amd_router_gate_896x7168_config` is the single source of truth for that
+# walk: the launcher dispatches on its answer, and the tests pin its
+# per-band output, so table and launch cannot drift apart.
+#
+# `tile_m` follows the row-block decomposition wasting the fewest dead
+# tail rows (tail rows still cost full loads and FMAs): tm2 covers m=2..6,
+# tm4 m=7..12, tm8 m=13..32, and m=33..64 pairs tile_n=4 with tm4.
+# `m == 1` streams the weight (no row reuse to trade for streaming loss).
+# The `expert_major_grid` bands and the `act_wide_k` flags won on cold
+# weights: the wide-K map (each lane owns 8 consecutive K, one 16 B
+# activation load per block, one SIMD-accumulator fold per row) cuts the
+# per-wave VMEM instructions by a third to a half and runs 8% to 18%
+# faster at every measured m >= 3. Its chunk must divide the 7 wide
+# K-blocks, so those rows stage one block per phase. `unroll_factor` is
+# dead on the `small_m_static_k` rows -- that path fully unrolls its K walk
+# -- but stays in the tuple because the fields mirror `gemv_split_k`'s
+# parameters.
+comptime _AMD_ROUTER_GATE_896X7168_TABLE = (
+    (1, 1, 1, 256, 2, True, False, 0, False, False),
+    (6, 2, 1, 128, 2, False, True, 1, True, True),
+    (12, 4, 1, 128, 2, False, True, 1, True, True),
+    (32, 8, 1, 128, 2, False, True, 1, True, True),
+    (64, 4, 4, 128, 2, False, False, 0, False, False),
+)
+
+# Config for `m` above the last band, never reached through
+# `mo.router.gate.mixed.gemv` (which caps at `m <= 64`): the wide-N launch.
+comptime _AMD_ROUTER_GATE_896X7168_FALLBACK = _RouterGateGemvConfig(
+    1, 4, 128, 2, False, False, 0, False, False
+)
+
+
+def _amd_router_gate_896x7168_row_config[i: Int]() -> _RouterGateGemvConfig:
+    """Returns the launch config of table row `i`, without its `max_m` key."""
+    comptime row = _AMD_ROUTER_GATE_896X7168_TABLE[i]
+    return _RouterGateGemvConfig(
+        row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9]
+    )
+
+
+def _amd_router_gate_896x7168_config(m: Int) -> _RouterGateGemvConfig:
+    """Returns the cold-weight MI355X launch config for the `[896, 7168]`
+    router-gate weight at this row count.
+
+    The production regime is cold weights: 92 router gates x 25.7 MB fp32 per
+    step never stay cache-resident, so the bands are keyed on that regime
+    (streaming first-row loads at m == 1, static-K staging above). The
+    `[128, 6144]` router gate keeps the N=128 sweep config instead and never
+    reads this table.
+
+    Args:
+        m: The runtime row count of the router-gate activation.
+
+    Returns:
+        The launch config for `m`; `m` above the fused window still returns a
+        valid wide-N config (the m > 64 fallback).
+    """
+    comptime for i in range(len(_AMD_ROUTER_GATE_896X7168_TABLE)):
+        comptime row = _AMD_ROUTER_GATE_896X7168_TABLE[i]
+        if m <= row[0]:
+            return _amd_router_gate_896x7168_row_config[i]()
+    return _AMD_ROUTER_GATE_896X7168_FALLBACK
 
 
 def router_gate_mixed_gemv[
@@ -1486,18 +1846,39 @@ def router_gate_mixed_gemv[
     Fuses the standalone bf16→fp32 activation cast into the router GEMV: `a` is
     loaded as bf16 and widened to fp32 in registers, then dotted against the
     unchanged fp32 weight `b` (`c = a @ b^T`) in a single launch. MiniMax-M3
-    uses this path on MI355X; other architectures retain the standard router.
+    uses this path on MI355X and on SM100, and the Kimi K3 router on gfx950.
 
     Because bf16→fp32 widening is lossless and the reduction structure matches
-    `gemv_split_k`, the result is numerically identical to casting `a` to fp32
-    first and running the fp32 GEMV.
+    `gemv_split_k`, the result is bit-identical to the fp32 `gemv_split_k` at
+    the same launch config over a pre-cast activation -- except on `act_wide_k`
+    bands (see the `[896, 7168]` table above), where each lane owns 8
+    consecutive K and the row folds a SIMD accumulator once: still fp32
+    arithmetic over exactly the widened bf16, but a different summation order
+    from the fp32 GEMV.
 
-    The launch config is the MI355X (gfx950 / CDNA4) cache-busting sweep winner
+    The MI355X (gfx950 / CDNA4) launch config is the cache-busting sweep winner
     for the `N=128, K=6144` router-gate shape: `simd_width=4, tile_m=1,
     128 threads, unroll=2`, with `tile_n=2` at `M<=16` and `tile_n=4` above,
     and the weight kept cache-resident (`weight_non_temporal=False`) so the
     per-row-block weight rereads hit L2 — the same cache policy the merged
-    KERN-3219 fp32 router path selects.
+    KERN-3219 fp32 router path selects. The wide `[896, 7168]` router gate
+    instead dispatches through the cold-weight band table
+    `_amd_router_gate_896x7168_config`: its 92 x 25.7 MB fp32 weights are
+    never cache-resident at decode, so the per-band winners differ
+    (streaming loads at `m == 1`, static-K staging above).
+
+    The SM100 config keeps the 256-thread, `simd_width=4` K split of the
+    standard fp32 router dispatch, so every row is bit-identical to that path
+    at the same `M <= 64`. Above 64 this launch keeps IEEE fp32 arithmetic,
+    while the standard dispatch uses TF32 tensor cores. Larger `tile_m * tile_n`
+    reuses each weight and activation load across more outputs, which cuts the
+    L2 traffic that bounds this launch (the weight is re-read once per row
+    block), at the price of a longer warp-reduce tail; the tiling below is
+    the B200 sweep winner per `M` bucket.
+
+    On SM100, `b` must be initialized before execution and remain unchanged:
+    the kernel prefetches its first weight tile before waiting for dependent
+    grids. A weight produced by a PDL predecessor is unsupported.
 
     Parameters:
         static_N: Static output width (weight rows / expert count). Selects the
@@ -1513,24 +1894,33 @@ def router_gate_mixed_gemv[
         c: Output `[M, N]` fp32 tensor.
         a: Activation `[M, K]` bf16 tensor.
         b: Weight `[N, K]` fp32 tensor (transpose_b layout).
-        m: Runtime row count (`M`). Optimal for tiny `M` (router: `M<=64`).
+        m: Runtime row count (`M`). The router window is `M<=64` on MI355X
+            and `M<=128` on SM100.
         n: Output width (`N`).
         k: Contraction dim (`K`).
         ctx: The device context.
     """
-    # gfx950 fp32 vectorized load = 16 B = 4 fp32 elements; the same element
-    # count vectorizes the bf16 activation load (8 B), matching the K tiling.
+    # A 16 B fp32 vector load is 4 elements; the same element count
+    # vectorizes the bf16 activation load (8 B), matching the K tiling.
     comptime simd_width = 16 // size_of[DType.float32]()
-    comptime tile_m = 1
-    comptime num_threads = 128
-    comptime unroll_factor = 2
     # Empty-launch guard: a graph-capture warmup can call the router with M==0
     # (and N is never 0 for a real gate); skip the launch so no block reads or
     # writes past the zero-length buffers.
     if m == 0 or n == 0:
         return
 
-    def _launch[tile_n: Int]() raises {imm}:
+    def _launch[
+        tile_m: Int,
+        tile_n: Int,
+        num_threads: Int,
+        unroll_factor: Int,
+        pdl_level: PDLLevel,
+        weight_non_temporal: Bool = False,
+        small_m_static_k: Bool = False,
+        small_m_k_chunk: Int = 0,
+        expert_major_grid: Bool = False,
+        act_wide_k: Bool = False,
+    ]() raises {imm}:
         comptime kernel = gemv_split_k[
             DType.float32,
             DType.bfloat16,
@@ -1546,10 +1936,28 @@ def router_gate_mixed_gemv[
             tile_n=tile_n,
             num_threads=num_threads,
             unroll_factor=unroll_factor,
-            weight_non_temporal=False,
+            weight_non_temporal=weight_non_temporal,
             check_bounds_m=tile_m > 1,
             check_bounds_n=static_N % tile_n != 0,
+            pdl_level=pdl_level,
+            small_m_static_k=small_m_static_k,
+            small_m_k_chunk=small_m_k_chunk,
+            expert_major_grid=expert_major_grid,
+            act_wide_k=act_wide_k,
         ]
+        comptime if not expert_major_grid:
+            # The M-major grid walks the weight rows in grid.y, capped at
+            # 65535 blocks on every supported target -- the same limit
+            # `_is_amd_small_m_gemv` asserts for its route. `n` is
+            # `static_N` at every call site of this launcher.
+            comptime assert (
+                static_N <= 65535
+            ), "router gate N exceeds the grid.y block limit"
+        # The grid order is part of the kernel's compile-time contract
+        # (`expert_major_grid` swaps which block axis walks the weight rows).
+        var grid = (ceildiv(n, tile_n), ceildiv(m, tile_m)) if comptime (
+            expert_major_grid
+        ) else (ceildiv(m, tile_m), ceildiv(n, tile_n))
         ctx.enqueue_function[kernel](
             c,
             a,
@@ -1557,14 +1965,65 @@ def router_gate_mixed_gemv[
             Int32(m),
             Int32(n),
             Int32(k),
-            grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+            grid_dim=grid,
             block_dim=num_threads,
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
-    if m <= 16:
-        _launch[2]()
+    comptime if ctx.target.is_amd_gpu():
+        comptime static_K = type_of(a).static_shape[1]
+        comptime if static_N == 896 and static_K == 7168:
+            # Cold-weight bands for the wide [896, 7168] router gate; the
+            # per-band winners differ from the warm-cache N=128 sweep
+            # below. The config function is the single source of truth:
+            # match its answer against the comptime table rows to pick
+            # the launch.
+            var cfg = _amd_router_gate_896x7168_config(m)
+            comptime for i in range(len(_AMD_ROUTER_GATE_896X7168_TABLE)):
+                comptime row_cfg = _amd_router_gate_896x7168_row_config[i]()
+                if cfg == row_cfg:
+                    _launch[
+                        row_cfg.tile_m,
+                        row_cfg.tile_n,
+                        row_cfg.num_threads,
+                        row_cfg.unroll_factor,
+                        PDLLevel.OFF,
+                        row_cfg.weight_non_temporal,
+                        row_cfg.small_m_static_k,
+                        row_cfg.small_m_k_chunk,
+                        row_cfg.expert_major_grid,
+                        row_cfg.act_wide_k,
+                    ]()
+                    return
+            comptime fallback = _AMD_ROUTER_GATE_896X7168_FALLBACK
+            _launch[
+                fallback.tile_m,
+                fallback.tile_n,
+                fallback.num_threads,
+                fallback.unroll_factor,
+                PDLLevel.OFF,
+                fallback.weight_non_temporal,
+                fallback.small_m_static_k,
+                fallback.small_m_k_chunk,
+                fallback.expert_major_grid,
+                fallback.act_wide_k,
+            ]()
+        else:
+            # N=128 sweep config (MiniMax-M3).
+            if m <= 16:
+                _launch[1, 2, 128, 2, PDLLevel.OFF]()
+            else:
+                _launch[1, 4, 128, 2, PDLLevel.OFF]()
     else:
-        _launch[4]()
+        # B200 sweep winners for the `N=128, K=6144` router gate, M = 8..128.
+        if m <= 8:
+            _launch[1, 1, 256, 1, PDLLevel.OVERLAP_AT_BEGINNING]()
+        elif m <= 24:
+            _launch[4, 1, 256, 1, PDLLevel.OVERLAP_AT_BEGINNING]()
+        elif m <= 32:
+            _launch[4, 2, 256, 2, PDLLevel.OVERLAP_AT_BEGINNING]()
+        else:
+            _launch[8, 2, 256, 2, PDLLevel.OVERLAP_AT_BEGINNING]()
 
 
 # Row Vector-Matrix multiplication
@@ -1914,21 +2373,93 @@ comptime _GEMV_MULTIROW_MAX_K_ITERS = 2
 
 
 @inline(.always)
-def is_minimax_router_gemm[
+def _is_amd_small_m_gemv[
     c_type: DType,
     a_type: DType,
     b_type: DType,
     static_N: Int,
     static_K: Int,
 ]() -> Bool:
-    """Returns whether a GEMM has the MiniMax-M3 fp32 router signature."""
+    """Returns whether a static GEMM shape admits AMD small-M GEMV.
+
+    The bounds cover the measured span (the smallest measured N is 24 for fp32
+    and 32 for bf16). The matmul caller additionally requires N % 4 == 0.
+    Wider fp32 N (for example 896x7168) regresses with cache-resident weights
+    at M >= 8, so it stays on the tiled path.
+    """
+    comptime n_min = 16
+    comptime k_min = 2048
+    comptime f32_n_max = 576
+    comptime f32_k_max = 16384
+    comptime bf16_n_max = 576
+    comptime bf16_k_max = 7168
+    comptime grid_y_limit = 65535
+    comptime assert (
+        f32_n_max <= grid_y_limit
+    ), "GEMV exceeds AMD/HIP grid.y limit"
     return (
-        a_type == .float32
-        and b_type == .float32
-        and c_type == .float32
-        and static_N == 128
-        and static_K == 6144
+        a_type == b_type
+        and static_K % simd_width_of[a_type, target=get_gpu_target()]() == 0
+        and (
+            (
+                a_type == .float32
+                and c_type == .float32
+                and n_min <= static_N <= f32_n_max
+                and k_min <= static_K <= f32_k_max
+            )
+            or (
+                a_type == .bfloat16
+                and c_type in (DType.bfloat16, DType.float32)
+                and n_min <= static_N <= bf16_n_max
+                and k_min <= static_K <= bf16_k_max
+            )
+        )
     )
+
+
+@inline(.always)
+def _amd_small_m_gemv_route[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    static_N: Int,
+    static_K: Int,
+](m: Int) -> Tuple[Bool, Bool]:
+    """Returns (use_gemv, use_config_b).
+
+    Config B uses cached weight loads and 128 threads for repeated rows.
+    Narrow fp32 outputs keep config A at every M.
+    """
+    comptime f32_config_b_n_min = 384
+    comptime bf16_config_b_n_min = 576
+    comptime f32_config_b_n_floor = 64
+    comptime max_m = 16
+    comptime m1_static_k_shape = (
+        a_type == .float32
+        and (
+            (static_N == 32 and static_K in (4096, 6144))
+            or (static_N == 256 and static_K == 6144)
+        )
+    )
+    var use_gemv = _is_amd_small_m_gemv[
+        c_type, a_type, b_type, static_N, static_K
+    ]() and (1 < m <= max_m or (m == 1 and m1_static_k_shape))
+    var use_config_b = (
+        use_gemv
+        and (a_type != .float32 or static_N >= f32_config_b_n_floor)
+        and (
+            m >= 4
+            or (
+                m >= 2
+                and static_N
+                >= (
+                    f32_config_b_n_min if a_type
+                    == .float32 else bf16_config_b_n_min
+                )
+            )
+        )
+    )
+    return (use_gemv, use_config_b)
 
 
 @inline(.always)
@@ -2334,8 +2865,12 @@ def _gemv_gpu_dispatch_impl[
                 tile_n: Int,
                 unroll_factor: Int = 2,
                 weight_non_temporal: Bool = True,
+                rows_per_block: Int = tile_m,
+                small_m_static_k: Bool = False,
+                small_m_k_chunk: Int = 0,
             ]() raises {imm}:
                 comptime if has_epilogue_fn:
+                    comptime assert small_m_k_chunk == 0
                     comptime kernel = gemv_split_k_epilogue_fn[
                         c_type,
                         a_type,
@@ -2348,14 +2883,15 @@ def _gemv_gpu_dispatch_impl[
                         type_of(b).Engine,
                         EpilogueFnType,
                         simd_width=simd_width,
-                        tile_m=tile_m,
+                        tile_m=rows_per_block,
                         tile_n=tile_n,
                         num_threads=num_threads,
                         unroll_factor=unroll_factor,
                         weight_non_temporal=weight_non_temporal,
-                        check_bounds_m=tile_m > 1,
+                        check_bounds_m=rows_per_block > 1,
                         check_bounds_n=static_N % tile_n != 0,
                         pdl_level=pdl_level,
+                        small_m_static_k=small_m_static_k,
                     ]
                     ctx.enqueue_function[kernel](
                         c,
@@ -2365,11 +2901,15 @@ def _gemv_gpu_dispatch_impl[
                         Int32(n),
                         Int32(k),
                         host_args=(epilogue_fn,),
-                        grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+                        grid_dim=(
+                            ceildiv(m, rows_per_block),
+                            ceildiv(n, tile_n),
+                        ),
                         block_dim=num_threads,
                         attributes=pdl_launch_attributes(pdl_level),
                     )
                 elif has_compute_fn:
+                    comptime assert small_m_k_chunk == 0
                     comptime kernel = gemv_split_k_compute_fn[
                         c_type,
                         a_type,
@@ -2382,14 +2922,15 @@ def _gemv_gpu_dispatch_impl[
                         type_of(b).Engine,
                         ComputeFnType,
                         simd_width=simd_width,
-                        tile_m=tile_m,
+                        tile_m=rows_per_block,
                         tile_n=tile_n,
                         num_threads=num_threads,
                         unroll_factor=unroll_factor,
                         weight_non_temporal=weight_non_temporal,
-                        check_bounds_m=tile_m > 1,
+                        check_bounds_m=rows_per_block > 1,
                         check_bounds_n=static_N % tile_n != 0,
                         pdl_level=pdl_level,
+                        small_m_static_k=small_m_static_k,
                     ]
                     ctx.enqueue_function[kernel](
                         c,
@@ -2399,7 +2940,10 @@ def _gemv_gpu_dispatch_impl[
                         Int32(n),
                         Int32(k),
                         host_args=(compute_fn,),
-                        grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+                        grid_dim=(
+                            ceildiv(m, rows_per_block),
+                            ceildiv(n, tile_n),
+                        ),
                         block_dim=num_threads,
                         attributes=pdl_launch_attributes(pdl_level),
                     )
@@ -2415,14 +2959,16 @@ def _gemv_gpu_dispatch_impl[
                         type_of(a).Engine,
                         type_of(b).Engine,
                         simd_width=simd_width,
-                        tile_m=tile_m,
+                        tile_m=rows_per_block,
                         tile_n=tile_n,
                         num_threads=num_threads,
                         unroll_factor=unroll_factor,
                         weight_non_temporal=weight_non_temporal,
-                        check_bounds_m=tile_m > 1,
+                        check_bounds_m=rows_per_block > 1,
                         check_bounds_n=static_N % tile_n != 0,
                         pdl_level=pdl_level,
+                        small_m_static_k=small_m_static_k,
+                        small_m_k_chunk=small_m_k_chunk,
                     ]
                     ctx.enqueue_function[kernel](
                         c,
@@ -2431,18 +2977,156 @@ def _gemv_gpu_dispatch_impl[
                         Int32(m),
                         Int32(n),
                         Int32(k),
-                        grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+                        grid_dim=(
+                            ceildiv(m, rows_per_block),
+                            ceildiv(n, tile_n),
+                        ),
                         block_dim=num_threads,
                         attributes=pdl_launch_attributes(pdl_level),
                     )
 
             comptime if ctx.target.is_amd_gpu():
-                comptime if is_minimax_router_gemm[
+                comptime if _is_amd_small_m_gemv[
                     c_type, a_type, b_type, static_N, static_K
                 ]():
-                    # MiniMax-M3 router gate: M row blocks reread the same 3 MB
-                    # weight. Cached loads turn those rereads into L2/MALL hits.
-                    _gemv_split_k_dispatch[128, 2, 2, False]()
+                    var route = _amd_small_m_gemv_route[
+                        c_type, a_type, b_type, static_N, static_K
+                    ](m)
+                    # TODO(anandpratap): these cells are tuned to the MI355
+                    # production shapes; any other shape inside the bounds
+                    # gets an unmeasured config. Retune, or move to a table,
+                    # when a new shape or GPU comes through this path.
+                    comptime tuned_m2m3 = (
+                        not has_epilogue_fn
+                        and not has_compute_fn
+                        and a_type == .float32
+                        and (
+                            (static_N == 288 and static_K == 4096)
+                            or (static_N in (128, 256) and static_K == 6144)
+                        )
+                    )
+                    comptime static_k_target = (
+                        static_K > 0
+                        and static_K % (simd_width * 256) == 0
+                        and not has_compute_fn
+                        and a_type == .float32
+                        and (
+                            (static_N == 32 and static_K in (4096, 6144))
+                            or (static_N == 256 and static_K == 6144)
+                        )
+                    )
+                    comptime bf16_narrow_m8 = (
+                        a_type == .bfloat16
+                        and c_type == .bfloat16
+                        and static_N == 32
+                        and static_K == 4096
+                        and not has_compute_fn
+                    )
+                    if bf16_narrow_m8 and m == 8:
+                        _gemv_split_k_dispatch[128, 1, 2, False, 1, False]()
+                    elif (
+                        route[1]
+                        or (tuned_m2m3 and (m == 2 or m == 3))
+                        or (static_k_target and m <= 8)
+                    ):
+                        # One output column per CTA leaves too few CTAs to
+                        # fill the GPU at narrow N; keep those on config B.
+                        comptime if (
+                            static_N >= 64 or static_k_target
+                        ) and static_K > 0 and static_K % (
+                            simd_width * 256
+                        ) == 0:
+                            if (
+                                static_k_target
+                                and m <= 8
+                                and (m == 1 or static_N == 32)
+                            ):
+                                _gemv_split_k_dispatch[
+                                    256, 1, 2, False, 1, True
+                                ]()
+                            elif m == 2:
+                                comptime if tuned_m2m3:
+                                    comptime if static_N == 128:
+                                        _gemv_split_k_dispatch[
+                                            256, 1, 2, False, 1, True, 1
+                                        ]()
+                                    else:
+                                        _gemv_split_k_dispatch[
+                                            256, 1, 2, False, 2, True
+                                        ]()
+                                else:
+                                    _gemv_split_k_dispatch[
+                                        256, 1, 2, False, 1, True
+                                    ]()
+                            elif m == 3:
+                                comptime if tuned_m2m3 and static_N == 288:
+                                    _gemv_split_k_dispatch[
+                                        128, 1, 2, False, 2, True, 1
+                                    ]()
+                                else:
+                                    _gemv_split_k_dispatch[
+                                        256, 1, 2, False, 2, True
+                                    ]()
+                            elif m <= 4:
+                                comptime if (
+                                    a_type == .float32
+                                    and static_N == 288
+                                    and static_K == 4096
+                                ):
+                                    _gemv_split_k_dispatch[
+                                        128, 1, 2, False, 2, True
+                                    ]()
+                                else:
+                                    _gemv_split_k_dispatch[
+                                        256, 1, 2, False, 2, True
+                                    ]()
+                            elif m <= 8:
+                                comptime if (
+                                    a_type == .float32 and static_N == 128
+                                ):
+                                    _gemv_split_k_dispatch[
+                                        256, 1, 2, False, 2, True
+                                    ]()
+                                elif (
+                                    a_type == .float32
+                                    and static_N == 256
+                                    and static_K == 6144
+                                    and not has_epilogue_fn
+                                    and not has_compute_fn
+                                ):
+                                    _gemv_split_k_dispatch[
+                                        256, 1, 2, False, 4, True, 1
+                                    ]()
+                                else:
+                                    _gemv_split_k_dispatch[
+                                        256, 1, 2, False, 4, True
+                                    ]()
+                            else:
+                                comptime if static_N <= 128 or (
+                                    a_type == .bfloat16
+                                    and not (
+                                        static_N == 576 and static_K == 4096
+                                    )
+                                ):
+                                    _gemv_split_k_dispatch[128, 2, 2, False]()
+                                else:
+                                    _gemv_split_k_dispatch[
+                                        256, 1, 2, False, 8, True
+                                    ]()
+                        else:
+                            _gemv_split_k_dispatch[128, 2, 2, False]()
+                    else:
+                        comptime config = _amd_gemv_config[
+                            simd_width,
+                            ctx.default_device_info.max_thread_block_size,
+                            warp_size,
+                            static_K,
+                            has_N,
+                            static_N,
+                        ]()
+                        _gemv_split_k_dispatch[
+                            config[0], config[1], config[2]
+                        ]()
                 else:
                     comptime config = _amd_gemv_config[
                         simd_width,
@@ -2995,6 +3679,14 @@ def _gemv_gpu_impl[
     log_shape[has_K, has_N, "B"](k, n)
     log_shape[has_M, has_N, "C"](m, n)
 
+    comptime fp32_router_shape = (
+        a_type == .float32
+        and b_type == .float32
+        and c_type == .float32
+        and static_N == 128
+        and static_K == 6144
+    )
+
     # Kernel selection
     var kernel_func: GEMVAlgorithm
 
@@ -3007,15 +3699,20 @@ def _gemv_gpu_impl[
         else:
             kernel_func = GEMVAlgorithm.GemvKernel
 
+    # The AMD small-M bounds are MI355 measurements; other targets keep the
+    # fp32 128x6144 router rule.
     elif (
         m == 1
         or (
             has_N
             and has_K
-            and is_minimax_router_gemm[
-                c_type, a_type, b_type, static_N, static_K
-            ]()
-            and m <= 16
+            and (
+                _amd_small_m_gemv_route[
+                    c_type, a_type, b_type, static_N, static_K
+                ](m)[0] if ctx.target.is_amd_gpu() else (
+                    fp32_router_shape and m <= 16
+                )
+            )
         )
     ) and transpose_b == True:
         comptime if a_type in (
@@ -3025,7 +3722,7 @@ def _gemv_gpu_impl[
             DType.float8_e4m3fn,
         ):
             if k % simd_width == 0:
-                if ceildiv(n, 2) <= ctx.get_attribute(
+                if ceildiv(n, 2) <= ctx.device().get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
                 ):
                     kernel_func = GEMVAlgorithm.GemvSplitK
@@ -4022,7 +4719,8 @@ def _gemm_mma_cpasync_kernel_impl[
     barrier()
 
     # PDL selective gating: only the activation loader waits on the producer so
-    # the weight load streams during it. The launcher
+    # the weight load streams during it (B must be a weight loaded straight
+    # from the checkpoint, never written by a predecessor). The launcher
     # routes the activation to the A loader normally, or to the B loader under
     # `swapAB` (where the weight becomes the free-streaming A operand).
     if warp_idx_ < 2:

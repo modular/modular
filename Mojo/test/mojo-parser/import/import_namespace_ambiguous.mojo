@@ -18,7 +18,7 @@
 # RUN: echo "def hello():" > %t.dir/one/foo/test.mojo
 # RUN: echo "    pass" >> %t.dir/one/foo/test.mojo
 # RUN: cp %t.dir/one/foo/test.mojo %t.dir/two/foo/test.mojo
-# RUN: %parse-mojo-isolated -verify-diagnostics -I=%t.dir/one -I=%t.dir/two %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I%t.dir/one -I%t.dir/two %s
 
 # expected-error @+1 {{ambiguous import 'test': found}}
 import foo.test

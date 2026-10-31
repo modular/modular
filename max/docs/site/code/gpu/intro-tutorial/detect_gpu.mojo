@@ -22,4 +22,4 @@ def main() raises:
         print("No compatible GPU found")
     else:
         var ctx = DeviceContext()
-        print("Found GPU:", ctx.name())
+        print("Found GPU:", ctx.device().get_name())

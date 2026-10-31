@@ -29,15 +29,15 @@ from typing import Any, NamedTuple, cast
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Graph
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
     recurrent_leaf,
 )
-from max.nn.layer import Module
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash2_qwen3_5 import DFlash2Qwen3_5
 from max.pipelines.architectures.dflash2_qwen3_5.model_config import (
@@ -332,12 +332,15 @@ def fused_graph(
         ),
         speculative=speculative,
         needs_bitmask_constraints=structured_output,
-        runtime=SimpleNamespace(reasoning_parser="qwen3_5"),
+        runtime=SimpleNamespace(
+            reasoning_parser="qwen3_5", prefer_module_v3=False
+        ),
         model=SimpleNamespace(
             data_parallel_degree=1,
             huggingface_config=SimpleNamespace(
                 get_text_config=lambda: text_config
             ),
+            pipeline_stage=None,
         ),
     )
     spec = build_spec_graph(

@@ -26,8 +26,8 @@
 # Note: MLIR diagnostics print "Included from", user-facing Mojo diagnostics
 # print "Imported from". Test for both.
 
-# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=true -I=%S/inputs %s 2>&1 | FileCheck %s --check-prefixes CHECK,MLIRDIAG,MLIRDIAG-SOURCE
-# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=false -I=%S/inputs %s 2>&1 | FileCheck %s --check-prefixes CHECK,MOJODIAG,MOJODIAG-SOURCE
+# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=true -I%S/inputs %s 2>&1 | FileCheck %s --check-prefixes CHECK,MLIRDIAG,MLIRDIAG-SOURCE
+# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=false -I%S/inputs %s 2>&1 | FileCheck %s --check-prefixes CHECK,MOJODIAG,MOJODIAG-SOURCE
 
 # RUN: rm -rf %t && mkdir -p %t/src
 # RUN: cp -r %S/inputs/test_package %t/src
@@ -35,14 +35,14 @@
 
 # RUN: kgen -precompile -I %S/../../test-packages -o %t/test_package.mojoc %t/src/test_package
 # RUN: kgen -precompile -I %S/../../test-packages -o %t/star_reexport_package.mojoc %t/src/star_reexport_package
-# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=true -I=%t %s 2>&1 | FileCheck %s --check-prefixes CHECK,MLIRDIAG
-# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=false -I=%t %s 2>&1 | FileCheck %s --check-prefixes CHECK,MOJODIAG
+# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=true -I%t %s 2>&1 | FileCheck %s --check-prefixes CHECK,MLIRDIAG
+# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=false -I%t %s 2>&1 | FileCheck %s --check-prefixes CHECK,MOJODIAG
 
 # Now remove the sources and run with Mojo diagnostics. We should see the same
 # as in the precompiled source-available case: that we see "Imported from" into
 # the user's module but not inside the package.
 # RUN: rm -r %t/src
-# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=false -I=%t %s 2>&1 | FileCheck %s --check-prefixes CHECK,MOJODIAG
+# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=false -I%t %s 2>&1 | FileCheck %s --check-prefixes CHECK,MOJODIAG
 
 # Reached through an intermediate module: test_package/module.mojo re-exports
 # `parametric_fn` from test_nested_package/module.mojo. The stack flows

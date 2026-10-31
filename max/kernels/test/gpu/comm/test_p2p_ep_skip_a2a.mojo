@@ -31,7 +31,6 @@ from shmem.ep import (
 )
 from shmem.ep_comm import BF16TokenFormat, EPLocalSyncCounters
 from std.testing import assert_almost_equal
-from std.utils.index import IndexList
 
 
 def legalize_topk_ids[
@@ -81,23 +80,13 @@ def test_skip_a2a[
     ]
     comptime msg_bytes = token_fmt_type.msg_size()
 
-    var my_rank = Int(ctx.id())
+    var my_rank = Int(ctx.device().id)
 
     print(
-        "Running skip_a2a test: hidden_size:",
-        hidden_size,
-        "top_k:",
-        top_k,
-        "n_local_experts:",
-        n_local_experts,
-        "n_total_experts:",
-        n_total_experts,
-        "n_tokens:",
-        n_tokens,
-        "fused_shared_expert:",
-        fused_shared_expert,
-        "my_rank:",
-        my_rank,
+        t"Running skip_a2a test: hidden_size: {hidden_size} top_k:"
+        t" {top_k} n_local_experts: {n_local_experts} n_total_experts:"
+        t" {n_total_experts} n_tokens: {n_tokens} fused_shared_expert:"
+        t" {fused_shared_expert} my_rank: {my_rank}"
     )
 
     # fmt: off
@@ -212,10 +201,10 @@ def test_skip_a2a[
 
     @inline(.always)
     def store_combine_output[
-        dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) {var combine_output_tt}:
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[dtype, width]) {var combine_output_tt}:
         combine_output_tt.store[alignment=alignment * size_of[dtype]()](
-            Coord(coords), rebind[SIMD[input_type, width]](val)
+            coords, rebind[SIMD[input_type, width]](val)
         )
 
     # --- Run fused dispatch ---

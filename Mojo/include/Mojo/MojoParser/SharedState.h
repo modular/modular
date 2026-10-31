@@ -26,6 +26,7 @@
 #include "Mojo/MojoParser/ModuleSpec.h"
 #include "Mojo/MojoParser/MojoDiags.h"
 #include "Mojo/Support/TriBool.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 
 #include "Support/BumpAllocator.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -45,7 +46,6 @@ class NoneAttr;
 class ParamDeclAttr;
 class ParamDeclRefAttr;
 class FuncTypeGeneratorType;
-class SymbolConstantAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -77,7 +77,6 @@ class TraitASTDecl;
 class TraitType;
 class CallOperands;
 class ParserEvaluationContext;
-struct ParserConfig;
 class CachedOriginFinder;
 class TraitDeclOp;
 enum class CallSyntax : uint8_t;
@@ -135,11 +134,14 @@ class SharedState {
   friend class ModuleLoader;
 
 public:
-  SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config);
+  SharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+              const CompilationOptions &options,
+              const FrontendOptions &frontendOptions);
   ~SharedState();
 
   MojoDiags diags; // Contains SourceMgr and MLIRContext pointers.
   const CompilationOptions &options;
+  const FrontendOptions frontendOptions;
 
   std::unique_ptr<DeclResolver> declResolver;
   std::unique_ptr<ModuleLoader> moduleLoader;
@@ -187,10 +189,12 @@ public:
 
   /// Returns true if `.mojoc` candidates should be ignored when resolving
   /// imports, so that a source build never picks up a prebuilt package.
-  bool arePrebuiltPackagesDisabled() const { return disablePrebuiltPackages; }
+  bool arePrebuiltPackagesDisabled() const {
+    return frontendOptions.disablePrebuiltPackages;
+  }
 
   /// Get the library base path for documentation generation.
-  StringRef getDocsBasePath() const { return docsBasePath; }
+  StringRef getDocsBasePath() const { return frontendOptions.docsBasePath; }
 
   /// Initialize the shared state for the given top-level decl.
   void initialize(TopLevelModuleASTDecl &topLevelDecl);
@@ -378,11 +382,20 @@ public:
   LogicalResult finalizeImportedBytecodeModules();
 
   //===--------------------------------------------------------------------===//
-  // Module Dependency Graph
+  // Incremental Parsing Cache
 
-  /// Whether experimental incremental parsing is enabled. Dep edges are only
+  /// Whether `--experimental-incr-parsing` is enabled. Dep edges are only
   /// recorded, and the dep graph only built, when it is.
-  bool isIncrParsingEnabled() const { return incrParsingEnabled; }
+  bool isIncrParsingEnabled() const;
+
+  /// Mark decl ops this lazy parse left signature- or body-unresolved, so a
+  /// cache-served run can resume them from source. Marks are discardable attrs.
+  void prepareModuleForIncrParsingCache();
+
+  /// Record the resume mark on `op` from `decl.getDeclStartCursor()`. No-ops if
+  /// the cursor is invalid or not at start of line (e.g. a synthesized decl).
+  void addIncrParsingCacheResumeAttrs(Operation *op, ASTDecl &decl,
+                                      const llvm::MemoryBuffer &buffer);
 
   /// Record a dep edge `importer` -> `imported`, attributed to each end's
   /// nearest enclosing file module or package. No-ops if either end has no
@@ -662,21 +675,6 @@ private:
   /// Claim `key` for `thunk`, returning false when a thunk is already
   /// registered under it and this one is a redundant copy.
   bool tryRegisterConversionThunk(Attribute key, FnOp thunk);
-
-  /// A flag indicating if prebuilt packages should not be considered during
-  /// parsing.
-  bool disablePrebuiltPackages = false;
-
-  /// Whether experimental incremental parsing is enabled. Currently always
-  /// false; a follow-up wires it to a parser-config option and tool flag
-  /// alongside the incremental parsing cache.
-  bool incrParsingEnabled = false;
-
-  /// If true, auto-import the builtin package.
-  bool useBuiltinModule = true;
-
-  /// Base library path prefix for generated documentation links.
-  std::string docsBasePath;
 
   std::unique_ptr<Impl> impl;
 };

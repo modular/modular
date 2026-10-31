@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The GLM-5 Next ModuleV3 model."""
 
 from .arch import glm5_next_modulev3_arch
 

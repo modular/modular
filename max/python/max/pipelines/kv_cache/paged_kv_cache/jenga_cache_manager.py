@@ -22,13 +22,13 @@ import numpy as np
 from max import tree
 from max.driver import Buffer
 from max.dtype import DType
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheAssignments,
     KVCacheBufferInterface,
     KVCacheMemory,
@@ -36,9 +36,9 @@ from max.nn.kv_cache.cache_params import (
     max_pages_per_request,
     spec_decode_cache_slack,
 )
-from max.nn.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import (
+from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.utils import (
     build_max_lengths_tensors,
 )
 from max.pipelines.context import TextContext
@@ -62,6 +62,7 @@ from ._common import (
     cache_valid_length_for_context,
     prompt_tokens_for_context,
 )
+from .block_utils import LittleKVCacheBlock
 from .cache_manager_interface import PagedKVCacheManagerInterface
 from .jenga_block_manager import (
     JengaBlockManager,
@@ -178,8 +179,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 geometry = cls._plan_geometry(params, size)
             except ValueError as e:
                 raise RuntimeError(
-                    f"Insufficient cache memory to allocate even a single"
-                    f" page: {e}"
+                    f"Insufficient cache memory to allocate even a single page: {e}"
                 ) from None
             if geometry.num_huge_blocks < 2:
                 raise RuntimeError(
@@ -363,10 +363,6 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             connector = None
         self._connector = connector
 
-        # One zeroed buffer per (replica, device, bound input), shaped like a
-        # single block's rows. Filled on first use and never written after.
-        self._zero_rows: dict[tuple[int, int, str], Buffer] = {}
-
         self._leaf_infos = leaf_infos
         self._num_huge_blocks = pools[0].num_huge_blocks
         self._kv_buffers = kv_buffers
@@ -378,6 +374,10 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             devices, self.params.data_parallel_degree
         )
         self._devices_per_replica = devices_per_replica
+
+        self._replica_slabs = split_into_groups(
+            slabs, self.params.data_parallel_degree
+        )
 
         leaves = params.leaves()
         # LUT columns index logical sequence pages, not physical page IDs.
@@ -673,27 +673,33 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                     view[(slice(src.start, src.stop), *rest)]
                 )
 
+    def allocate_block(
+        self, replica_idx: int, leaf_id: str
+    ) -> LittleKVCacheBlock:
+        """Allocates initialized memory on the serial scheduler thread.
+
+        Clears before any connector import or peer copy can write the block.
+        A failed clear propagates to the existing fatal error handling.
+        """
+        pool = self.pools[replica_idx]
+        block, retyped = pool.alloc_block_with_retype(leaf_id)
+        if retyped:
+            huge_bid = block.bid // pool.cache_ratios[leaf_id]
+            # A valid value in one dtype may be a NaN under another leaf's dtype.
+            # Clear the whole huge block, including little pages not yet allocated.
+            for slab in self._replica_slabs[replica_idx]:
+                slab[huge_bid, :].memset(0)
+        return block
+
     @traced
     def _wipe_rows(self, replica_idx: int, rows: Mapping[str, range]) -> None:
-        """Zeroes rows within the bound input holding them.
-
-        The driver copies but does not fill, so the zeroes come from a buffer
-        allocated once per bound input and never written.
-
-        Args:
-            replica_idx: Whose slab the rows belong to.
-            rows: Per bound input, the rows to zero.
-        """
+        """Zeroes rows within the bound input holding them."""
         for key, span in rows.items():
-            for device_idx, view in enumerate(self._bound[replica_idx][key]):
+            for view in self._bound[replica_idx][key]:
                 rest = (slice(None),) * (view.rank - 1)
-                dst = view[(slice(span.start, span.stop), *rest)]
-                cache_key = (replica_idx, device_idx, key)
-                source = self._zero_rows.get(cache_key)
-                if source is None:
-                    source = Buffer.zeros(dst.shape, dst.dtype, dst.device)
-                    self._zero_rows[cache_key] = source
-                dst.inplace_copy_from(source)
+                view[(slice(span.start, span.stop), *rest)].view(
+                    DType.uint8
+                ).memset(0)
 
     def _fill_state(
         self, replica_idx: int, fills: Mapping[str, tuple[int | None, int]]
@@ -745,8 +751,12 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             super().step(ctx)
             return
         replica_idx = self._replica_of(ctx)
-        for group in self._groups.values():
-            self._fill_state(replica_idx, group.checkpoint(ctx, replica_idx))
+        if self._publishes_states(ctx):
+            for group in self._groups.values():
+                self._fill_state(
+                    replica_idx,
+                    group.checkpoint(ctx, replica_idx, allocation_owner=self),
+                )
         super().step(ctx)
 
     # ============================================================================

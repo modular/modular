@@ -261,32 +261,32 @@ def main() raises:
         else:
             peer_base = pair_base
 
-        comptime SrcPtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
         comptime OutPtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
-        var my_in_ptrs = StaticTuple[SrcPtrType, GROUP]()
-        var my_out_ptrs = StaticTuple[OutPtrType, GROUP]()
-        var my_lengths = StaticTuple[Int32, GROUP](Int32(length))
-        for i in range(GROUP):
-            my_in_ptrs[i] = rebind[SrcPtrType](
-                in_tile(group_base + i, length).ptr
+        var my_in = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> InTileType: in_tile(
+                group_base + i, length
             )
-            my_out_ptrs[i] = out_tile(rank, i, length).ptr
+        )
+        var my_out_ptrs = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> OutPtrType: rebind[OutPtrType](
+                out_tile(rank, i, length).ptr
+            )
+        )
+        var my_lengths = Array[_, GROUP](fill=Int32(length))
 
-        var peer_in_ptrs = StaticTuple[
-            ImmPointer[Scalar[dtype], ImmutAnyOrigin], GROUP
-        ]()
-        var peer_lengths = StaticTuple[Int32, GROUP](Int32(length))
-        var peer_out_ptrs = StaticTuple[
-            MutPointer[Scalar[dtype], MutAnyOrigin], GROUP * GROUP
-        ]()
-        for dst_idx in range(GROUP):
-            peer_in_ptrs[dst_idx] = rebind[
-                ImmPointer[Scalar[dtype], ImmutAnyOrigin]
-            ](in_tile(peer_base + dst_idx, length).ptr)
-            for src_idx in range(GROUP):
-                peer_out_ptrs[dst_idx * GROUP + src_idx] = rebind[
-                    MutPointer[Scalar[dtype], MutAnyOrigin]
-                ](out_tile(peer_base + dst_idx, src_idx, length).ptr)
+        var peer_in = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> InTileType: in_tile(
+                peer_base + i, length
+            )
+        )
+        var peer_lengths = Array[_, GROUP](fill=Int32(length))
+        # Flattened as [dst * GROUP + src], matching `allgather`'s output
+        # layout.
+        var peer_out_ptrs = Array[_, GROUP * GROUP](
+            fill_with=lambda (i: Int) -> OutPtrType: rebind[OutPtrType](
+                out_tile(peer_base + i // GROUP, i % GROUP, length).ptr
+            )
+        )
 
         var pair_sigs = Array[_, PAIR](
             fill_with=lambda (i: Int) -> MutPointer[
@@ -298,9 +298,9 @@ def main() raises:
 
         _allgather_p2p_relay(
             my_out_ptrs,
-            my_in_ptrs,
+            my_in,
             my_lengths,
-            peer_in_ptrs,
+            peer_in,
             peer_lengths,
             peer_out_ptrs,
             pair_sigs,
@@ -403,18 +403,8 @@ def main() raises:
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     print(
-        "# relay allgather:",
-        WORLD,
-        "GPUs,",
-        WORLD // GROUP,
-        "groups of",
-        GROUP,
-        "| dtype",
-        dtype,
-        "| simd_width",
-        simd_width,
-        "| iters",
-        iters,
+        t"# relay allgather: {WORLD} GPUs, {WORLD // GROUP} groups of {GROUP} |"
+        t" dtype {dtype} | simd_width {simd_width} | iters {iters}"
     )
 
     var shard_kb = List[Int](capacity=8)
@@ -443,20 +433,12 @@ def main() raises:
             var base_ms = run_baseline(length, None, "baseline")
             var default_ms = run_relay(length, None, "relay-default")
             print(
-                "CSV,",
-                shard_kb[si],
-                ",baseline,-,-,",
-                base_ms,
-                ",",
-                gbps(length, base_ms),
+                t"CSV, {shard_kb[si]} ,baseline,-,-, {base_ms} ,"
+                t" {gbps(length, base_ms)}"
             )
             print(
-                "CSV,",
-                shard_kb[si],
-                ",default,-,-,",
-                default_ms,
-                ",",
-                gbps(length, default_ms),
+                t"CSV, {shard_kb[si]} ,default,-,-, {default_ms} ,"
+                t" {gbps(length, default_ms)}"
             )
             for di in range(len(direct_blocks)):
                 for ri in range(len(relay_blocks)):
@@ -478,18 +460,9 @@ def main() raises:
                         )
                         var ms = run_relay(length, Optional(cfg), label)
                         print(
-                            "CSV,",
-                            shard_kb[si],
-                            ",",
-                            direct_blocks[di],
-                            ",",
-                            relay_blocks[ri],
-                            ",",
-                            percents[pi],
-                            ",",
-                            ms,
-                            ",",
-                            gbps(length, ms),
+                            t"CSV, {shard_kb[si]} , {direct_blocks[di]} ,"
+                            t" {relay_blocks[ri]} , {percents[pi]} , {ms} ,"
+                            t" {gbps(length, ms)}"
                         )
         return
 
@@ -508,31 +481,17 @@ def main() raises:
         # time a recipe no caller ever gets.
         if table_recipe(length).relay_percent == 0:
             print(
-                "|",
-                human_readable_size(length * size_of[dtype]()),
-                "|",
-                base_ms,
-                "|",
-                gbps(length, base_ms),
-                "| relay declined by the tuning table |",
+                t"| {human_readable_size(length * size_of[dtype]())} |"
+                t" {base_ms} | {gbps(length, base_ms)} | relay declined by the"
+                t" tuning table |"
             )
             continue
 
         var relay_ms = run_relay(length, None, "allgather_relay")
         print(
-            "|",
-            human_readable_size(length * size_of[dtype]()),
-            "|",
-            base_ms,
-            "|",
-            gbps(length, base_ms),
-            "|",
-            relay_ms,
-            "|",
-            gbps(length, relay_ms),
-            "|",
-            base_ms / relay_ms,
-            "|",
+            t"| {human_readable_size(length * size_of[dtype]())} | {base_ms} |"
+            t" {gbps(length, base_ms)} | {relay_ms} |"
+            t" {gbps(length, relay_ms)} | {base_ms / relay_ms} |"
         )
 
     _ = host_buffer^

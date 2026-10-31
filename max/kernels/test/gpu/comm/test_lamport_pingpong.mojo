@@ -304,12 +304,8 @@ def run_variant[
         )
     else:
         print(
-            (
-                "  VISIBILITY OK: every reader slot observed the peer's stores"
-                " and advanced (min generation seen ="
-            ),
-            min_seen,
-            ")",
+            t"  VISIBILITY OK: every reader slot observed the peer's stores and"
+            t" advanced (min generation seen = {min_seen} )"
         )
 
     if total_torn == 0:
@@ -338,7 +334,7 @@ def main() raises:
     var writer_ctx = DeviceContext(device_id=0)
     var reader_ctx = DeviceContext(device_id=1)
     assert_true(
-        writer_ctx.can_access(reader_ctx),
+        writer_ctx.device().can_access_peer(reader_ctx.device()),
         "GPU 0 cannot peer-access GPU 1; P2P unavailable",
     )
 

@@ -13,7 +13,7 @@
 """The vocoder's convolutions, expressed as matmuls instead of cuDNN calls.
 
 Both layers here are exact rewrites of a convolution, and both exist because the
-cuDNN paths behind ``max.nn.Conv1D`` and ``max.nn.ConvTranspose1d`` are
+cuDNN paths behind ``max.nn.legacy.Conv1D`` and ``max.nn.legacy.ConvTranspose1d`` are
 unsuitable for this decoder on sm_86. Measured on an A10G:
 
 * Forward convolution is 6x to 470x slower than the same arithmetic as matmuls
@@ -37,10 +37,10 @@ bits TF32 discards.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.tensor import Tensor
 
 
 def split_halves(t: Tensor) -> tuple[Tensor, Tensor]:
@@ -87,7 +87,7 @@ def split_matmul(x: Tensor, w: Tensor) -> Tensor:
 class ShiftedConv1d(Module[[Tensor], Tensor]):
     """A length-preserving dilated convolution as a sum of shifted matmuls.
 
-    The weight keeps the ``(kernel, in, out)`` layout that ``max.nn.Conv1D``
+    The weight keeps the ``(kernel, in, out)`` layout that ``max.nn.legacy.Conv1D``
     declares for channels-last data, so checkpoints converted for either layer
     are interchangeable.
     """

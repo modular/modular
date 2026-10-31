@@ -20,29 +20,24 @@ adds a bigram bias to each draft position's logits.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 
-import numpy as np
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
 from typing_extensions import Self
 
 from ..deepseekV4.layers import expand_copies
 from .deepseekV41 import (
-    DeepseekV41,
     DeepseekV41Block,
-    DeepseekV41Trunk,
     HCStreams,
-    ReplicaBatch,
-    VisionMerge,
+    _adopt_shards,
 )
 from .layer_resolver import LayerInfo
 from .layer_resolver import resolve as resolve_layers
-from .layers.attention import CSA2Cache
 from .layers.dspark import (
     DeepseekV41DSparkAttention,
     DSparkMarkovHead,
@@ -53,7 +48,6 @@ from .layers.dspark_moe import DeepseekV41DSparkMoE
 from .layers.ragged import ReplicaTokens
 from .layers.ragged import V41RaggedRows as RaggedRows
 from .model_config import DeepseekV41Config, position_capacity
-from .weight_adapters import DSPARK_MODULE_PREFIX
 
 
 def drafter_layer_infos(config: DeepseekV41Config) -> list[LayerInfo]:
@@ -205,6 +199,25 @@ class DeepseekV41DSparkDrafter(Module):
                 stage.attn.shard_heads(num_devices)
             stage.ffn.shard_experts(num_devices)
 
+    def replicas(
+        self, devices: Sequence[DeviceRef], *, split_heads: bool
+    ) -> list[Self]:
+        """Builds one copy of the stages per device.
+
+        Each copy splits as :meth:`shard` splits.
+
+        Each copy's weights are shards of these stages', which stay the
+        source the weights are loaded into. Call it once, after
+        :meth:`load_state_dict`.
+        """
+        n = len(devices)
+        self.shard(n, split_heads=split_heads)
+        replicas = [type(self)(self.config, device) for device in devices]
+        _adopt_shards(self, replicas, list(devices))
+        for rank, replica in enumerate(replicas):
+            replica.keep_local(n, rank, split_heads=split_heads)
+        return replicas
+
     def keep_local(
         self, num_devices: int, rank: int, *, split_heads: bool = True
     ) -> None:
@@ -329,14 +342,14 @@ class DeepseekV41DSparkDrafter(Module):
             state.
         """
         lead = drafters[0]
-        all_ids = ops.allgather(
-            [ops.reshape(ids, [-1]) for ids in block_ids],
-            signal_buffers,
-            axis=0,
-        )
+        # The stages' gate treats every draft as text and reads only the
+        # batch's row count from its ids, so the ids are not gathered.
         batch_ids = [
-            ops.reshape(ops.rebind(ids, [replica_tokens.total]), [1, -1])
-            for ids in all_ids
+            ops.broadcast_to(
+                ops.constant(0, ids.dtype, ids.device),
+                [1, replica_tokens.total],
+            )
+            for ids in block_ids
         ]
         streams = [
             HCStreams(expand_copies(embed(ids), lead.config.hc_mult))
@@ -425,182 +438,3 @@ class DeepseekV41DSparkDrafter(Module):
             current = ops.cast(sample(step, i), DType.int32)
             drafted.append(current)
         return ops.stack(drafted, axis=1), ops.stack(biased, axis=1)
-
-
-def block_ids_for(
-    anchor_ids: TensorValue, block_size: int, noise_token_id: int
-) -> TensorValue:
-    """Builds the draft block token ids from each request's anchor token.
-
-    Args:
-        anchor_ids: ``[b]``, the first token of each request's block.
-        block_size: Tokens per draft block.
-        noise_token_id: The placeholder token filling the rest of a block.
-
-    Returns:
-        ``[1, b * block_size]`` int32: each anchor followed by
-        ``block_size - 1`` copies of ``noise_token_id``.
-    """
-    device = anchor_ids.device
-    batch = anchor_ids.shape[0]
-    anchors = ops.unsqueeze(ops.cast(anchor_ids, DType.int32), -1)
-    noise = ops.broadcast_to(
-        ops.constant(np.int32(noise_token_id), DType.int32, device),
-        [batch, block_size - 1],
-    )
-    return ops.reshape(ops.concat([anchors, noise], axis=-1), [1, -1])
-
-
-class DeepseekV41WithDSpark(DeepseekV41):
-    """:class:`~.deepseekV41.DeepseekV41` with the DSpark drafter attached.
-
-    The trunk, norm and head keep their non-speculative names; the drafter
-    sits under the ``dspark`` attribute.
-    """
-
-    def __init__(
-        self,
-        config: DeepseekV41Config,
-        device: DeviceRef | None = None,
-        *,
-        engram_host_tables: Mapping[int, tuple[TensorValue, TensorValue]],
-        engram_token_map: np.ndarray | None = None,
-    ) -> None:
-        super().__init__(
-            config,
-            device,
-            engram_host_tables=engram_host_tables,
-            engram_token_map=engram_token_map,
-        )
-        self.dspark = DeepseekV41DSparkDrafter(config, self.device)
-        assert DSPARK_MODULE_PREFIX == "dspark"  # this attribute's name
-
-    def tensor_parallel_replicas(
-        self,
-        devices: Sequence[DeviceRef],
-        engram_host_tables: Sequence[
-            Mapping[int, tuple[TensorValue, TensorValue]]
-        ],
-    ) -> list[Self]:
-        """Builds one replica per device, splitting the drafter as well.
-
-        Call it once, after :meth:`load_state_dict`.
-        """
-        n = len(devices)
-        self.dspark.shard(n)
-        replicas = super().tensor_parallel_replicas(devices, engram_host_tables)
-        for rank, replica in enumerate(replicas):
-            replica.dspark.keep_local(n, rank)
-        return replicas
-
-    def data_parallel_replicas(
-        self,
-        devices: Sequence[DeviceRef],
-        engram_host_tables: Sequence[
-            Mapping[int, tuple[TensorValue, TensorValue]]
-        ],
-    ) -> list[Self]:
-        """Builds one data-parallel replica per device, drafter included.
-
-        The drafter splits only its routed experts. Call it once, after
-        :meth:`load_state_dict`.
-        """
-        n = len(devices)
-        self.dspark.shard(n, split_heads=False)
-        replicas = super().data_parallel_replicas(devices, engram_host_tables)
-        for rank, replica in enumerate(replicas):
-            replica.dspark.keep_local(n, rank, split_heads=False)
-        return replicas
-
-    @staticmethod
-    def trunk_with_taps_data_parallel(
-        replicas: Sequence[DeepseekV41WithDSpark],
-        split: ReplicaBatch,
-        caches: Sequence[CSA2Cache],
-        signal_buffers: Sequence[BufferValue],
-        visions: Sequence[VisionMerge] | None = None,
-    ) -> tuple[list[TensorValue], list[TensorValue]]:
-        """Runs :meth:`trunk_with_taps` with each device on its own requests.
-
-        ``split`` is the batch cut per device
-        (:meth:`DeepseekV41.split_replicas`), and ``visions`` each device's
-        own image rows (:meth:`VisionMerge.for_rows`). Returns each device's
-        pre-norm ``[1, t_i, d]`` stream and its taps.
-        """
-        xs, taps = DeepseekV41Trunk.data_parallel_with_taps(
-            [replica.trunk for replica in replicas],
-            split.tokens,
-            split.batch_tokens,
-            split.rows,
-            caches,
-            signal_buffers,
-            split.replica_tokens,
-            tap_layer_ids=replicas[0].config.dspark_target_layer_ids,
-            engram_operands=[
-                replica._engram_operands(tok, row, lookback)
-                for replica, tok, row, lookback in zip(
-                    replicas,
-                    split.tokens,
-                    split.rows,
-                    split.lookbacks,
-                    strict=True,
-                )
-            ],
-            visions=visions,
-        )
-        assert taps is not None
-        return xs, taps
-
-    @staticmethod
-    def trunk_with_taps_tensor_parallel(
-        replicas: Sequence[DeepseekV41WithDSpark],
-        tokens: Sequence[TensorValue],
-        rows: Sequence[RaggedRows],
-        caches: Sequence[CSA2Cache],
-        signal_buffers: Sequence[BufferValue],
-        engram_lookback_ids: Sequence[TensorValue] | None = None,
-    ) -> tuple[TensorValue, list[TensorValue]]:
-        """Runs :meth:`trunk_with_taps` with one replica per device.
-
-        Every argument but ``signal_buffers`` is per device. Returns device
-        0's pre-norm ``[1, s, d]`` stream and each device's taps.
-        """
-        x, taps = DeepseekV41Trunk.tensor_parallel_with_taps(
-            [replica.trunk for replica in replicas],
-            tokens,
-            rows,
-            caches,
-            signal_buffers,
-            tap_layer_ids=replicas[0].config.dspark_target_layer_ids,
-            engram_operands=DeepseekV41._engram_operands_tensor_parallel(
-                replicas, tokens, rows, engram_lookback_ids, signal_buffers
-            ),
-        )
-        assert taps is not None
-        return x, taps
-
-    def trunk_with_taps(
-        self,
-        tokens: TensorValue,
-        rows: RaggedRows,
-        cache: object | None = None,
-        engram_lookback_ids: TensorValue | None = None,
-    ) -> tuple[TensorValue, TensorValue]:
-        """Runs the trunk and also returns the hidden states the drafter reads.
-
-        Returns:
-            The pre-norm ``[1, s, d]`` stream, and the ``[1, s, d * n_taps]``
-            taps: the stream entering each layer in
-            ``config.dspark_target_layer_ids``, averaged over its
-            hyper-connection copies and concatenated.
-        """
-        operands = self._engram_operands(tokens, rows, engram_lookback_ids)
-        x, taps = self.trunk.forward_with_taps(
-            tokens,
-            rows,
-            cache,
-            tap_layer_ids=self.config.dspark_target_layer_ids,
-            engram_operands=operands,
-        )
-        assert taps is not None
-        return x, taps

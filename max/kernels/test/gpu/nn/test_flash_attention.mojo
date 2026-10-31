@@ -60,23 +60,10 @@ def test[
     use_index_input: Bool = False,
 ) raises:
     print(
-        "test_flash_attention",
-        "batch_size:",
-        batch_size,
-        "num_partitions:",
-        num_partitions.or_else(-1),
-        "num_heads:",
-        num_heads,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "group:",
-        group,
-        "qkv_type:",
-        qkv_type,
-        "depth:",
-        depth,
+        t"test_flash_attention batch_size: {batch_size} num_partitions:"
+        t" {num_partitions.or_else(-1)} num_heads: {num_heads} seq_len:"
+        t" {seq_len} num_keys: {num_keys} group: {group} qkv_type:"
+        t" {qkv_type} depth: {depth}"
     )
 
     # Query, key, value dimensions.

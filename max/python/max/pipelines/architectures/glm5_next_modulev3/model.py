@@ -15,14 +15,18 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any, ClassVar
 
+from max.driver import Device, accelerator_api
 from max.dtype import DType
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.graph.weights import WeightData
+from max.nn.legacy.kernels import mhc_pre_supports
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.tensor import default_device
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -33,6 +37,45 @@ from .model_config import Glm5NextConfig
 logger = logging.getLogger("max.pipelines")
 
 __all__ = ["Glm5NextModel"]
+
+_HC_FN_SUFFIX = ".hc_fn"
+
+
+def _stored_hc_fn_dtype(state_dict: Mapping[str, WeightData]) -> DType:
+    """Returns the checkpoint dtype shared by every mHC stream projection.
+
+    One dtype is chosen for all sites, so a mix would narrow the float32
+    projections to bfloat16; it is rejected instead.
+    """
+    stored = {
+        weight.dtype
+        for name, weight in state_dict.items()
+        if name.endswith(_HC_FN_SUFFIX)
+    }
+    if len(stored) > 1:
+        raise ValueError(
+            "GLM-5.3-Flash expects every mHC projection (*.hc_fn) in one"
+            f" dtype, but the checkpoint mixes {sorted(map(str, stored))}"
+        )
+    return stored.pop() if stored else DType.float32
+
+
+def _hc_fn_dtype(
+    stored: DType, hc_mult: int, hidden_size: int, dtype: DType, device: Device
+) -> DType:
+    """Returns the dtype the mHC sites hold their stream projections in.
+
+    The fused pre-site op reads a bfloat16 projection in one pass rather
+    than three, so it keeps the checkpoint's bfloat16. The op chain computes
+    in float32, and widening there is exact.
+    """
+    if (
+        stored == DType.bfloat16
+        and accelerator_api() == "hip"
+        and mhc_pre_supports(hc_mult, hidden_size, dtype, stored, device)
+    ):
+        return DType.bfloat16
+    return DType.float32
 
 
 class Glm5NextModel(DeepseekV3_2Model):
@@ -45,6 +88,11 @@ class Glm5NextModel(DeepseekV3_2Model):
 
     model_config_cls: ClassVar[type[Any]] = Glm5NextConfig
 
+    # The decoder shards the MoE rows across the TP ranks before the expert
+    # dispatch (`Glm5NextDecoderLayer.forward`), so exporters pick the P2P
+    # EP backend.
+    ep_dispatch_token_layout: ClassVar[str] = "tp_sharded"
+
     @classmethod
     def get_kv_params(
         cls,
@@ -54,6 +102,7 @@ class Glm5NextModel(DeepseekV3_2Model):
         kv_cache_config: Any,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache layout this architecture runs with."""
         return Glm5NextConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -78,6 +127,13 @@ class Glm5NextModel(DeepseekV3_2Model):
                 break
         n_devices = len(self.devices)
         config.mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
+        config.hc_fn_dtype = _hc_fn_dtype(
+            _stored_hc_fn_dtype(state_dict),
+            config.hc_mult,
+            config.hidden_size,
+            config.compute_dtype,
+            self.devices[0],
+        )
 
         logger.info(
             "GLM-5.3-Flash pools: %d KDA layers holding %.1f MiB per sequence, "
@@ -87,6 +143,25 @@ class Glm5NextModel(DeepseekV3_2Model):
             len(config.sparse_attention_layers),
         )
         return config
+
+    @override
+    def _prepare_state_dict(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> dict[str, Any]:
+        state_dict = super()._prepare_state_dict(state_dict, model_config)
+        dtype = model_config.hc_fn_dtype
+        # Cast here rather than rely on the automatic parameter-dtype cast,
+        # which warns and can be switched off by MODULAR_AUTO_CAST_WEIGHTS.
+        return {
+            name: (
+                weight.astype(dtype)
+                if name.endswith(_HC_FN_SUFFIX)
+                and isinstance(weight, WeightData)
+                and weight.dtype != dtype
+                else weight
+            )
+            for name, weight in state_dict.items()
+        }
 
     @override
     def _instantiate_module(self, model_config: Any) -> Any:

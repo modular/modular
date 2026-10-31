@@ -24,6 +24,7 @@
 #include "MLRT/GraphRT/MEFExecutor/MEFInvokable.h"
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveRegistry.h"
 #include "MLRT/GraphRT/Primitives.h"
+#include "Support/Buffer.h"
 #include "Support/ML/SizeUtils.h"
 
 #include "benchmark/benchmark.h"
@@ -73,9 +74,8 @@ static PrimitiveRegistry *getPrimitiveRegistry() {
   return registry;
 }
 
-/// Holds a loaded MEF file and its backing buffer.
+/// Holds a loaded MEF file.
 struct LoadedMEF {
-  std::unique_ptr<llvm::MemoryBuffer> buffer;
   RCRef<MEFFile> file;
 };
 
@@ -95,15 +95,15 @@ static LoadedMEF loadMEFFile(llvm::StringRef name) {
   auto alignedBuffer = createAndCopyToAlignedBuffer(
       (*bufferOrErr)->getBufferStart(), (*bufferOrErr)->getBufferEnd());
 
-  auto mefFileOrErr =
-      MEFFile::open(alignedBuffer->getBuffer(), *getPrimitiveRegistry());
+  auto mefFileOrErr = MEFFile::open(Buffer::take(std::move(alignedBuffer)),
+                                    *getPrimitiveRegistry());
   if (failed(mefFileOrErr)) {
     llvm::errs() << "Failed to parse MEF file: " << path << ": "
                  << mefFileOrErr.getError() << "\n";
     std::abort();
   }
 
-  return LoadedMEF{std::move(alignedBuffer), mefFileOrErr.takeValue()};
+  return LoadedMEF{mefFileOrErr.takeValue()};
 }
 
 /// Find a testcase by name in a MEF file.

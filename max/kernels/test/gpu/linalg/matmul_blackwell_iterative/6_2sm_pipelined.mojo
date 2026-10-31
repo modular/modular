@@ -66,6 +66,7 @@ from layout.tma_async import (
 )
 from linalg.arch.sm100 import MmaOpSM100_SS
 
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -129,8 +130,8 @@ def load_AB[
     num_pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -223,10 +224,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
 ](
     tmem_addr: UInt32,
     a_smem_iter: SMemTileArray[a_type, _, _, pipeline_stages],
@@ -277,8 +278,8 @@ def store_C[
     /,
     *,
     accum_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: Int = 4,
@@ -547,7 +548,13 @@ def store_C[
         tcgen05_dealloc[Int32(cta_group)](tmem_addr, UInt32(max_tmem_cols))
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -561,9 +568,9 @@ def kernel_6[
     a_desc_shape: Coord,
     b_desc_shape: Coord,
     c_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     num_pipeline_stages: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -685,7 +692,7 @@ def kernel_6[
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+                Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
             )
         compute_barrier[].init()
 
@@ -704,8 +711,10 @@ def kernel_6[
         mma_shape,
         accum_type=accum_type,
         cta_group=cta_group,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
@@ -771,8 +780,10 @@ def kernel_6[
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
                 cta_group=cta_group,
-                cluster_shape=Index(
-                    cluster_shape[0], cluster_shape[1], cluster_shape[2]
+                cluster_shape=(
+                    Int(cluster_shape[0]),
+                    Int(cluster_shape[1]),
+                    Int(cluster_shape[2]),
                 ),
             ](
                 tmem_addr,
@@ -818,9 +829,9 @@ def blackwell_kernel_6[
     b_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -930,9 +941,9 @@ def test_blackwell_kernel_6[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1087,8 +1098,8 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     comptime a_type = DType.bfloat16
     comptime b_type = DType.bfloat16
     comptime c_type = DType.bfloat16
-    comptime block_tile_shape = Index(128, 128, 64)
-    comptime umma_shape = Index(
+    comptime block_tile_shape = (128, 128, 64)
+    comptime umma_shape = (
         block_tile_shape[0] * 2,
         block_tile_shape[1] * 2,
         16,
@@ -1108,7 +1119,7 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                 c_type,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 benchmark=True,
@@ -1128,8 +1139,8 @@ def main() raises:
             benchmark_blackwell_matmul(ctx)
             return
 
-        comptime block_tile_shape = Index(128, 128, 64)
-        comptime umma_shape = Index(
+        comptime block_tile_shape = (128, 128, 64)
+        comptime umma_shape = (
             block_tile_shape[0] * 2,
             block_tile_shape[1] * 2,
             16,
@@ -1140,7 +1151,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape,
             umma_shape,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             M=4096,

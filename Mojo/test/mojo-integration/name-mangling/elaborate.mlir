@@ -10,7 +10,7 @@ kgen.generator @some_generator() attributes {sourceName = "foo"} {
 // CHECK-LABEL: kgen.func export @get_source_name
 kgen.generator export @get_source_name() {
   // CHECK-NEXT: constant: string = <"foo">
-  %0 = kgen.param.constant: string = <#kgen.get_source_name<#kgen.symbol.constant<@some_generator> : !kgen.generator<() -> ()>>>
+  %0 = kgen.param.constant: string = <#kgen.get_source_name<#kgen.gen<#kgen.func.symbol<@some_generator>> : !kgen.generator<() -> ()>>>
   hlcf.return
 }
 

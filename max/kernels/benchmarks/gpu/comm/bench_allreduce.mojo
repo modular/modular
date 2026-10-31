@@ -291,17 +291,8 @@ def bench_reduce[
     # https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md#allreduce
     var busbw = 2 * gbps * Float64((ngpus - 1)) / Float64(ngpus)
     print(
-        "|",
-        name,
-        "| slowest mean time",
-        max_time,
-        "ms |",
-        "algbw:",
-        gbps,
-        "GB/s |",
-        "busbw:",
-        busbw,
-        "GB/s |",
+        t"| {name} | slowest mean time {max_time} ms | algbw: {gbps} GB/s |"
+        t" busbw: {busbw} GB/s |"
     )
 
     # Copy results back and verify

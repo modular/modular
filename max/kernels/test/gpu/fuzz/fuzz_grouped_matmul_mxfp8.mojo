@@ -90,8 +90,8 @@ comptime N = get_defined_int["N", 2048]()
 comptime K = get_defined_int["K", 1024]()
 comptime num_experts = get_defined_int["num_experts", 8]()
 
-comptime block_tile_shape = Index(bm, bn, BK)
-comptime umma_shape = Index(bm, bn, MMA_K)
+comptime block_tile_shape = (bm, bn, BK)
+comptime umma_shape = (bm, bn, MMA_K)
 comptime k_groups = ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
 comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
 
@@ -339,7 +339,7 @@ def run_one_case(
         a_type, a_type, out_dtype, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=Index(1, 1, 1),
+        cluster_shape=(Int(1), Int(1), Int(1)),
         mma_shape=umma_shape,
         block_swizzle_size=8,
         cta_group=1,
@@ -763,7 +763,7 @@ def _run_batch_composition(
         a_type, a_type, out_dtype, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=Index(1, 1, 1),
+        cluster_shape=(Int(1), Int(1), Int(1)),
         mma_shape=umma_shape,
         block_swizzle_size=8,
         cta_group=1,
@@ -901,12 +901,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "num_active_experts=",
-                specs[i].num_active_experts,
-                "tok_seed=",
-                specs[i].tok_seed,
+                t"FUZZ_SPEC idx= {i} num_active_experts="
+                t" {specs[i].num_active_experts} tok_seed= {specs[i].tok_seed}"
             )
         return
 
@@ -914,16 +910,8 @@ def main() raises:
         var nae = flag_int(args, "--num_active_experts", 3)
         var ts = flag_int(args, "--tok_seed", 1)
         print(
-            "FUZZ_SINGLE num_active_experts=",
-            nae,
-            "tok_seed=",
-            ts,
-            "N=",
-            N,
-            "K=",
-            K,
-            "num_experts=",
-            num_experts,
+            t"FUZZ_SINGLE num_active_experts= {nae} tok_seed= {ts} N= {N} K="
+            t" {K} num_experts= {num_experts}"
         )
         with DeviceContext() as ctx:
             if batch_invariance:
@@ -936,17 +924,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_grouped_matmul_mxfp8 seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "N=",
-        N,
-        "K=",
-        K,
-        "num_experts=",
-        num_experts,
-        "===",
+        t"=== fuzz_grouped_matmul_mxfp8 seed= {the_seed} budget="
+        t" {the_budget} N= {N} K= {K} num_experts= {num_experts} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

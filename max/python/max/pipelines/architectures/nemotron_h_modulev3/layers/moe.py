@@ -16,29 +16,29 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.graph import TensorValue, ops
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     moe_router_group_limited,
     moe_sigmoid_gemv_router,
 )
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_ops import (
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_ops import (
     interleave_grouped_scales,
 )
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import (
+from max.nn.legacy import kernels
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     NamedMapping,
     Partial,
 )
-from max.experimental.sharding.rules import unary_rule
-from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
-from max.nn import kernels
+from max.tensor.sharding.rules import unary_rule
 
 from ..model_config import NemotronHConfig
 from ..quantization import NVFP4_GROUP_SIZE
@@ -68,6 +68,7 @@ class NemotronHMLP(Module[[Tensor], Tensor]):
         self.down_proj = quantized_linear(config, f"{name}.down_proj")
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the MLP over ``x``."""
         return self.down_proj(_relu2(self.up_proj(x)))
 
 
@@ -157,8 +158,7 @@ def _with_shared_slices_value(
     num_routed: int,
     slices: int,
 ) -> tuple[TensorValue, TensorValue]:
-    """Appends every shared-expert slice, at weight 1, to each token's routed
-    experts.
+    """Appends every shared-expert slice, at weight 1, to each token's experts.
 
     Args:
         topk_ids: Each token's routed expert ids, ``[tokens, k]``.
@@ -191,8 +191,10 @@ _with_shared_slices = F.functional(_with_shared_slices_value)
 
 
 def _nvfp4_on_host(out_dim: int, in_dim: int, *experts: int) -> list[Tensor]:
-    """Zeros for an NVFP4 weight's codes, block scales and global scale, on
-    the host as stored."""
+    """Zeros for an NVFP4 weight, on the host as stored.
+
+    The zeros cover the weight's codes, block scales and global scale.
+    """
     cpu = CPU()
     return [
         Tensor.zeros(
@@ -224,9 +226,10 @@ class _SharedExpertSlices(Module[[], None]):
         self.down_proj = _NVFP4Projection(hidden, inner)
 
     def stacked(self, proj: str, slices: int) -> list[Tensor]:
-        """Returns a projection's codes, block scales and global scales, one
-        slice per expert.
+        """Returns a projection's codes, block scales and global scales, sliced.
 
+        There is one slice per expert. ``up`` slices its rows and ``down`` its
+        columns, so each slice is laid out as a routed expert's.
         ``up`` slices its rows and ``down`` its columns, so each slice is
         laid out as a routed expert's.
         """
@@ -270,6 +273,7 @@ class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
         )
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        """Scores each token's experts and returns the routing weights."""
         mesh = x.mesh
         if mesh.num_devices <= 2:
             # Every device routes its own replica of the tokens. The replicas
@@ -376,9 +380,11 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
     def _shard_channels(
         self, stack: Tensor, axis: int, mesh: DeviceMesh
     ) -> Tensor:
-        """Shards an expert stack's channels across ``mesh``, each device's
-        share zero-padded.
+        """Shards an expert stack's channels across ``mesh``.
 
+        Each device's share is zero-padded. ``stack`` holds :attr:`channels`
+        channels along ``axis``, maybe several to an element, as packed codes
+        and block scales do.
         ``stack`` holds :attr:`channels` channels along ``axis``, maybe
         several to an element, as packed codes and block scales do.
         """
@@ -401,9 +407,10 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
         return stack.to(NamedMapping(mesh, tuple(spec)))
 
     def placed_params(self, proj: str, mesh: DeviceMesh) -> list[Tensor]:
-        """Returns a routed projection's parameters, each device holding its
-        share of every expert's channels.
+        """Returns a routed projection's parameters, sharded across the mesh.
 
+        Each device holds its share of every expert's channels: the weight, then
+        the W4A4 block scales and global scales.
         That is the weight, then the W4A4 block scales and global scales.
 
         Args:
@@ -433,9 +440,11 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
     def device_params(
         self, proj: str, mesh: DeviceMesh
     ) -> list[list[TensorValue]]:
-        """Returns each device's share of a routed projection's parameters,
-        as the grouped matmul reads them.
+        """Returns each device's share of a routed projection's parameters.
 
+        They come back as the grouped matmul reads them: the weight, then the
+        W4A4 interleaved block scales and global scales. All of them read only
+        weights, so the graph compiler prepares them once, at model init.
         That is the weight, then the W4A4 interleaved block scales and global
         scales. All of them read only weights, so the graph compiler prepares
         them once, at model init.
@@ -450,6 +459,7 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
             ]
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the routed and shared experts over ``x``."""
         experts, weights = self.gate(x)
         if self.shared_slices:
             experts, weights = _with_shared_slices(

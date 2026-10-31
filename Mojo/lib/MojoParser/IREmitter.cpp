@@ -460,15 +460,8 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       return {};
     }
 
-    // Materialize signatures as closures.
-    if (signature.isCapturing()) {
-      emitError(
-          expr->getLoc(),
-          "TODO: capturing closures cannot be materialized as runtime values");
-      return {};
-    }
-    return SRValue(CreateClosureOp::create(*builder, location, signature, attr,
-                                           ValueRange()));
+    return SRValue(
+        CreateFuncPtrOp::create(*builder, location, signature, attr));
   }
 
   ASTType valueType = value.ir.getRValueType();
@@ -1080,7 +1073,8 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
     // Suggest transfer if the type is movable, or if it is a transferable
     // MValue.
-    if ((valueType.isMovable(exprLoc, shared, declScope) ||
+    if (dest.context != EC_VarInitMatchBinding &&
+        (valueType.isMovable(exprLoc, shared, declScope) ||
          canTransferFrom())) {
       diag.attachNote(exprLoc)
           << "consider transferring the value with '^'"
@@ -2343,10 +2337,8 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   // FIXME:(MOCO-4812): this should not be an ImmMem unconditionally.
   argConventions.push_back(ArgConvention::ImmMem);
   llvm::append_range(argConventions, sig.getFnMetadata().getArgConventions());
-  // TODO: remove capturing when legacy closures are removed.
   auto metadata = FnMetadataAttr::get(
-      ctx, argConventions,
-      sig.getFnMetadata().getFnEffects().setCapturing(true), originData);
+      ctx, argConventions, sig.getFnMetadata().getFnEffects(), originData);
 
   // Account for `_Self`/`self` inserted when constructing the closure trait.
   // We have to do it here since we can not parametrize a pog_list. (So we can

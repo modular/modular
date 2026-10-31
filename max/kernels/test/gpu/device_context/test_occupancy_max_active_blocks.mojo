@@ -25,9 +25,11 @@ from std.math import ceildiv
 
 
 # Kernel that uses shared memory for testing occupancy with dynamic shared memory
-def shared_memory_kernel(
-    input: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def shared_memory_kernel[
+    in_origin: ImmOrigin, out_origin: MutOrigin
+](
+    input: ImmPointer[Float32, in_origin],
+    output: MutPointer[Float32, out_origin],
     len_dev: Int32,
 ):
     """A kernel that uses shared memory to test occupancy calculations."""
@@ -66,9 +68,11 @@ def shared_memory_kernel(
 
 
 # Simple kernel for testing occupancy calculations
-def occupancy_test_kernel(
-    input: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def occupancy_test_kernel[
+    in_origin: ImmOrigin, out_origin: MutOrigin
+](
+    input: ImmPointer[Float32, in_origin],
+    output: MutPointer[Float32, out_origin],
     len_dev: Int32,
 ):
     """A simple kernel for testing occupancy - just copies input to output."""
@@ -87,7 +91,9 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     )
 
     # Compile the simple kernel for occupancy testing
-    var simple_func = ctx.compile_function[occupancy_test_kernel]()
+    var simple_func = ctx.compile_function[
+        occupancy_test_kernel[ImmUntrackedOrigin, MutUntrackedOrigin]
+    ]()
 
     # Test with different block sizes
     var block_sizes: List[Int] = [32, 64, 128, 256, 512, 1024]
@@ -117,7 +123,9 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
             )
 
     # Test with shared memory usage
-    var shared_func = ctx.compile_function[shared_memory_kernel]()
+    var shared_func = ctx.compile_function[
+        shared_memory_kernel[ImmUntrackedOrigin, MutUntrackedOrigin]
+    ]()
 
     print("\nTesting occupancy with different shared memory sizes:")
     var shared_memory_sizes: List[Int] = [
@@ -192,16 +200,15 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
         )
     )
     print(
-        "Using block size ",
-        optimal_block_size,
-        " with ",
-        optimal_blocks,
-        " max blocks per SM",
+        t"Using block size  {optimal_block_size}  with  {optimal_blocks}  max"
+        t" blocks per SM"
     )
 
     # Launch the kernel
     var grid_dim = ceildiv(length, optimal_block_size)
-    comptime kernel = occupancy_test_kernel
+    comptime kernel = occupancy_test_kernel[
+        ImmOrigin(origin_of(input_device)), origin_of(output_device)
+    ]
     ctx.enqueue_function[kernel](
         input_device,
         output_device,

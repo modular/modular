@@ -17,34 +17,34 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mesh_axis import DP
-from max.experimental.nn.common_layers.quant_moe import (
+from max.graph import DeviceRef, TensorValue, ops
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mesh_axis import DP
+from max.nn.common_layers.quant_moe import (
     QuantizedMoE,
 )
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import (
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
+from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Replicated,
     Sharded,
     Unknown,
 )
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorValue, ops
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
-from max.pipelines.lib import ModuleV3Outputs
 
 from ..deepseekV2_modulev3.layers.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
@@ -192,6 +192,7 @@ class DeepseekV3TextModel(
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: EPCommBuffers | None = None,
     ) -> ModuleV3Outputs:
+        """Runs the embedding and decoder stack over the tokens."""
         if self.mesh is not None:
             tokens = F.distributed_broadcast(tokens, self.mesh)
             input_row_offsets = F.distributed_broadcast(
@@ -283,6 +284,7 @@ class DeepseekV3(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the model over its graph inputs."""
         mesh = self.config.mesh
         assert mesh is not None
 

@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 from max.config import ConfigFileModel
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     HostStagingAlloc,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -261,9 +261,9 @@ class KVConnectorConfig(ConfigFileModel):
         description=(
             "Open the disk cache files with O_DIRECT so offload bypasses the "
             "page cache. There is no buffered fallback: startup fails if "
-            "direct I/O does not work. Requires 4096-byte-aligned leaf "
-            "blocks and is incompatible with host_staging_alloc='driver' on "
-            "AMD."
+            "direct I/O does not work. Host rows and disk slots are padded "
+            "to a multiple of 4096 bytes. Incompatible with "
+            "host_staging_alloc='driver' on AMD."
         ),
     )
     """Whether the disk tier's reads and writes bypass the page cache (O_DIRECT)."""
@@ -439,13 +439,14 @@ class KVCacheConfig(ConfigFileModel):
         window_size: int | None = None,
         stride_alignment: int | None = None,
         scratch: bool = False,
+        v_head_dim: int | None = None,
     ) -> KVCacheParams:
-        """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
+        """Returns :class:`~max.nn.legacy.kv_cache.cache_params.KVCacheParams` built from this config.
 
         Selects the attention-type-specific subclass: a
-        :class:`~max.nn.kv_cache.cache_params.MLAKVCacheParams` when ``is_mla``
+        :class:`~max.nn.legacy.kv_cache.cache_params.MLAKVCacheParams` when ``is_mla``
         is set, otherwise a
-        :class:`~max.nn.kv_cache.cache_params.MHAKVCacheParams`.
+        :class:`~max.nn.legacy.kv_cache.cache_params.MHAKVCacheParams`.
 
         Args:
             dtype: Data type for KV cache storage.
@@ -479,10 +480,13 @@ class KVCacheConfig(ConfigFileModel):
             stride_alignment: The page stride alignment the cache's kernels
                 honor, letting the pool pad its pages, or ``None`` to keep
                 them packed. See
-                :attr:`~max.nn.kv_cache.cache_params.KVLeafRegion.stride_alignment`.
+                :attr:`~max.nn.legacy.kv_cache.cache_params.KVLeafRegion.stride_alignment`.
             scratch: Whether the cache is per-request scratch: one block a
                 request, never published (see
-                :attr:`~max.nn.kv_cache.cache_params.KVCacheParams.scratch`).
+                :attr:`~max.nn.legacy.kv_cache.cache_params.KVCacheParams.scratch`).
+            v_head_dim: Dimension of each value head, when it differs from
+                ``head_dim``. Defaults to ``None``, the same as ``head_dim``.
+                See :attr:`~max.nn.legacy.kv_cache.cache_params.KVCacheParams.v_head_dim`.
 
         Returns:
             The constructed KV cache parameters.
@@ -513,6 +517,7 @@ class KVCacheConfig(ConfigFileModel):
             window_size=window_size,
             stride_alignment=stride_alignment,
             scratch=scratch,
+            v_head_dim=v_head_dim,
         )
         if is_mla:
             if num_q_heads is None:

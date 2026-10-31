@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Whisper pipeline model."""
 
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -59,6 +60,8 @@ class WhisperInputs(ModelInputs):
 
 # TODO: Need specific Context type, not just this base type.
 class Whisper(PipelineModel[Any, None, Model]):
+    """The Whisper model graph."""
+
     state_dict: dict[str, Any]
     """The weights, kept for :meth:`graph_specs`."""
 

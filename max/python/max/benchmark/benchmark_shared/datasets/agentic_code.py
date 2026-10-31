@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Agentic coding sessions: the message structs and the session sampler."""
+
 from __future__ import annotations
 
 import logging
@@ -41,16 +43,22 @@ logger = logging.getLogger(__name__)
 
 
 class MessageContentPart(msgspec.Struct):
+    """One text part of a message's content."""
+
     type: Literal["text"]
     text: str = ""
 
 
 class Message(msgspec.Struct):
+    """One message, either plain text or a list of content parts."""
+
     role: str
     content: str | list[MessageContentPart] | None = None
 
 
 class Turn(msgspec.Struct):
+    """One turn in a session, with its messages and token counts."""
+
     messages: list[Message] | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -59,10 +67,14 @@ class Turn(msgspec.Struct):
 
 
 class Session(msgspec.Struct):
+    """A multi-turn session: its ordered turns."""
+
     turns: list[Turn]
 
 
 class AgenticCodeData(msgspec.Struct):
+    """The dataset file: every session it holds."""
+
     sessions: list[Session]
 
 
@@ -105,6 +117,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
     """
 
     def fetch(self) -> None:
+        """Downloads the session file from Hugging Face."""
         self.dataset_path = hf_hub_download_with_retry(
             repo_id="novita/agentic_code_dataset_22",
             filename="e22_sessions_openai.json",
@@ -120,6 +133,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         enable_tool_calls: bool = True,
         **kwargs,
     ) -> RequestSamples:
+        """Samples chat sessions from the agentic coding dataset."""
         assert self.dataset_path is not None, (
             "dataset_path must be set; call fetch() first"
         )
@@ -315,6 +329,8 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 distributions. Ignored when fitting.
             shuffle: Whether to shuffle before sampling (session order when not
                 fitting; user-turn pool when fitting).
+            pool: Tokenizer pool the fitted session encoding runs under.
+                Required when ``fit_length_distributions`` is True.
             fit_length_distributions: Build sessions from pooled turns and CLI
                 distributions instead of replaying full recorded sessions.
             num_turns: Turns per session distribution when fitting.
@@ -327,6 +343,8 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             min_output_len: Floor for sampled output lengths when fitting.
             max_output_len: Optional ceiling that fitted output lengths are
                 clamped to.
+            tools: Tool definitions the fitted sessions' tool calls may use.
+            agentic_rounds_per_turn: Agent-loop rounds per turn when fitting.
             enable_tool_calls: When False, skip turns whose messages include
                 non-system/user roles (same as ``sample_requests``).
 

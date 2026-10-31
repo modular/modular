@@ -11,4 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Re-exports the RMO dialect bindings from ``max._mlir.dialects``."""
+
 from max._mlir.dialects import rmo

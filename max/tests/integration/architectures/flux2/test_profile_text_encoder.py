@@ -43,10 +43,9 @@ from typing import Any, NamedTuple
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
 from max.pipelines.architectures.mistral3.text_encoder.mistral3 import (
     Mistral3TextEncoderTransformer,
@@ -61,6 +60,7 @@ from max.pipelines.architectures.qwen3.text_encoder.qwen3 import (
     Qwen3TextEncoderTransformer,
 )
 from max.profiler import Tracer, set_gpu_profiling_state
+from max.tensor import Tensor
 from pytest_benchmark.fixture import BenchmarkFixture
 
 # --------------------------------------------------------------------------- #

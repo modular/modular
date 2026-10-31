@@ -425,22 +425,14 @@ def run_shape[
             max_pbf16 = max(
                 max_pbf16, abs(a - Float64(ph[i].cast[DType.float64]()))
             )
-        print("CHECK", tag, "max|slow-fast|=", max_fast, "max|slow|=", max_ref)
+        print(t"CHECK {tag} max|slow-fast|= {max_fast} max|slow|= {max_ref}")
         print(
-            "CHECK",
-            tag,
-            "max|slow-fast_nosplit|=",
-            max_nosplit,
-            "max|slow|=",
-            max_ref,
+            t"CHECK {tag} max|slow-fast_nosplit|= {max_nosplit} max|slow|="
+            t" {max_ref}"
         )
         print(
-            "CHECK",
-            tag,
-            "max|slow-slow_pbf16|=",
-            max_pbf16,
-            "max|slow|=",
-            max_ref,
+            t"CHECK {tag} max|slow-slow_pbf16|= {max_pbf16} max|slow|="
+            t" {max_ref}"
         )
 
     @inline(.always)

@@ -574,12 +574,8 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
             var got = out_host_ptr[i]
             if not isclose(expected, got, atol=1e-4, rtol=1e-5):
                 print(
-                    "ERROR. Mismatch at flattened idx:",
-                    i,
-                    "expected:",
-                    expected,
-                    "got:",
-                    got,
+                    t"ERROR. Mismatch at flattened idx: {i} expected:"
+                    t" {expected} got: {got}"
                 )
                 assert_true(False)
 

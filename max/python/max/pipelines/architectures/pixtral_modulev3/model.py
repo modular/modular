@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Pixtral pipeline model."""
 
 from __future__ import annotations
 
@@ -18,12 +19,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import functional as F
 from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import (
     SafetensorWeights,
@@ -31,7 +31,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     GraphSpec,
@@ -45,6 +45,7 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import (
     parse_state_dict_from_weights,
 )
+from max.tensor import default_dtype
 
 from .batch_processor import PixtralModuleV3BatchProcessor
 from .model_config import PixtralConfig
@@ -132,6 +133,7 @@ class PixtralModel(
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the graphs over the prepared inputs."""
         assert isinstance(model_inputs, PixtralInputs)
         assert model_inputs.kv_cache_inputs is not None, (
             "Pixtral has KV cache inputs, but none were provided"

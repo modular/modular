@@ -19,8 +19,8 @@ import pytest
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.layer import LayerList, Module
-from max.nn.moe import MoE, apply_eplb_placement, router_fold_supported
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.moe import MoE, apply_eplb_placement, router_fold_supported
 
 NUM_LOGICAL = 4
 

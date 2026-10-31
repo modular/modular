@@ -13,8 +13,13 @@
 
 from std.ffi import external_call
 
-from max.gpu.host import DeviceContext, DeviceFunction, DeviceStream
-from max.gpu.host._legacy.device_context import _CString, _checked
+from .device_context import (
+    DeviceContext,
+    DeviceFunction,
+    DeviceStream,
+    _CString,
+    _checked,
+)
 
 
 struct _CUctx_st:
@@ -33,10 +38,10 @@ struct _CUevent_st:
     pass
 
 
-comptime CUcontext = OptionalPointer[_CUctx_st, UntrackedOrigin[mut=True]]
-comptime CUstream = OptionalPointer[_CUstream_st, UntrackedOrigin[mut=True]]
-comptime CUmodule = OptionalPointer[_CUmod_st, UntrackedOrigin[mut=True]]
-comptime CUevent = OptionalPointer[_CUevent_st, UntrackedOrigin[mut=True]]
+comptime CUcontext = Optional[Pointer[_CUctx_st, UntrackedOrigin[mut=True]]]
+comptime CUstream = Optional[Pointer[_CUstream_st, UntrackedOrigin[mut=True]]]
+comptime CUmodule = Optional[Pointer[_CUmod_st, UntrackedOrigin[mut=True]]]
+comptime CUevent = Optional[Pointer[_CUevent_st, UntrackedOrigin[mut=True]]]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.

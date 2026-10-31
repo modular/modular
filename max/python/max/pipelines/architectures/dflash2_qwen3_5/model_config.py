@@ -185,8 +185,7 @@ def dflash2_draft_width(
 
 @dataclass(frozen=True)
 class DFlash2Qwen3_5Config:
-    """The draft's Llama 3 config and the DFlash2 fields its checkpoint
-    names."""
+    """The draft's Llama 3 config and the DFlash2 fields its checkpoint names."""
 
     llama: Llama3Config
     dflash: Dflash2DraftHFConfig
@@ -218,6 +217,8 @@ class DFlash2Qwen3_5Config:
 
     @property
     def num_target_layers(self) -> int | None:
-        """Returns the target depth the draft was trained against, if its
-        checkpoint names one."""
+        """Returns the target depth the draft was trained against.
+
+        ``None`` when the checkpoint names no depth.
+        """
         return self.dflash.num_target_layers

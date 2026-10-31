@@ -33,15 +33,15 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn import Module
-from max.nn.kernels import (
+from max.nn.legacy import Module
+from max.nn.legacy.kernels import (
     apply_packed_bitmask,
     apply_penalties_to_logits,
     scatter_set_constant,
     topk_fused_sampling,
     update_frequency_data,
 )
-from max.nn.sampling import (
+from max.nn.legacy.sampling import (
     RejectionSampler,
     RejectionSamplerWithResiduals,
     compute_synthetic_acceptance_base_rate,

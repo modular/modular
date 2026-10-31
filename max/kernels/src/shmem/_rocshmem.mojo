@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from std.collections.string.string_span import get_static_string
 from max.gpu.host import DeviceContext
-from max.gpu.host._legacy._amdgpu_hip import hipStream_t, HIP
+from max.gpu.host import hipStream_t, HIP
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import size_of
@@ -303,7 +303,7 @@ def rocshmem_init_thread_tcp(
     """
     ctx.set_as_current()
 
-    var global_rank = node_id * gpus_per_node + Int(ctx.id())
+    var global_rank = node_id * gpus_per_node + Int(ctx.device().id)
     var total_gpus = gpus_per_node * total_nodes
 
     var attr = ROCSHMEMInitAttr()
@@ -468,7 +468,7 @@ def rocshmem_malloc[
         "rocshmem_malloc",
         def(
             c_size_t,
-        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
+        ) thin -> Optional[Pointer[Scalar[dtype], MutUntrackedOrigin]],
     ]()(size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
@@ -483,7 +483,7 @@ def rocshmem_calloc[
         "rocshmem_calloc",
         def(
             c_size_t, c_size_t
-        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
+        ) thin -> Optional[Pointer[Scalar[dtype], MutUntrackedOrigin]],
     ]()(count, size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_calloc", count * size)
@@ -492,7 +492,7 @@ def rocshmem_calloc[
 def _check_rocshmem_allocation[
     dtype: DType
 ](
-    ptr: OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
+    ptr: Optional[Pointer[Scalar[dtype], MutUntrackedOrigin]],
     func_name: StaticString,
     requested_bytes: c_size_t,
 ) raises -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:

@@ -138,15 +138,8 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
     var mat_mask = MaterializedMask(mask)
 
     print(
-        "test_mha_sm100_materialized_mask: depth=",
-        head_size,
-        " cache=",
-        cache_length,
-        " valid=",
-        valid_length,
-        " num_keys=",
-        num_keys,
-        sep="",
+        t"test_mha_sm100_materialized_mask:"
+        t" depth={head_size} cache={cache_length} valid={valid_length} num_keys={num_keys}"
     )
 
     comptime Collection = PagedKVCacheCollection[

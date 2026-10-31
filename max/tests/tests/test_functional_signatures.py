@@ -26,10 +26,10 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from max.experimental import functional as F
-from max.experimental.functional._signatures import TENSOR_VALUE_ALIAS_NAMES
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.functional._signatures import TENSOR_VALUE_ALIAS_NAMES
 from max.graph import TensorValue
+from max.tensor import Tensor
 
 # Names of the graph-op wrapper-type aliases that must NOT leak into any
 # rendered signature or ``__annotations__`` on the functional surface.

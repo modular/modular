@@ -32,9 +32,11 @@ comptime IN_COLS = 3
 comptime OUT_COLS = 4
 
 
-def _gmem_kernel(
-    in_ptr: MutPointer[BFloat16, MutAnyOrigin],
-    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
+def _gmem_kernel[
+    in_origin: MutOrigin, out_origin: MutOrigin
+](
+    in_ptr: MutPointer[BFloat16, in_origin],
+    out_ptr: MutPointer[BFloat16, out_origin],
 ):
     var lane = thread_idx.x
     var base = lane * IN_COLS
@@ -43,9 +45,11 @@ def _gmem_kernel(
     (out_ptr.unsafe_offset(lane * OUT_COLS)).unsafe_store(v)
 
 
-def _general_kernel(
-    in_ptr: MutPointer[BFloat16, MutAnyOrigin],
-    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
+def _general_kernel[
+    in_origin: MutOrigin, out_origin: MutOrigin
+](
+    in_ptr: MutPointer[BFloat16, in_origin],
+    out_ptr: MutPointer[BFloat16, out_origin],
 ):
     var lane = thread_idx.x
     var base = lane * IN_COLS
@@ -82,7 +86,7 @@ def main() raises:
     for i in range(ROWS * OUT_COLS):
         out_host[i] = BFloat16(-1)
     ctx.enqueue_copy(out_dev, out_host)
-    ctx.enqueue_function[_gmem_kernel](
+    ctx.enqueue_function[_gmem_kernel[origin_of(in_dev), origin_of(out_dev)]](
         in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -92,9 +96,9 @@ def main() raises:
     for i in range(ROWS * OUT_COLS):
         out_host[i] = BFloat16(-1)
     ctx.enqueue_copy(out_dev, out_host)
-    ctx.enqueue_function[_general_kernel](
-        in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS
-    )
+    ctx.enqueue_function[
+        _general_kernel[origin_of(in_dev), origin_of(out_dev)]
+    ](in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS)
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
     _check(out_host)

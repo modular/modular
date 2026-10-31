@@ -1,7 +1,12 @@
 ---
-title: Automatic destruction
-description: Let Mojo destroy values automatically after their last use.
+title: Automatic value destruction
+description: >
+  Learn the default way a value's lifetime ends: Mojo destroys it after its
+  last use. Covers deinitializers and lifetime extension.
 ---
+
+<!-- Compiler verified: 2026-10-16, Mojo 1.2.0.dev2026101520 (d2872eb2) -->
+<!-- Last updated: 2026-10-16 -->
 
 Mojo destroys values as soon as they're no longer used. It doesn't wait for
 the end of a code block or even the end of an expression. With Mojo's
@@ -15,12 +20,12 @@ deinitializer.
 
 For cleanup that must happen at a specific, compiler-checked point, Mojo
 also supports *explicit* deinitializers. See
-[Explicit value destruction](/docs/manual/lifecycle/explicit-destroy/).
+[Requiring explicit destruction](/docs/manual/lifecycle/explicit-destroy/).
 
 ## When Mojo destroys values
 
-Track when each Number instance is deinitialized by overloading `__deinit__()`
-to print a message:
+To see when each `Number` instance is destroyed, give `Number` a
+deinitializer that prints a message:
 
 ```mojo
 @fieldwise_init
@@ -84,7 +89,10 @@ for `self`. The value and its fields remain valid while `__deinit__()`
 performs cleanup. When the method returns, the instance becomes logically
 deinitialized.
 
-Mojo generates a `__deinit__()` for every struct with deinitializable fields.
+If a struct doesn't define `__deinit__()` and doesn't opt out with
+`not Deinitable`, Mojo generates one. That requires every field to be
+`Deinitable`. A struct that holds an explicitly destroyed field must
+either define a `__deinit__()` that consumes the field or opt out itself.
 
 In general, don't call `__deinit__()` directly. If you need that level of
 control, use [explicit value
@@ -118,20 +126,22 @@ methods. For example:
 
 ```mojo
 struct S:
-   var a: String
-   var b: String
+    var a: String
+    var b: String
 
-   def __deinit__(deinit self):
-       # Mojo calls a.__deinit__() here.
-       use(b)
-       # Mojo calls b.__deinit__() here.
+    def __deinit__(deinit self):
+        # Mojo calls self.a.__deinit__() here.
+        use(self.b)
+        # Mojo calls self.b.__deinit__() here.
 ```
 
 ## Custom deinitializers
 
-Define a custom `__deinit__()` when your type needs to perform cleanup as
-it's destroyed. For example, you might free manually allocated memory or
-close a long-lived resource such as a file.
+Define a custom
+[`__deinit__()`](/docs/reference/struct-declarations/#instance-tear-down-with-deinitializers)
+when your type needs to perform cleanup as it's destroyed. For example, you
+might free manually allocated memory or close a long-lived resource such as a
+file.
 
 This logger owns a temporary file. Its deinitializer closes the file when
 the logger is destroyed:
@@ -152,7 +162,7 @@ struct QuickLogger:
     def __deinit__(deinit self):
         try:
             print(t"Closing: {self.temporary_file.name}")
-            self.temporary_file.close()
+            self.temporary_file^.close()
         except e:
             print(t"Error: {e}")
 
@@ -162,19 +172,96 @@ def main() raises:
     ql.log("This is the last use of 'ql'")
 ```
 
-## Explicit lifetime extension
+## Keeping a value alive
 
-Most of the time, Mojo's ASAP destruction requires no extra effort. You may
-need to explicitly mark the last use of a value to control when its
-deinitializer runs.
+Most of the time, Mojo's ASAP destruction picks the right point and ends a
+value's lifetime there. Sometimes, though, something outside a value's
+ordinary uses still depends on it, such as a pointer into its storage or a
+lock it holds. Origins keep the value alive for pointers the compiler can
+track. For everything else, extend the lifetime explicitly.
+
+### Origins keep owners alive
+
+A pointer whose origin ties back to the owner keeps the owner alive
+automatically:
+
+```mojo
+def main():
+    var foo = String("some text")
+    var bar = foo.unsafe_ptr()  # Pointer[Byte, origin_of(foo)]
+
+    # time passes, and foo is never read directly again
+
+    print(bar[])  # using bar here keeps foo alive to this point
+```
+
+The same holds for a pointer to one of a value's fields. Its origin keeps
+the whole value alive:
+
+```mojo
+def main():
+    var b = Buf(v=42)
+    var p = Pointer(to=b.v)  # origin_of(b.v)
+    print("midpoint")
+    use_ptr(p)               # b is still alive
+    # Buf destroyed after p's last use, not after the second line
+```
+
+{/* [[ FACT: `Buf` and `use_ptr()` are used here and in the "When the
+   origin is gone" example, but the page never defines either, so neither
+   sample compiles as shown.
+   WHY: a reader who pastes the sample gets "use of unknown declaration"
+   before seeing the point about origins; the comments ("Buf destroyed
+   after p's last use") also assume a deinitializer the reader can't see.
+   FIX: introduce them once, before this sample. The test mocks show the
+   shape (death/tests.mojo:391): `Buf` is a `Movable` struct with an `Int`
+   field `v` and a `__deinit__()` that announces destruction; `use_ptr()`
+   reads through a `Pointer[Int, _]`. Either a sentence ("`Buf` is a
+   struct with an `Int` field `v` whose deinitializer prints a message")
+   or a short definition block works. ]] */}
+
+The compiler pushes you toward origins. It rejects `AnyOrigin` in a struct
+field outright, and it refuses to widen `Pointer[Int, origin_of(a._alloc)]`
+to `Pointer[Int, MutAnyOrigin]` implicitly.
+
+When working with foreign function interfaces (FFIs), prefer an origin tied
+to the owner of the value you pull a pointer from. For worked examples of C
+filling a Mojo-owned buffer, see [Calling C functions](/docs/manual/c-ffi/).
+
+### When the origin is gone
+
+Without an origin, a dependency is invisible and the owner dies after the
+pointer construction and origin cast. Casting to `MutUntrackedOrigin`
+severs the link. Here's the same code with the origin removed:
+
+```mojo
+def main():
+    var b = Buf(v=42)
+    var p = Pointer(to=b.v).unsafe_origin_cast[MutUntrackedOrigin]()
+    # Buf destroyed here, before midpoint
+    print("midpoint")
+    use_ptr(p)  # undefined behavior: the owner is already gone
+```
+
+Origins are unavailable or gone after a cast to an untracked origin, with
+an opaque handle, or with a bare address crossing into C. Those produce an
+untracked pointer, and the compiler stops connecting it to the owner. That's
+when you extend the lifetime yourself.
+
+If the C side retains a pointer past the call, no origin saves you, because
+the retention is invisible. That case needs an owner that outlives the
+C-side lifetime, not a lifetime extension.
+
+### Explicit lifetime extension {#explicit-lifetime-extension}
 
 Use explicit lifetime extension when something outside the value's ordinary
 uses still requires it to remain alive and you can't use origins or
 references to do this.
 
-Assign the value to the `_` *discard pattern* where you want its lifetime to
-end. This marks its last use, so the deinitializer runs immediately after
-the statement:
+Assign the value to the `_` [*discard
+pattern*](/docs/reference/literals/#discard-pattern) where you want its lifetime
+to end. This marks its last use, so the deinitializer runs immediately after the
+statement:
 
 ```mojo
 var s = "abc"
@@ -194,11 +281,9 @@ origin has been erased, which can lead to a use-after-free. Neither produces
 a compiler error. `_ = value` keeps the value alive until the point where you
 need it released or need the pointer to remain valid.
 
-:::note
-Previous versions of Mojo required the transfer sigil (`^`) when
-discarding a move-only type. This is no longer required, since the
-compiler doesn't move the discarded value. For more on the
-transfer sigil, see
-[ownership
-transfer](/docs/manual/values/ownership/#transfer-arguments-var-and-).
-:::
+The transfer sigil makes no difference here: `_ = t^` keeps `t` alive
+exactly as `_ = t` does. For why, see [Ownership transfer and
+destruction](/docs/manual/lifecycle/destruction-transfer/).
+
+Assigning to the discard pattern can only extend the lifetime of a value,
+it never forces a value to be destroyed.

@@ -408,10 +408,10 @@ void Graph::doRewrite(const Node *node) {
     // Finally, update the callee signature.
     functionType = FunctionType::get(func.getContext(), call->getOperandTypes(),
                                      call->getResultTypes());
-    FuncTypeGeneratorType calleeSignature = FuncTypeGeneratorType::get(
-        {}, functionType, convs, sigBase.getFnEffects());
+    auto calleeSignature =
+        FuncType::get(functionType, convs, sigBase.getFnEffects());
     call.setCalleeAttr(
-        SymbolConstantAttr::get(call.getCalleeSymbol(), calleeSignature));
+        FuncSymbolGenerator::get(call.getCalleeSymbol(), calleeSignature));
   }
 }
 

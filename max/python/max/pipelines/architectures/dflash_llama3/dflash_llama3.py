@@ -18,14 +18,14 @@ from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
-from max.nn.attention import AttentionWithRope
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.transformer import TransformerBlock
+from max.nn.legacy.attention import AttentionWithRope
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer import TransformerBlock
 
 from ..llama3.model_config import Llama3Config, create_rope_embedding
 
@@ -232,7 +232,7 @@ class DFlashLlama3(Module):
         input_row_offsets: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
-        # Alias for forward_block to satisfy the Module ABC.
+        """Alias for :meth:`forward_block`."""
         return self.forward_block(
             input_embeds, kv_collections, input_row_offsets, signal_buffers
         )

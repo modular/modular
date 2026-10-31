@@ -49,7 +49,6 @@ from max.gpu.compute.arch.tcgen05 import (
 from max.gpu.primitives.warp import vote
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import TileTensor, row_major, Idx, stack_allocation, coord
-from std.utils.coord import coord_to_index_list
 from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tma_async import (
@@ -66,9 +65,9 @@ from nn.attention.gpu.nvidia.common import (
 from nn.attention.mha_mask import MHAMask, MASK_VALUE
 from nn.attention.mha_utils import null_pointer, unread_pointer
 from nn.attention.mha_operand import MHAOperand
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
+from layout import Coord
 from linalg.arch.sm100.mma import smem_descriptor
 
 from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
@@ -201,13 +200,11 @@ def tma_tile_o[
     """
     # Outer coordinates run up to rows, so the extent is one past that. Its
     # box is 1, so it never masks.
-    res = create_tma_descriptor[dtype, 3, swizzle_mode](
+    res = create_tma_descriptor[dtype, swizzle_mode=swizzle_mode](
         DeviceBuffer(ctx, ptr.unsafe_offset(-depth * BM), 1, owning=False),
-        IndexList[3](rows + 1, BM, depth),
-        IndexList[3](depth, depth, 1),
-        coord_to_index_list(
-            _default_desc_shape[dtype, coord[1, BM, BK], swizzle_mode]()
-        ),
+        (rows + 1, Idx[BM], depth),
+        (depth, depth, Idx[1]),
+        _default_desc_shape[dtype, coord[1, BM, BK], swizzle_mode](),
     )
 
 
@@ -2567,7 +2564,7 @@ struct DecodeSM100QKTSS[
         Self.accum_type,
         Self.operand_type,
         Self.operand_type,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=True,  # QKᵀ
     ]()
 
@@ -2694,7 +2691,7 @@ struct DecodeSM100PVSS[
         Self.accum_type,
         Self.operand_type,
         Self.operand_type,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=False,  # P (k-major) * V (mn-major) = no transpose
     ]()
 
@@ -2788,7 +2785,7 @@ struct DecodeSM100QKTTS[
         Self.accum_type,
         Self.operand_type,
         Self.operand_type,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=True,  # QKᵀ
     ]()
 
@@ -2863,7 +2860,7 @@ struct DecodeSM100QKTSS_FP8[
         Self.accum_type,
         Self.operand_type,
         Self.operand_type,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=True,  # QKT
     ]()
 
@@ -2959,7 +2956,7 @@ struct DecodeSM100QKTSS_Content_FP8[
         Self.accum_type,
         Self.operand_type,
         Self.operand_type,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=True,  # QK^T
     ]()
 
@@ -3055,7 +3052,7 @@ struct DecodeSM100QKTSS_Rope_BF16[
         Self.accum_type,
         Self.operand_type,
         Self.operand_type,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=True,  # QK^T
     ]()
 
@@ -3152,7 +3149,7 @@ struct DecodeSM100PVSS_FP8[
         Self.accum_type,
         Self.operand_type,
         Self.operand_type,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=False,  # P (k-major) * V (mn-major) = no transpose
     ]()
 
@@ -3570,7 +3567,7 @@ def clamped_index_coordinate(
     var tile_key_base: UInt32,
     var num_keys: Int,
     var cache_start_pos: UInt32,
-) -> IndexList[4, element_type=.uint32]:
+) -> Coord[Int, Int, Int, Int]:
     """Builds a four-component index coordinate with the key index clamped to the last valid key.
 
     Args:
@@ -3591,7 +3588,7 @@ def clamped_index_coordinate(
     # Clamp k to last valid key so MaterializedMask never reads OOB.
     var last_k_abs: UInt32 = cache_start_pos + UInt32(max(num_keys - 1, 0))
     var k_idx_abs_safe: UInt32 = min(k_idx_abs, last_k_abs)
-    return IndexList[4, element_type=.uint32](
+    return (
         Int(prompt_idx),
         Int(q_head_idx),
         Int(q_idx_abs),

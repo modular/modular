@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps Z-Image checkpoint names onto the MAX tree."""
 
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ def _replace_prefix(key: str, old: str, new: str) -> str:
 def convert_z_image_transformer_state_dict(
     state_dict: dict[str, WeightData],
 ) -> dict[str, WeightData]:
+    """Renames the checkpoint's transformer tensors to the module tree's."""
     converted: dict[str, WeightData] = {}
 
     dropped_prefixes = (

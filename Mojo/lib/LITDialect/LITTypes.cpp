@@ -45,10 +45,23 @@ void LITDialect::registerTypes() {
       >();
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
-  dialect->registerMnemonicType<MetaType>();
-  dialect->registerMnemonicType<TraitType>();
-  dialect->registerMnemonicType<OriginType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<MetaType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<TraitType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<OriginType>();
   dialect->registerMnemonicType<OriginSetType>();
+
+  // LIT compound expressions; see `registerNonTrivialParamAttrs`. The
+  // operand-free origins (any/comptime/static) and implicit origin refs are
+  // leaves and are not registered. Neither is LITStructAttr: it is usually a
+  // small constant such as `DType.int` or `1` in `SIMD[DType.int, 1]`, where a
+  // label costs more than it saves. Any operator nested inside one is still
+  // labeled at its own level. Field references (OriginFieldAttr,
+  // StructExtractAttr) are excluded like other references, and
+  // OriginMutCastAttr is elided by the pretty printer, so a label on it would
+  // mark nothing visible.
+  dialect->registerNonTrivialParamAttrs<
+      UnpackedAttr, OriginUnionAttr, OriginEqAttr, InteriorOriginAttr,
+      OriginSubtreeAttr, OriginSetAttr, OriginSetUnionAttr, RefPackAttr>();
 
   // Register the StructType parser.
   getContext()->getLoadedDialect<KGENDialect>()->setSymbolTypeParser(
@@ -178,7 +191,8 @@ OptionalParseResult ModuleType::parseValue(AsmParser &p,
   return {}; // No custom parsing.
 }
 
-LogicalResult ModuleType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ModuleType::printValue(AsmPrinter &p, TypedAttr value,
+                                     KGENParamPrinter &printer) const {
   return failure(); // No custom printing.
 }
 
@@ -245,8 +259,8 @@ OptionalParseResult LIT::StructType::parseValue(AsmParser &p,
   return p.parseRBrace();
 }
 
-LogicalResult LIT::StructType::printValue(AsmPrinter &p,
-                                          TypedAttr value) const {
+LogicalResult LIT::StructType::printValue(AsmPrinter &p, TypedAttr value,
+                                          KGENParamPrinter &printer) const {
   auto attr = ::dyn_cast<LITStructAttr>(value);
   if (!attr)
     return failure();
@@ -258,14 +272,14 @@ LogicalResult LIT::StructType::printValue(AsmPrinter &p,
       // the value, because the parser will think that is a field name.
       !::isa<ParamOperatorAttr, SugarAttr, CastFromBuiltinAttr,
              CastToBuiltinAttr>(std::get<1>(values.front()))) {
-    printColonTypeParamValue(p, std::get<1>(values.front()));
+    printer.printColonTypeParamValue(p, std::get<1>(values.front()));
   } else {
     llvm::interleaveComma(values, p, [&](const auto &element) {
       auto [name, value] = element;
       p.printKeywordOrString(name);
-      printColonTypeOrIndex(p, value.getType());
+      printer.printColonTypeOrIndex(p, value.getType());
       p << " = ";
-      printParamValue(p, value);
+      printer.printParamValue(p, value);
     });
   }
   p << '}';
@@ -591,16 +605,17 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
   return parseSugaredTypeValue(p, value, metatype, typeParser);
 }
 
-static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
-  auto typePrinter = [](AsmPrinter &p, Type type) {
+static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
+                                    KGENParamPrinter &printer) {
+  auto typePrinter = [&printer](AsmPrinter &p, Type type) {
     if (auto ref = ::dyn_cast<LIT::StructType>(type)) {
       // Use the alias printer if suitable.
       if (failed(p.printAlias(ref))) {
         p << ref.getSymbol();
-        printParameterValues(p, ref.getParamValues());
+        printer.printParameterValues(p, ref.getParamValues());
       }
     } else {
-      printKGENType(p, type);
+      printer.printKGENType(p, type);
     }
   };
   return printSugaredTypeValue(p, value, typePrinter);
@@ -762,8 +777,9 @@ OptionalParseResult TraitType::parseValue(AsmParser &p,
   return parseTypeValue(p, value, *this);
 }
 
-LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value);
+LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value,
+                                    KGENParamPrinter &printer) const {
+  return printTypeValue(p, value, printer);
 }
 
 /// Return the metatype for this this trait as a value.
@@ -834,8 +850,9 @@ OptionalParseResult MetaType::parseValue(AsmParser &p, TypedAttr &value) const {
   return parseTypeValue(p, value, *this);
 }
 
-LogicalResult MetaType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value);
+LogicalResult MetaType::printValue(AsmPrinter &p, TypedAttr value,
+                                   KGENParamPrinter &printer) const {
+  return printTypeValue(p, value, printer);
 }
 
 mlir::OpAsmAliasResult MetaType::getAlias(raw_ostream &os) const {
@@ -966,7 +983,8 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
   return processPostFix();
 }
 
-LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value,
+                                     KGENParamPrinter &printer) const {
   if (auto declRef = ::dyn_cast<ParamDeclRefAttr>(value)) {
     printParamName(p, declRef.getName(), /*isRef*/ false);
     return success();
@@ -974,7 +992,7 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
 
   if (auto set = ::dyn_cast<OriginSetUnionAttr>(value)) {
     p << '|';
-    printParamValue(p, set.getValue());
+    printer.printParamValue(p, set.getValue());
     p << '|';
     return success();
   }
@@ -987,10 +1005,10 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
   if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(value)) {
     p << '{';
     if (unionAttr.getNumOperands()) {
-      printParamValue(p, unionAttr.getOperand(0));
+      printer.printParamValue(p, unionAttr.getOperand(0));
       for (auto operand : unionAttr.getOperands().drop_front()) {
         p << ", ";
-        printParamValue(p, operand);
+        printer.printParamValue(p, operand);
       }
     }
     p << '}';
@@ -999,14 +1017,14 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
 
   if (auto mutcast = ::dyn_cast<OriginMutCastAttr>(value)) {
     p << "(mutcast ";
-    printOriginParamValue(p, mutcast.getOperand());
+    printOriginParamValue(p, mutcast.getOperand(), printer);
     p << ")";
     return success();
   }
 
   // Print field access with dot notation.
   if (auto field = ::dyn_cast<OriginFieldAttr>(value)) {
-    if (failed(printValue(p, field.getBase())))
+    if (failed(printValue(p, field.getBase(), printer)))
       return failure();
     // FIXME: This should use ".field" instead of "->field" but MLIR doesn't
     // make it easy to parse a dot.
@@ -1017,10 +1035,10 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
 
   // Print interior access with x[<string-param>] notation.
   if (auto interior = ::dyn_cast<InteriorOriginAttr>(value)) {
-    if (failed(printValue(p, interior.getBase())))
+    if (failed(printValue(p, interior.getBase(), printer)))
       return failure();
     p << "[";
-    printParamValue(p, interior.getUserName());
+    printer.printParamValue(p, interior.getUserName());
     p << "]";
     return success();
   }
@@ -1074,6 +1092,17 @@ TypedAttr OriginType::stripMutCastAndRebind(TypedAttr origin) {
   return origin;
 }
 
+bool OriginType::covers(TypedAttr wider, TypedAttr narrower) {
+  wider = getCanonicalAttr(wider);
+  narrower = getCanonicalAttr(narrower);
+  auto widerType = dyn_cast<OriginType>(wider.getType());
+  if (!widerType)
+    return false;
+  auto originUnion = OriginUnionAttr::get(
+      {wider, OriginMutCastAttr::get(narrower, widerType)}, widerType);
+  return wider == originUnion;
+}
+
 std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
   // Sugar for !lit.origin<true> and !lit.origin<false> can be elided, as these
   // print as MutableOrigin / ImmutableOrigin.  This ends up being a lot nicer
@@ -1115,7 +1144,8 @@ OptionalParseResult OriginSetType::parseValue(AsmParser &p,
   return std::nullopt;
 }
 
-LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value,
+                                        KGENParamPrinter &printer) const {
   if (auto set = ::dyn_cast<OriginSetAttr>(value)) {
     printOriginSet(p, set.getOperands());
     return success();
@@ -1238,11 +1268,12 @@ OptionalParseResult RefType::parseValue(AsmParser &p, TypedAttr &value) const {
   return {};
 }
 
-LogicalResult RefType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult RefType::printValue(AsmPrinter &p, TypedAttr value,
+                                  KGENParamPrinter &printer) const {
   // Print a `store_to_mem` directive.
   if (auto memAttr = ::dyn_cast<StoreToMemAttr>(value)) {
     p << "store_to_mem(";
-    printParamValue(p, memAttr.getValue());
+    printer.printParamValue(p, memAttr.getValue());
     p << ')';
     return success();
   }

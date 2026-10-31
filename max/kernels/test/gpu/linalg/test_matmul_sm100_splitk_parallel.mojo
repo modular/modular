@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """SM100 split-K: the parallel reduction (one accumulator row per epilogue
-thread), the tuned (2112, 14336) dispatch, the tuned fp32-output (384, 5120)
-dispatch, and the k-group tail of the split ranges."""
+thread), the tuned (2112, 14336) dispatch, the tuned fp32-output (384, 5120) and
+(512, 5120) dispatches, and the k-group tail of the split ranges."""
 
 from std.random import rand
 from std.sys import size_of
+from std.time import global_perf_counter_ns
 
 import linalg.matmul.vendor.blas as vendor_blas
 from layout import Idx, TileTensor, row_major
@@ -37,9 +38,15 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 from linalg.utils import identity_compute_fn, no_epilogue_fn
+from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from std.utils.index import Index
 
 comptime dtype = DType.bfloat16
@@ -104,8 +111,8 @@ def parallel_config[
     mma_n: Int, num_split_k: Int, swap_ab: Bool, stages: Int
 ]() -> MatmulConfig[dtype, dtype, dtype, True]:
     return MatmulConfig[dtype, dtype, dtype, True](
-        cluster_shape=Index(1, 1, 1),
-        mma_shape=Index(128, mma_n, 16),
+        cluster_shape=(Int(1), Int(1), Int(1)),
+        mma_shape=(Int(128), Int(mma_n), Int(16)),
         cta_group=1,
         AB_swapped=swap_ab,
         k_group_size=2,
@@ -246,6 +253,28 @@ def _expect_equal[
 ) raises:
     var c_host = ctx.enqueue_create_host_buffer[dtype](m * N)
     var r_host = ctx.enqueue_create_host_buffer[dtype](m * N)
+    ctx.enqueue_copy(c_host, c)
+    ctx.enqueue_copy(r_host, r)
+    ctx.synchronize()
+    for i in range(m * N):
+        if c_host[i] != r_host[i]:
+            raise Error(
+                t"{what}: c[{i // N}, {i % N}] = {c_host[i]}, expected"
+                t" {r_host[i]} (M={m} N={N})"
+            )
+
+
+def _expect_equal_f32[
+    N: Int
+](
+    ctx: DeviceContext,
+    m: Int,
+    c: DeviceBuffer[DType.float32],
+    r: DeviceBuffer[DType.float32],
+    what: String,
+) raises:
+    var c_host = ctx.enqueue_create_host_buffer[DType.float32](m * N)
+    var r_host = ctx.enqueue_create_host_buffer[DType.float32](m * N)
     ctx.enqueue_copy(c_host, c)
     ctx.enqueue_copy(r_host, r)
     ctx.synchronize()
@@ -421,6 +450,195 @@ def test_dispatch_f32_out[
     print(t"fp32 out OK: M={m} N={N} K={K} tuned={expect_tuned}")
 
 
+def _late_fill_kernel(
+    a: MutPointer[Scalar[dtype], MutAnyOrigin],
+    n: Int32,
+    spin_ns: Int64,
+):
+    # Releases the dependent grid at entry, then publishes the activations
+    # late: a GEMM that reads A before its wait sees the poison instead.
+    launch_dependent_grids()
+    var t0 = global_perf_counter_ns()
+    while Int64(global_perf_counter_ns() - t0) < spin_ns:
+        pass
+    var tid = Int(block_idx.x * block_dim.x + thread_idx.x)
+    var stride = Int(grid_dim.x * block_dim.x)
+    for i in range(tid, Int(n), stride):
+        a[i] = Scalar[dtype](Float32((i * 7 + 3) % 5 - 2))
+
+
+def _slow_copy_kernel(
+    src: MutPointer[Scalar[DType.float32], MutAnyOrigin],
+    dst: MutPointer[Scalar[DType.float32], MutAnyOrigin],
+    n: Int32,
+    spin_ns: Int64,
+):
+    # Releases the dependent grid at entry, waits for the GEMM before it, then
+    # reads C late: a GEMM after it that writes C before its own wait would be
+    # seen here.
+    launch_dependent_grids()
+    wait_on_dependent_grids()
+    var t0 = global_perf_counter_ns()
+    while Int64(global_perf_counter_ns() - t0) < spin_ns:
+        pass
+    var tid = Int(block_idx.x * block_dim.x + thread_idx.x)
+    var stride = Int(grid_dim.x * block_dim.x)
+    for i in range(tid, Int(n), stride):
+        dst[i] = src[i]
+
+
+def test_pdl_chain[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
+    # The production chain through the dispatch (PDL at OVERLAP_AT_BEGINNING).
+    # The producer and consumer use 32 blocks: with 512 blocks the dependent
+    # grid was observed not to launch early at all, which would leave a missing
+    # wait undetected.
+    #   late producer of A -> GEMM -> slow consumer of C -> GEMM into the same C
+    # The producer and the consumer release their dependents at entry, so both
+    # GEMMs launch while the grid before them is still running. The first GEMM
+    # must wait before reading A, the second before writing C (which the
+    # consumer is still reading), and the consumer must see the first GEMM's
+    # whole output.
+    comptime c_type = DType.float32
+    comptime spin_ns = 200000
+    var a_buf = ctx.enqueue_create_buffer[dtype](m * K)
+    var a2b = _exact_inputs[N, K](ctx, m, 1)
+    ref a2 = a2b[0]
+    ref b = a2b[1]
+    var c = ctx.enqueue_create_buffer[c_type](m * N)
+    var o = ctx.enqueue_create_buffer[c_type](m * N)
+    var r1 = ctx.enqueue_create_buffer[c_type](m * N)
+    var r2 = ctx.enqueue_create_buffer[c_type](m * N)
+    var a_ptr = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+        a_buf.unsafe_ptr()
+    )
+    var c_ptr = rebind[MutPointer[Scalar[c_type], MutAnyOrigin]](c.unsafe_ptr())
+    var o_ptr = rebind[MutPointer[Scalar[c_type], MutAnyOrigin]](o.unsafe_ptr())
+    var c_tile = TileTensor(c, row_major(m, Idx[N]))
+    var b_tile = TileTensor(b, row_major(Idx[N], Idx[K])).as_imm()
+    # The chain only tests the split-K kernel if the dispatch picks the row: on
+    # a device that cannot hold its grid, `_matmul_gpu` falls back to vendor
+    # BLAS and every check below would pass without exercising it.
+    var status = sm100_heuristic_and_outliers_dispatch[
+        transpose_b=True, has_compute_fn=False, outliers_only=True
+    ](
+        c_tile,
+        TileTensor(a2, row_major(m, Idx[K])).as_imm(),
+        b_tile,
+        no_epilogue_fn,
+        identity_compute_fn,
+        ctx,
+    )
+    if status != DISPATCH_HIT:
+        raise Error(t"pdl chain: the tuned row was not selected (M={m})")
+    _get_splitk_scratch(ctx).enqueue_fill(UInt8(0xFF))
+    for _ in range(3):
+        a_buf.enqueue_fill(Scalar[dtype](-3))
+        c.enqueue_fill(Scalar[c_type](-7))
+        o.enqueue_fill(Scalar[c_type](-9))
+        ctx.enqueue_function[_late_fill_kernel](
+            a_ptr,
+            Int32(m * K),
+            Int64(spin_ns),
+            grid_dim=32,
+            block_dim=256,
+        )
+        _matmul_gpu[use_tensor_core=True, transpose_b=True](
+            c_tile,
+            TileTensor(a_buf, row_major(m, Idx[K])).as_imm(),
+            b_tile,
+            ctx,
+        )
+        ctx.enqueue_function[_slow_copy_kernel](
+            c_ptr,
+            o_ptr,
+            Int32(m * N),
+            Int64(spin_ns),
+            grid_dim=32,
+            block_dim=256,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+        _matmul_gpu[use_tensor_core=True, transpose_b=True](
+            c_tile,
+            TileTensor(a2, row_major(m, Idx[K])).as_imm(),
+            b_tile,
+            ctx,
+        )
+        ctx.synchronize()
+        # `a_buf` now holds the producer's final data.
+        vendor_blas.matmul(
+            ctx,
+            TileTensor(_untracked(r1), row_major(m, Idx[N])),
+            TileTensor(_untracked(a_buf), row_major(m, Idx[K])),
+            TileTensor(_untracked(b), row_major(Idx[N], Idx[K])),
+            c_row_major=True,
+            transpose_b=True,
+        )
+        vendor_blas.matmul(
+            ctx,
+            TileTensor(_untracked(r2), row_major(m, Idx[N])),
+            TileTensor(_untracked(a2), row_major(m, Idx[K])),
+            TileTensor(_untracked(b), row_major(Idx[N], Idx[K])),
+            c_row_major=True,
+            transpose_b=True,
+        )
+        _expect_equal_f32[N](ctx, m, o, r1, "pdl chain, consumer saw C")
+        _expect_equal_f32[N](ctx, m, c, r2, "pdl chain, second GEMM")
+    print(t"pdl chain OK: M={m} N={N} K={K}")
+
+
+def test_dispatch_out_random[
+    c_type: DType, N: Int, K: Int
+](ctx: DeviceContext, m: Int, rel_tol: Float64) raises:
+    # Non-integer inputs, so split-K accumulation and reduction order show:
+    # the output against an fp64 host reference of the bf16 operands.
+    var a_host = ctx.enqueue_create_host_buffer[dtype](m * K)
+    var b_host = ctx.enqueue_create_host_buffer[dtype](N * K)
+    ctx.synchronize()
+    rand(a_host.unsafe_ptr(), m * K)
+    rand(b_host.unsafe_ptr(), N * K)
+    for i in range(m * K):
+        a_host[i] = a_host[i] - 0.5
+    for i in range(N * K):
+        b_host[i] = b_host[i] - 0.5
+    var a = ctx.enqueue_create_buffer[dtype](m * K)
+    var b = ctx.enqueue_create_buffer[dtype](N * K)
+    var c = ctx.enqueue_create_buffer[c_type](m * N)
+    ctx.enqueue_copy(a, a_host)
+    ctx.enqueue_copy(b, b_host)
+    var c_host = ctx.enqueue_create_host_buffer[c_type](m * N)
+    _get_splitk_scratch(ctx).enqueue_fill(UInt8(0xFF))
+    _matmul_gpu[use_tensor_core=True, transpose_b=True](
+        TileTensor(c, row_major(m, Idx[N])),
+        TileTensor(a, row_major(m, Idx[K])).as_imm(),
+        TileTensor(b, row_major(Idx[N], Idx[K])).as_imm(),
+        ctx,
+    )
+    ctx.enqueue_copy(c_host, c)
+    ctx.synchronize()
+    var ref_host = List[Float64](length=m * N, fill=0.0)
+    var peak = Float64(0)
+    for i in range(m):
+        for j in range(N):
+            var acc = Float64(0)
+            for k in range(K):
+                acc += (
+                    a_host[i * K + k].cast[DType.float64]()
+                    * b_host[j * K + k].cast[DType.float64]()
+                )
+            ref_host[i * N + j] = acc
+            peak = max(peak, abs(acc))
+    var tol = rel_tol * peak
+    for i in range(m * N):
+        var got = c_host[i].cast[DType.float64]()
+        # Negated so that a NaN counts as a mismatch.
+        if not (abs(got - ref_host[i]) <= tol):
+            raise Error(
+                t"{c_type} out random: c[{i // N}, {i % N}] = {got}, expected"
+                t" {ref_host[i]} +- {tol} (M={m} N={N} K={K})"
+            )
+    print(t"{c_type} out random OK: M={m} N={N} K={K} tol={tol}")
+
+
 def test_k_group_tail[
     N: Int, K: Int, num_split_k: Int, k_group_size: Int
 ](ctx: DeviceContext) raises:
@@ -432,8 +650,8 @@ def test_k_group_tail[
     comptime num_k_tiles = K // BK
     comptime assert K % BK == 0 and num_k_tiles % k_group_size == 0
     comptime config = MatmulConfig[dtype, dtype, dtype, True](
-        cluster_shape=Index(2, 1, 1),
-        mma_shape=Index(128, 96, 16),
+        cluster_shape=(Int(2), Int(1), Int(1)),
+        mma_shape=(Int(128), Int(96), Int(16)),
         cta_group=2,
         num_split_k=num_split_k,
         k_group_size=k_group_size,
@@ -518,6 +736,22 @@ def main() raises:
         for m in [2, 47, 64, 65, 96, 144, 191, 192]:
             test_dispatch_f32_out[384, 5120](ctx, m, True)
         test_dispatch_f32_out[384, 5120](ctx, 193, False)
+
+        # The (512, 5120) row covers M 17-128 (up to two 64-wide X tiles, 128
+        # CTAs); M 16 and 129 are the vendor controls. The row is keyed on (N, K)
+        # alone, so test_dispatch_exact covers its bf16-output use too.
+        for m in [17, 33, 64, 65, 100, 127, 128]:
+            test_dispatch_f32_out[512, 5120](ctx, m, True)
+        for m in [16, 129]:
+            test_dispatch_f32_out[512, 5120](ctx, m, False)
+        for m in [17, 64, 128]:
+            # fp32 output: every product is exact, so the error is fp32
+            # accumulation over K terms; 1e-4 of the peak is two orders above
+            # it. bf16 output adds one rounding, at most 2^-9 of the value.
+            test_dispatch_out_random[DType.float32, 512, 5120](ctx, m, 1e-4)
+            test_dispatch_out_random[DType.bfloat16, 512, 5120](ctx, m, 4e-3)
+            test_dispatch_exact[512, 5120](ctx, m)
+            test_pdl_chain[512, 5120](ctx, m)
 
         # Splits must be whole k-groups of 2: 6 K tiles split 4 + 2 (3 + 3
         # would end mid group); 224 K tiles split 76/76/72 (S=3) and

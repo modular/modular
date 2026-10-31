@@ -98,13 +98,7 @@ struct _Clock(ImplicitlyCopyable, Movable):
 
     def mark(self, label: StaticString):
         """Prints `label` stamped with the time since the run began."""
-        print(
-            "[",
-            Float64(monotonic() - self._start_ns) / 1.0e6,
-            "ms ] ",
-            label,
-            sep="",
-        )
+        print(t"[{Float64(monotonic() - self._start_ns) / 1.0e6}ms ] {label}")
 
     def elapsed_sec(self) -> Float64:
         """Seconds since the run began."""
@@ -271,7 +265,7 @@ def _run_round[call: Int](ctx0: DeviceContext, ctx1: DeviceContext) raises:
     var tg = TaskGroup()
     # Resolved before the coroutine exists: a raise between the two would
     # abandon it, and Coroutine is not implicitly destroyable.
-    var caller_worker = task_id_for_device(Int(ctx1.id()))
+    var caller_worker = task_id_for_device(Int(ctx1.device().id))
 
     @inline(.always)
     __async def lane() {var} -> None:

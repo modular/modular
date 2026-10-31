@@ -13,12 +13,13 @@
 
 """Benchmark for allreduce + RMSNorm + FP8 quantization pipeline.
 
-Measures five variants:
+Measures six variants:
 1. allreduce only
 2. allreduce + fused RMSNorm+FP8 (two kernel launches)
 3. fully fused allreduce+RMSNorm+FP8 (single kernel launch)
 4. allreduce (with add epilogue) + fused RMSNorm+FP8 (two kernel launches)
 5. fully fused allreduce+add+RMSNorm+FP8 (single kernel launch)
+6. allreduce + standalone RMSNorm (two kernel launches, no-quant mode only)
 """
 
 from std.sys import (
@@ -52,11 +53,57 @@ from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
-from layout import Coord, TileTensor, coord_to_index_list, row_major
-from nn.normalization import rms_norm_fused_fp8
+from layout import (
+    Coord,
+    ImmTileTensor,
+    MutTileTensor,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
+from nn.normalization import rms_norm_fused_fp8, rms_norm_gpu
 
-from std.utils import IndexList
+from std.memory import bitcast
 from std.utils.numerics import max_finite
+
+
+def _launch_rms_norm[
+    in_dtype: DType,
+    num_cols: Int,
+    epsilon: Float32,
+    weight_offset: Float32,
+](
+    in_buf: MutTileTensor[in_dtype, ...],
+    out_buf: MutTileTensor[in_dtype, ...],
+    gamma: ImmTileTensor[in_dtype, ...],
+    rows: Int,
+    ctx: DeviceContext,
+) raises:
+    """Launch a standalone RMSNorm over `[rows, num_cols]`.
+
+    The two-launch baseline's second launch: the production `rms_norm_gpu`
+    entry point with `ops.rms_norm`'s default cast order
+    (`multiply_before_cast=False`).
+    """
+
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var in_buf} -> SIMD[in_dtype, width]:
+        return in_buf.load[width=width](coords)
+
+    @inline(.always)
+    def output_fn[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[in_dtype, width]) {var out_buf} -> None:
+        out_buf.store[alignment=alignment](coords, val)
+
+    rms_norm_gpu[
+        2,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=False,
+    ](input_fn, output_fn, Coord(rows, num_cols), gamma, ctx)
 
 
 def _verify_results[
@@ -139,9 +186,9 @@ def _verify_results[
 
     @inline(.always)
     def v_fused_in[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {var ar_ptr_v} -> SIMD[in_dtype, width]:
-        var li = idx[0] * num_cols + idx[1]
+        width: Int
+    ](coords: Coord) {var ar_ptr_v} -> SIMD[in_dtype, width]:
+        var li = Int(coords[0]) * num_cols + Int(coords[1])
         return ar_ptr_v.unsafe_load[width=width, alignment=width](li)
 
     rms_norm_fused_fp8[
@@ -151,7 +198,7 @@ def _verify_results[
         2,
     ](
         v_fused_in,
-        IndexList[2](num_rows, num_cols),
+        (num_rows, num_cols),
         TileTensor(
             v_fused_fp8_dev,
             row_major(Coord(num_rows, num_cols)),
@@ -220,14 +267,7 @@ def _verify_results[
         if fv != ffv:
             num_errors += 1
             if num_errors <= 5:
-                print(
-                    "  Mismatch at",
-                    i,
-                    ": fused=",
-                    fv,
-                    ", fully_fused=",
-                    ffv,
-                )
+                print(t"  Mismatch at {i} : fused= {fv} , fully_fused= {ffv}")
 
     var error_rate = Float32(num_errors) / Float32(length)
     if error_rate > 0.03:
@@ -260,14 +300,8 @@ def _verify_results[
             scale_errors += 1
             if scale_errors <= 5:
                 print(
-                    "  Scale mismatch at row",
-                    i,
-                    ": fused=",
-                    fused_s,
-                    ", fully_fused=",
-                    ff_s,
-                    ", rel_diff=",
-                    rel_diff,
+                    t"  Scale mismatch at row {i} : fused= {fused_s} ,"
+                    t" fully_fused= {ff_s} , rel_diff= {rel_diff}"
                 )
 
     if scale_errors > 0:
@@ -405,9 +439,9 @@ def _verify_add_results[
 
     @inline(.always)
     def v_ep_fused_in[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {var ar_ptr_v} -> SIMD[in_dtype, width]:
-        var li = idx[0] * num_cols + idx[1]
+        width: Int
+    ](coords: Coord) {var ar_ptr_v} -> SIMD[in_dtype, width]:
+        var li = Int(coords[0]) * num_cols + Int(coords[1])
         return ar_ptr_v.unsafe_load[width=width, alignment=width](li)
 
     rms_norm_fused_fp8[
@@ -417,7 +451,7 @@ def _verify_add_results[
         2,
     ](
         v_ep_fused_in,
-        IndexList[2](num_rows, num_cols),
+        (num_rows, num_cols),
         TileTensor(
             v_ep_fp8_dev,
             row_major(Coord(num_rows, num_cols)),
@@ -489,12 +523,8 @@ def _verify_add_results[
             num_errors += 1
             if num_errors <= 5:
                 print(
-                    "  Add-path mismatch at",
-                    i,
-                    ": epilogue=",
-                    ev,
-                    ", fully_fused=",
-                    ffv,
+                    t"  Add-path mismatch at {i} : epilogue= {ev} ,"
+                    t" fully_fused= {ffv}"
                 )
 
     var error_rate = Float32(num_errors) / Float32(length)
@@ -528,14 +558,8 @@ def _verify_add_results[
             scale_errors += 1
             if scale_errors <= 5:
                 print(
-                    "  Add-path scale mismatch at row",
-                    i,
-                    ": epilogue=",
-                    ep_s,
-                    ", fully_fused=",
-                    ff_s,
-                    ", rel_diff=",
-                    rel_diff,
+                    t"  Add-path scale mismatch at row {i} : epilogue= {ep_s} ,"
+                    t" fully_fused= {ff_s} , rel_diff= {rel_diff}"
                 )
 
     if scale_errors > 0:
@@ -561,6 +585,196 @@ def _verify_add_results[
     _ = ep_scales_h^
 
 
+def _verify_noquant_results[
+    in_dtype: DType,
+    ngpus: Int,
+    num_cols: Int,
+    epsilon: Float32,
+    weight_offset_f32: Float32,
+](
+    num_rows: Int,
+    list_of_ctx: List[DeviceContext],
+    signal_buffers: List[DeviceBuffer[.uint8]],
+    cb_inputs: List[CacheBustingBuffer[in_dtype]],
+    mut ar_out_dev: List[DeviceBuffer[in_dtype]],
+    mut norm_out_dev: List[DeviceBuffer[in_dtype]],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    gamma_dev: DeviceBuffer[in_dtype],
+    weight_offset: Scalar[in_dtype],
+    scale_ub: Float32,
+) raises:
+    """Verify the no-quant two-launch baseline against the fused kernel.
+
+    The two-launch path rounds the allreduce sum to `in_dtype` before the
+    norm reads it back, while the fused kernel keeps the sum in float32
+    throughout, so outputs can differ by a few `in_dtype` ULP. Elements
+    are gated on bit distance for 16-bit dtypes (relative error
+    otherwise); the max absolute difference is printed either way.
+    """
+    var length = num_rows * num_cols
+    var ctx0 = list_of_ctx[0]
+    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(num_cols)))
+
+    comptime InTensorType = TileTensor[
+        in_dtype, type_of(row_major(Coord(0, num_cols))), ImmutAnyOrigin
+    ]
+    comptime OutTensorType = TileTensor[
+        in_dtype, type_of(row_major(Coord(0, num_cols))), MutAnyOrigin
+    ]
+    var in_tensors = Array[InTensorType, ngpus](
+        fill_with=lambda (i: Int) -> InTensorType: TileTensor(
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                cb_inputs[i].offset_ptr(0)
+            ),
+            row_major(Coord(num_rows, num_cols)),
+        )
+    )
+    var out_tensors = Array[OutTensorType, ngpus](
+        fill_with=lambda (i: Int) {
+            ref ar_out_dev, imm num_rows
+        } -> OutTensorType: TileTensor(
+            ar_out_dev[i],
+            row_major(Coord(num_rows, num_cols)),
+        ).as_unsafe_any_origin()
+    )
+
+    # Two-launch path: allreduce, then the standalone norm on GPU 0.
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    group_start()
+    comptime for i in range(ngpus):
+        allreduce[ngpus=ngpus](
+            in_tensors, out_tensors[i], rank_sigs, list_of_ctx[i]
+        )
+    group_end()
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    _launch_rms_norm[in_dtype, num_cols, epsilon, weight_offset_f32](
+        out_tensors[0],
+        TileTensor(
+            norm_out_dev[0],
+            row_major(Coord(num_rows, num_cols)),
+        ).as_unsafe_any_origin(),
+        gamma_tensor,
+        num_rows,
+        ctx0,
+    )
+
+    # Fused path (single kernel; every rank holds the same result, so all
+    # write GPU 0's buffer as `_verify_results` does).
+    var v_fused_dev = ctx0.enqueue_create_buffer[in_dtype](length)
+    var v_fused_scales_dev = ctx0.enqueue_create_buffer[.float32](num_rows)
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    group_start()
+    comptime for i in range(ngpus):
+        allreduce_rmsnorm[multiply_before_cast=False](
+            in_tensors,
+            TileTensor(
+                v_fused_dev,
+                row_major(Coord(num_rows, num_cols)),
+            ),
+            gamma_tensor,
+            epsilon,
+            weight_offset,
+            scale_ub,
+            TileTensor(
+                v_fused_scales_dev,
+                row_major(Coord(num_rows, 1)),
+            ),
+            rank_sigs,
+            list_of_ctx[i],
+        )
+    group_end()
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+    ctx0.synchronize()
+
+    var unfused_h = List(length=length, fill=Scalar[in_dtype](0))
+    var fused_h = List(length=length, fill=Scalar[in_dtype](0))
+    ctx0.enqueue_copy(unfused_h, norm_out_dev[0])
+    ctx0.enqueue_copy(fused_h, v_fused_dev)
+    ctx0.synchronize()
+
+    # The bf16-rounded pre-norm sum shifts inv_rms by up to ~2^-9, so the
+    # two paths land a few `in_dtype` ULP apart (measured: 2-3). Gate on bit
+    # distance for 16-bit dtypes, with a relative-error fallback otherwise;
+    # a wrong kernel differs by O(1) relative error and still fails.
+    comptime is_16bit = size_of[in_dtype]() == 2
+    comptime max_bit_dist = 8
+    comptime rel_tolerance = Float32(1.0 / 64.0)
+    var max_abs_diff = Float32(0)
+    var max_rel_diff = Float32(0)
+    var max_dist = 0
+    var num_over = 0
+    for i in range(length):
+        var u = unfused_h[i].cast[.float32]()
+        var f = fused_h[i].cast[.float32]()
+        var diff = abs(u - f)
+        if diff > max_abs_diff:
+            max_abs_diff = diff
+        var rel = diff / max(max(abs(u), abs(f)), Float32(1e-6))
+        if rel > max_rel_diff:
+            max_rel_diff = rel
+        var over: Bool
+        comptime if is_16bit:
+            var dist = abs(
+                Int(bitcast[.uint16](unfused_h[i]))
+                - Int(bitcast[.uint16](fused_h[i]))
+            )
+            if dist > max_dist:
+                max_dist = dist
+            over = dist > max_bit_dist
+        else:
+            over = rel > rel_tolerance
+        if over:
+            num_over += 1
+            if num_over <= 5:
+                print(
+                    "  No-quant mismatch at",
+                    i,
+                    ": two_launch=",
+                    u,
+                    ", fused=",
+                    f,
+                )
+
+    print(
+        "No-quant verification: max abs diff =",
+        max_abs_diff,
+        ", max rel diff =",
+        max_rel_diff,
+        ", max bit dist =",
+        max_dist,
+        ", over tolerance:",
+        num_over,
+        "/",
+        length,
+    )
+    if num_over > 0:
+        raise Error(
+            String(
+                "No-quant outputs differ beyond bf16 tolerance: ",
+                num_over,
+                " / ",
+                length,
+            )
+        )
+    print("No-quant verification PASSED")
+
+    _ = unfused_h^
+    _ = fused_h^
+    _ = v_fused_dev^
+    _ = v_fused_scales_dev^
+
+
 def bench_allreduce_rmsnorm_fp8[
     in_dtype: DType,
     out_dtype: DType,
@@ -572,8 +786,11 @@ def bench_allreduce_rmsnorm_fp8[
 
     # When out_dtype == in_dtype the kernel skips FP8 quantization. The two
     # 2-launch FP8 reference variants (allreduce + rms_norm_fused_fp8) and the
-    # FP8 verification are gated out in that mode; only the allreduce-only
-    # baseline and the fully-fused kernels (variants 1, 3, 5) run.
+    # FP8 verification are gated out in that mode; the allreduce-only
+    # baseline (variant 1), the two-launch allreduce + rms_norm_gpu baseline
+    # (variant 6) and the fully-fused kernels (variants 3, 5) run, with a
+    # bf16 verification comparing the two-launch baseline against the fused
+    # kernel.
     comptime quantize = out_dtype != in_dtype
 
     # --- Shared buffer setup ---
@@ -658,6 +875,8 @@ def bench_allreduce_rmsnorm_fp8[
     var fused_add_fp8_out_dev = List[DeviceBuffer[out_dtype]](capacity=ngpus)
     var fused_add_scales_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
     var residual_out_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    # Bench 6: allreduce + standalone RMSNorm (no-quant mode only)
+    var norm_out_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     for i in range(ngpus):
         fused_fp8_out_dev.append(
             list_of_ctx[i].enqueue_create_buffer[out_dtype](length)
@@ -678,6 +897,9 @@ def bench_allreduce_rmsnorm_fp8[
             list_of_ctx[i].enqueue_create_buffer[.float32](num_rows)
         )
         residual_out_dev.append(
+            list_of_ctx[i].enqueue_create_buffer[in_dtype](length)
+        )
+        norm_out_dev.append(
             list_of_ctx[i].enqueue_create_buffer[in_dtype](length)
         )
 
@@ -704,8 +926,12 @@ def bench_allreduce_rmsnorm_fp8[
     list_of_ctx[0].enqueue_copy(gamma_dev, gamma_host)
 
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(num_cols)))
-    var epsilon = Float32(0.001)
-    var weight_offset = Scalar[in_dtype](0.0)
+    # `epsilon`/`weight_offset_f32` must be comptime: `rms_norm_gpu` takes
+    # both as parameters, and the two-launch baseline must launch with the
+    # exact values the fused kernel receives.
+    comptime epsilon = Float32(0.001)
+    comptime weight_offset_f32 = Float32(0.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
     var scale_ub = max_finite[out_dtype]().cast[.float32]()
 
     list_of_ctx[0].synchronize()
@@ -769,6 +995,14 @@ def bench_allreduce_rmsnorm_fp8[
     var residual_output_ptrs = Array[ResPtrType, ngpus](
         fill_with=lambda (i: Int) {ref} -> ResPtrType: dbuffer_ptr(
             residual_out_dev[i]
+        )
+    )
+    var norm_out_tensors = Array[OutTensorType, ngpus](
+        fill_with=lambda (i: Int) {
+            ref norm_out_dev, imm num_rows
+        } -> OutTensorType: TileTensor(
+            norm_out_dev[i],
+            row_major(Coord(num_rows, num_cols)),
         )
     )
 
@@ -838,9 +1072,9 @@ def bench_allreduce_rmsnorm_fp8[
 
                 @inline(.always)
                 def fused_in[
-                    width: Int, _rank: Int
-                ](idx: IndexList[_rank]) {var ar_ptr} -> SIMD[in_dtype, width]:
-                    var li = idx[0] * num_cols + idx[1]
+                    width: Int
+                ](coords: Coord) {var ar_ptr} -> SIMD[in_dtype, width]:
+                    var li = Int(coords[0]) * num_cols + Int(coords[1])
                     return ar_ptr.unsafe_load[width=width, alignment=width](li)
 
                 rms_norm_fused_fp8[
@@ -850,7 +1084,7 @@ def bench_allreduce_rmsnorm_fp8[
                     2,
                 ](
                     fused_in,
-                    IndexList[2](num_rows, num_cols),
+                    (num_rows, num_cols),
                     TileTensor(
                         fused_fp8_out_ptrs[ctx_idx],
                         row_major(Coord(num_rows, num_cols)),
@@ -879,6 +1113,52 @@ def bench_allreduce_rmsnorm_fp8[
             [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
         )
 
+    # ===== Benchmark 6: allreduce + standalone RMSNorm (no quant only) =====
+    comptime if not quantize:
+
+        @inline(.always)
+        def bench_ar_norm_iter(
+            mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        ) raises {mut in_tensors, imm}:
+            @inline(.always)
+            def call_fn(
+                ctx_inner: DeviceContext, cache_iter: Int
+            ) raises {mut in_tensors, imm}:
+                comptime for _j in range(ngpus):
+                    in_tensors[_j] = TileTensor(
+                        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                            cb_inputs[_j].offset_ptr(cache_iter)
+                        ),
+                        row_major(Coord(num_rows, num_cols)),
+                    )
+
+                # Two launches, as the unfused graph runs them.
+                allreduce[ngpus=ngpus](
+                    in_tensors,
+                    ar_out_tensors[ctx_idx],
+                    rank_sigs,
+                    ctx_inner,
+                )
+                _launch_rms_norm[
+                    in_dtype, num_cols, epsilon, weight_offset_f32
+                ](
+                    ar_out_tensors[ctx_idx],
+                    norm_out_tensors[ctx_idx],
+                    gamma_tensor,
+                    num_rows,
+                    ctx_inner,
+                )
+
+            bencher_iter_custom(bench, call_fn, ctx)
+
+        bench_multicontext(
+            b,
+            bench_ar_norm_iter,
+            list_of_ctx,
+            BenchId("allreduce_then_rms_norm", input_id=bench_name_prefix),
+            [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
+        )
+
     # ===== Benchmark 3: fully fused allreduce+RMSNorm (single kernel) =====
 
     @inline(.always)
@@ -897,20 +1177,25 @@ def bench_allreduce_rmsnorm_fp8[
                     row_major(Coord(num_rows, num_cols)),
                 )
 
-            allreduce_rmsnorm(
+            var fully_fused_out = TileTensor(
+                fully_fused_fp8_out_ptrs[ctx_idx],
+                row_major(Coord(num_rows, num_cols)),
+            )
+            var fully_fused_scales_out = TileTensor(
+                fully_fused_scales_ptrs[ctx_idx],
+                row_major(Coord(num_rows, 1)),
+            )
+            # `multiply_before_cast` follows the quantize flag: False matches
+            # `ops.rms_norm`'s default cast order (and the two-launch baseline
+            # above) and requires out_dtype == in_dtype.
+            allreduce_rmsnorm[multiply_before_cast=quantize](
                 in_tensors,
-                TileTensor(
-                    fully_fused_fp8_out_ptrs[ctx_idx],
-                    row_major(Coord(num_rows, num_cols)),
-                ),
+                fully_fused_out,
                 gamma_tensor,
                 epsilon,
                 weight_offset,
                 scale_ub,
-                TileTensor(
-                    fully_fused_scales_ptrs[ctx_idx],
-                    row_major(Coord(num_rows, 1)),
-                ),
+                fully_fused_scales_out,
                 rank_sigs,
                 ctx_inner,
             )
@@ -982,9 +1267,9 @@ def bench_allreduce_rmsnorm_fp8[
                 # allreduce + residual).
                 @inline(.always)
                 def add_fused_in[
-                    width: Int, _rank: Int
-                ](idx: IndexList[_rank]) {var ar_ptr} -> SIMD[in_dtype, width]:
-                    var li = idx[0] * num_cols + idx[1]
+                    width: Int
+                ](coords: Coord) {var ar_ptr} -> SIMD[in_dtype, width]:
+                    var li = Int(coords[0]) * num_cols + Int(coords[1])
                     return ar_ptr.unsafe_load[width=width, alignment=width](li)
 
                 rms_norm_fused_fp8[
@@ -994,7 +1279,7 @@ def bench_allreduce_rmsnorm_fp8[
                     2,
                 ](
                     add_fused_in,
-                    IndexList[2](num_rows, num_cols),
+                    (num_rows, num_cols),
                     TileTensor(
                         fused_add_fp8_out_ptrs[ctx_idx],
                         row_major(Coord(num_rows, num_cols)),
@@ -1102,6 +1387,22 @@ def bench_allreduce_rmsnorm_fp8[
             scale_ub,
         )
 
+    comptime if verify and not quantize:
+        _verify_noquant_results[
+            in_dtype, ngpus, num_cols, epsilon, weight_offset_f32
+        ](
+            num_rows,
+            list_of_ctx,
+            signal_buffers,
+            cb_inputs,
+            ar_out_dev,
+            norm_out_dev,
+            rank_sigs,
+            gamma_dev,
+            weight_offset,
+            scale_ub,
+        )
+
     comptime if verify and quantize:
         _verify_add_results[in_dtype, out_dtype, ngpus, num_cols](
             num_rows,
@@ -1131,6 +1432,7 @@ def bench_allreduce_rmsnorm_fp8[
     _ = fused_add_fp8_out_dev^
     _ = fused_add_scales_dev^
     _ = residual_out_dev^
+    _ = norm_out_dev^
     _ = gamma_dev^
     _ = gamma_host^
     _ = residual_host^
@@ -1155,13 +1457,7 @@ def main() raises:
 
     var num_devices = DeviceContext.number_of_devices()
     if num_devices < num_gpus:
-        print(
-            "Need",
-            num_gpus,
-            "GPUs but only found",
-            num_devices,
-            "- skipping.",
-        )
+        print(t"Need {num_gpus} GPUs but only found {num_devices} - skipping.")
         return
 
     # Enable P2P access between all GPU pairs before the read-only status
@@ -1176,18 +1472,12 @@ def main() raises:
     for i in range(num_gpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 
+    var benchmark_name = "Benchmarking allreduce + RMSNorm" + (
+        " + FP8:" if quantize else " (no quant):"
+    )
     print(
-        "Benchmarking allreduce + RMSNorm"
-        + (" + FP8:" if quantize else " (no quant):"),
-        num_gpus,
-        "GPUs,",
-        in_dtype,
-        "->",
-        out_dtype,
-        ",",
-        num_rows,
-        "x",
-        num_cols,
+        t"{benchmark_name} {num_gpus} GPUs, {in_dtype} -> {out_dtype} ,"
+        t" {num_rows} x {num_cols}"
     )
 
     var m = Bench(BenchConfig(num_repetitions=1))

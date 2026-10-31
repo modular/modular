@@ -76,8 +76,7 @@ def _test_dispatch[
     test_grouped_matmul_sm100_block_fp4.mojo but calls the dispatch function
     which selects all config parameters based on (N, K).
 
-    `pdl_level` selects the kernel's PDL mode; `OVERLAP_AT_BEGINNING` runs
-    the path that loads weights before the PDL wait.
+    `pdl_level` selects the kernel's PDL mode.
 
     With `check_row_scales`, also runs the dispatch with bf16 per-row input
     scales twice. Power-of-two scales commute with every rounding step, so
@@ -100,16 +99,7 @@ def _test_dispatch[
     var M = total_num_tokens
 
     print(
-        "  N=",
-        N,
-        " K=",
-        K,
-        " M=",
-        M,
-        " experts=",
-        num_active_experts,
-        "/",
-        num_experts,
+        t"  N={N} K={K} M={M} experts={num_active_experts}/{num_experts}",
         sep="",
     )
 
@@ -518,14 +508,9 @@ def _test_dispatch[
                     if c_rs_host[idx] != c_expected[idx]:
                         if mismatches < 8:
                             print(
-                                "    row-scale mismatch at row",
-                                idx // N,
-                                "col",
-                                idx % N,
-                                ":",
-                                c_rs_host[idx],
-                                "vs",
-                                c_expected[idx],
+                                t"    row-scale mismatch at row {idx // N} col"
+                                t" {idx % N} : {c_rs_host[idx]} vs"
+                                t" {c_expected[idx]}"
                             )
                         mismatches += 1
                 if mismatches != 0:
@@ -1136,20 +1121,12 @@ def main() raises:
         )
 
         # ============================================================
-        # 11. Weights before the PDL wait (OVERLAP_AT_BEGINNING)
+        # 11. The OVERLAP_AT_BEGINNING level takes the same fence as ON
         # ============================================================
         print("\n=== PDL overlap at beginning ===")
 
         comptime early = PDLLevel.OVERLAP_AT_BEGINNING
-        print("  11a: decode, more k iterations than stages")
-        _test_dispatch[8, 4096, 7168, True, early](
-            4,
-            [3, 1, 5, 2],
-            [0, 3, 5, 7],
-            ctx,
-        )
-
-        print("  11b: decode, the prefill covers every k iteration")
+        print("  11a: decode")
         _test_dispatch[4, 2048, 1024, False, early](
             3,
             [2, 7, 1],
@@ -1157,23 +1134,7 @@ def main() raises:
             ctx,
         )
 
-        print("  11c: decode, odd k-tile count (one tile per stage)")
-        _test_dispatch[8, 1856, 2688, False, early](
-            4,
-            [3, 1, 5, 2],
-            [0, 3, 5, 7],
-            ctx,
-        )
-
-        print("  11d: prefill, 2-CTA tiles with -1 IDs")
-        _test_dispatch[6, 4096, 7168, True, early](
-            5,
-            [97, 13, 211, 5, 131],
-            [3, 0, -1, 1, 4],
-            ctx,
-        )
-
-        print("  11e: all -1 expert IDs")
+        print("  11b: all -1 expert IDs")
         _test_dispatch[4, 2048, 1024, False, early](
             3,
             [128, 256, 512],

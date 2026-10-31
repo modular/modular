@@ -40,21 +40,15 @@
 #
 # IMPORTANT — the user simulator is half the measurement, and which model plays
 # it changes the score. OpenRouter pins it to gemini-2.5-flash ("We pin it to
-# gemini-2.5-flash so agent scores stay comparable"), but we have no Gemini
-# credential: the GOOGLE_API_KEY referenced by minimaxM3AgentClassDatasetEval
-# was never provisioned as a repo secret. So this defaults to self-simulation —
-# the endpoint under test plays the customer as well as the agent — which needs
-# no new secret and matches how the HLE, AA-LCR and AA-Omniscience steps handle
-# the same missing key. That number tracks our own runs over time but is NOT
-# comparable to OpenRouter's leaderboard. For a comparable score, pass
-# --user-llm openrouter/google/gemini-2.5-flash with OPENROUTER_API_KEY set
-# (the route the harness itself uses), or gemini/gemini-2.5-flash with
-# GEMINI_API_KEY or GOOGLE_API_KEY.
+# gemini-2.5-flash so agent scores stay comparable"), but Google no longer
+# serves that model to new API keys. Comparability instead comes from running
+# one pinned simulator against both our endpoint and a reference engine (vLLM or
+# SGLang) serving the same model.
 #
-# Self-simulation is a weaker measurement than a pinned third-party simulator:
-# one model plays both sides of the conversation, and it holds the scenario
-# instructions while doing so. Treat a self-simulated score as a regression
-# signal, not as our AutoExacto standing.
+# Pin one with --user-llm openai/<model> --user-api-base URL. Without --user-llm
+# the endpoint under test also plays the customer: no extra credential, but one
+# model holds both sides and the scenario, so a broken build degrades both.
+# Treat a self-simulated score as a regression signal only.
 #
 # Usage:
 #   run_exacto_taubench_local.sh [options]
@@ -66,12 +60,23 @@
 #                       $EXACTO_API_KEY, then $OPENAI_API_KEY, then "dummy".
 #   --model MODEL      Model name for the API `model` field. Default:
 #                       auto-detect via GET {url}/v1/models.
-#   --user-llm LLM     litellm name for the user simulator. Default: empty,
-#                       meaning self-simulate with the endpoint under test (no
-#                       extra credential). For OpenRouter parity pass
-#                       openrouter/google/gemini-2.5-flash (needs
-#                       OPENROUTER_API_KEY) or gemini/gemini-2.5-flash (needs
-#                       GEMINI_API_KEY/GOOGLE_API_KEY).
+#   --user-llm LLM     litellm name for the user simulator. Empty or "self"
+#                       (the default) self-simulates. openai/<model> with
+#                       --user-api-base reaches any OpenAI-compatible endpoint;
+#                       openrouter/* needs OPENROUTER_API_KEY, gemini/* needs
+#                       GEMINI_API_KEY or GOOGLE_API_KEY.
+#   --user-api-base URL
+#                      Base URL of an openai/* simulator's endpoint (trailing
+#                       /v1 optional); required with openai/*. Default:
+#                       $EXACTO_USER_API_BASE, used only with openai/*.
+#   --user-api-key KEY Key for --user-api-base. Default: $EXACTO_USER_API_KEY,
+#                       then the agent's key. Passed through the environment,
+#                       so it never lands in the results JSON.
+#   --user-max-tokens N
+#                      max_tokens for an --user-api-base simulator (default
+#                       8192; "unset" sends none). Without it a Mach endpoint
+#                       caps replies at --max-new-tokens (256 by default),
+#                       which a reasoning simulator can spend just thinking.
 #   --reasoning-effort E
 #                      reasoning_effort sent with every agent request (default:
 #                       high, the harness's). "unset" sends none, which leaves
@@ -126,9 +131,14 @@
 #
 #   ./bazelw run //max/tests/integration/accuracy/model_evals:exacto_taubench_local
 #
+# The same, with the customer played by a pinned model on another endpoint:
+#
+#   ./bazelw run //max/tests/integration/accuracy/model_evals:exacto_taubench_local -- \
+#     --user-llm openai/<simulator model> --user-api-base https://host/v1
+#
 # Env overrides: EXACTO_CACHE, EXACTO_TAU2_PIN, EXACTO_TAU2_PYTHON,
-#               EXACTO_REFERENCE_USER_LLM, EXACTO_API_KEY, GEMINI_API_KEY,
-#               OPENROUTER_API_KEY.
+#               EXACTO_REFERENCE_USER_LLM, EXACTO_API_KEY, EXACTO_USER_API_BASE,
+#               EXACTO_USER_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY.
 
 set -euo pipefail
 
@@ -152,8 +162,11 @@ url="http://localhost:8000"
 api_key="${EXACTO_API_KEY:-${OPENAI_API_KEY:-}}"
 model=""
 user_llm=""
+user_api_base=""
+user_api_key="${EXACTO_USER_API_KEY:-}"
 reasoning_effort="high"
 user_reasoning_effort=""
+user_max_tokens=8192
 num_trials=4
 num_tasks=""
 task_split="base"
@@ -166,7 +179,7 @@ serve_config=""
 out_dir="/tmp/exacto-taubench-results"
 refresh=0
 
-usage() { sed -n '15,128p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '15,141p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -174,6 +187,9 @@ while [[ $# -gt 0 ]]; do
     --api-key) api_key="$2"; shift 2 ;;
     --model) model="$2"; shift 2 ;;
     --user-llm) user_llm="$2"; shift 2 ;;
+    --user-api-base) user_api_base="$2"; shift 2 ;;
+    --user-api-key) user_api_key="$2"; shift 2 ;;
+    --user-max-tokens) user_max_tokens="$2"; shift 2 ;;
     --reasoning-effort) reasoning_effort="$2"; shift 2 ;;
     --user-reasoning-effort) user_reasoning_effort="$2"; shift 2 ;;
     --num-trials) num_trials="$2"; shift 2 ;;
@@ -193,6 +209,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 url="${url%/}"; url="${url%/v1}"; url="${url%/}"
+[[ "$user_llm" == "self" ]] && user_llm=""
+# The env default only applies to a simulator that can use it, so a stale
+# export cannot block self-simulation or another provider.
+if [[ -z "$user_api_base" && "$user_llm" == openai/* ]]; then
+  user_api_base="${EXACTO_USER_API_BASE:-}"
+fi
+user_api_base="${user_api_base%/}"; user_api_base="${user_api_base%/v1}"
+user_api_base="${user_api_base%/}"
 
 vpy() { env -u PYTHONPATH -u PYTHONHOME "$VENV/bin/python" "$@"; }
 
@@ -223,6 +247,22 @@ fi
 # failing here beats dying mid-simulation after burning GPU time. Self-
 # simulation (the default) needs nothing beyond the endpoint itself.
 resolve_user_key() {
+  if [[ -n "$user_api_base" && "$user_llm" != openai/* ]]; then
+    cat >&2 <<MSG
+ERROR: --user-api-base applies only to an openai/<model> simulator, but
+       --user-llm is '${user_llm:-(self-simulation)}'. Other providers resolve
+       their own endpoint, and self-simulation uses the endpoint under test.
+MSG
+    exit 1
+  fi
+  # Without a base URL, litellm would send the agent's key to api.openai.com.
+  if [[ "$user_llm" == openai/* && -z "$user_api_base" ]]; then
+    cat >&2 <<MSG
+ERROR: --user-llm $user_llm needs --user-api-base (or EXACTO_USER_API_BASE)
+       naming the OpenAI-compatible endpoint that serves it.
+MSG
+    exit 1
+  fi
   case "$user_llm" in
     openrouter/*)
       if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
@@ -262,19 +302,114 @@ MSG
 # that ran to the context cap, for one), and nothing catches it per task, so a
 # single such turn aborts the whole run. The OpenRouter harness hands the empty
 # text to the user simulator and carries on; this patch makes tau2 do the same.
+# MAX rejects an empty user message, so the simulator sees a short placeholder
+# for that turn instead; the recorded trajectory keeps the empty text.
 patch_empty_agent_turn() {
+  vpy - "$CHECKOUT/src/tau2/orchestrator/orchestrator.py" \
+    "$CHECKOUT/src/tau2/user/base.py" <<'PYPATCH'
+import sys
+
+
+def patch(path, anchor, replacement, what):
+    src = open(path).read()
+    if src.count(anchor) != 1:
+        sys.exit(f"ERROR: tau2 changed; cannot patch the {what} in {path}")
+    open(path, "w").write(src.replace(anchor, replacement))
+
+
+patch(
+    sys.argv[1],
+    "            agent_msg.validate()\n",
+    "            if not (agent_msg.has_text_content() or agent_msg.is_tool_call()):\n"
+    "                agent_msg.content = \"\"\n",
+    "empty-agent-turn check",
+)
+patch(
+    sys.argv[2],
+    "                        UserMessage(\n"
+    "                            role=\"user\",\n"
+    "                            content=message.content,\n",
+    "                        UserMessage(\n"
+    "                            role=\"user\",\n"
+    "                            content=(message.content or \"\").strip()\n"
+    "                            or \"(The agent sent an empty message.)\",\n",
+    "simulator's view of an empty agent turn",
+)
+PYPATCH
+}
+
+# tau2 raises the same way on an empty simulator turn, which a reasoning
+# simulator returns when it runs out of tokens mid-thought. Forwarding it as
+# empty text, as the OpenRouter harness does, fails here: MAX rejects an empty
+# user message. The simulator is not deterministic at temperature 0, so this
+# retries from a copy of its state, up to three attempts, and if all are empty
+# ends the task as a user_error instead of aborting the run. Each empty attempt
+# is logged at ERROR (the level tau2 prints) and recorded on the message for
+# exacto_report.py.
+patch_empty_user_turn() {
   vpy - "$CHECKOUT/src/tau2/orchestrator/orchestrator.py" <<'PYPATCH'
 import sys
 path = sys.argv[1]
-anchor = "            agent_msg.validate()\n"
-replacement = (
-    "            if not (agent_msg.has_text_content() or agent_msg.is_tool_call()):\n"
-    "                agent_msg.content = \"\"\n"
+anchor = (
+    "            user_msg, self.user_state = self.user.generate_next_message(\n"
+    "                self.message, self.user_state\n"
+    "            )\n"
+    "            user_msg.validate()\n"
+)
+replacement = '''            _empty_turns = []
+            for _attempt in range(3):
+                user_msg, _user_state = self.user.generate_next_message(
+                    self.message, self.user_state.model_copy(deep=True)
+                )
+                if user_msg.has_text_content() or user_msg.is_tool_call():
+                    break
+                _choice = user_msg.raw_data or {}
+                _reasoning = (_choice.get("message") or {}).get("reasoning_content")
+                _empty_turns.append(str(_choice.get("finish_reason")))
+                logger.error(
+                    f"empty user simulator turn (attempt {_attempt + 1} of 3, "
+                    f"task {self.task.id}): "
+                    f"finish_reason={_choice.get('finish_reason')} "
+                    f"reasoning_chars={len(_reasoning or '')} "
+                    f"usage={user_msg.usage}"
+                )
+            self.user_state = _user_state
+            if _empty_turns:
+                user_msg.raw_data = {
+                    **(user_msg.raw_data or {}),
+                    "exacto_empty_turns": _empty_turns,
+                }
+            if not (user_msg.has_text_content() or user_msg.is_tool_call()):
+                user_msg.content = ""
+                self.trajectory.append(user_msg)
+                self.done = True
+                self.termination_reason = TerminationReason.USER_ERROR
+                return
+'''
+src = open(path).read()
+if src.count(anchor) != 1:
+    sys.exit(f"ERROR: tau2 changed; cannot patch the empty-user-turn check in {path}")
+open(path, "w").write(src.replace(anchor, replacement))
+PYPATCH
+}
+
+# litellm's openai provider reads OPENAI_API_KEY, which the agent uses, so a
+# simulator on another endpoint needs a per-call key. An api_key in
+# --user-llm-args would land in the uploaded results JSON, so the args name an
+# environment variable instead.
+patch_api_key_env() {
+  vpy - "$CHECKOUT/src/tau2/utils/llm_utils.py" <<'PYPATCH'
+import sys
+path = sys.argv[1]
+anchor = '    if kwargs.get("num_retries") is None:\n'
+addition = (
+    '    if "api_key_env" in kwargs:\n'
+    '        kwargs["api_key"] = __import__("os").environ[kwargs.pop("api_key_env")]\n'
 )
 src = open(path).read()
 if src.count(anchor) != 1:
-    sys.exit(f"ERROR: tau2 changed; cannot patch the empty-agent-turn check in {path}")
-open(path, "w").write(src.replace(anchor, replacement))
+    sys.exit(f"ERROR: tau2 changed; cannot patch the api_key_env hook in {path}")
+open(path, "w").write(src.replace(anchor, addition + anchor))
 PYPATCH
 }
 
@@ -300,7 +435,15 @@ ensure_checkout() {
     "$uv" venv --python "$HARNESS_PYTHON" "$VENV" >/dev/null
     (cd "$CHECKOUT" && "$uv" pip install --python "$VENV/bin/python" -q -e .)
   fi
+  # Recent litellm imports mcp on the plain completion path but declares it
+  # only under its proxy/mcp extras, so a tool-calling agent request dies with
+  # ModuleNotFoundError. Checked on every run because cached venvs predate it.
+  if ! "$VENV/bin/python" -c "import mcp.types" 2>/dev/null; then
+    "$uv" pip install --python "$VENV/bin/python" -q "mcp>=2.2,<3"
+  fi
   patch_empty_agent_turn
+  patch_empty_user_turn
+  patch_api_key_env
 }
 
 detect_model() {
@@ -483,19 +626,28 @@ if sys.argv[1] != "unset":
     args["reasoning_effort"] = sys.argv[1]
 if sys.argv[2]:
     args["api_base"] = sys.argv[2]
+if sys.argv[3]:
+    args["api_key_env"] = sys.argv[3]
+if sys.argv[4] not in ("", "unset"):
+    args["max_tokens"] = int(sys.argv[4])
 print(json.dumps(args))
-' "$1" "$2"
+' "$1" "$2" "${3:-}" "${4:-}"
 }
 agent_args="$(llm_args "$reasoning_effort" "$url/v1")"
 
-# Default: the endpoint under test plays the customer too, so the simulator
-# needs the same api_base. A third-party simulator resolves through its own
-# provider credential and must NOT be handed our base URL.
+# Self-simulation reuses the agent's api_base. An openai/* simulator on another
+# endpoint gets that endpoint's base URL and key; any other provider resolves
+# its own endpoint and must NOT be handed ours.
 if [[ -z "$user_llm" ]]; then
   user_llm="openai/$model"
   user_reasoning_effort="${user_reasoning_effort:-$reasoning_effort}"
   user_args="$(llm_args "$user_reasoning_effort" "$url/v1")"
   self_simulated=1
+elif [[ -n "$user_api_base" ]]; then
+  user_reasoning_effort="${user_reasoning_effort:-medium}"
+  user_args="$(llm_args "$user_reasoning_effort" "$user_api_base/v1" \
+    EXACTO_USER_API_KEY "$user_max_tokens")"
+  self_simulated=0
 else
   user_reasoning_effort="${user_reasoning_effort:-medium}"
   user_args="$(llm_args "$user_reasoning_effort" "")"
@@ -517,7 +669,14 @@ args=(
 )
 [[ -n "$num_tasks" ]] && args+=(--num-tasks "$num_tasks")
 
-echo "[exacto] running tau2 airline: trials=$num_trials tasks=${num_tasks:-50(all)} reasoning_effort=$reasoning_effort user=$user_llm$([[ "$self_simulated" == 1 ]] && echo " (self-simulated)") user_reasoning_effort=$user_reasoning_effort"
+if [[ "$self_simulated" == 1 ]]; then
+  user_desc="$user_llm (self-simulated)"
+elif [[ -n "$user_api_base" ]]; then
+  user_desc="$user_llm @ $user_api_base/v1"
+else
+  user_desc="$user_llm"
+fi
+echo "[exacto] running tau2 airline: trials=$num_trials tasks=${num_tasks:-50(all)} reasoning_effort=$reasoning_effort user=$user_desc user_reasoning_effort=$user_reasoning_effort"
 (
   cd "$CHECKOUT"
   # Pin the data directory explicitly. tau2 otherwise derives it from the
@@ -527,6 +686,7 @@ echo "[exacto] running tau2 airline: trials=$num_trials tasks=${num_tasks:-50(al
   env -u PYTHONPATH -u PYTHONHOME \
     TAU2_DATA_DIR="$CHECKOUT/data" \
     OPENAI_API_KEY="${api_key:-dummy}" \
+    EXACTO_USER_API_KEY="${user_api_key:-${api_key:-dummy}}" \
     "$VENV/bin/tau2" "${args[@]}"
 )
 
@@ -587,10 +747,15 @@ def effort(args):
 
 
 if model_name(s.get("user_llm")) != model_name(s.get("reference_user_llm")):
-    print(f"::warning::user simulator is {s.get('user_llm')}, not OpenRouter's "
-          f"pinned {s.get('reference_user_llm')}, so this score is a regression signal "
-          "for our own runs and NOT our AutoExacto standing. Self-simulation in "
-          "particular has one model on both sides of the conversation.")
+    if self_simulated:
+        print("::warning::the endpoint under test also played the customer, so "
+              "one model is on both sides of the conversation. Treat this score "
+              "as a regression signal for our own runs only.")
+    else:
+        print(f"::warning::user simulator is {s.get('user_llm')}, not OpenRouter's "
+              f"pinned {s.get('reference_user_llm')}. Compare this score only with "
+              "runs on the same simulator, such as a reference engine serving "
+              "the same model.")
 if effort(s.get("agent_llm_args")) != "high":
     print(f"::warning::agent reasoning_effort is {effort(s.get('agent_llm_args'))}, "
           "not the harness's high, so this score is not comparable to OpenRouter's.")

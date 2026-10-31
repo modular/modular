@@ -73,11 +73,12 @@ def tma_tile_tensor_load_kernel[
     dst_rows: Int,
     dst_cols: Int,
     tile_shape: Coord,
+    dst_origin: MutOrigin,
 ](
     dst: TileTensor[
         dtype,
         RowMajorLayout[ComptimeInt[dst_rows], ComptimeInt[dst_cols]],
-        MutAnyOrigin,
+        dst_origin,
     ],
     tma_tile: TMATensorTile[dtype, tile_shape],
 ):
@@ -157,7 +158,8 @@ def test_tma_load_tile_tensor[
         type_of(tma_tensor).dtype,
         M_roundup,
         N_roundup,
-        type_of(tma_tensor).tile_shape,  # tile shape
+        type_of(tma_tensor).tile_shape,  # tile shape,
+        dst_origin=origin_of(dst),
     ]
     ctx.enqueue_function[kernel](
         dst.device_tensor(),
@@ -278,12 +280,8 @@ def test_tma_store_rank[
         )
 
     print(
-        "TMA store passed: rank=",
-        rank,
-        " k_major=",
-        k_major,
-        " generic=",
-        generic,
+        t"TMA store passed: rank= {rank}  k_major= {k_major}  generic="
+        t" {generic}"
     )
 
 
@@ -326,11 +324,12 @@ def test_tma_store_ranks(ctx: DeviceContext) raises:
 def tma_prefetch_load_kernel[
     tile_shape: Coord,
     desc_shape: Coord,
+    dst_origin: MutOrigin,
 ](
     dst: TileTensor[
         .float32,
         RowMajorLayout[ComptimeInt[_idx_product[tile_shape]()]],
-        MutAnyOrigin,
+        dst_origin,
     ],
     tma_tile: TMATensorTile[.float32, tile_shape, desc_shape],
 ):
@@ -384,9 +383,13 @@ def test_tma_prefetch_load[
         ctx, src.device_tensor()
     )
     var dst = HostDeviceTileTensor[.float32](row_major[size](), ctx)
-    ctx.enqueue_function[tma_prefetch_load_kernel[tile_shape, desc_shape]](
-        dst.device_tensor(), tma, grid_dim=1, block_dim=32
-    )
+    ctx.enqueue_function[
+        tma_prefetch_load_kernel[
+            tile_shape,
+            desc_shape,
+            dst_origin=origin_of(dst),
+        ]
+    ](dst.device_tensor(), tma, grid_dim=1, block_dim=32)
     dst.to_host()
     _ = src^
     var host = dst.host_tensor()

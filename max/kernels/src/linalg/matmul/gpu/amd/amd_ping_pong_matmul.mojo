@@ -32,7 +32,7 @@ from max.gpu.sync import schedule_barrier, s_waitcnt
 from std.sys import llvm_intrinsic
 from max.gpu.intrinsics import readfirstlane
 
-from std.utils import Index, IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
@@ -66,16 +66,16 @@ from structured_kernels.amd_tile_io import RegTileWriter, TileLoaderLDS
 struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
     """Block/warp/MMA shape configuration for ping-pong kernels."""
 
-    var block_shape: IndexList[3]
-    var warp_shape: IndexList[3]
-    var mma_shape: IndexList[3]
+    var block_shape: Tuple[Int, Int, Int]
+    var warp_shape: Tuple[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
 
     def __init__(
         out self,
         *,
-        block_shape: IndexList[3],
-        warp_shape: IndexList[3],
-        mma_shape: IndexList[3],
+        block_shape: Tuple[Int, Int, Int],
+        warp_shape: Tuple[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
     ):
         self.block_shape = block_shape
         self.warp_shape = warp_shape
@@ -83,17 +83,21 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
 
     @staticmethod
     def _write_index_list(
-        mut writer: Some[Writer], list: IndexList, sep: StaticString
+        mut writer: Some[Writer], list: Tuple[Int, Int, Int], sep: StaticString
     ):
-        comptime for i in range(list.size):
+        comptime for i in range(3):
             if i != 0:
                 writer.write(sep)
-            writer.write(list[i])
+            writer.write(Int(list[i]))
 
     @inline(.always)
     def num_threads(self) -> Int:
-        var num_warps = self.block_shape // self.warp_shape
-        return num_warps.flattened_length() * WARP_SIZE
+        var num_warps = (
+            (Int(self.block_shape[0]) // Int(self.warp_shape[0]))
+            * (Int(self.block_shape[1]) // Int(self.warp_shape[1]))
+            * (Int(self.block_shape[2]) // Int(self.warp_shape[2]))
+        )
+        return num_warps * WARP_SIZE
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("config_")
@@ -887,30 +891,30 @@ def amd_ping_pong_matmul[
 
         # Standard 256x256 config
         comptime config_16x16 = KernelConfig(
-            block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM // 2, BN // 4, BK),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(BM, BN, BK),
+            warp_shape=(BM // 2, BN // 4, BK),
+            mma_shape=(16, 16, 128),
         )
 
         # Skinny 128x256 config (170 FLOP/B, 96 KB LDS)
         comptime skinny_config = KernelConfig(
-            block_shape=Index(128, BN, BK),
-            warp_shape=Index(64, BN // 4, BK),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(128, BN, BK),
+            warp_shape=(64, BN // 4, BK),
+            mma_shape=(16, 16, 128),
         )
 
         # Alternative 256x256 config with 32x32x64 MMA
         comptime config_32x32 = KernelConfig(
-            block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM // 2, BN // 4, BK),
-            mma_shape=Index(32, 32, 64),
+            block_shape=(BM, BN, BK),
+            warp_shape=(BM // 2, BN // 4, BK),
+            mma_shape=(32, 32, 64),
         )
 
         # Small K configuration with 32x32x64 MMA and BK=64
         comptime config_32x32x64 = KernelConfig(
-            block_shape=Index(BM, BN, 64),
-            warp_shape=Index(BM // 2, BN // 4, 64),
-            mma_shape=Index(32, 32, 64),
+            block_shape=(BM, BN, 64),
+            warp_shape=(BM // 2, BN // 4, 64),
+            mma_shape=(32, 32, 64),
         )
 
         # Skinny wins in a mid-M band whose boundaries depend on N:
@@ -927,8 +931,8 @@ def amd_ping_pong_matmul[
         comptime BN = 256
         comptime BK = 64
         comptime config = KernelConfig(
-            block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM // 2, BN // 4, BK),
-            mma_shape=Index(16, 16, 32),
+            block_shape=(BM, BN, BK),
+            warp_shape=(BM // 2, BN // 4, BK),
+            mma_shape=(16, 16, 32),
         )
         run_kernel[config]()

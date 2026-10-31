@@ -456,7 +456,7 @@ def enqueue_apple_matmul_8x8[
     it in place of `c`."""
     var cores: Int
     try:
-        cores = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        cores = ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     except:
         cores = _BLOCK_CALIBRATION_CORES
     var choice = _apple_8x8_block_choice(m, n, cores)

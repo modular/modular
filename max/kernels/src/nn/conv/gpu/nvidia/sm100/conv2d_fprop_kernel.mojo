@@ -41,6 +41,11 @@ from std.sys import size_of
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import cluster_sync, elect_one_sync
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.memory import external_memory, fence_mbarrier_init
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import syncwarp
@@ -123,7 +128,7 @@ struct Conv2dFpropKernel[
     # Configuration
     config: Conv2dConfig[act_type, filter_type, out_type],
     # Cluster shape
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     register_based_epilogue: Bool = True,
 ]:
     """SM100 Conv2D forward propagation kernel.
@@ -245,11 +250,7 @@ struct Conv2dFpropKernel[
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = TileScheduler[
         num_stages=Self.num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
-            Self.config.cluster_shape[0],
-            Self.config.cluster_shape[1],
-            Self.config.cluster_shape[2],
-        ),
+        cluster_shape=Self.config.cluster_shape,
         block_swizzle_size=Self.config.block_swizzle_size,
     ]
 
@@ -402,8 +403,8 @@ struct Conv2dFpropKernel[
     comptime TileWriterType = TileWriter[
         a_type=Self.act_type,
         accum_type=Self.accum_type,
-        block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        block_tile_shape=(Self.BM, Self.BN, Self.BK),
+        mma_shape=(Self.MMA_M, Self.MMA_N, Self.MMA_K),
         opc=Self.opc,
         c_swizzle=Self.config.c_swizzle,
         transpose_c=False,
@@ -702,7 +703,13 @@ struct Conv2dFpropKernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
@@ -725,25 +732,32 @@ struct Conv2dFpropKernel[
             cluster_dim: Cluster dimensions.
             mnk: GEMM dimensions (M, N, K).
         """
-        Self._run_impl[
-            has_residual=False,
-            _src_tile_shape=Self.OutTmaOp.tile_shape,
-            _src_desc_shape=Self.OutTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            out_tma_op,  # Unused dummy for src_tma_op
-            cluster_dim,
-            mnk,
-            Float32(0.0),
-            identity_compute_fn,
-            no_epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=False,
+                _src_tile_shape=Self.OutTmaOp.tile_shape,
+                _src_desc_shape=Self.OutTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                out_tma_op,  # Unused dummy for src_tma_op
+                cluster_dim,
+                mnk,
+                Float32(0.0),
+                identity_compute_fn,
+                no_epilogue_fn,
+            )
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
@@ -773,26 +787,33 @@ struct Conv2dFpropKernel[
             mnk: GEMM dimensions (M, N, K).
             compute_fn: Element-wise epilogue applied to each output value.
         """
-        Self._run_impl[
-            has_residual=False,
-            has_compute_fn=True,
-            _src_tile_shape=Self.OutTmaOp.tile_shape,
-            _src_desc_shape=Self.OutTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            out_tma_op,  # Unused dummy for src_tma_op
-            cluster_dim,
-            mnk,
-            Float32(0.0),
-            compute_fn,
-            no_epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=False,
+                has_compute_fn=True,
+                _src_tile_shape=Self.OutTmaOp.tile_shape,
+                _src_desc_shape=Self.OutTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                out_tma_op,  # Unused dummy for src_tma_op
+                cluster_dim,
+                mnk,
+                Float32(0.0),
+                compute_fn,
+                no_epilogue_fn,
+            )
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
@@ -822,26 +843,33 @@ struct Conv2dFpropKernel[
             mnk: GEMM dimensions (M, N, K).
             epilogue_fn: Elementwise epilogue that stores each output value.
         """
-        Self._run_impl[
-            has_residual=False,
-            has_epilogue_fn=True,
-            _src_tile_shape=Self.OutTmaOp.tile_shape,
-            _src_desc_shape=Self.OutTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            out_tma_op,  # Unused dummy for src_tma_op
-            cluster_dim,
-            mnk,
-            Float32(0.0),
-            identity_compute_fn,
-            epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=False,
+                has_epilogue_fn=True,
+                _src_tile_shape=Self.OutTmaOp.tile_shape,
+                _src_desc_shape=Self.OutTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                out_tma_op,  # Unused dummy for src_tma_op
+                cluster_dim,
+                mnk,
+                Float32(0.0),
+                identity_compute_fn,
+                epilogue_fn,
+            )
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
@@ -869,25 +897,32 @@ struct Conv2dFpropKernel[
             mnk: GEMM dimensions (M, N, K).
             beta: Residual scale factor.
         """
-        Self._run_impl[
-            has_residual=True,
-            _src_tile_shape=Self.SrcTmaOp.tile_shape,
-            _src_desc_shape=Self.SrcTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            src_tma_op,
-            cluster_dim,
-            mnk,
-            beta,
-            identity_compute_fn,
-            no_epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=True,
+                _src_tile_shape=Self.SrcTmaOp.tile_shape,
+                _src_desc_shape=Self.SrcTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                src_tma_op,
+                cluster_dim,
+                mnk,
+                beta,
+                identity_compute_fn,
+                no_epilogue_fn,
+            )
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
@@ -923,22 +958,23 @@ struct Conv2dFpropKernel[
             epilogue_fn: Elementwise epilogue that stores each output value
                 after the residual add.
         """
-        Self._run_impl[
-            has_residual=True,
-            has_epilogue_fn=True,
-            _src_tile_shape=Self.SrcTmaOp.tile_shape,
-            _src_desc_shape=Self.SrcTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            src_tma_op,
-            cluster_dim,
-            mnk,
-            beta,
-            identity_compute_fn,
-            epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=True,
+                has_epilogue_fn=True,
+                _src_tile_shape=Self.SrcTmaOp.tile_shape,
+                _src_desc_shape=Self.SrcTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                src_tma_op,
+                cluster_dim,
+                mnk,
+                beta,
+                identity_compute_fn,
+                epilogue_fn,
+            )
 
     # ========== Unified Kernel Implementation ==========
 

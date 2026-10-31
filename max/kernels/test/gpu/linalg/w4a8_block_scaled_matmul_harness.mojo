@@ -36,6 +36,7 @@ fails the full-output NaN scan, whatever the sampled comparison covers.
 
 from std.math import ceildiv
 from std.random import random_float64, random_ui64, seed
+from std.utils.coord import Coord
 from std.utils.numerics import isnan, nan
 
 from max.gpu.host import DeviceContext, HostBuffer
@@ -109,7 +110,7 @@ def run_w4a8_block_scaled_matmul[
     *,
     mma_n: Int,
     cta_group: Int,
-    cluster_shape: IndexList[3],
+    cluster_shape: Coord[Int, Int, Int],
     swapAB: Bool = False,
     k_group_size: Int = 1,
     block_swizzle_size: Int = 0,
@@ -213,8 +214,8 @@ def run_w4a8_block_scaled_matmul[
         a_type, b_type, C_DTYPE, SF_DTYPE, SF_DTYPE, True
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=cluster_shape,
-        mma_shape=(cta_group * 128, mma_n, MMA_K),
+        cluster_shape=(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
+        mma_shape=(Int(cta_group * 128), Int(mma_n), Int(MMA_K)),
         block_swizzle_size=block_swizzle_size,
         cta_group=cta_group,
         AB_swapped=swapAB,

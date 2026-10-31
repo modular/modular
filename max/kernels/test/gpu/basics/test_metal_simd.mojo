@@ -42,7 +42,9 @@ def _input(base: Int) -> _V:
     return v
 
 
-def _kernel(output: MutPointer[Float32, MutAnyOrigin]):
+def _kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var results = _ops(_input(thread_idx.x + 1))
     for op in range(_NUM_OPS):
         for i in range(_W):
@@ -52,7 +54,9 @@ def _kernel(output: MutPointer[Float32, MutAnyOrigin]):
 def main() raises:
     with DeviceContext() as ctx:
         var out_device = ctx.enqueue_create_buffer[DType.float32](_NUM_OPS * _W)
-        ctx.enqueue_function[_kernel](out_device, grid_dim=1, block_dim=1)
+        ctx.enqueue_function[_kernel[origin_of(out_device)]](
+            out_device, grid_dim=1, block_dim=1
+        )
         var expected = _ops(_input(1))
         with out_device.map_to_host() as out_host:
             for op in range(_NUM_OPS):

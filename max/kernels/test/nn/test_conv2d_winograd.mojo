@@ -167,7 +167,7 @@ def outputs_are_close[
                 atol=1e-6,  # absolute error tolerance
                 rtol=1e-6,  # relative error tolerance
             ):
-                print("Mismatch at position (", i, ",", j, ")")
+                print(t"Mismatch at position ( {i} , {j} )")
                 print("Naive:", output_naive[i, j])
                 print("Winograd:", output_winograd[i, j])
                 print("Difference:", output_naive[i, j] - output_winograd[i, j])
@@ -204,9 +204,9 @@ def test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     winograd_2d_convolution_3x3[dtype](input, filter, output_winograd)
 
     # Perform Naive convolution
-    comptime output_shape = Index(1, 1, Oh, Ow, 1)
-    comptime input_shape = Index(1, 1, H, W, 1)
-    comptime filter_shape = Index(1, Kh, Kw, 1, 1)
+    comptime output_shape = (1, 1, Oh, Ow, 1)
+    comptime input_shape = (1, 1, H, W, 1)
+    comptime filter_shape = (1, Kh, Kw, 1, 1)
     comptime pad_d = Index(0, 0)
     comptime pad_h = Index(0, 0)
     comptime pad_w = Index(0, 0)

@@ -43,8 +43,6 @@ from ..sm100_structured.block_scaled.block_scaled_matmul import (
 )
 from .config import BlockScaledMatmulConfig
 from std.sys import size_of
-from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 from linalg.utils import _as_compute_fn
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
@@ -93,9 +91,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -330,9 +328,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=scaling_kind,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
-        ),
+        cluster_shape=cluster_shape,
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
         cta_group=cta_group,

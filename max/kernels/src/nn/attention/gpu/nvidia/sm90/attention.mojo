@@ -68,7 +68,6 @@ from nn.attention.mha_utils import (
     get_start_and_end_for_partitions,
 )
 
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 from std.utils import StaticTuple
 
@@ -333,7 +332,7 @@ def _apply_mask[
 
                         comptime if masked:
                             p = mask.mask(
-                                IndexList[4, element_type=.uint32](
+                                (
                                     Int(position.prompt_idx),
                                     Int(q_head_idx),
                                     Int(score_row_with_start_pos),
@@ -347,29 +346,25 @@ def _apply_mask[
                         comptime if mask_t.apply_log2e_after_mask:
                             p *= log2e
 
-                        var bound: IndexList[2, element_type=.uint32]
+                        var bound: Coord[Int, Int]
 
                         comptime if decoding:
-                            bound = IndexList[2, element_type=.uint32](
+                            bound = (
                                 Int(position.num_keys),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
+                                (Int(score_row), Int(score_col)),
                                 bound,
                                 p,
                             )
                         elif masked:
-                            bound = IndexList[2, element_type=.uint32](
+                            bound = (
                                 Int(position.seq_len),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
+                                (Int(score_row), Int(score_col)),
                                 bound,
                                 p,
                             )

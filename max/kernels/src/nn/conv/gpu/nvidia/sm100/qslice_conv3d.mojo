@@ -69,6 +69,11 @@ from std.math.uutils import udivmod
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import Coord, TileTensor, row_major
 from std.sys import align_of, simd_width_of
 from std.utils import IndexList
@@ -107,15 +112,17 @@ def _accum_bf16_to_fp32_kernel[
     var accum_idx = global_idx.x * output_simd_width
     if accum_idx >= _per_batch_elems:
         return
-    var src_val = src_bf16_ptr.unsafe_load[
-        width=output_simd_width, alignment=bf16_alignment
-    ](accum_idx).cast[.float32]()
-    var accum_val = accum_fp32_ptr.unsafe_load[
-        width=output_simd_width, alignment=fp32_alignment
-    ](accum_idx)
-    accum_fp32_ptr.unsafe_store[alignment=fp32_alignment](
-        accum_idx, accum_val + src_val
-    )
+
+    with PDL():
+        var src_val = src_bf16_ptr.unsafe_load[
+            width=output_simd_width, alignment=bf16_alignment
+        ](accum_idx).cast[.float32]()
+        var accum_val = accum_fp32_ptr.unsafe_load[
+            width=output_simd_width, alignment=fp32_alignment
+        ](accum_idx)
+        accum_fp32_ptr.unsafe_store[alignment=fp32_alignment](
+            accum_idx, accum_val + src_val
+        )
 
 
 @__name(t"qslice_fp32_to_dtype_plain_{dtype}")
@@ -132,13 +139,17 @@ def _fp32_to_dtype_plain_kernel[
     var output_idx = global_idx.x * output_simd_width
     if output_idx >= _output_elems:
         return
-    dst_ptr.unsafe_store[alignment=align_of[SIMD[dtype, output_simd_width]]()](
-        output_idx,
-        src_fp32_ptr.unsafe_load[
-            width=output_simd_width,
-            alignment=align_of[SIMD[.float32, output_simd_width]](),
-        ](output_idx).cast[dtype](),
-    )
+
+    with PDL():
+        dst_ptr.unsafe_store[
+            alignment=align_of[SIMD[dtype, output_simd_width]]()
+        ](
+            output_idx,
+            src_fp32_ptr.unsafe_load[
+                width=output_simd_width,
+                alignment=align_of[SIMD[.float32, output_simd_width]](),
+            ](output_idx).cast[dtype](),
+        )
 
 
 @__name(t"qslice_fp32_to_dtype_epilogue_{dtype}")
@@ -178,11 +189,13 @@ def _fp32_to_dtype_epilogue_kernel[
     var w: Int
     var c: Int
     w, c = udivmod(rem, C_out)
-    var val = src_fp32_ptr.unsafe_load[
-        width=output_simd_width,
-        alignment=align_of[SIMD[.float32, output_simd_width]](),
-    ](output_idx).cast[dtype]()
-    epilogue_fn[alignment=output_simd_width]((b, d, h, w, c), val)
+
+    with PDL():
+        var val = src_fp32_ptr.unsafe_load[
+            width=output_simd_width,
+            alignment=align_of[SIMD[.float32, output_simd_width]](),
+        ](output_idx).cast[dtype]()
+        epilogue_fn[alignment=output_simd_width]((b, d, h, w, c), val)
 
 
 @__name(t"qslice_fp32_to_dtype_compute_{dtype}")
@@ -221,14 +234,18 @@ def _fp32_to_dtype_compute_kernel[
     var w: Int
     var c: Int
     w, c = udivmod(rem, C_out)
-    var val = src_fp32_ptr.unsafe_load[
-        width=output_simd_width,
-        alignment=align_of[SIMD[.float32, output_simd_width]](),
-    ](output_idx).cast[dtype]()
-    dst_ptr.unsafe_store[alignment=align_of[SIMD[dtype, output_simd_width]]()](
-        output_idx,
-        compute_fn[alignment=output_simd_width]((b, d, h, w, c), val),
-    )
+
+    with PDL():
+        var val = src_fp32_ptr.unsafe_load[
+            width=output_simd_width,
+            alignment=align_of[SIMD[.float32, output_simd_width]](),
+        ](output_idx).cast[dtype]()
+        dst_ptr.unsafe_store[
+            alignment=align_of[SIMD[dtype, output_simd_width]]()
+        ](
+            output_idx,
+            compute_fn[alignment=output_simd_width]((b, d, h, w, c), val),
+        )
 
 
 # =========================================================================
@@ -373,7 +390,7 @@ def dispatch_qslice_conv3d_sm100[
 
     var pad_h = symmetric_padding[1]
     var pad_w = symmetric_padding[2]
-    var symmetric_padding_2d = IndexList[2](pad_h, pad_w)
+    var symmetric_padding_2d = (pad_h, pad_w)
 
     comptime output_simd_width = gcd(
         simd_width_of[output_type, target=ctx.target](), C_out
@@ -440,6 +457,7 @@ def dispatch_qslice_conv3d_sm100[
                 Int32(per_batch_elems),
                 grid_dim=accum_grid,
                 block_dim=accum_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
     # --- 3. Final fp32 → bf16 write to user output (fuse epilogue). ---
@@ -460,6 +478,7 @@ def dispatch_qslice_conv3d_sm100[
             host_args=(epilogue_fn,),
             grid_dim=final_grid,
             block_dim=final_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     elif has_compute_fn:
         comptime output_kernel = _fp32_to_dtype_compute_kernel[
@@ -476,6 +495,7 @@ def dispatch_qslice_conv3d_sm100[
             host_args=(compute_fn,),
             grid_dim=final_grid,
             block_dim=final_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         comptime output_kernel = _fp32_to_dtype_plain_kernel[
@@ -487,6 +507,7 @@ def dispatch_qslice_conv3d_sm100[
             Int32(output_elems),
             grid_dim=final_grid,
             block_dim=final_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     return True

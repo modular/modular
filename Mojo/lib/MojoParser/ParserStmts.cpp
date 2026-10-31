@@ -1609,13 +1609,13 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
       for (const PatternBoundName &binding : bindings) {
         DeclRefNode nameNode(binding.name);
         ExprDest declDest(LValueInitializerType{binding.value.getRValueType()},
-                          EC_VarInit);
+                          EC_VarInitMatchBinding);
         declDest.setPatternDeclKind(binding.bindingKind);
         LValue bindingLV = emitter.emitExprLValue(&nameNode, declDest);
         if (!bindingLV)
           return success();
 
-        ExprDest storeDest(bindingLV, EC_VarInit);
+        ExprDest storeDest(bindingLV, EC_VarInitMatchBinding);
         if (!emitter.emitCResult(binding.value, &nameNode, storeDest))
           return success();
       }
@@ -1751,16 +1751,20 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
     return success();
   }
 
-  // Resolve lazy subjects once before branching into cases. Also borrow
-  // RValues because no individual pattern may consume the shared subject.
-  // Existing LValues already provide stable storage and retain mutability.
-  if (!isComptime && (subject.getIfRValue() || subject.getIfDLValue())) {
-    // TODO: maintain RValueness for as long as we can.
-    BValue subjectBVal =
-        getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
-    if (!subjectBVal)
+  // Resolve lazy subjects once before branching into cases. We don't want to
+  // call the getter multiple times for each subpattern.
+  if (subject.getIfDLValue()) {
+    subject = getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
+    if (!subject)
       return failure();
-    subject = subjectBVal;
+  }
+
+  // If the subject is an SRValue, dump it into an MRValue so projections for
+  // borrowed references don't move it away from the original value.
+  if (subject.getIfSRValue()) {
+    subject = getEmitter().emitMRValue({subject, subjectExpr}, EC_MatchSubject);
+    if (!subject)
+      return failure();
   }
 
   // Shared path uniquing across all cases. Command lists are built while
@@ -2101,6 +2105,19 @@ void StmtParser::emitComptimeCases(ArrayRef<MatchCaseEntry> caseEntries,
   }
 }
 
+/// Return whether clustering should be skipped for a leading command.
+static bool shouldSkipClustering(const PatternCommand *command) {
+  if (command->kind != PatternCommand::Kind::Equal)
+    return command->kind != PatternCommand::Kind::EnumTag;
+
+  // Non-literal value patterns (`.float16`, `Self.HOST`, `{}`) are equality
+  // tests with no literal spelling.
+  // Clustering requires a stable sort key, so emit each as its own case.
+  // Preserve case order: -0 and 0 compare equal.
+  const ExprNode *exp = command->expr;
+  return exp->getLiteralSpelling().empty() || exp->kind == ExprNode::kNeg;
+}
+
 /// Determine if some number of the specified cases can be emitted as a cluster
 /// - this is possible when they share a common leading test, and that test can
 /// be expressed as a logical "switch" statement.  This includes tests against
@@ -2112,17 +2129,8 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
   if (firstCaseCommands.empty())
     return 1;
 
-  // Only support literal equality and enum tag checks in clusters.
   const PatternCommand *firstCommand = firstCaseCommands.front();
-  if (firstCommand->kind != PatternCommand::Kind::Equal &&
-      firstCommand->kind != PatternCommand::Kind::EnumTag)
-    return 1;
-
-  // Non-literal value patterns (`.float16`, `Self.HOST`, `{}`) are equality
-  // tests with no literal spelling. Clustering requires a stable sort key, so
-  // emit each one as its own case instead.
-  if (firstCommand->kind == PatternCommand::Kind::Equal &&
-      firstCommand->expr->getLiteralSpelling().empty())
+  if (shouldSkipClustering(firstCommand))
     return 1;
 
   // Great, now we check to see how big of a cluster we can make.  Absorb as
@@ -2151,7 +2159,8 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
       break;
     const PatternCommand *nextCommand = currentCase.commandList.front();
     if (nextCommand->kind != firstCommand->kind ||
-        nextCommand->path != firstCommand->path)
+        nextCommand->path != firstCommand->path ||
+        shouldSkipClustering(nextCommand))
       break;
 
     // The cases we find are only exclusive if subsequent matches don't exist.
@@ -2518,22 +2527,77 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     }
   };
 
-  auto materializeBindings =
-      [&](ArrayRef<PatternBoundName> bindings) -> LogicalResult {
+  // Materialize bindings for a case into VarDecls. If `borrowVarBindings` is
+  // true, borrow the value of "var" bindings before copying them.
+  auto materializeBindings = [&](PatternEmitState &emissionState,
+                                 ArrayRef<PatternBoundName> bindings,
+                                 bool borrowVarBindings) -> LogicalResult {
     IREmitter emitter = getEmitter();
-    for (const PatternBoundName &binding : bindings) {
+    SmallVector<CValue, 4> bindingValues;
+    if (!borrowVarBindings && failed(emissionState.getConsumedBindingValues(
+                                  emitter, bindings, bindingValues)))
+      return failure();
+    for (auto [bindingIndex, binding] : llvm::enumerate(bindings)) {
       DeclRefNode nameNode(binding.name);
       ExprDest declDest(LValueInitializerType{binding.value.getRValueType()},
-                        EC_VarInit);
+                        EC_VarInitMatchBinding);
       declDest.setPatternDeclKind(binding.bindingKind);
       LValue bindingLV = emitter.emitExprLValue(&nameNode, declDest);
       if (!bindingLV)
         return failure();
 
-      ExprDest storeDest(bindingLV, EC_VarInit);
-      if (!emitter.emitCResult(binding.value, &nameNode, storeDest))
+      ExprDest storeDest(bindingLV, EC_VarInitMatchBinding);
+      CValue bindingValue =
+          bindingValues.empty() ? binding.value : bindingValues[bindingIndex];
+      if (!borrowVarBindings && binding.bindingKind == PatternDeclKind::kVar &&
+          emissionState.rootSubject.getIfRValue() && binding.path &&
+          bindingValues.empty()) {
+        bindingValue = emissionState.getPathValue(
+            emitter, binding.path, binding.expr, /*consume=*/true);
+        if (!bindingValue)
+          return failure();
+      }
+      // If this is a 'var' binding, but we aren't allowed to consume the
+      // subject value, make sure to promote to a BValue.
+      if (borrowVarBindings && binding.bindingKind == PatternDeclKind::kVar &&
+          bindingValue.getIfRValue()) {
+        BValue bindingBVal = emitter.emitBValue({bindingValue, &nameNode},
+                                                EC_VarInitMatchBinding);
+        if (!bindingBVal)
+          return failure();
+        bindingValue = bindingBVal;
+      }
+      if (!emitter.emitCResult(bindingValue, &nameNode, storeDest))
         return failure();
     }
+    return success();
+  };
+
+  // Or-patterns materialize aggregate bindings while emitting commands, before
+  // the guarded binding can borrow its value.
+  auto borrowSubjectForGuard =
+      [&](PatternEmitState &caseEmissionState,
+          const MatchCaseEntry &caseEntry) -> LogicalResult {
+    // Nothing to do if there is no guard or the subject is already not an
+    // RValue.
+    if (!caseEntry.guardExpr || !caseEmissionState.rootSubject.getIfRValue())
+      return success();
+    // Or-patterns materialize their shared bindings while emitting commands,
+    // before normal binding materialization has a chance to borrow them.
+    if (!llvm::any_of(caseEntry.commandList, [](const PatternCommand *command) {
+          return command->kind == PatternCommand::Or &&
+                 command->hasVarBinding();
+        }))
+      return success();
+
+    // Otherwise, we need to borrow the subject for the guard.
+    BValue subjectBVal = getEmitter().emitBValue(
+        {caseEmissionState.rootSubject, caseEntry.patternExpr},
+        EC_MatchSubject);
+    if (!subjectBVal)
+      return failure();
+    caseEmissionState.rootSubject = subjectBVal;
+    caseEmissionState.pathValues.clear();
     return success();
   };
 
@@ -2553,7 +2617,9 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
     pushChildScope(scopeGuard, keepDecl);
-    if (failed(materializeBindings(bindings)))
+    // No need to borrow var bindings, because this will be the only case.
+    if (failed(materializeBindings(emissionState, bindings,
+                                   /*borrowVarBindings=*/false)))
       return;
 
     emitCaseBody(caseEntry, inMatchCase, /*needsScope=*/false);
@@ -2612,6 +2678,8 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
 
     auto &caseEntry = thisCluster.front();
     SmallVector<PatternBoundName> bindings;
+    if (failed(borrowSubjectForGuard(caseEmissionState, caseEntry)))
+      continue;
     if (failed(caseEmissionState.emitCommands(builder, caseEntry.commandList,
                                               bindings)))
       continue;
@@ -2621,11 +2689,12 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     pushChildScope(scopeGuard, keepDecl);
 
     // Materialize pattern bindings before the guard so guards can refer to
-    // them. Match subjects are borrowed (BValues), so `var` bindings copy and
-    // `ref` bindings borrow — same machinery as `var x = ...` / `ref x = ...`.
+    // them. A guarded `var` binding borrows its value before copying it, so a
+    // failed guard leaves the match subject available to later cases.
     // On failure, treat like a pattern emission error so later cases/statements
     // still parse (recovery), rather than aborting the whole match.
-    if (failed(materializeBindings(bindings)))
+    if (failed(materializeBindings(caseEmissionState, bindings,
+                                   /*borrowVarBindings=*/caseEntry.guardExpr)))
       continue;
 
     // Emit the pattern guard and body of the case. Scope already opened above
@@ -2633,23 +2702,20 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
     emitCaseBody(caseEntry, /*inMatchCase*/ true, /*needsScope=*/false);
   }
 
-  // The match else is fallthrough when the cases are incomplete; when a
-  // concluding case covers every subject value, nothing can reach the else.
+  // Failure advances the enclosing match or falls through at top level.
+  // Exhaustive matches cannot reach the else region.
   builder.setInsertionPointToStart(&matchOp.getElseRegion().front());
   if (matchIsConcluding)
     HLCF::UnreachableOp::create(builder, emissionState.matchLocation);
+  else if (inMatchCase)
+    HLCF::MatchNextOp::create(builder, emissionState.matchLocation);
   else
     HLCF::YieldOp::create(builder, emissionState.matchLocation);
   builder.setInsertionPointAfter(matchOp);
 
-  // If in a nested hlcf.match.case, failure to match is a failure of the case
-  // that encloses us — unless this nested match already concluded.
-  if (inMatchCase) {
-    if (matchIsConcluding)
-      HLCF::UnreachableOp::create(builder, emissionState.matchLocation);
-    else
-      HLCF::MatchNextOp::create(builder, emissionState.matchLocation);
-  }
+  // A successful nested match completes the enclosing case.
+  if (inMatchCase)
+    HLCF::MatchCompleteOp::create(builder, emissionState.matchLocation);
 }
 
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite
@@ -2964,7 +3030,7 @@ ParseResult StmtParser::parseComptimeFor(size_t curIndent, SMLoc forLoc,
                                           emitter.deferredTypingContext);
     // Must resolved to a function literal. Extract the literal target.
     return sugarCast<FnLiteralTypeGeneratorType>(literal.getType())
-        .getSymbolConstantAttr();
+        .getFuncSymbolAttr();
   };
 
   PValue hasNext = getMutFnWrapper("paramfor_has_next");
@@ -4021,19 +4087,34 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
       arms, [](const ArmEntry &arm) { return arm.patternExpr != nullptr; });
   if (hasPatternCondition) {
     auto materializeBindings =
-        [&](ArrayRef<PatternBoundName> bindings) -> LogicalResult {
+        [&](PatternEmitState &emissionState,
+            ArrayRef<PatternBoundName> bindings) -> LogicalResult {
       IREmitter emitter = getEmitter();
-      for (const PatternBoundName &binding : bindings) {
+      SmallVector<CValue, 4> bindingValues;
+      if (failed(emissionState.getConsumedBindingValues(emitter, bindings,
+                                                        bindingValues)))
+        return failure();
+      for (auto [bindingIndex, binding] : llvm::enumerate(bindings)) {
         DeclRefNode nameNode(binding.name);
         ExprDest declDest(LValueInitializerType{binding.value.getRValueType()},
-                          EC_VarInit);
+                          EC_VarInitMatchBinding);
         declDest.setPatternDeclKind(binding.bindingKind);
         LValue bindingLV = emitter.emitExprLValue(&nameNode, declDest);
         if (!bindingLV)
           return failure();
 
-        ExprDest storeDest(bindingLV, EC_VarInit);
-        if (!emitter.emitCResult(binding.value, &nameNode, storeDest))
+        ExprDest storeDest(bindingLV, EC_VarInitMatchBinding);
+        CValue bindingValue =
+            bindingValues.empty() ? binding.value : bindingValues[bindingIndex];
+        if (binding.bindingKind == PatternDeclKind::kVar &&
+            emissionState.rootSubject.getIfRValue() && binding.path &&
+            bindingValues.empty()) {
+          bindingValue = emissionState.getPathValue(
+              emitter, binding.path, binding.expr, /*consume=*/true);
+          if (!bindingValue)
+            return failure();
+        }
+        if (!emitter.emitCResult(bindingValue, &nameNode, storeDest))
           return failure();
       }
       return success();
@@ -4095,12 +4176,19 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
           getEmitter().emitExprCValue(arm.condExpr, EC_MatchSubject);
       if (!subject)
         return failure();
-      if (subject.getIfRValue() || subject.getIfDLValue()) {
+      if (subject.getIfDLValue()) {
         BValue subjectBValue =
             getEmitter().emitBValue({subject, arm.condExpr}, EC_MatchSubject);
         if (!subjectBValue)
           return failure();
         subject = subjectBValue;
+      }
+      if (subject.getIfSRValue()) {
+        MRValue subjectMRValue =
+            getEmitter().emitMRValue({subject, arm.condExpr}, EC_MatchSubject);
+        if (!subjectMRValue)
+          return failure();
+        subject = subjectMRValue;
       }
 
       PatternMatchBuilder matchBuilder(*curDeclScope, EC_Type);
@@ -4128,7 +4216,8 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
         DebugInfo::DIBuilder::ScopeGuard scopeGuard;
         llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
         pushChildScope(scopeGuard, keepDecl);
-        if (failed(materializeBindings(bindings)) || failed(emitBody(arm)))
+        if (failed(materializeBindings(emissionState, bindings)) ||
+            failed(emitBody(arm)))
           return failure();
       }
       HLCF::MatchCompleteOp::create(builder, arm.keywordLoc);

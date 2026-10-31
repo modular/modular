@@ -18,6 +18,7 @@ from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from layout import TileTensor, row_major
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.primitives.grid_controls import PDLLevel
 
 from nn.attention.gpu.mla_index_kpool import (
     KPOOL_EXPAND_BLOCK_SIZE,
@@ -69,14 +70,8 @@ def test_kpool_compress[
         total_pools += n
 
     print(
-        "kpool_compress: head_dim=",
-        head_dim,
-        " kpool=",
-        kpool,
-        " tokens=",
-        total_tokens,
-        " pools=",
-        total_pools,
+        t"kpool_compress: head_dim= {head_dim}  kpool= {kpool}  tokens="
+        t" {total_tokens}  pools= {total_pools}"
     )
     assert_true(total_pools > 0, "test shape selects no complete pool")
 
@@ -171,6 +166,7 @@ def test_kpool_compress[
         out_tile.Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kernel](
         out_tile,
@@ -333,6 +329,7 @@ def test_kpool_one_is_identity[head_dim: Int](ctx: DeviceContext) raises:
         out_tile.Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kernel](
         out_tile,
@@ -390,12 +387,8 @@ def test_decode_writer_matches_prefill_writer[
     var pools_per_req = seq_len // kpool
     var total_pools = num_requests * pools_per_req
     print(
-        "decode-vs-prefill: requests=",
-        num_requests,
-        " seq_len=",
-        seq_len,
-        " pools=",
-        total_pools,
+        t"decode-vs-prefill: requests= {num_requests}  seq_len= {seq_len} "
+        t" pools= {total_pools}"
     )
     assert_true(total_pools > 0, "test shape closes no pool")
 
@@ -475,6 +468,7 @@ def test_decode_writer_matches_prefill_writer[
         prefill_tile.Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[prefill_kernel](
         prefill_tile,
@@ -1081,14 +1075,8 @@ def test_expand_topk[
     for i in range(batch_size):
         total_seq_len += seq_lens[i]
     print(
-        "expand_topk: kpool=",
-        kpool,
-        " pool_topk=",
-        pool_topk,
-        " tail=",
-        tail_width,
-        " tokens=",
-        total_seq_len,
+        t"expand_topk: kpool= {kpool}  pool_topk= {pool_topk}  tail="
+        t" {tail_width}  tokens= {total_seq_len}"
     )
 
     var pool_host = ctx.enqueue_create_host_buffer[.int32](
@@ -1146,6 +1134,7 @@ def test_expand_topk[
         kpool,
         pool_topk,
         always_select_tail,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kernel](
         out_tile,
@@ -1366,12 +1355,8 @@ def test_spec_step_matches_single_steps[
     var steps = seq_len // next_n
     assert_equal(steps * next_n, seq_len, "seq_len must divide by next_n")
     print(
-        "spec-vs-single: requests=",
-        num_requests,
-        " next_n=",
-        next_n,
-        " seq_len=",
-        seq_len,
+        t"spec-vs-single: requests= {num_requests}  next_n= {next_n}  seq_len="
+        t" {seq_len}"
     )
 
     var total = num_requests * seq_len
@@ -1559,7 +1544,7 @@ def test_padded_slot_leaves_no_trace[
         ctx: Device context.
     """
     comptime real = next_n - 1
-    print("padded slot: next_n=", next_n, " real=", real, " kpool=", kpool)
+    print(t"padded slot: next_n= {next_n}  real= {real}  kpool= {kpool}")
 
     var k_h = ctx.enqueue_create_host_buffer[.bfloat16](next_n * head_dim)
     var g_h = ctx.enqueue_create_host_buffer[.bfloat16](next_n * head_dim)
@@ -1650,6 +1635,7 @@ def _seed_chunk[
         type_of(slot_t.as_imm()).Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kern](
         ring_t,
@@ -1909,6 +1895,7 @@ def test_kpool_ring_close[
         type_of(slot_t.as_imm()).Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kern](
         out_t,

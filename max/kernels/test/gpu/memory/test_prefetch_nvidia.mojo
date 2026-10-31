@@ -23,9 +23,11 @@ from max.gpu.host import DeviceContext
 comptime _N = 4
 
 
-def _kernel(
-    data: MutPointer[Float32, MutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def _kernel[
+    data_origin: MutOrigin, output_origin: MutOrigin
+](
+    data: MutPointer[Float32, data_origin],
+    output: MutPointer[Float32, output_origin],
 ):
     var shared = stack_allocation[_N, Float32, address_space=.SHARED]()
     var local = stack_allocation[_N, Float32, address_space=.LOCAL]()
@@ -49,7 +51,9 @@ def main() raises:
             for i in range(_N):
                 host[i] = Float32(i + 1)
         var output = ctx.enqueue_create_buffer[DType.float32](_N)
-        ctx.enqueue_function[_kernel](data, output, grid_dim=1, block_dim=1)
+        ctx.enqueue_function[_kernel[origin_of(data), origin_of(output)]](
+            data, output, grid_dim=1, block_dim=1
+        )
         with output.map_to_host() as host:
             for i in range(_N):
                 assert_equal(host[i], Float32(3 * (i + 1)))

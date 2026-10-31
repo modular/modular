@@ -99,8 +99,8 @@ lit.fn @slashAndStarOnly(|, *) {
 
 // CHECK-LABEL: lit.fn @signature_type<dt: dtype, w: scalar<dt>>(%a: index owned = 1)
 lit.fn @signature_type<dt: dtype, w: scalar<dt>>(%a: index owned = 1) {
-  // CHECK: self: !lit.generator<<"dt": dtype, "w": scalar<*(0,0)>>("a": index owned = 1) -> ()> = <@signature_type>
-  kgen.param.declare self: !lit.generator<<"dt": dtype, "w": scalar<*(0,0)>>("a": index owned = 1) -> ()> = <@signature_type>
+  // CHECK: self: !lit.generator<<"dt": dtype, "w": scalar<*(0,0)>>("a": index owned = 1) -> ()> = <@signature_type<:dtype *(0,0), :scalar<*(0,0)> *(0,1)>>
+  kgen.param.declare self: !lit.generator<<"dt": dtype, "w": scalar<*(0,0)>>("a": index owned = 1) -> ()> = <@signature_type<:dtype *(0,0), :scalar<*(0,0)> *(0,1)>>
   // CHECK: call @signature_type<:dtype si32, :scalar<si32> 1>(%a) : !lit.generator<("a": index owned = 1) -> ()>
   kgen.call @signature_type<:dtype si32, :scalar<si32> 1>(%a) : !lit.generator<("a": index owned = 1) -> ()>
   hlcf.return
@@ -116,10 +116,10 @@ lit.fn @default_params<
 >(%z: index owned = 42) {
   // CHECK: self: !lit.generator<
   // CHECK-SAME: <"a": dtype, "b": dtype = f32, "c": scalar<si32> = 1, *, "d": dtype, "e": dtype = si8, "f": scalar<si16> = 2
-  // CHECK-SAME: >("z": index owned = 42) -> ()> = <@default_params>
+  // CHECK-SAME: >("z": index owned = 42) -> ()> = <@default_params<:dtype *(0,0), :dtype *(0,1), :scalar<si32> *(0,2), :dtype *(0,3), :dtype *(0,4), :scalar<si16> *(0,5)>>
   kgen.param.declare self: !lit.generator<<
     "a": dtype, "b": dtype = f32, "c": scalar<si32> = 1, *, "d": dtype, "e": dtype = si8, "f": scalar<si16> = 2
-  >("z": index owned = 42) -> ()> = <@default_params>
+  >("z": index owned = 42) -> ()> = <@default_params<:dtype *(0,0), :dtype *(0,1), :scalar<si32> *(0,2), :dtype *(0,3), :dtype *(0,4), :scalar<si16> *(0,5)>>
 
   // CHECK: call @default_params<
   // CHECK-SAME: :dtype si16, :dtype f16, :scalar<si32> 5, :dtype si16, :dtype f16, :scalar<si16> 5
@@ -146,8 +146,8 @@ lit.fn @default_args(
 
 // CHECK-LABEL: lit.fn @star_slash_params<a: dtype, |, b: dtype = f32, *, w: scalar<si32> = 1>(%z: index owned = 42)
 lit.fn @star_slash_params<a: dtype, |, b: dtype = f32, *, w: scalar<si32> = 1>(%z: index owned = 42) {
-  // CHECK: self: !lit.generator<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index owned = 42) -> ()> = <@star_slash_params>
-  kgen.param.declare self: !lit.generator<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index owned = 42) -> ()> = <@star_slash_params>
+  // CHECK: self: !lit.generator<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index owned = 42) -> ()> = <@star_slash_params<:dtype *(0,0), :dtype *(0,1), :scalar<si32> *(0,2)>>
+  kgen.param.declare self: !lit.generator<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index owned = 42) -> ()> = <@star_slash_params<:dtype *(0,0), :dtype *(0,1), :scalar<si32> *(0,2)>>
   hlcf.return
 }
 
@@ -180,8 +180,8 @@ lit.fn @parametric_default_param<x, y = x>() {
 
 // CHECK-LABEL: @call_default_param
 lit.fn @call_default_param() {
-  // CHECK: ref: !lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> = <@parametric_default_param>
-  kgen.param.declare ref: !lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> = <@parametric_default_param>
+  // CHECK: ref: !lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> = <@parametric_default_param<*(0,0), *(0,1)>>
+  kgen.param.declare ref: !lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> = <@parametric_default_param<*(0,0), *(0,1)>>
   // CHECK: bound: !lit.generator<<"y": index = 1>() -> ()> = <bind_params(
   // CHECK-SAME: :!lit.generator<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, ?)>
   kgen.param.declare bound: !lit.generator<<"y": index = 1>() -> ()> = <bind_params(
@@ -201,7 +201,7 @@ lit.fn @address_default[mut lt](%p: !lit.ref<simd<2, si8>, mut lt> owned_in_mem 
 // CHECK-SAME: <a: i1, b, +, c = 1, |>
 lit.fn @inferred<a: i1, b, +, c = 1, |>() {
   // CHECK-NEXT: !lit.generator<<"a": i1, "b": index, +, "c": index = 1, |>() -> ()>
-  kgen.param.constant: !lit.generator<<"a": i1, "b": index, +, "c": index = 1, |>() -> ()> = <@inferred>
+  kgen.param.constant: !lit.generator<<"a": i1, "b": index, +, "c": index = 1, |>() -> ()> = <@inferred<:i1 *(0,0), *(0,1), *(0,2)>>
 
   // CHECK-NEXT: !lit.generator<<index, +, *, index>() -> ()> = <?>
   kgen.param.constant: !lit.generator<<index, +, *, index>() -> ()> = <?>
@@ -219,17 +219,17 @@ lit.fn @different_param_name<["a"]param, |>() {
 
 // CHECK-LABEL: lit.fn @lifetime_set
 lit.fn @lifetime_set<set: origin.set>[mut lt]() {
-  // CHECK-NEXT: f0: !lit.generator<:set:() capturing -> ()> = <?>
-  kgen.param.declare f0: !lit.generator<:set:() capturing -> ()> = <?>
-  // CHECK-NEXT: f1: !lit.generator<:{mut lt}:() capturing -> ()> = <?>
-  kgen.param.declare f1: !lit.generator<:{mut lt}:() capturing -> ()> = <?>
-  // CHECK-NEXT: f2: !lit.generator<[1]:set:() capturing -> ()> = <?>
-  kgen.param.declare f2: !lit.generator<[1]:set:() capturing -> ()> = <?>
-  // CHECK-NEXT: f3: !lit.generator<[1]:{mut lt}:() capturing -> ()> = <?>
-  kgen.param.declare f3: !lit.generator<[1]:{mut lt}:() capturing -> ()> = <?>
-  // CHECK-NEXT: f4: !lit.generator<<index>:set:() capturing -> ()> = <?>
-  kgen.param.declare f4: !lit.generator<<index>:set:() capturing -> ()> = <?>
-  // CHECK-NEXT: f5: !lit.generator<<index>:{mut lt}:() capturing -> ()> = <?>
-  kgen.param.declare f5: !lit.generator<<index>:{mut lt}:() capturing -> ()> = <?>
+  // CHECK-NEXT: f0: !lit.generator<:set:() -> ()> = <?>
+  kgen.param.declare f0: !lit.generator<:set:() -> ()> = <?>
+  // CHECK-NEXT: f1: !lit.generator<:{mut lt}:() -> ()> = <?>
+  kgen.param.declare f1: !lit.generator<:{mut lt}:() -> ()> = <?>
+  // CHECK-NEXT: f2: !lit.generator<[1]:set:() -> ()> = <?>
+  kgen.param.declare f2: !lit.generator<[1]:set:() -> ()> = <?>
+  // CHECK-NEXT: f3: !lit.generator<[1]:{mut lt}:() -> ()> = <?>
+  kgen.param.declare f3: !lit.generator<[1]:{mut lt}:() -> ()> = <?>
+  // CHECK-NEXT: f4: !lit.generator<<index>:set:() -> ()> = <?>
+  kgen.param.declare f4: !lit.generator<<index>:set:() -> ()> = <?>
+  // CHECK-NEXT: f5: !lit.generator<<index>:{mut lt}:() -> ()> = <?>
+  kgen.param.declare f5: !lit.generator<<index>:{mut lt}:() -> ()> = <?>
   hlcf.return
 }

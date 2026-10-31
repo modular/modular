@@ -27,21 +27,23 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.linear import ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
+    forward_sharded_layers,
+)
 
 from ..deepseekV3.deepseekV3 import (
     DeepseekV3DecoderLayer,
@@ -51,6 +53,8 @@ from .model_config import DeepseekV3NextNConfig
 
 
 class DeepseekV3NextN(Module):
+    """DeepSeek-V3 speculative model that drafts extra tokens."""
+
     def __init__(self, config: DeepseekV3NextNConfig) -> None:
         super().__init__()
         self.config = config
@@ -173,6 +177,7 @@ class DeepseekV3NextN(Module):
         ep_inputs: list[Value[Any]] | None = None,
         split_prefix: str = "draft",
     ) -> DecoderOutputs:
+        """Runs the speculative model over the graph inputs."""
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("host_input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
@@ -299,6 +304,7 @@ class DeepseekV3NextN(Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types for the config's devices."""
         devices = self.config.devices
         device_ref = devices[0]
 

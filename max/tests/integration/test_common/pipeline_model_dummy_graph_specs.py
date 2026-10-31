@@ -29,13 +29,24 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, Value
-from max.nn import Module
-from max.nn.graph_groups import Logits, RaggedBatch
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
-from max.nn.transformer import DecoderOutputs, ReturnLogits
+from max.graph.weights import WeightsFormat
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import Logits, RaggedBatch
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
 from max.pipelines import PipelineConfig
 from max.pipelines.context import TextContext
-from max.pipelines.lib import GraphRole, GraphSpec, ModelInputs, ModelOutputs
+from max.pipelines.lib import (
+    CheckpointRole,
+    GraphRole,
+    GraphSpec,
+    ModelInputs,
+    ModelOutputs,
+    WeightEntry,
+    WeightRenaming,
+    WeightRule,
+    WeightTransform,
+)
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     BatchProcessor,
@@ -106,6 +117,9 @@ class DummyGraphSpecsPipelineModel(DummyLlamaPipelineModel):
         self.model = self.load_model(session)
 
     def _load_state_dict(self) -> dict[str, Any]:
+        assert isinstance(self.adapter, WeightTransform)
+        entry = WeightEntry(CheckpointRole.TARGET, self.adapter)
+        self.weight_naming = {GraphRole.DECODER: (entry,)}
         return {}
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> None:
@@ -136,6 +150,17 @@ class DummyGraphSpecsPipelineModel(DummyLlamaPipelineModel):
         return self.load_graphs(session)[GraphRole.DECODER]
 
 
+def _weight_rules(huggingface_config: object) -> list[WeightRule]:
+    del huggingface_config
+    return [WeightRenaming(r"^model\.", "")]
+
+
 ARCHITECTURES = [
-    replace(DUMMY_LLAMA_ARCH, pipeline_model=DummyGraphSpecsPipelineModel)
+    replace(
+        DUMMY_LLAMA_ARCH,
+        pipeline_model=DummyGraphSpecsPipelineModel,
+        default_weights_format=WeightsFormat.safetensors,
+        weight_rules=_weight_rules,
+        use_weight_rules=True,
+    )
 ]

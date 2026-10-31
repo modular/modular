@@ -17,8 +17,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.architectures.mistral.model_config import MistralConfig
-from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -46,6 +49,28 @@ class Mistral3Config(MistralConfig):
 
     @override
     @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
+    ) -> KVCacheParamInterface:
+        """Sizes the KV cache from the text config."""
+        return super().construct_kv_params(
+            getattr(huggingface_config, "text_config", huggingface_config),
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
+        )
+
+    @override
+    @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
@@ -60,6 +85,9 @@ class Mistral3Config(MistralConfig):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX Engine model configuration; defaults to
+                ``pipeline_config.model``.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized MistralConfig instance.

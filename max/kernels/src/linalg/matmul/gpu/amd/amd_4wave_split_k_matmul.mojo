@@ -48,7 +48,7 @@ from linalg.utils import (
     no_epilogue_fn,
 )
 
-from .amd_4wave_matmul import AMD4WaveMatmul, KernelConfig
+from .amd_4wave_matmul import AMD4WaveMatmul, MatmulKernelConfig
 
 
 # ===----------------------------------------------------------------------=== #
@@ -183,7 +183,7 @@ def _split_k_reduce_impl[
     var _total_elems = Int(total_elems)
     var _elems_per_split = Int(elems_per_split)
     var _n_dim = Int(n_dim)
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     var stride = Int(grid_dim.x * block_dim.x)
     while tid < _total_elems:
         var acc = Float32(0.0)
@@ -511,19 +511,19 @@ def _amd_4wave_split_k_matmul_impl[
     var M = Int(c.dim[0]())
     var elems_per_split = M * N
 
-    comptime config_64 = KernelConfig(
-        block_shape=Index(64, 64, _bk),
-        warp_shape=Index(32, 32, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+    comptime config_64 = MatmulKernelConfig(
+        block_shape=(64, 64, _bk),
+        warp_shape=(32, 32, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
-    comptime config_128 = KernelConfig(
-        block_shape=Index(128, 128, _bk),
-        warp_shape=Index(64, 64, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+    comptime config_128 = MatmulKernelConfig(
+        block_shape=(128, 128, _bk),
+        warp_shape=(64, 64, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
 
     @inline(.always)
-    def launch_split_k[config: KernelConfig]() raises {imm}:
+    def launch_split_k[config: MatmulKernelConfig]() raises {imm}:
         # Workspace is row-major (num_splits * M, N) — split_id selects
         # the M-band inside the kernel via `pid_m + split_id*num_pid_m`.
         var ws_tile = TileTensor(

@@ -1,6 +1,7 @@
 load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "modular_py_test", "modular_pyo3_extension", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -249,12 +250,58 @@ modular_py_library(
     ignore_unresolved_imports = [
         "max.driver.Device",
         "max.engine.Model",
-        "max.experimental.tensor.Tensor",
-        "max.experimental.validation.EagerUsageValidator",
+        "max.tensor.Tensor",
+        "max.tensor.validation.EagerUsageValidator",
     ],
 )
 
-alias(
+modular_py_library(
     name = "tensor",
-    actual = "//max/python/max/experimental",
+    srcs = glob([
+        "functional/**/*.py",
+        "tensor/**/*.py",
+    ]),
+    docstring_example_deps = [
+        # Some examples in this package import max.nn; the
+        # library must not depend on it (nn depends on this package), so
+        # it joins the test's runfiles only. The macro excludes nested
+        # package deps from collection, so nn's examples run only in
+        # nn's own docstring test.
+        "//max/python/max/nn",
+    ],
+    # The root package holds other libraries; collect only this one's dirs.
+    docstring_example_dirs = [
+        "functional",
+        "tensor",
+    ],
+    # 150+ examples, each compiling interpreter kernels on the fly; CI
+    # clamps every test to 800s and the slowest shard ran ~730s on
+    # CPU-only CI with 6 shards, so shard to stay well under it.
+    docstring_example_shard_count = 8,
+    docstring_example_test_rule = modular_eager_py_test,
+    # interpreter is used via lazy import in realization_context.py
+    ignore_extra_deps = [
+        ":interpreter",
+    ],
+    # Imported late in realization_context.py; declaring it would be a cycle.
+    ignore_unresolved_imports = ["max.nn.legacy.comm.allreduce.Signals"],
+    test_docstring_examples = True,
+    deps = [
+        ":_core",
+        ":_eager_policy",
+        ":_mlir_context",
+        ":_validation_hooks",
+        ":interpreter",
+        ":tree",
+        "//max/python/max/_artifact",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+        requirement("numpy"),
+        requirement("rich"),
+        requirement("typing-extensions"),
+        "@mojo//:python",
+    ],
 )

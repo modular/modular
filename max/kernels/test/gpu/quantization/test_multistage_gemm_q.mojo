@@ -45,7 +45,7 @@ from quantization.qmatmul_gpu import (
 )
 
 from std.utils import StaticTuple
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -77,14 +77,16 @@ def create_ref_b[
     b_layout: TensorLayout,
     group_size: Int,
     pack_factor: Int,
+    b_packed_origin: ImmOrigin,
+    b_out_origin: MutOrigin,
 ](
-    b_packed: TileTensor[mut=False, type_q, b_q_layout, ImmutAnyOrigin],
-    b_out: TileTensor[mut=True, type_b, b_layout, MutAnyOrigin],
+    b_packed: TileTensor[type_q, b_q_layout, b_packed_origin],
+    b_out: TileTensor[type_b, b_layout, b_out_origin],
 ):
     comptime WARP_SIZE = 32
     comptime BLOCK_N = 128
     comptime BLOCK_K = 32
-    comptime repack_tile = Index(64, 16)
+    comptime repack_tile = (64, 16)
     comptime TILE_N = 64
     comptime TILE_K = 16
     comptime num_k_warps = BLOCK_K // repack_tile[1]
@@ -251,7 +253,7 @@ def test_repack_Q4_0_for_sm8x[
 
     build_b_buffer(N, K, gguf_b_host_ptr.unsafe_ptr())
     Q4sym[group_size, DType.bfloat16].dequantize_and_write_to_tensor(
-        gguf_b_host.as_imm(), gguf_dequan_ref_host, IndexList[2](K, N)
+        gguf_b_host.as_imm(), gguf_dequan_ref_host, (K, N)
     )
 
     var gguf_b_device = ctx.enqueue_create_buffer[.uint8](gguf_b_size)
@@ -295,6 +297,8 @@ def test_repack_Q4_0_for_sm8x[
         repacked_dequan_tensor.LayoutType,
         group_size,
         pack_factor,
+        ImmOrigin(repacked_b_tensor.origin),
+        repacked_dequan_tensor.origin,
     ]
 
     ctx.enqueue_function[dequan](
@@ -345,7 +349,7 @@ def test_quantized[
     comptime pack_factor = 8
     comptime group_bytes = group_size // 2 + 2
 
-    comptime repack_tile = Index(64, 16)
+    comptime repack_tile = (64, 16)
 
     print("test multistage matmul")
     comptime static_M = MType.static_value
@@ -453,13 +457,8 @@ def test_quantized[
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         print(
-            "Transpose B ",
-            "True",
-            nrun,
-            " runs avg(s)",
-            sectime,
-            "TFlops/s",
-            TFlop / sectime,
+            t"Transpose B  True {nrun}  runs avg(s) {sectime} TFlops/s"
+            t" {TFlop / sectime}"
         )
 
     comptime if use_ragged_epilogue:
@@ -507,6 +506,8 @@ def test_quantized[
         b_ref_tensor.LayoutType,
         group_size,
         pack_factor,
+        ImmOrigin(b_tensor.origin),
+        b_ref_tensor.origin,
     ]
 
     ctx.enqueue_function[dequan](

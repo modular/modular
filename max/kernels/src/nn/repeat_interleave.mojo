@@ -23,6 +23,11 @@ from max.gpu import (
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     Idx,
@@ -190,31 +195,34 @@ def _repeat_offset_map_kernel[
     var tid = thread_idx.x
     var base: Int64 = 0
 
-    for chunk in range(0, axis_size, BLOCK_SIZE):
-        var selected: Int64 = 0
-        var i = chunk + tid
-        if i < axis_size:
-            var r = Int64(repeats[i])
-            if r < 0:
-                r = 0
-            selected = r
+    with PDL():
+        for chunk in range(0, axis_size, BLOCK_SIZE):
+            var selected: Int64 = 0
+            var i = chunk + tid
+            if i < axis_size:
+                var r = Int64(repeats[i])
+                if r < 0:
+                    r = 0
+                selected = r
 
-        # Exclusive prefix within the chunk, plus the running base.
-        var start = base + Int64(
-            block.prefix_sum[block_size=BLOCK_SIZE, exclusive=True](selected)
-        )
+            # Exclusive prefix within the chunk, plus the running base.
+            var start = base + Int64(
+                block.prefix_sum[block_size=BLOCK_SIZE, exclusive=True](
+                    selected
+                )
+            )
 
-        if i < axis_size:
-            var r = Int(repeats[i])
-            if r < 0:
-                r = 0
-            var s = Int(start)
-            for _ in range(r):
-                offset_map[s] = Int32(i)
-                s += 1
+            if i < axis_size:
+                var r = Int(repeats[i])
+                if r < 0:
+                    r = 0
+                var s = Int(start)
+                for _ in range(r):
+                    offset_map[s] = Int32(i)
+                    s += 1
 
-        # Advance the running base by this chunk's total.
-        base += Int64(block.sum[block_size=BLOCK_SIZE](selected))
+            # Advance the running base by this chunk's total.
+            base += Int64(block.sum[block_size=BLOCK_SIZE](selected))
 
 
 @__llvm_metadata(
@@ -265,11 +273,18 @@ def _repeat_interleave_emit_kernel[
     var inner_idx = flat % inner
     var axis_idx = (flat // inner) % out_axis
     var outer_idx = flat // (inner * out_axis)
-    var src_axis = Int(offset_map[axis_idx])
-    var src_flat = outer_idx * in_axis * inner + src_axis * inner + inner_idx
-    var input_flat = input_buffer.reshape(row_major(outer * in_axis * inner))
-    var output_flat = output_buffer.reshape(row_major(outer * out_axis * inner))
-    output_flat.store((flat,), input_flat.load[width=1]((src_flat,)))
+    with PDL():
+        var src_axis = Int(offset_map[axis_idx])
+        var src_flat = (
+            outer_idx * in_axis * inner + src_axis * inner + inner_idx
+        )
+        var input_flat = input_buffer.reshape(
+            row_major(outer * in_axis * inner)
+        )
+        var output_flat = output_buffer.reshape(
+            row_major(outer * out_axis * inner)
+        )
+        output_flat.store((flat,), input_flat.load[width=1]((src_flat,)))
 
 
 def _repeat_interleave_gpu[
@@ -381,6 +396,7 @@ def _repeat_interleave_gpu[
         Int64(in_axis),
         grid_dim=1,
         block_dim=map_block_size,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     var map_imm = offset_map.as_imm().as_unsafe_any_origin()
@@ -417,6 +433,7 @@ def _repeat_interleave_gpu[
         Int64(collapsed_input_shape[2]),
         grid_dim=num_emit_blocks,
         block_dim=emit_block_size,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

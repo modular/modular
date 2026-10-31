@@ -34,6 +34,7 @@
 #include "Mojo/MojoTooling/REPLPythonExprUtils.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/Config.h"
 #include "Support/Context.h"
@@ -777,22 +778,21 @@ private:
 /// It also sets up a SourceMgr with the given MojoDocument as its main file.
 struct MojoDocument::Context {
   Context(MojoDocument &mainDoc)
-      : mlirContext(MLIRContext::Threading::DISABLED),
-        parserConfig(&mlirContext, compilationOptions), symbolIndex(mainDoc),
+      : mlirContext(MLIRContext::Threading::DISABLED), symbolIndex(mainDoc),
         parserListener(mainDoc, symbolIndex) {
-    parserConfig.parserListener = &parserListener;
+    frontendOptions.parserListener = &parserListener;
 
     DialectRegistry registry;
     registerAllKGENDialects(registry);
-    parserConfig.context->appendDialectRegistry(registry);
+    mlirContext.appendDialectRegistry(registry);
 
-    parserContext =
-        std::make_unique<MojoParserContext>(mainDoc.sourceMgr, parserConfig);
+    parserContext = std::make_unique<MojoParserContext>(
+        mainDoc.sourceMgr, &mlirContext, compilationOptions, frontendOptions);
   }
 
   KGEN::CompilationOptions compilationOptions;
   MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
-  ParserConfig parserConfig;
+  KGEN::FrontendOptions frontendOptions;
   SymbolIndex symbolIndex;
   LSPParserListener parserListener;
   std::unique_ptr<MojoParserContext> parserContext;

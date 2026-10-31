@@ -30,20 +30,20 @@ from typing import ClassVar
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.experimental.functional import (
+from max.functional import (
     full,
     ones,
     transfer_to,
     zeros,
 )
-from max.experimental.sharding import (
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor
 
 _F32 = DType.float32
 
@@ -213,7 +213,7 @@ class _Properties:
             np.testing.assert_allclose(arr, np.full((4, 4), 2.0), rtol=1e-5)
 
     def test_dtype_preserved(self) -> None:
-        from max.experimental.functional import cast
+        from max.functional import cast
 
         mapping = DeviceMapping(self.MESH_2D, (Replicated(), Replicated()))
         t = full([2, 4], 1.0, dtype=DType.bfloat16, device=mapping)

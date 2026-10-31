@@ -17,9 +17,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.conv import Conv2d
-from max.nn.embedding import Embedding
-from max.nn.layer import Module
+from max.nn.legacy.conv import Conv2d
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.layer import Module
 
 from ..model_config import Idefics3VisionConfig
 
@@ -96,7 +96,6 @@ class Idefics3VisionEmbeddings(Module):
         Returns:
             Embeddings of shape [batch_size, num_patches, hidden_size].
         """
-
         batch_size = pixel_values.shape[0]
         max_im_h = pixel_values.shape[2]
         max_im_w = pixel_values.shape[3]

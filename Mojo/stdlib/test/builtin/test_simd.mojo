@@ -21,6 +21,7 @@ from std.benchmark import black_box
 from std.builtin._format_float import _write_float
 from std.simd import _modf
 from std.itertools import product
+from std.python import PythonObject
 from std.random import randn, seed
 from std.testing import (
     assert_almost_equal,
@@ -37,6 +38,7 @@ from std.testing.prop.strategy import SIMD
 
 from std.utils import StaticTuple
 from std.utils.numerics import isfinite, isinf, isnan, nan
+from test_utils import check_convertible_to_python, check_python_object
 
 
 def test_cast() raises:
@@ -1889,19 +1891,6 @@ def test_pow() raises:
     assert_equal(Int64(27), Int64.__pow__(Int64(3), Int64(3)))
     assert_equal(Int64(81), Int64.__pow__(Int64(3), Int64(4)))
 
-    # Negative exponents: 1 ** n == 1 for all n.
-    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-1)))
-    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-5)))
-
-    # Negative exponents: (-1) ** n depends on parity.
-    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-1)))
-    assert_equal(Int64(1), Int64.__pow__(Int64(-1), Int64(-2)))
-    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-3)))
-
-    # Negative exponents: |base| > 1 truncates to 0.
-    assert_equal(Int64(0), Int64.__pow__(Int64(2), Int64(-1)))
-    assert_equal(Int64(0), Int64.__pow__(Int64(3), Int64(-2)))
-
 
 def test_powf() raises:
     assert_almost_equal(Float32(2.0) ** Float32(0.5), 1.4142135)
@@ -2894,6 +2883,35 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     randn(h_A.unsafe_ptr(), size=1)
     # Simply verify that cast doesn't error.
     _ = h_A[0].cast[.float8_e8m0fnu]()
+
+
+def test_convertible_to_python() raises:
+    check_convertible_to_python(42, "42")
+    check_convertible_to_python(1.5, "1.5")
+    check_convertible_to_python(Float32(1.5), "1.5")
+    check_convertible_to_python(Int32(42), "42")
+    check_convertible_to_python(
+        UInt64(12345678901234567890), "12345678901234567890"
+    )
+
+    # test implicit conversions
+    check_python_object(42, "42")
+    check_python_object(1.5, "1.5")
+    check_python_object(Float32(1.5), "1.5")
+    check_python_object(Int32(42), "42")
+    check_python_object(UInt64(12345678901234567890), "12345678901234567890")
+
+    # non raising conversion to PythonObject
+    def non_raising_to_python[
+        dtype: DType
+    ](var value: Scalar[dtype]) -> PythonObject:
+        return PythonObject(value)
+
+    assert_equal(String(non_raising_to_python(Int32(42))), "42")
+    assert_equal(
+        String(non_raising_to_python(UInt64(12345678901234567890))),
+        "12345678901234567890",
+    )
 
 
 def main() raises:

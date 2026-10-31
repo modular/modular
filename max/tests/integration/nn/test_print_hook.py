@@ -18,9 +18,9 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.graph_groups import Logits
-from max.nn.hooks.print_hook import PrintHook
-from max.nn.layer import Layer
+from max.nn.legacy.graph_groups import Logits
+from max.nn.legacy.hooks.print_hook import PrintHook
+from max.nn.legacy.layer import Layer
 
 
 class OuterLayer(Layer):

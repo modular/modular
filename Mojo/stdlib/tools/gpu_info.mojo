@@ -14,7 +14,6 @@
 from std.sys.arg import argv
 
 import max.gpu.host
-import max.gpu.host._legacy._nvidia_cuda as cuda
 
 
 def compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
@@ -60,39 +59,39 @@ def main() raises:
     var ctx = host.DeviceContext(device_id, api=api)
 
     var compute_capability = ctx.compute_capability()
-    var arch_name = ctx.arch_name()
+    var arch_name = ctx.device().get_arch()
     var major, minor = divmod(compute_capability, 10)
 
     if ctx.api() == "cuda":
         print("GPUInfo(")
-        print('name="' + ctx.name() + '", ')
-        print('api="' + String(ctx.api()) + '", ')
+        print('name="' + ctx.device().get_name() + '", ')
+        print(String(t'api="{ctx.api()}", '))
         print(
             'arch_name="'
             + compute_capability_to_arch_name(major, minor)
             + '", '
         )
-        print(
-            "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
-        )
+        print(String(t"compute={Float32(major) + (Float32(minor) / 10)}, "))
         print('version="' + arch_name + '", ')
         print(
             "sm_count="
             + String(
-                ctx.get_attribute(host.DeviceAttribute.MULTIPROCESSOR_COUNT)
+                ctx.device().get_attribute(
+                    host.DeviceAttribute.MULTIPROCESSOR_COUNT
+                )
             )
             + ", "
         )
         print(
             "warp_size="
-            + String(ctx.get_attribute(host.DeviceAttribute.WARP_SIZE))
+            + String(ctx.device().get_attribute(host.DeviceAttribute.WARP_SIZE))
             + ", "
         )
         print("threads_per_sm=-1, ")
         print(
             "shared_memory_per_multiprocessor="
             + String(
-                ctx.get_attribute(
+                ctx.device().get_attribute(
                     host.DeviceAttribute.MAX_SHARED_MEMORY_PER_MULTIPROCESSOR
                 )
             )
@@ -101,7 +100,9 @@ def main() raises:
         print(
             "max_registers_per_block="
             + String(
-                ctx.get_attribute(host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
+                ctx.device().get_attribute(
+                    host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK
+                )
             )
             + ", "
         )
@@ -109,29 +110,31 @@ def main() raises:
         print(")")
     elif ctx.api() == "hip":
         print("GPUInfo(")
-        print('name="' + ctx.name() + '", ')
-        print('api="' + String(ctx.api()) + '", ')
+        print('name="' + ctx.device().get_name() + '", ')
+        print(String(t'api="{ctx.api()}", '))
         print('arch_name="' + arch_name + '", ')
-        print(
-            "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
-        )
+        print(String(t"compute={Float32(major) + (Float32(minor) / 10)}, "))
         print(
             "sm_count="
             + String(
-                ctx.get_attribute(host.DeviceAttribute.MULTIPROCESSOR_COUNT)
+                ctx.device().get_attribute(
+                    host.DeviceAttribute.MULTIPROCESSOR_COUNT
+                )
             )
             + ", "
         )
         print(
             "warp_size="
-            + String(ctx.get_attribute(host.DeviceAttribute.WARP_SIZE))
+            + String(ctx.device().get_attribute(host.DeviceAttribute.WARP_SIZE))
             + ", "
         )
         print("threads_per_sm=-1, ")
         print(
             "max_registers_per_block="
             + String(
-                ctx.get_attribute(host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
+                ctx.device().get_attribute(
+                    host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK
+                )
             )
             + ", "
         )

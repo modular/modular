@@ -28,7 +28,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.kernels import moe_create_indices
+from max.nn.legacy.kernels import moe_create_indices
 from max.pipelines.architectures.deepseekV4.layers.moe import (
     local_expert_groups,
 )

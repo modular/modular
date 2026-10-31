@@ -273,8 +273,6 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"Throws", 0, "throws">,
   /// This is an async function.
   I16BitEnumAttrCaseBit<"Async", 1, "async">,
-  /// This function captures state.
-  I16BitEnumAttrCaseBit<"Capturing", 2, "capturing">,
   /// This function has a auto-derefed result of !lit.ref or !kgen.pointer type.
   I16BitEnumAttrCaseBit<"RefResult", 5, "refresult">,
   /// This function uses the C ABI for argument and return value passing.

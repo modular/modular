@@ -114,24 +114,12 @@ def test_swiglu[
     var H = N // 2
 
     print(
-        "  dtypes=(bf16,bf16,bf16) shape=(",
-        M,
-        ",",
-        N,
-        ",",
-        K,
-        ") mma=(",
-        config.mma_shape[0],
-        ",",
-        config.mma_shape[1],
-        ") cluster=(",
-        config.cluster_shape[0],
-        ",",
-        config.cluster_shape[1],
-        ") swizzle=",
-        config.block_swizzle_size,
-        " swap_ab=" + ("True" if config.AB_swapped else "False"),
-        " path=" + ("gmem" if config.register_swiglu else "smem_tma"),
+        (
+            t"  dtypes=(bf16,bf16,bf16) shape=({M},{N},{K})"
+            t" mma=({config.mma_shape[0]},{config.mma_shape[1]})"
+            t" cluster=({config.cluster_shape[0]},{config.cluster_shape[1]})"
+            t" swizzle={config.block_swizzle_size}{' swap_ab=' + ('True' if config.AB_swapped else 'False')}{' path=' + ('gmem' if config.register_swiglu else 'smem_tma')}"
+        ),
         sep="",
     )
 
@@ -224,12 +212,12 @@ def main() raises:
         # is fixed at (2, 1, 1) — the smallest cta_group=2 cluster.
         comptime for bn in range(8, 128, 8):
             # ---- MMA_M=256 (BM=128): both paths run for every BN ----
-            comptime mma_shape_256 = Index(256, 2 * bn, MMA_K)
+            comptime mma_shape_256 = (256, 2 * bn, MMA_K)
 
             comptime config_256_smem = swiglu_matmul_config[
                 dtype, dtype, dtype, True
             ](
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(Int(2), Int(1), Int(1)),
                 mma_shape=mma_shape_256,
                 block_swizzle_size=0,
                 cta_group=2,
@@ -242,7 +230,7 @@ def main() raises:
             comptime config_256_gmem = FusedSwiGLUMatmulConfig[
                 dtype, dtype, dtype, True
             ](
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(Int(2), Int(1), Int(1)),
                 mma_shape=mma_shape_256,
                 block_swizzle_size=0,
                 cta_group=2,
@@ -258,7 +246,7 @@ def main() raises:
             comptime config_256_swap_smem = swiglu_matmul_config[
                 dtype, dtype, dtype, True
             ](
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(Int(2), Int(1), Int(1)),
                 mma_shape=mma_shape_256,
                 block_swizzle_size=0,
                 cta_group=2,
@@ -271,7 +259,7 @@ def main() raises:
             comptime config_256_swap_gmem = FusedSwiGLUMatmulConfig[
                 dtype, dtype, dtype, True
             ](
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(Int(2), Int(1), Int(1)),
                 mma_shape=mma_shape_256,
                 block_swizzle_size=0,
                 cta_group=2,
@@ -283,14 +271,14 @@ def main() raises:
             )
 
             # ---- MMA_M=128 (BM=64, Layout B) ----
-            comptime mma_shape_128 = Index(128, 2 * bn, MMA_K)
+            comptime mma_shape_128 = (128, 2 * bn, MMA_K)
 
             # SMEM-TMA only when BN % 16 == 0 (i.e., MMA_N % 32 == 0).
             comptime if bn % 16 == 0:
                 comptime config_128_smem = swiglu_matmul_config[
                     dtype, dtype, dtype, True
                 ](
-                    cluster_shape=Index(2, 1, 1),
+                    cluster_shape=(Int(2), Int(1), Int(1)),
                     mma_shape=mma_shape_128,
                     block_swizzle_size=0,
                     cta_group=2,
@@ -304,7 +292,7 @@ def main() raises:
             comptime config_128_gmem = FusedSwiGLUMatmulConfig[
                 dtype, dtype, dtype, True
             ](
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(Int(2), Int(1), Int(1)),
                 mma_shape=mma_shape_128,
                 block_swizzle_size=0,
                 cta_group=2,
@@ -321,7 +309,7 @@ def main() raises:
             comptime config_128_swap_smem = swiglu_matmul_config[
                 dtype, dtype, dtype, True
             ](
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(Int(2), Int(1), Int(1)),
                 mma_shape=mma_shape_128,
                 block_swizzle_size=0,
                 cta_group=2,
@@ -334,7 +322,7 @@ def main() raises:
             comptime config_128_swap_gmem = FusedSwiGLUMatmulConfig[
                 dtype, dtype, dtype, True
             ](
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(Int(2), Int(1), Int(1)),
                 mma_shape=mma_shape_128,
                 block_swizzle_size=0,
                 cta_group=2,
@@ -356,8 +344,8 @@ def main() raises:
         comptime config_256_128 = swiglu_matmul_config[
             dtype, dtype, dtype, True
         ](
-            cluster_shape=Index(4, 4, 1),
-            mma_shape=Index(256, 128, MMA_K),
+            cluster_shape=(Int(4), Int(4), Int(1)),
+            mma_shape=(Int(256), Int(128), Int(MMA_K)),
             block_swizzle_size=4,
             cta_group=2,
             AB_swapped=False,
@@ -379,8 +367,8 @@ def main() raises:
         comptime config_256_128_swap = swiglu_matmul_config[
             dtype, dtype, dtype, True
         ](
-            cluster_shape=Index(2, 1, 1),
-            mma_shape=Index(256, 128, MMA_K),
+            cluster_shape=(Int(2), Int(1), Int(1)),
+            mma_shape=(Int(256), Int(128), Int(MMA_K)),
             block_swizzle_size=4,
             cta_group=2,
             AB_swapped=True,
@@ -399,8 +387,8 @@ def main() raises:
         comptime config_256_64 = swiglu_matmul_config[
             dtype, dtype, dtype, True
         ](
-            cluster_shape=Index(4, 4, 1),
-            mma_shape=Index(256, 64, MMA_K),
+            cluster_shape=(Int(4), Int(4), Int(1)),
+            mma_shape=(Int(256), Int(64), Int(MMA_K)),
             block_swizzle_size=4,
             cta_group=2,
             AB_swapped=False,
@@ -415,8 +403,8 @@ def main() raises:
         comptime config_128_128 = swiglu_matmul_config[
             dtype, dtype, dtype, True
         ](
-            cluster_shape=Index(4, 4, 1),
-            mma_shape=Index(128, 128, MMA_K),
+            cluster_shape=(Int(4), Int(4), Int(1)),
+            mma_shape=(Int(128), Int(128), Int(MMA_K)),
             block_swizzle_size=4,
             cta_group=2,
             AB_swapped=False,
@@ -433,8 +421,8 @@ def main() raises:
         comptime config_128_128_swap = swiglu_matmul_config[
             dtype, dtype, dtype, True
         ](
-            cluster_shape=Index(2, 1, 1),
-            mma_shape=Index(128, 128, MMA_K),
+            cluster_shape=(Int(2), Int(1), Int(1)),
+            mma_shape=(Int(128), Int(128), Int(MMA_K)),
             block_swizzle_size=4,
             cta_group=2,
             AB_swapped=True,
@@ -453,8 +441,8 @@ def main() raises:
         comptime config_128_64 = swiglu_matmul_config[
             dtype, dtype, dtype, True
         ](
-            cluster_shape=Index(4, 4, 1),
-            mma_shape=Index(128, 64, MMA_K),
+            cluster_shape=(Int(4), Int(4), Int(1)),
+            mma_shape=(Int(128), Int(64), Int(MMA_K)),
             block_swizzle_size=4,
             cta_group=2,
             AB_swapped=False,
@@ -468,8 +456,8 @@ def main() raises:
         comptime config_128_128_c82 = swiglu_matmul_config[
             dtype, dtype, dtype, True
         ](
-            cluster_shape=Index(8, 2, 1),
-            mma_shape=Index(128, 128, MMA_K),
+            cluster_shape=(Int(8), Int(2), Int(1)),
+            mma_shape=(Int(128), Int(128), Int(MMA_K)),
             block_swizzle_size=2,
             cta_group=2,
             AB_swapped=False,
@@ -481,8 +469,8 @@ def main() raises:
         comptime config_128_128_kg2 = swiglu_matmul_config[
             dtype, dtype, dtype, True
         ](
-            cluster_shape=Index(4, 4, 1),
-            mma_shape=Index(128, 128, MMA_K),
+            cluster_shape=(Int(4), Int(4), Int(1)),
+            mma_shape=(Int(128), Int(128), Int(MMA_K)),
             block_swizzle_size=0,
             cta_group=2,
             AB_swapped=False,

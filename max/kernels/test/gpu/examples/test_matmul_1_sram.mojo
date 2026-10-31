@@ -28,10 +28,12 @@ from std.testing import assert_false
 comptime tile_size = 32
 
 
-def matmul_sram(
-    a_ptr: MutPointer[Float32, MutAnyOrigin],
-    b_ptr: MutPointer[Float32, MutAnyOrigin],
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
+def matmul_sram[
+    a_origin: MutOrigin, b_origin: MutOrigin, c_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float32, a_origin],
+    b_ptr: MutPointer[Float32, b_origin],
+    c_ptr: MutPointer[Float32, c_origin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -167,7 +169,11 @@ def run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function[matmul_sram](
+    ctx.enqueue_function[
+        matmul_sram[
+            origin_of(a_device), origin_of(b_device), origin_of(c_device)
+        ]
+    ](
         a_device,
         b_device,
         c_device,
@@ -187,14 +193,8 @@ def run_matmul(ctx: DeviceContext) raises:
             var val = c_host[i, j]
             if val != Float32(K):
                 print(
-                    "Fail at index = [",
-                    i,
-                    ",",
-                    j,
-                    "] the value is",
-                    val,
-                    "the golden value is",
-                    K,
+                    t"Fail at index = [ {i} , {j} ] the value is {val} the"
+                    t" golden value is {K}"
                 )
                 failed = True
 

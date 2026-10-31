@@ -30,9 +30,9 @@ from collections.abc import Callable, Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.attention.attention_with_rope import _compute_shard_range
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
+from max.nn.legacy.kernels import (
     apply_qk_rms_norm,
     flash_attention_ragged,
     fused_qk_ragged_rope,
@@ -42,12 +42,12 @@ from max.nn.kernels import (
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import quantized_fused_qkv_matmul
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.quant_ops import quantized_fused_qkv_matmul
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 
 class MiniMaxM2Attention(Module, Shardable):
@@ -141,6 +141,7 @@ class MiniMaxM2Attention(Module, Shardable):
 
     @property
     def wqkv(self) -> TensorValue:
+        """The concatenated q, k, and v projection weights."""
         wq: TensorValue = self.q_proj.weight
         wk: TensorValue = self.k_proj.weight
         wv: TensorValue = self.v_proj.weight
@@ -166,6 +167,7 @@ class MiniMaxM2Attention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """The attention's sharding strategy, or ``None``."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -211,6 +213,7 @@ class MiniMaxM2Attention(Module, Shardable):
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[MiniMaxM2Attention]:
+        """Returns one replica per device, sharded as the strategy says."""
         if not self._sharding_strategy:
             raise ValueError(
                 "MiniMaxM2Attention layer cannot be sharded because no "
@@ -428,8 +431,15 @@ class MiniMaxM2Attention(Module, Shardable):
         """TP phase 2: apply cross-rank QK norm, then attention and o_proj.
 
         Args:
+            layer_idx: Host uint32 layer index within the cache.
+            q: The query projection for this rank's heads.
+            k: The key projection for this rank's heads.
+            v: The value projection for this rank's heads.
             qk_var_global: [total_seq_len, 2] holding the globally-reduced mean
                 of squares for Q and K (already averaged across TP ranks).
+            kv_collection: This layer's paged KV cache.
+            freqs_cis: The RoPE tables for these positions.
+            input_row_offsets: ``[B + 1]`` uint32 ragged row offsets.
         """
         head_dim = self.kv_params.head_dim
 

@@ -25,16 +25,18 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.embedding import Embedding, VocabParallelEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy.embedding import Embedding, VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer.distributed_transformer import (
+    forward_sharded_layers,
+)
 
 from .inkling import InklingDecoderLayer
 from .layers.attention import log_scaling_tau
@@ -222,6 +224,7 @@ class InklingMultiTokenPredictor(Module):
         return hs
 
     def log_scaling(self, positions: TensorValue) -> TensorValue:
+        """The log-scaling factor the draft applies at ``positions``."""
         text_config = self.config.text_config
         return log_scaling_tau(
             positions,
@@ -234,8 +237,11 @@ class InklingMultiTokenPredictor(Module):
     ) -> tuple[
         list[list[BufferValue]], list[list[TensorValue]], list[TensorValue]
     ]:
-        """Returns one depth's conv pools, slot tables and layer rows: a
-        single zeroed slot that every row reads.
+        """Returns one depth's conv pools, slot tables and layer rows.
+
+        They are a single zeroed slot that every row reads. The depths never
+        commit their conv state, so their taps before a chunk read zero, which a
+        pool the graph creates zeroed holds.
 
         The depths never commit their conv state, so their taps before a
         chunk read zero, which a pool the graph creates zeroed holds.
@@ -309,6 +315,7 @@ class InklingMultiTokenPredictor(Module):
         return hs
 
     def __call__(self, *args: object, **kwargs: object) -> list[TensorValue]:
+        """Raises, because each draft depth runs through ``forward_depth``."""
         raise TypeError(
             "InklingMultiTokenPredictor is invoked per depth via forward_depth"
         )

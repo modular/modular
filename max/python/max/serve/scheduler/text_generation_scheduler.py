@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Scheduler for text generation requests."""
+
 from __future__ import annotations
 
 import logging
@@ -27,6 +30,12 @@ from max.pipelines.context import (
     TextGenerationOutput,
 )
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
+from max.pipelines.kv_cache.checkpoint import (
+    Checkpointer,
+    CheckpointerFactory,
+    checkpoint_at_end_of_prompt,
+    checkpoint_at_release,
+)
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     MemoryPlan,
@@ -52,6 +61,7 @@ from max.serve.scheduler_result import SchedulerResult
 from max.serve.telemetry import _log_context
 from max.serve.telemetry._log_context import batch_id_ctx
 from max.serve.telemetry._tracing import batch_spans_enabled
+from max.serve.telemetry.metrics import METRICS
 from opentelemetry import propagate as otel_propagate
 from opentelemetry.context import Context as OtelContext
 
@@ -60,7 +70,7 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .dp_padding import DPBatchPadder
-from .utils import SchedulerLogger, get_cancelled_reqs
+from .utils import SchedulerLogger, _ScheduledBatch, get_cancelled_reqs
 
 if TYPE_CHECKING:
     from max.serve.telemetry._kernel_capture import KernelCapture
@@ -89,8 +99,9 @@ def _parent_trace_context(context: TextContext) -> OtelContext | None:
 
 
 def _sampled_link(parent: OtelContext) -> otel_trace.Link | None:
-    """Returns a link to the span in ``parent``, or None when it has none or
-    it is not sampled, since an unsampled span is never exported.
+    """Returns a link to the sampled span in ``parent``, or None if unsampled.
+
+    An unsampled span is never exported.
 
     Args:
         parent: A request's context, as extracted from its trace carrier.
@@ -102,8 +113,9 @@ def _sampled_link(parent: OtelContext) -> otel_trace.Link | None:
 
 
 class _BatchLinks:
-    """The links from the scheduler's ``max.batch`` spans to their members'
-    sampled request spans, kept from admission until each request leaves.
+    """Links from a ``max.batch`` span to its members' sampled request spans.
+
+    Kept from admission until each request leaves.
 
     Args:
         link_every_member: Whether every member is linked, as at global level
@@ -136,8 +148,9 @@ class _BatchLinks:
         batch: Sequence[TextContext],
         is_traced: Callable[[RequestID], bool] | None,
     ) -> list[otel_trace.Link]:
-        """Returns a pass's links, and over the cap keeps traced members'
-        first, so the requests that asked for the pass's capture can find it.
+        """Returns a pass's links, keeping traced members' first over the cap.
+
+        Those requests asked for the pass's capture, so they can still find it.
 
         Args:
             batch: The pass's requests.
@@ -152,8 +165,10 @@ class _BatchLinks:
         return [self._links[r] for r in members[: self._max_links]]
 
     def drop_untraced(self, request_ids: Iterable[RequestID]) -> None:
-        """Drops the links of running requests that are no longer traced,
-        which only traced requests have below global level ``batch``."""
+        """Drops the links of running requests that are no longer traced.
+
+        Only traced requests have links below global level ``batch``.
+        """
         if not self._link_every_member:
             for request_id in request_ids:
                 self._links.pop(request_id, None)
@@ -164,6 +179,8 @@ class _BatchLinks:
 
 
 class TokenGenerationScheduler(Scheduler):
+    """Schedules text generation requests in one process."""
+
     def __init__(
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
@@ -182,6 +199,7 @@ class TokenGenerationScheduler(Scheduler):
         max_pending_requests: int | None = None,
         kernel_capture: KernelCapture | None = None,
         max_batch_links: int = _DEFAULT_MAX_BATCH_LINKS,
+        checkpointer_factory: CheckpointerFactory | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -215,6 +233,8 @@ class TokenGenerationScheduler(Scheduler):
                     f"Using default: {BatchSchedulingStrategy.PER_REPLICA.value}"
                 )
 
+        if checkpointer_factory is not None:
+            kv_cache.populate_checkpointer(checkpointer_factory)
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
@@ -241,10 +261,13 @@ class TokenGenerationScheduler(Scheduler):
             self._batch_spans_enabled, max_batch_links
         )
 
+    def with_checkpointer(self, checkpointer: Checkpointer) -> None:
+        """Uses ``checkpointer`` to checkpoint requests."""
+        self.batch_constructor.with_checkpointer(checkpointer)
+
     @traced
     def _retrieve_pending_requests(self) -> None:
-        """
-        Retrieves pending requests from the request queue.
+        """Retrieves pending requests from the request queue.
 
         This method drains the request queue synchronously and processes
         any contexts that are available.
@@ -291,8 +314,10 @@ class TokenGenerationScheduler(Scheduler):
                     self._batch_links.admit(context.request_id, parent, traced)
 
     def _end_request_telemetry(self, request_id: RequestID) -> None:
-        """Ends a departing request's phase spans and drops its batch link
-        and kernel trace."""
+        """Ends a departing request's phase spans.
+
+        Also drops its batch link and kernel trace.
+        """
         if (span := self._prefill_spans.pop(request_id, None)) is not None:
             span.end()
         if (span := self._decode_spans.pop(request_id, None)) is not None:
@@ -303,7 +328,7 @@ class TokenGenerationScheduler(Scheduler):
 
     @traced
     def run_iteration(self) -> SchedulerProgress:
-        """The Scheduler routine that creates batches and schedules them on GPU
+        """The Scheduler routine that creates batches and schedules them on GPU.
 
         Returns:
             SchedulerProgress: Indicates whether work was performed in this iteration.
@@ -338,10 +363,8 @@ class TokenGenerationScheduler(Scheduler):
             )
             return SchedulerProgress.NO_PROGRESS
 
-        # When the overlap pipeline is actually overlapping, the wall-clock
-        # time measured below reflects the previous batch's sync, not the
-        # current batch. Flag it so the logger attributes execution time and
-        # throughput to the completed-batch stats collected below.
+        # Overlap execution metrics belong to the completed batch rather than
+        # the batch being enqueued. The pipeline supplies that batch's stats.
         is_overlap_active = bool(
             getattr(self.pipeline, "overlap_active", False)
         )
@@ -350,16 +373,16 @@ class TokenGenerationScheduler(Scheduler):
         t0 = time.monotonic()
         if len(inputs.flat_batch) > 0:
             with Tracer(f"_schedule({inputs})"):
-                num_terminated_reqs = self._schedule(inputs, is_overlap_active)
+                scheduled = self._schedule(inputs, is_overlap_active)
         else:
-            num_terminated_reqs = self._schedule(inputs, is_overlap_active)
+            scheduled = self._schedule(inputs, is_overlap_active)
         t1 = time.monotonic()
-        batch_execution_time_s = t1 - t0
+        METRICS.scheduler_batch_step_time(
+            (t1 - t0) * 1000, batch_type=inputs.batch_type.value
+        )
 
-        # Log batch metrics. Under overlap scheduling the wall-clock time
-        # measured above describes the previously enqueued batch; the
-        # pipeline reports that batch's composition and timing so telemetry
-        # is attributed to the correct batch type.
+        # Overlap reports the completed batch's composition and service time;
+        # synchronous batches use the interval measured around execute().
         completed_batch_stats = (
             self.pipeline.take_completed_batch_stats()
             if hasattr(self.pipeline, "take_completed_batch_stats")
@@ -370,9 +393,14 @@ class TokenGenerationScheduler(Scheduler):
             inputs=inputs,
             kv_cache=self.batch_constructor.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
-            batch_execution_time_s=batch_execution_time_s,
+            batch_execution_time_s=0.0
+            if is_overlap_active
+            else scheduled.execution_time_s,
+            num_output_tokens=None
+            if is_overlap_active
+            else scheduled.output_tokens,
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
-            num_terminated_reqs=num_terminated_reqs,
+            num_terminated_reqs=scheduled.terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
             if hasattr(self.pipeline, "batch_spec_decode_metrics")
@@ -406,8 +434,8 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(
         self, inputs: TextGenerationInputs[TextContext], lagged: bool = False
-    ) -> int:
-        """Returns the number of terminated requests."""
+    ) -> _ScheduledBatch:
+        """Executes a batch and returns its service time and completed counts."""
         batch_id = self._batch_counter
         self._batch_counter += 1
 
@@ -484,7 +512,12 @@ class TokenGenerationScheduler(Scheduler):
                 else 0
             )
             try:
+                execution_start = time.monotonic()
                 responses = self.pipeline.execute(inputs)
+                execution_time_s = time.monotonic() - execution_start
+                output_tokens = sum(
+                    len(output.tokens) for output in responses.values()
+                )
             finally:
                 if range_id:
                     range_end(range_id)
@@ -559,7 +592,11 @@ class TokenGenerationScheduler(Scheduler):
             batch_span.set_attribute(
                 "max.batch.terminated_count", num_terminated_requests
             )
-            return num_terminated_requests
+            return _ScheduledBatch(
+                terminated_reqs=num_terminated_requests,
+                execution_time_s=execution_time_s,
+                output_tokens=output_tokens,
+            )
         finally:
             batch_span.end()
 
@@ -576,6 +613,7 @@ def load_text_generation_scheduler(
     max_pending_requests: int | None = None,
     kernel_capture: KernelCapture | None = None,
 ) -> TokenGenerationScheduler:
+    """Builds a text generation scheduler from the pipeline and memory plan."""
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
         pipeline_config, pipeline.max_batch_size, memory_plan
@@ -608,8 +646,10 @@ def load_text_generation_scheduler(
             context_type=context_type,
         )
 
-    # Return Scheduler
-    return TokenGenerationScheduler(
+    checkpointer_factory = Checkpointer.factory().with_heuristics(
+        checkpoint_at_end_of_prompt(), checkpoint_at_release()
+    )
+    scheduler = TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
         # For spec decoding, there may be multiple KVCaches. The scheduler
@@ -624,4 +664,7 @@ def load_text_generation_scheduler(
         max_pending_requests=max_pending_requests,
         kernel_capture=kernel_capture,
         max_batch_links=pipeline_config.profiling.kernel_trace_max_batch_links,
+        checkpointer_factory=checkpointer_factory,
     )
+    scheduler.with_checkpointer(checkpointer_factory.build())
+    return scheduler

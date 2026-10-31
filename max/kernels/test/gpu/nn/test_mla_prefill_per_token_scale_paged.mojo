@@ -110,21 +110,10 @@ def run_test_paged_prefill_per_token_scale[
     batch_size: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     print(
-        "test_mla_prefill_per_token_scale_paged",
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_keys:",
-        num_keys,
-        " page_size:",
-        page_size,
-        " qkv_type:",
-        qkv_type,
-        " rope_type:",
-        rope_type,
-        " scale_type:",
-        scale_type,
+        t"test_mla_prefill_per_token_scale_paged  batch_size: {batch_size} "
+        t" seq_len: {seq_len}  num_keys: {num_keys}  page_size: {page_size} "
+        t" qkv_type: {qkv_type}  rope_type: {rope_type}  scale_type:"
+        t" {scale_type}"
     )
 
     var scale = Float32(0.5)
@@ -793,18 +782,8 @@ def run_test_paged_prefill_per_token_scale[
                         max_abs_err = abs_err
                     if abs_err > atol:
                         print(
-                            "mismatch at b=",
-                            b,
-                            " s=",
-                            s,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " actual=",
-                            actual,
-                            " expect=",
-                            expect,
+                            t"mismatch at b= {b}  s= {s}  h= {h}  d= {d} "
+                            t" actual= {actual}  expect= {expect}"
                         )
                     assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 

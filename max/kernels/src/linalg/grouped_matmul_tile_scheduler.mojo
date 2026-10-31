@@ -18,7 +18,8 @@ from std.math import ceildiv
 from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
+from std.utils.index import Index
 from layout import ImmTileTensor, TensorLayout
 
 
@@ -121,11 +122,12 @@ struct TileScheduler[
     static_MN: Int,  # if swapAB, then static_MN is M, otherwise N
     # note that the tile shape always refers to the original non-swapped AB
     # shape
-    tile_shape: IndexList[3],
-    cluster: IndexList[3] = Index(1, 1, 1),
+    tile_shape: Coord[Int, Int, Int],
+    cluster: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
+    invariant_offsets: Bool = True,
 ](TrivialRegisterPassable):
     """Schedules output tiles across CTAs for a persistent grouped matmul kernel.
 
@@ -143,6 +145,10 @@ struct TileScheduler[
         swizzle: Whether to swizzle block indices for improved L2 reuse.
         swapAB: Whether to swap A and B operands. When true, the static
             dimension is M; when false, it is N.
+        invariant_offsets: Whether `group_offsets` is read with invariant
+            (non-coherent) loads, which the compiler may schedule above a
+            programmatic-dependent-launch wait. Set it to False when a
+            predecessor grid writes `group_offsets`.
     """
 
     var num_active_experts: Int
@@ -178,11 +184,9 @@ struct TileScheduler[
         comptime assert (
             Self.cluster[1] == Self.cluster[2] == 1
         ), "Currently multicasting along non-M dimension is not supported"
-        comptime assert Self.cta_group == Self.cluster[0], (
-            "cta_group must be equal to cluster M size. Got cta_group = "
-            + String(Self.cta_group)
-            + " and cluster M size = "
-            + String(Self.cluster[0])
+        comptime assert Self.cta_group == Self.cluster[0], String(
+            t"cta_group must be equal to cluster M size. Got cta_group = "
+            t"{Self.cta_group} and cluster M size = {Self.cluster[0]}"
         )
         comptime cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
         comptime cluster_n_size = Self.cluster[1] * Self.tile_shape[1]
@@ -190,15 +194,10 @@ struct TileScheduler[
             Self.cluster[0] == 1 or Self.static_MN % cluster_m_size == 0
         ) if Self.swapAB else (
             Self.cluster[1] == 1 or Self.static_MN % cluster_n_size == 0
-        ), (
-            "Problem static non-reducing dimension must be divisible by the"
-            " corresponding cluster size. Got "
-            + String(Self.static_MN)
-            + " and cluster ("
-            + String(cluster_m_size)
-            + ", "
-            + String(cluster_n_size)
-            + ")"
+        ), String(
+            t"Problem static non-reducing dimension must be divisible by "
+            t"the corresponding cluster size. Got {Self.static_MN} and "
+            t"cluster ({cluster_m_size}, {cluster_n_size})"
         )
 
         self.num_active_experts = num_active_experts
@@ -209,12 +208,19 @@ struct TileScheduler[
         self.block_idx_start = 0
 
     @inline(.always)
+    def _group_offset(self, idx: UInt32) -> UInt32:
+        comptime if Self.invariant_offsets:
+            return self.group_offsets[Int(idx)]
+        else:
+            return self.group_offsets.load[invariant=False](Coord(Int(idx)))
+
+    @inline(.always)
     def fetch_next_work(mut self) -> WorkInfo:
         self.current_iter += 1
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             grid_dim.x
         ) + UInt32(block_idx.x)
-        var start_idx = self.group_offsets[Int(self.current_group_idx)]
+        var start_idx = self._group_offset(self.current_group_idx)
 
         var num_dynamic_dim_blocks: UInt32
         # Trim to the next group
@@ -223,7 +229,7 @@ struct TileScheduler[
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
-            var end_idx = self.group_offsets[Int(self.current_group_idx + 1)]
+            var end_idx = self._group_offset(self.current_group_idx + 1)
             var current_dynamic_dim = end_idx - start_idx
             num_dynamic_dim_blocks = UInt32(
                 rebind[Scalar[Self.div_dynamic_block.uint_type]](

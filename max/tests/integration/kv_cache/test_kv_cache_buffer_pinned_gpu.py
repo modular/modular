@@ -15,7 +15,7 @@
 import pytest
 from max.driver import CPU, Accelerator, Buffer, Device, Usage
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheBuffer
+from max.nn.legacy.kv_cache.cache_params import KVCacheBuffer
 
 
 def _shard(device: Device, usage: Usage) -> Buffer:

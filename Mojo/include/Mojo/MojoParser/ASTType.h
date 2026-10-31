@@ -32,6 +32,7 @@ class InflightDiag;
 
 namespace KGEN {
 class ParamDeclAttr;
+class DedupContext;
 
 } // namespace KGEN
 
@@ -374,6 +375,10 @@ struct ASTTypePrinterContext {
 
   /// Set to true when printing a closure trait signature.
   bool isClosureSignature = false;
+
+  /// When non-null, parameter expressions are deduplicated into this context
+  /// while printing.
+  DedupContext *dedup = nullptr;
 
   ASTTypePrinterContext() {}
   ASTTypePrinterContext(SharedState *shared) : shared(shared) {}

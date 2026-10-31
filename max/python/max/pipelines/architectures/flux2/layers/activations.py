@@ -10,10 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Activation functions selectable by name in Flux2 layers."""
 
 from functools import partial
 
-from max.experimental import functional as F
+from max import functional as F
 
 ACT2FN = {
     "silu": F.silu,

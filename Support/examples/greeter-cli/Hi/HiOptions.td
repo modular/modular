@@ -21,5 +21,5 @@ include "Support/Driver/CommonOptions.td"
 
 def HiOptionGroup : OptionGroup<"Hi options">, Index<0>;
 
-def hello : Flag<["--", "-"], "hello">, Group<HiOptionGroup>, Index<0>,
+def hello : Flag<["--", "-"], "hello">, Group<HiOptionGroup>,
   HelpText<"Uses a more formal \"hello\" when printing a greeting.">;

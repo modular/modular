@@ -56,20 +56,9 @@ def test[
 ) raises:
     print("test_mha_causal_mask")
     print(
-        "qkv_type:",
-        qkv_type,
-        "depth:",
-        depth,
-        "num_heads:",
-        num_heads,
-        "group:",
-        group,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "mask:",
-        MaskType.name(),
+        t"qkv_type: {qkv_type} depth: {depth} num_heads: {num_heads} group:"
+        t" {group} seq_len: {seq_len} num_keys: {num_keys} mask:"
+        t" {MaskType.name()}"
     )
     # Query, key, value dimensions.
     comptime batch_size = 1
@@ -210,20 +199,10 @@ def test[
                         ].cast[.float64]()
                     var rerr = abs((actual - expect) / expect)
                     print(
-                        "s, h, d = ",
-                        "(" + String(s),
-                        h,
-                        String(d) + ")",
-                        "actual =",
-                        actual,
-                        "expect =",
-                        expect,
-                        "rerr =",
-                        rerr,
-                        "next_expect =",
-                        next_expect,
-                        "next_actual =",
-                        next_actual,
+                        t"s, h, d = "
+                        t""" {"(" + String(s)} {h} {String(d) + ")"} actual ="""
+                        t" {actual} expect = {expect} rerr = {rerr} next_expect"
+                        t" = {next_expect} next_actual = {next_actual}"
                     )
 
                 assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)

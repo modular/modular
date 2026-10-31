@@ -45,10 +45,12 @@ from max.runtime.async_value import AnyAsyncValueRef
 # as a host function value.
 struct Kernels:
     @staticmethod
-    def vec_add(
-        output: Pointer[Float32, MutAnyOrigin],
-        in0: Pointer[Float32, ImmutAnyOrigin],
-        in1: Pointer[Float32, ImmutAnyOrigin],
+    def vec_add[
+        out_origin: MutOrigin, in0_origin: MutOrigin, in1_origin: MutOrigin
+    ](
+        output: Pointer[Float32, out_origin],
+        in0: Pointer[Float32, in0_origin],
+        in1: Pointer[Float32, in1_origin],
         length_dev: Int32,
     ):
         var length = Int(length_dev)
@@ -60,10 +62,12 @@ struct Kernels:
         )
 
     @staticmethod
-    def scaled_vec_add(
-        output: Pointer[Float32, MutAnyOrigin],
-        in0: Pointer[Float32, ImmutAnyOrigin],
-        in1: Pointer[Float32, ImmutAnyOrigin],
+    def scaled_vec_add[
+        out_origin: MutOrigin, in0_origin: MutOrigin, in1_origin: MutOrigin
+    ](
+        output: Pointer[Float32, out_origin],
+        in0: Pointer[Float32, in0_origin],
+        in1: Pointer[Float32, in1_origin],
         length_dev: Int32,
         scale: Float32,
     ):
@@ -76,11 +80,9 @@ struct Kernels:
         ) * scale
 
     @staticmethod
-    def fill_constant(
-        output: Pointer[Float32, MutAnyOrigin],
-        val_dev: Int32,
-        length_dev: Int32,
-    ):
+    def fill_constant[
+        out_origin: MutOrigin
+    ](output: Pointer[Float32, out_origin], val_dev: Int32, length_dev: Int32,):
         var val = Int(val_dev)
         var length = Int(length_dev)
         var tid = global_idx.x
@@ -89,11 +91,9 @@ struct Kernels:
         output[unsafe_offset=tid] = Float32(val)
 
     @staticmethod
-    def add_in_place(
-        buf: Pointer[Float32, MutAnyOrigin],
-        delta_dev: Int32,
-        length_dev: Int32,
-    ):
+    def add_in_place[
+        buf_origin: MutOrigin
+    ](buf: Pointer[Float32, buf_origin], delta_dev: Int32, length_dev: Int32,):
         var delta = Int(delta_dev)
         var length = Int(length_dev)
         var tid = global_idx.x
@@ -106,7 +106,9 @@ struct Kernels:
     # 1 for overlap and 2 for a timeout. `state[2]` is written after the spin
     # and copied to `state[3]` after the dependent's wait.
     @staticmethod
-    def pdl_primary(state: Pointer[Int32, MutAnyOrigin], timeout_ns: UInt64):
+    def pdl_primary[
+        state_origin: MutOrigin
+    ](state: Pointer[Int32, state_origin], timeout_ns: UInt64):
         launch_dependent_grids()
         var start = global_perf_counter_ns()
         var overlapped = Int32(1)
@@ -118,7 +120,9 @@ struct Kernels:
         state[unsafe_offset=2] = 42
 
     @staticmethod
-    def pdl_secondary(state: Pointer[Int32, MutAnyOrigin]):
+    def pdl_secondary[
+        state_origin: MutOrigin
+    ](state: Pointer[Int32, state_origin]):
         state.unsafe_store[volatile=True](Int32(1))
         wait_on_dependent_grids()
         state[unsafe_offset=3] = state[unsafe_offset=2]
@@ -138,7 +142,11 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = Float32(length - i)
 
-    var func = ctx.compile_function[Kernels.vec_add]()
+    var func = ctx.compile_function[
+        Kernels.vec_add[
+            MutUntrackedOrigin, MutUntrackedOrigin, MutUntrackedOrigin
+        ]
+    ]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function(
@@ -181,11 +189,20 @@ def test_parameterized_kernel_node(ctx: DeviceContext) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = Float32(length - i)
 
+    var out_dev_ptr = out_dev.unsafe_ptr()
+    var in0_dev_ptr = in0_dev.unsafe_ptr()
+    var in1_dev_ptr = in1_dev.unsafe_ptr()
+    comptime kernel = Kernels.vec_add[
+        type_of(out_dev_ptr).origin,
+        type_of(in0_dev_ptr).origin,
+        type_of(in1_dev_ptr).origin,
+    ]
+
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
-        _ = builder.add_function[Kernels.vec_add](
-            out_dev,
-            in0_dev,
-            in1_dev,
+        _ = builder.add_function[kernel](
+            out_dev_ptr,
+            in0_dev_ptr,
+            in1_dev_ptr,
             Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
@@ -214,11 +231,20 @@ def test_scaled_kernel_node(ctx: DeviceContext) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = Float32(length - i)
 
+    var out_dev_ptr = out_dev.unsafe_ptr()
+    var in0_dev_ptr = in0_dev.unsafe_ptr()
+    var in1_dev_ptr = in1_dev.unsafe_ptr()
+    comptime kernel = Kernels.scaled_vec_add[
+        type_of(out_dev_ptr).origin,
+        type_of(in0_dev_ptr).origin,
+        type_of(in1_dev_ptr).origin,
+    ]
+
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
-        _ = builder.add_function[Kernels.scaled_vec_add](
-            out_dev,
-            in0_dev,
-            in1_dev,
+        _ = builder.add_function[kernel](
+            out_dev_ptr,
+            in0_dev_ptr,
+            in1_dev_ptr,
             Int32(length),
             scale,
             grid_dim=ceildiv(length, block_dim),
@@ -405,11 +431,20 @@ def test_add_output(ctx: DeviceContext) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = Float32(length - i)
 
+    var out_dev_ptr = out_dev.unsafe_ptr()
+    var in0_dev_ptr = in0_dev.unsafe_ptr()
+    var in1_dev_ptr = in1_dev.unsafe_ptr()
+    comptime kernel = Kernels.vec_add[
+        type_of(out_dev_ptr).origin,
+        type_of(in0_dev_ptr).origin,
+        type_of(in1_dev_ptr).origin,
+    ]
+
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
-        _ = builder.add_function[Kernels.vec_add](
-            out_dev,
-            in0_dev,
-            in1_dev,
+        _ = builder.add_function[kernel](
+            out_dev_ptr,
+            in0_dev_ptr,
+            in1_dev_ptr,
             Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
@@ -442,7 +477,7 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
     var buf_a = ctx.enqueue_create_buffer[.float32](length)
     var buf_b = ctx.enqueue_create_buffer[.float32](length)
 
-    var func = ctx.compile_function[Kernels.fill_constant]()
+    var func = ctx.compile_function[Kernels.fill_constant[MutUntrackedOrigin]]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Sequence A on `buf_a`: write 1, then 2, then 3, internally chained
@@ -597,7 +632,11 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
     #        assert_equal(host_b[i], UInt32(0xBBBBBBBB))
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = Pointer(to=host_a1).as_unsafe_any_origin()[]
+    _ = host_a1^
+    _ = host_a2^
+    _ = host_b1^
+    _ = host_b2^
+    _ = buf_b^
 
 
 def test_region(ctx: DeviceContext) raises:
@@ -691,8 +730,8 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
 
     var buf = ctx.enqueue_create_buffer[.float32](length)
 
-    var fill = ctx.compile_function[Kernels.fill_constant]()
-    var incr = ctx.compile_function[Kernels.add_in_place]()
+    var fill = ctx.compile_function[Kernels.fill_constant[MutUntrackedOrigin]]()
+    var incr = ctx.compile_function[Kernels.add_in_place[MutUntrackedOrigin]]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Producer scope: fill `buf` with 5 (single kernel node, a graph root).
@@ -747,8 +786,8 @@ def test_region_passthrough_dependencies(
 
     var buf = ctx.enqueue_create_buffer[.float32](length)
 
-    var fill = ctx.compile_function[Kernels.fill_constant]()
-    var incr = ctx.compile_function[Kernels.add_in_place]()
+    var fill = ctx.compile_function[Kernels.fill_constant[MutUntrackedOrigin]]()
+    var incr = ctx.compile_function[Kernels.add_in_place[MutUntrackedOrigin]]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Producer scope: fill `buf` with 5.
@@ -931,8 +970,8 @@ def test_region_serializes_nodes(ctx: DeviceContext) raises:
 
     var buf = ctx.enqueue_create_buffer[.float32](length)
 
-    var fill = ctx.compile_function[Kernels.fill_constant]()
-    var incr = ctx.compile_function[Kernels.add_in_place]()
+    var fill = ctx.compile_function[Kernels.fill_constant[MutUntrackedOrigin]]()
+    var incr = ctx.compile_function[Kernels.add_in_place[MutUntrackedOrigin]]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Neither node names a dependency and both write `buf`, so only the
@@ -978,8 +1017,8 @@ def test_region_chains_after_recording_context(ctx: DeviceContext) raises:
 
     var buf = ctx.enqueue_create_buffer[.float32](length)
 
-    var fill = ctx.compile_function[Kernels.fill_constant]()
-    var incr = ctx.compile_function[Kernels.add_in_place]()
+    var fill = ctx.compile_function[Kernels.fill_constant[MutUntrackedOrigin]]()
+    var incr = ctx.compile_function[Kernels.add_in_place[MutUntrackedOrigin]]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # The fill is recorded through the recording context, so it never
@@ -1031,8 +1070,8 @@ def test_as_context_kernel_chain(ctx: DeviceContext) raises:
 
     var buf = ctx.enqueue_create_buffer[.float32](length)
 
-    var fill = ctx.compile_function[Kernels.fill_constant]()
-    var incr = ctx.compile_function[Kernels.add_in_place]()
+    var fill = ctx.compile_function[Kernels.fill_constant[MutUntrackedOrigin]]()
+    var incr = ctx.compile_function[Kernels.add_in_place[MutUntrackedOrigin]]()
 
     # Record fill(=5) then incr(+10) on the same buffer through the recording
     # context. The facade chains each enqueue after the previous one, so a
@@ -1079,8 +1118,12 @@ def _check_pdl_pair(
     ctx: DeviceContext, pdl: Bool, recorded: Bool, mixed: Bool = False
 ) raises:
     var state = ctx.enqueue_create_buffer[.int32](4)
-    var primary = ctx.compile_function[Kernels.pdl_primary]()
-    var secondary = ctx.compile_function[Kernels.pdl_secondary]()
+    var primary = ctx.compile_function[
+        Kernels.pdl_primary[MutUntrackedOrigin]
+    ]()
+    var secondary = ctx.compile_function[
+        Kernels.pdl_secondary[MutUntrackedOrigin]
+    ]()
     var attrs = pdl_launch_attributes(PDLLevel.ON if pdl else PDLLevel.OFF)
     var timeout_ns = UInt64(100_000_000)
 
@@ -1694,8 +1737,16 @@ def test_create_collective_two_graphs(ctx: DeviceContext) raises:
             h0[i] = Float32(i)
             h1[i] = Float32(length - i)
 
-    var add_fn = ctx.compile_function[Kernels.vec_add]()
-    var scale_fn = ctx.compile_function[Kernels.scaled_vec_add]()
+    var add_fn = ctx.compile_function[
+        Kernels.vec_add[
+            MutUntrackedOrigin, MutUntrackedOrigin, MutUntrackedOrigin
+        ]
+    ]()
+    var scale_fn = ctx.compile_function[
+        Kernels.scaled_vec_add[
+            MutUntrackedOrigin, MutUntrackedOrigin, MutUntrackedOrigin
+        ]
+    ]()
     var scale = Float32(3.0)
 
     def build_for[n: Int](mut builder: DeviceGraphBuilder[_]) raises {imm}:
@@ -1749,9 +1800,9 @@ def test_create_collective_two_graphs(ctx: DeviceContext) raises:
 
 def test_create_collective_stable_slots(ctx: DeviceContext) raises:
     print(
-        "Test DeviceGraph.create_collective installs one cache-owned stable"
-        " slot table on every builder, shared across the collective's graphs"
-        " and across rebuilds with the same identity."
+        t"Test DeviceGraph.create_collective installs one cache-owned stable"
+        t" slot table on every builder, shared across the collective's graphs"
+        t" and across rebuilds with the same identity."
     )
     comptime length = 64
 

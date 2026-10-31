@@ -53,6 +53,7 @@ from std.random import randn, seed
 
 from max.gpu import *
 from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.primitives.grid_controls import PDLLevel
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mla_index_kpool import (
@@ -260,6 +261,7 @@ def run_case[
         kpool,
         pool_topk,
         select_tail,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[expand_kernel](
         expand_out,
@@ -494,28 +496,12 @@ def run_case[
                 worst_row = row
     var ok = min_cos >= min_row_cosine and max_rel <= max_row_rel_err
     print(
-        "PASS" if ok else "FAIL",
-        name,
-        ": batch_size=",
-        batch_size,
-        " cache_len=",
-        cache_len,
-        " q_len=",
-        q_len,
-        " logical=",
-        use_logical,
-        " lag=",
-        lag,
-        " min_row_cosine=",
-        min_cos,
-        " max_row_rel_err=",
-        max_rel,
-        " (token ",
-        worst_row // NUM_HEADS,
-        ", visible ",
-        cache_len + (worst_row // NUM_HEADS) % q_len + 1,
-        ") max_abs_err=",
-        max_err,
+        t"""{"PASS" if ok else "FAIL"} {name} : batch_size= {batch_size} """
+        t" cache_len= {cache_len}  q_len= {q_len}  logical= {use_logical}  lag="
+        t" {lag}  min_row_cosine= {min_cos}  max_row_rel_err= {max_rel}  (token"
+        t"  {worst_row // NUM_HEADS} , visible "
+        t" {cache_len + (worst_row // NUM_HEADS) % q_len + 1} ) max_abs_err="
+        t" {max_err}"
     )
 
     _ = mla_args

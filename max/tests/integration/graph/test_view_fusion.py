@@ -111,6 +111,30 @@ def test_transpose_static(session: InferenceSession) -> None:
     np.testing.assert_allclose(out, a.T, rtol=1e-5, atol=1e-5)
 
 
+@pytest.mark.parametrize("dtype", [DType.uint8, DType.float32])
+@pytest.mark.parametrize("channels", [2, 3, 4, 5, 8])
+def test_permute_nhwc_to_nchw(
+    session: InferenceSession, dtype: DType, channels: int
+) -> None:
+    """An NHWC -> NCHW permute reads its input with an innermost stride of
+    `channels`, the case small-stride window loads target on CPU."""
+    shape = [1, 5, 7, channels]
+    with Graph(
+        "permute_nhwc_to_nchw",
+        input_types=[TensorType(dtype, shape, device=DeviceRef.CPU())],
+    ) as graph:
+        (x,) = (v.tensor for v in graph.inputs)
+        graph.output(x.permute([0, 3, 1, 2]))
+
+    a = (
+        (np.arange(np.prod(shape)) * 7 % 251)
+        .astype(dtype.to_numpy())
+        .reshape(shape)
+    )
+    (out,) = run_and_verify_fusion(session, graph, a)
+    np.testing.assert_array_equal(out, a.transpose(0, 3, 1, 2))
+
+
 def test_reshape_static(session: InferenceSession) -> None:
     """A standalone `mo.static.reshape` (flatten) compiles and runs correctly."""
     with Graph(

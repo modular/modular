@@ -16,10 +16,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 from ..model_config import HYV4Config
 from .attention import HYV4Attention
@@ -71,8 +71,11 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
             self.hc_mlp = HYV4HyperConnection(config)
 
     def shard(self) -> None:
-        """Splits attention by heads and the routed experts by expert over the
-        mesh the layer was built on; the rest stays replicated."""
+        """Splits attention by heads and the routed experts by expert.
+
+        Both split over the mesh the layer was built on; the rest stays
+        replicated.
+        """
         self.self_attn.shard_heads()
         if isinstance(self.mlp, HYV4MoE):
             self.mlp.shard_experts()

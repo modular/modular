@@ -261,17 +261,8 @@ def bench_broadcast[
     # See: https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md
     var busbw = gbps
     print(
-        "|",
-        name,
-        "| slowest mean time",
-        max_time,
-        "ms |",
-        "algbw:",
-        gbps,
-        "GB/s |",
-        "busbw:",
-        busbw,
-        "GB/s |",
+        t"| {name} | slowest mean time {max_time} ms | algbw: {gbps} GB/s |"
+        t" busbw: {busbw} GB/s |"
     )
 
     # Zero output and signal buffers, then run one more broadcast for verification.

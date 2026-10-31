@@ -24,6 +24,7 @@ namespace M::KGEN {
 class ParameterEvaluationContext;
 class SymTabEvaluationContext;
 class TraitSymbolAttr;
+class KGENParamPrinter;
 enum class SugarKind : uint32_t;
 } // namespace M::KGEN
 

@@ -32,11 +32,14 @@ _CPU_ONLY_TESTS = [
 
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
-    "test_advanced_indexing.py",
+    "test_mega_ffn_amd_gpu.py",
+    "test_mega_ffn_amd_init_memory_gpu.py",
+    "test_mega_ffn_amd_mxfp4_gpu.py",
     "test_buffer_create_init.py",
     "test_buffer_create_init_gpu.py",
     "test_debug_config.py",
     "test_debug_config_integration.py",
+    "test_device_graph_side_stream_reclaim.py",
     "test_device_graph_synthesis.py",
     "test_engine_device_graph.py",
     "test_execution_spans.py",
@@ -45,6 +48,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
+    "test_matmul_swiglu_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_ir.py",
     "test_rowwise_reductions.py",
@@ -52,6 +56,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_runtime_source_notes.py",
     "test_nms.py",
     "test_scatter.py",
+    "test_side_stream_host_wait_capture.py",
     "test_tile_based_fusion.py",
     "test_typical_llm_snifftest.py",
 ]
@@ -62,12 +67,15 @@ _GRAPH_COMMON_DATA = [
     "//max/tests/integration/Inputs/kernel_override_ops",
     "//max/tests/integration/Inputs/kernel_verification_ops",
     "//max/tests/integration/Inputs/test_user_op",
+    "//max/tests/integration/graph/testdata/bad_kernel_ops",
+    "//max/tests/integration/graph/testdata/bad_kernel_ops:__init__.mojo",
     "//max/tests/integration/graph/testdata/compile_config_ops",
     "//max/tests/integration/graph/testdata/counter_ops",
     "//max/tests/tests/graph/testdata",
 ]
 
 _GRAPH_COMMON_ENV = {
+    "MODULAR_BAD_KERNEL_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/bad_kernel_ops)",
     "MODULAR_COUNTER_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/counter_ops)",
     "MODULAR_KERNEL_OVERRIDE_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_override_ops)",
     "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
@@ -91,12 +99,13 @@ _GRAPH_COMMON_DEPS = [
     "//max/python/max/engine",
     "//max/python/max/graph",
     "//max/python/max/mlir",
-    "//max/python/max/nn",
+    "//max/python/max/nn/legacy",
     "//max/tests/integration/test_common:graph_utils",
     "//max/tests/integration/test_common:modular_graph_test",
     requirement("gguf"),
     requirement("hypothesis"),
     requirement("numpy"),
+    requirement("pillow"),
     requirement("pytest-asyncio"),
     requirement("torch"),
     requirement("torchvision"),
@@ -156,6 +165,7 @@ modular_py_test(
     precompile_mefs = True,
     precompile_shards = {
         "test_mamba2_fused_inputs.py": 4,
+        "test_resize_linear.py": 4,
         "test_resize_nearest.py": 8,
     },
     tags = [
@@ -173,7 +183,7 @@ modular_py_library(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )
@@ -191,48 +201,6 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
-    ],
-)
-
-# GEX-3523 / MAXPLAT-477: this test was originally disabled because its 16
-# GPU parametrizations exceeded the bulk graph target's timebox on H100.
-# Re-enabled as a dedicated, sharded target so each shard fits comfortably
-# under the 600s `ci-persistent --test_timeout=-1,-1,600,600` clamp.
-#
-# Per-case wall-clock (the `set_item*` cases are skipped on accelerators):
-#   H100: median 31.4s, p99 42.6s, max 60.9s (from a 16 000-case stress run).
-#   B200: median ~33s, max ~50s (from a smoke run with 16 GPU cases).
-#
-# Unsharded the B200 wall is ~640-650s, which trips the 600s ci-persistent
-# clamp (observed `TIMEOUT in 610.0s` on postsubmit b200, build 6395).
-# `shard_count = 4` splits the 16 cases roughly 4-per-shard, giving
-# ~150-200s per shard with ~3x headroom.
-modular_py_test(
-    name = "test_advanced_indexing",
-    size = "large",
-    srcs = [
-        "conftest.py",
-        "test_advanced_indexing.py",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "2",
-    },
-    gpu_constraints = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    shard_count = 4,
-    tags = [
-        "gpu",
-    ],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        requirement("hypothesis"),
-        requirement("numpy"),
-        requirement("torch"),
     ],
 )
 
@@ -303,7 +271,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    # max.experimental.nn.Module.compile() reaches max.engine.InferenceSession
+    # max.nn.Module.compile() reaches max.engine.InferenceSession
     # transitively through its own lazy internals; optional at runtime, like
     # the experimental package's own ignore_extra_deps for the same target.
     ignore_unresolved_imports = ["max.engine.InferenceSession"],
@@ -312,11 +280,11 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("hypothesis"),
     ],
 )
@@ -360,7 +328,103 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "mega_ffn_amd_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_mega_ffn_amd_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    # MI355-only: the op's MegaFFN is the gfx950 decode kernel.
+    precompile_mefs = True,
+    tags = [
+        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
+        "exclusive-if-local",
+        "gpu",
+    ],
+    # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
+    # closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "mega_ffn_amd_init_memory_tests",
+    size = "large",
+    srcs = ["test_mega_ffn_amd_init_memory_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    # No precompile_mefs: the model compiles in a spawned child, which needs
+    # the capped pool from its start and which the record cannot see.
+    tags = [
+        "exclusive-if-local",
+        "gpu",
+    ],
+    # Needs mo.grouped.ffn.blockwise.fp8.amd, registered only by the
+    # closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "mega_ffn_amd_mxfp4_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_mega_ffn_amd_mxfp4_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    # MI355-only: the op's MegaFFN is the gfx950 decode kernel.
+    precompile_mefs = True,
+    tags = [
+        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
+        "exclusive-if-local",
+        "gpu",
+    ],
+    # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
+    # closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -591,6 +655,63 @@ modular_py_test(
     ],
 )
 
+# A small VMM budget with fine granules, so filling the free budget after a
+# capture is cheap and the allocator's reuse of released memory is visible.
+modular_py_test(
+    name = "test_device_graph_side_stream_reclaim",
+    srcs = [
+        "conftest.py",
+        "test_device_graph_side_stream_reclaim.py",
+    ],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "2147483648",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "1",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+    },
+    # TODO(CENG-1259): Run on AMD too once HIP keeps side-stream views alive
+    # after capture; the fix this test covers is CUDA only.
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+# Its own process: the test points the capture's DOT dump at a temporary
+# directory before any device stream exists.
+modular_py_test(
+    name = "test_side_stream_host_wait_capture",
+    srcs = [
+        "conftest.py",
+        "test_side_stream_host_wait_capture.py",
+    ],
+    # The capture keeps each matmul's output, past the default budget.
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "2147483648",
+    },
+    # The host wait is recorded into a captured graph on CUDA only.
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
 modular_py_test(
     name = "test_engine_device_graph",
     srcs = [
@@ -610,7 +731,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -634,6 +755,22 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_matmul_swiglu_fusion_gpu",
+    size = "large",
+    srcs = ["test_matmul_swiglu_fusion_gpu.py"],
+    gpu_constraints = ["//:b200_gpu"],
+    mojo_deps = ["//max:builtin_kernels"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("torch"),
     ],
 )
 

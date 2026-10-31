@@ -25,7 +25,7 @@ from std.testing import assert_equal, assert_true
 from std.utils import IndexList
 from std.utils.numerics import inf, max_finite, nan
 
-from extensibility import DynamicTensor
+from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from nn.gather_scatter import (
     _AtomicUpdateFn,
@@ -241,11 +241,11 @@ def run_case[
 
     var cpu_out = _poisoned_output[dt](n_in)
     scatter_elements[target="cpu", atomic_update_fn=atomic_update_fn](
-        DynamicTensor[dt, rank](input.unsafe_ptr(), in_shape),
-        DynamicTensor[itype, rank](indices.unsafe_ptr(), upd_shape),
-        DynamicTensor[dt, rank](updates.unsafe_ptr(), upd_shape),
+        TileTensor(input.unsafe_ptr(), row_major(Coord(in_shape))),
+        TileTensor(indices.unsafe_ptr(), row_major(Coord(upd_shape))),
+        TileTensor(updates.unsafe_ptr(), row_major(Coord(upd_shape))),
         axis,
-        DynamicTensor[dt, rank](cpu_out.unsafe_ptr(), in_shape),
+        TileTensor(cpu_out.unsafe_ptr(), row_major(Coord(in_shape))),
         cpu,
     )
     _check_output(cpu_out, expected, String("cpu ", label))
@@ -261,11 +261,11 @@ def run_case[
     gpu.enqueue_copy(out_dev, gpu_out.unsafe_ptr())
 
     scatter_elements[target="gpu", atomic_update_fn=atomic_update_fn](
-        DynamicTensor[dt, rank](in_dev.unsafe_ptr(), in_shape),
-        DynamicTensor[itype, rank](idx_dev.unsafe_ptr(), upd_shape),
-        DynamicTensor[dt, rank](upd_dev.unsafe_ptr(), upd_shape),
+        TileTensor(in_dev.unsafe_ptr(), row_major(Coord(in_shape))),
+        TileTensor(idx_dev.unsafe_ptr(), row_major(Coord(upd_shape))),
+        TileTensor(upd_dev.unsafe_ptr(), row_major(Coord(upd_shape))),
         axis,
-        DynamicTensor[dt, rank](out_dev.unsafe_ptr(), in_shape),
+        TileTensor(out_dev.unsafe_ptr(), row_major(Coord(in_shape))),
         gpu,
     )
     gpu.enqueue_copy(gpu_out.unsafe_ptr(), out_dev)

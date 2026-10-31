@@ -569,7 +569,7 @@ def graph_op(
     """A decorator to create PyTorch custom operations using MAX graph operations.
 
     This decorator allows you to define larger graphs using the functions in
-    :mod:`max.graph.ops` or :mod:`max.nn` modules and
+    :mod:`max.graph.ops` or :mod:`max.nn.legacy` modules and
     call them with PyTorch tensors, or integrate them into PyTorch modules.
     These custom ops can be called eagerly, and support compilation with
     ``torch.compile`` and the Inductor backend.

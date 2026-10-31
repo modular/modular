@@ -58,6 +58,21 @@ modular_py_test(
     ],
 )
 
+# Kept out of tests-pure-cpu so it also runs on macOS, where host memory
+# estimation bugs have shown up (SERVSYS-1226, SERVSYS-1337).
+modular_py_test(
+    name = "test_memory_estimation",
+    srcs = ["test_memory_estimation.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:mocks",
+        "//max/tests/integration/test_common:pipeline_model_dummy",
+    ],
+)
+
 modular_py_test(
     name = "tests-pure-cpu",
     srcs = [
@@ -66,7 +81,6 @@ modular_py_test(
         "test_context.py",
         "test_dtype.py",
         "test_logits_processor.py",
-        "test_memory_estimation.py",
         "test_speculative_config.py",
         "test_telemetry.py",
         "test_weight_path_parser.py",
@@ -88,16 +102,12 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
-        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/speculative",
-        "//max/tests/integration/test_common:mocks",
-        "//max/tests/integration/test_common:pipeline_model_dummy",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("pydantic"),
@@ -316,7 +326,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         "//max/python/max/support",
     ],
@@ -475,7 +485,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         # conftest.py imports generate_local_model_path.
         "//max/python/max/pipelines/lib",
     ],
@@ -502,7 +512,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -554,7 +564,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -581,7 +591,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -607,7 +617,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -633,7 +643,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -659,7 +669,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -686,7 +696,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -712,7 +722,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/request",

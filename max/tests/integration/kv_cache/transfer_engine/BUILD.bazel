@@ -20,7 +20,7 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/kv_cache",
     ],
 )
@@ -60,7 +60,7 @@ modular_py_binary(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/kv_cache",
         requirement("msgspec"),
         requirement("numpy"),
@@ -297,7 +297,7 @@ modular_py_test(
         ":transfer_engine_test_helpers",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/tests/nixl:nixl_plugin_env",
         requirement("numpy"),

@@ -17,15 +17,18 @@ from __future__ import annotations
 from array import array
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
-from max._kv_core import blocks_held_of_hit
-from max.nn.kv_cache import KVCacheGroupId
+from max._kv_core import PrefixCache, blocks_held_of_hit
+from max.nn.legacy.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 
 from .block_utils import LittleKVCacheBlock
 from .jenga_block_pool import JengaBlockPool
+
+if TYPE_CHECKING:
+    from .jenga_block_manager import JengaBlockManager
 
 __all__ = [
     "FullKVGroupCoordinator",
@@ -152,13 +155,38 @@ class KVGroupCoordinatorInterface:
         allow_cross_replica: bool = False,
     ) -> list[bool]:
         """Which of ``desired_hashes`` this leaf can serve, positionally."""
+        local, *peers = self._searched_caches(replica_idx, allow_cross_replica)
         return [
-            self.find_replica_with_hash(
-                block_hash, replica_idx, allow_cross_replica
-            )
-            is not None
+            block_hash in local or any(block_hash in peer for peer in peers)
             for block_hash in desired_hashes
         ]
+
+    def resident_run(
+        self,
+        desired_hashes: Sequence[bytes],
+        replica_idx: int,
+        allow_cross_replica: bool = False,
+    ) -> int:
+        """How many of ``desired_hashes``, from the first, this leaf holds.
+
+        Stops at the first miss, unlike :meth:`residency`.
+        """
+        local, *peers = self._searched_caches(replica_idx, allow_cross_replica)
+        for run, block_hash in enumerate(desired_hashes):
+            if block_hash not in local and not any(
+                block_hash in peer for peer in peers
+            ):
+                return run
+        return len(desired_hashes)
+
+    def _searched_caches(
+        self, replica_idx: int, allow_cross_replica: bool
+    ) -> list[PrefixCache]:
+        """The prefix caches :meth:`find_replica_with_hash` searches."""
+        caches = [pool.prefix_caches[self.leaf_id] for pool in self.pools]
+        if not allow_cross_replica:
+            return [caches[replica_idx]]
+        return [caches.pop(replica_idx), *caches]
 
     def longest_cache_hit(
         self,
@@ -285,16 +313,22 @@ class KVGroupCoordinatorInterface:
         }
 
     def grow(
-        self, req_id: RequestID, num_required_blocks: int, replica_idx: int
+        self,
+        req_id: RequestID,
+        num_required_blocks: int,
+        replica_idx: int,
+        *,
+        allocation_owner: JengaBlockManager,
     ) -> None:
         """Allocates the blocks every row still needs."""
-        pool = self.pools[replica_idx]
         leaf_id = self.leaf_id
         req_blocks = self.rows[req_id][leaf_id]
         for _ in range(
             self._num_blocks_to_allocate(req_blocks, num_required_blocks)
         ):
-            req_blocks.append(pool.alloc_block(leaf_id))
+            req_blocks.append(
+                allocation_owner.allocate_block(replica_idx, leaf_id)
+            )
 
     def _is_committable(
         self,
@@ -351,9 +385,29 @@ class KVGroupCoordinatorInterface:
         req_id: RequestID,
         num_committed_blocks: int,
         replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
-        """Frees the blocks the group no longer reads, nulling their slots."""
+        """Frees the blocks the group no longer reads, nulling their slots.
+
+        Args:
+            req_id: The request whose row to trim.
+            num_committed_blocks: How many blocks the request has filled.
+            replica_idx: Which pool the blocks live in.
+            keep: Page boundaries the request can resume from, in blocks,
+                lowest first. The cache keeps the blocks needed to resume at
+                each.
+        """
         raise NotImplementedError("Subclasses must implement this method.")
+
+    @property
+    def has_full_prefix_dependency(self) -> bool:
+        """Whether a hit on this cache reads every block before its depth.
+
+        Each block such a cache commits is then needed by every later hit, so
+        it is worth offloading as soon as it is committed rather than at a
+        checkpoint.
+        """
+        return False
 
     def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
         """How many blocks of a hit that deep this group actually holds.
@@ -409,7 +463,11 @@ class KVGroupCoordinatorInterface:
         return {}
 
     def checkpoint(
-        self, ctx: TextContext, replica_idx: int
+        self,
+        ctx: TextContext,
+        replica_idx: int,
+        *,
+        allocation_owner: JengaBlockManager,
     ) -> Mapping[str, tuple[int | None, int]]:
         """Returns the block each leaf carries onto its successor.
 
@@ -422,6 +480,7 @@ class KVGroupCoordinatorInterface:
         Args:
             ctx: The request whose forward just ran.
             replica_idx: Which pool its blocks belong to.
+            allocation_owner: Allocates any successor the leaf draws.
         """
         return {}
 
@@ -458,9 +517,15 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
         req_id: RequestID,
         num_committed_blocks: int,
         replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
         """Keeps every block: this group reads its whole history."""
         return
+
+    @property
+    def has_full_prefix_dependency(self) -> bool:
+        """Returns true: this group reads its whole history."""
+        return True
 
     def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
         """All of it: this group reads its whole history."""
@@ -598,10 +663,17 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
         req_id: RequestID,
         num_committed_blocks: int,
         replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
-        """Frees the blocks below the window, nulling their slots."""
+        """Frees the blocks below the window, nulling their slots.
+
+        Keeps the window ending at the lowest boundary in ``keep``, which also
+        covers every higher one. With nothing in ``keep``, keeps the window
+        ending at the committed depth.
+        """
         pool = self.pools[replica_idx]
-        first_needed = max(0, num_committed_blocks - self._blocks_in_window)
+        end = min(keep) if keep else num_committed_blocks
+        first_needed = max(0, end - self._blocks_in_window)
         req_blocks = self.rows[req_id][self.leaf_id]
         null_block = pool.null_little_blocks[self.leaf_id]
         for idx in range(first_needed - 1, -1, -1):

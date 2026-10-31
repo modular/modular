@@ -64,14 +64,14 @@ from max.driver import (
     _ChunkedStagingRegion,
     accelerator_api,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheGroupId,
     KVCacheMemory,
     KVCacheParamInterface,
     KVConnectorType,
 )
-from max.nn.kv_cache.cache_params import HostStagingAlloc
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.cache_params import HostStagingAlloc
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     compute_jenga_ratios,
 )
@@ -80,9 +80,11 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from ..kv_connector import (
     ByteCount,
+    CompletedProbe,
     KVConnector,
     KVConnectorTransfer,
     KVLoadRefused,
+    KVProbe,
     KVTransfer,
 )
 from ..paged_kv_cache._common import (
@@ -101,9 +103,44 @@ _HOST_OFFLOAD_MAX_FRACTION_OF_AVAILABLE = 0.9
 _DRIVER_STAGING_CHUNK_BYTES = 4 * 1024**3
 
 # O_DIRECT requires the buffer address and length aligned to the device's
-# logical block size; 4 KiB covers the devices MAX runs on and matches
-# `DIRECT_IO_ALIGN` in rust_kv/kv-tier-connector/src/disk_tier.rs.
+# logical block size. Host rows are padded to 4 KiB, the ext4/XFS block size,
+# rather than to the 512 bytes many devices accept: a direct write that is not
+# block-aligned serializes on the file's inode lock, and an unaligned hole
+# punch zeroes its edges through the page cache. Matches `DIRECT_IO_ALIGN` in
+# rust_kv/kv-tier-connector/src/disk_tier.rs.
 _DIRECT_IO_ALIGN_BYTES = 1 << 12
+
+
+def _host_row_bytes(block_bytes: int, direct_io: bool) -> int:
+    """The host row (and disk slot) a block of ``block_bytes`` occupies."""
+    if not direct_io:
+        return block_bytes
+    return -(-block_bytes // _DIRECT_IO_ALIGN_BYTES) * _DIRECT_IO_ALIGN_BYTES
+
+
+def _log_padded_rows(
+    leaf_memory: Mapping[str, KVCacheMemory], row_bytes: Mapping[str, int]
+) -> None:
+    """Logs the leaves whose host rows direct I/O pads, and what it costs."""
+    padded = {
+        leaf_id: (mem.host_bytes_per_page, row_bytes[leaf_id])
+        for leaf_id, mem in leaf_memory.items()
+        if row_bytes[leaf_id] != mem.host_bytes_per_page
+    }
+    if not padded:
+        return
+    total_block = sum(mem.host_bytes_per_page for mem in leaf_memory.values())
+    total_row = sum(row_bytes.values())
+    logger.info(
+        "TierConnector: direct I/O pads host rows and disk slots to "
+        f"{_DIRECT_IO_ALIGN_BYTES} bytes: "
+        + ", ".join(
+            f"{leaf_id} {block}->{row} (+{(row - block) / block:.1%})"
+            for leaf_id, (block, row) in padded.items()
+        )
+        + f"; {(total_row - total_block) / total_block:.1%} more bytes per "
+        "page across all leaves"
+    )
 
 
 @functools.cache
@@ -215,10 +252,12 @@ _GTT_SHARED_LIMIT_NOTE = (
 
 
 def _check_gtt_capacity(requested_bytes: int) -> None:
-    """Raises when a driver-allocated host staging region exceeds the node's
-    free GTT (GPU driver pinned memory) -- the limit that binds for
-    ``host_staging_alloc='driver'`` on HIP, where the allocation is NOT
-    charged to this process's memory cgroup."""
+    """Raises when driver-allocated host staging exceeds free GTT.
+
+    GTT is the GPU driver's pinned memory, and it is the limit that binds
+    for ``host_staging_alloc='driver'`` on HIP, where the allocation is NOT
+    charged to this process's memory cgroup.
+    """
     usage = _read_gtt_usage()
     if usage is None:
         logger.warning(
@@ -467,6 +506,18 @@ def _alloc_chunked_staging_region(
     return region
 
 
+def _leaf_recency(group_id: KVCacheGroupId, page_size: int) -> tuple[str, int]:
+    """Returns how the native ``touch`` orders a leaf's blocks.
+
+    The kind, and for a sliding window its width in blocks.
+    """
+    if group_id.is_sliding_window():
+        return ("sliding_window", group_id.blocks_in_window(page_size))
+    if group_id.is_recurrent():
+        return ("recurrent", 0)
+    return ("full_sequence", 0)
+
+
 class TierConnector(KVConnector):
     """KVConnector backed by a native host/disk tiered connector."""
 
@@ -572,6 +623,10 @@ class TierConnector(KVConnector):
             num_disk_workers,
             num_h2d_onload_lanes,
             use_disk_direct_io,
+            leaf_recency=[
+                _leaf_recency(group_id, page_size)
+                for group_id in leaves.values()
+            ],
         )
         # Set only once the native connector exists, so `__del__` on a
         # half-built instance has nothing to stop.
@@ -592,6 +647,7 @@ class TierConnector(KVConnector):
         params: KVCacheParamInterface,
         device_memory_bytes: int,
     ) -> TierConnector:
+        """Builds a tiered connector for the given leaves and replicas."""
         _validate_leaves(leaves)
         leaf0 = next(iter(leaves.keys()))
         cfg = params.kv_connector_config
@@ -718,25 +774,18 @@ class TierConnector(KVConnector):
         else:
             _check_host_memory_capacity(host_offload_max_bytes)
 
+        # Each leaf's host row: its block's bytes, padded under direct I/O to a
+        # whole number of 4 KiB so the disk tier reads and writes the row in
+        # place. Only the host row and its disk slot grow; the device block
+        # does not, and the copies move only its bytes.
         leaf_cache_sizes = {
-            leaf_id: leaf_buffers.host_bytes_per_page
+            leaf_id: _host_row_bytes(
+                leaf_buffers.host_bytes_per_page, use_disk_direct_io
+            )
             for leaf_id, leaf_buffers in replica_kv_memory[0].items()
         }
         if use_disk_direct_io:
-            # O_DIRECT needs every block length aligned to 4096 bytes. Check
-            # all leaves before allocating anything, so one error names every
-            # offender.
-            unaligned = {
-                leaf_id: size
-                for leaf_id, size in leaf_cache_sizes.items()
-                if size % _DIRECT_IO_ALIGN_BYTES != 0
-            }
-            if unaligned:
-                raise ValueError(
-                    "use_disk_direct_io requires every leaf's block size to "
-                    f"be a multiple of 4096 bytes; offending leaves: {unaligned}. "
-                    "Disable the flag."
-                )
+            _log_padded_rows(replica_kv_memory[0], leaf_cache_sizes)
         # The host pool is built without a null block -- unlike the device
         # pool -- so it hands out every huge block, and one is enough.
         num_huge_blocks, huge_page_bytes, cache_ratios = compute_jenga_ratios(
@@ -776,9 +825,8 @@ class TierConnector(KVConnector):
             max_leaf_id_len = max(len(leaf_id) for leaf_id in leaves)
             for leaf_id in leaves:
                 ratio = cache_ratios[leaf_id]
-                mem = replica_kv_memory[0][leaf_id]
                 logger.info(
-                    f"\t{leaf_id:<{max_leaf_id_len}}: {ratio * num_huge_blocks} pages of {mem.host_bytes_per_page}  ({ratio} per huge page)"
+                    f"\t{leaf_id:<{max_leaf_id_len}}: {ratio * num_huge_blocks} pages of {leaf_cache_sizes[leaf_id]}  ({ratio} per huge page)"
                 )
 
             return cls(
@@ -805,10 +853,12 @@ class TierConnector(KVConnector):
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        """Returns the leaf IDs this connector services."""
         return self._leaves
 
     @property
     def name(self) -> str:
+        """Reports the name ``TieredConnector`` in logs and metrics."""
         return "TieredConnector"
 
     def lookup(
@@ -816,12 +866,13 @@ class TierConnector(KVConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Which of ``block_hashes`` the host and disk tiers hold, per leaf.
 
-        ``hint`` is ignored for the same reason :meth:`load` ignores it. The
-        Rust side knows leaves only by index, so the answer comes back in
-        ``leaves()`` order and is keyed here.
+        ``hint`` is ignored for the same reason :meth:`load` ignores it, and
+        ``chain_start`` with it. The Rust side knows leaves only by index, so
+        the answer comes back in ``leaves()`` order and is keyed here.
 
         Takes no pin, and the disk index is not this thread's alone: an
         offload's write-through LRU-evicts from it on the disk-write lane. A
@@ -853,6 +904,36 @@ class TierConnector(KVConnector):
                 f"{len(leaf_ids)}-leaf tree over {width} blocks"
             )
         return dict(zip(leaf_ids, resident, strict=True))
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> Sequence[Mapping[str, Sequence[bool]]]:
+        """Answers every replica with one :meth:`lookup`.
+
+        The tiers are keyed by hash alone, so every replica can load the same
+        blocks.
+        """
+        return [self.lookup(block_hashes, hint=hint)] * len(replica_idxs)
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe:
+        """Answers :meth:`probe` at once, as a handle the manager keeps.
+
+        The manager reads it again at the request's first allocation, which
+        then loads from it rather than looking up again.
+        """
+        return CompletedProbe(self.probe(block_hashes, replica_idxs, hint))
+
+    def probe_is_lookup(self) -> bool:
+        """Returns ``True``, since :meth:`probe` is one :meth:`lookup`."""
+        return True
 
     def load(
         self,
@@ -965,9 +1046,21 @@ class TierConnector(KVConnector):
     def touch(
         self, block_hashes: Sequence[bytes], replica_idx: int = 0
     ) -> None:
-        return None
+        """Refreshes each leaf's recency in the tiers.
+
+        Does not raise. A missed touch costs a later refetch.
+        """
+        del replica_idx
+        try:
+            self._native.reclaim()
+            self._native.touch(list(block_hashes))
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException:
+            logger.exception("Tier touch skipped")
 
     def shutdown(self) -> None:
+        """Stops the native lanes and releases the host and disk regions."""
         if self._shutdown:
             return
         self._shutdown = True
@@ -982,6 +1075,7 @@ class TierConnector(KVConnector):
 
     @property
     def host_byte_count(self) -> ByteCount:
+        """Reports free and total pinned host bytes."""
         return ByteCount(
             free=self._native.free_host_bytes(),
             total=self._native.host_bytes(),
@@ -989,12 +1083,14 @@ class TierConnector(KVConnector):
 
     @property
     def disk_byte_count(self) -> ByteCount:
+        """Reports free and total offload directory bytes."""
         return ByteCount(
             free=self._native.free_disk_bytes(),
             total=self._native.disk_bytes(),
         )
 
     def reset_prefix_cache(self) -> None:
+        """Clears the native prefix cache."""
         self._native.reset_prefix_cache()
 
     def _wrap_native_metrics(
@@ -1012,9 +1108,11 @@ class TierConnector(KVConnector):
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters without resetting them."""
         return self._wrap_native_metrics(*self._native.metrics())
 
     def take_metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters and resets the refusal counters."""
         metrics = self._wrap_native_metrics(*self._native.take_metrics())
         self._loads_refused = 0
         self._offload_blocks_dropped = 0

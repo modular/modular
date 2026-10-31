@@ -890,19 +890,19 @@ def callMaybeStatic(a: Int, b: EmptyStruct):
 def initializersAsFunctions():
     # Register passable trivial.
     # CHECK-NEXT: %def_ptr1 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::SIMD[DType.int, 1])")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::SIMD[DType.int, 1])")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr1
     var def_ptr1: def (:Int) thin -> MyInt = MyInt.__init__
 
     # Register passable non-trivial.
 
     # CHECK-NEXT: %def_ptr2 = lit.var.decl "def_ptr2"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr2
     var def_ptr2: def () thin -> StructExample = StructExample.__init__
 
     # CHECK-NEXT: %def_ptr4 = lit.var.decl "def_ptr4"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__init__(copy:{{.*}}"]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr{{.*}}@StructExample::@"__init__(copy:{{.*}}"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr4
     var def_ptr4: def (
         *, copy: StructExample
@@ -910,7 +910,7 @@ def initializersAsFunctions():
 
     # Memory
     # CHECK-NEXT: %def_ptr5 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::SIMD[DType.int, 1])")
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::SIMD[DType.int, 1])")
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr5
     var def_ptr5: def (Int) thin -> StructWithInit = StructWithInit.__init__
 

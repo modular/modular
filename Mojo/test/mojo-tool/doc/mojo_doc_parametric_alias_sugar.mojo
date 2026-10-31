@@ -128,9 +128,8 @@ def take_nested(p: Pair[Doubled[Int], IntPair]):
     pass
 
 
-# Binding the `_` adds a parameter, so the bound type no longer matches the
-# alias and prints expanded.
-# CHECK-DAG: "signature": "def take_partial(p: Pointer[Int])"
+# A `_` binds to an implicit parameter, so the type keeps its alias.
+# CHECK-DAG: "signature": "def take_partial(p: UnsafePointer[Int])"
 def take_partial(p: UnsafePointer[mut=True, Int, _]):
     pass
 

@@ -31,6 +31,12 @@ from max.gpu.primitives.cluster import (
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from max.gpu import (
     block_id_in_cluster,
     thread_idx,
@@ -85,6 +91,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -188,8 +195,8 @@ def load_AB[
     num_pipeline_stages: Int,
     //,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
@@ -600,10 +607,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     //,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
 ](
     tmem_addr: UInt32,
     a_smem_tiles: SMemTileArray2D[
@@ -751,7 +758,7 @@ def stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.static_stride[0]
     comptime stride1 = dst.static_stride[1]
-    comptime assert stride1 == 1, "stride1 must be 1. Got: " + String(stride1)
+    comptime assert stride1 == 1, String(t"stride1 must be 1. Got: {stride1}")
     comptime shape0 = dst.static_shape[
         1
     ] if not transpose_c else dst.static_shape[0]
@@ -825,8 +832,8 @@ def multi_stage_store_C[
     *,
     c_smem_layout: Layout,
     accum_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     stage_stride_cols: Int,
     c_static_N: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1012,13 +1019,19 @@ def multi_stage_store_C[
         tmem_copy_async(
             TileTensor(upper_frag.unsafe_ptr(), FragRegs),
             tmem_16x256b(
-                stage_tile.tile[FRAGMENT_LANES, stageN](coord[0, stage])
+                stage_tile[
+                    : Idx[FRAGMENT_LANES],
+                    Idx[stage * stageN] : Idx[(stage + 1) * stageN],
+                ]
             ),
         )
         tmem_copy_async(
             TileTensor(lower_frag.unsafe_ptr(), FragRegs),
             tmem_16x256b(
-                stage_tile.tile[FRAGMENT_LANES, stageN](coord[1, stage])
+                stage_tile[
+                    Idx[FRAGMENT_LANES] : Idx[2 * FRAGMENT_LANES],
+                    Idx[stage * stageN] : Idx[(stage + 1) * stageN],
+                ]
             ),
         )
         TMemEngine.wait_load()
@@ -1184,12 +1197,9 @@ def multi_stage_store_C[
             comptime assert (
                 transpose_c
             ), "Unaligned handling only supports transpose_c"
-            comptime assert MMA_M == 256 or cta_group == 1, (
-                "Unaligned handling only supports MMA_M == 256 or cta_group =="
-                " 1. Got "
-                + String(MMA_M)
-                + " and "
-                + String(cta_group)
+            comptime assert MMA_M == 256 or cta_group == 1, String(
+                t"Unaligned handling only supports MMA_M == 256 or "
+                t"cta_group == 1. Got {MMA_M} and {cta_group}"
             )
 
             comptime chunkM = st_matrix_swizzle.bytes() // size_of[c_type]()
@@ -1199,10 +1209,9 @@ def multi_stage_store_C[
                 chunk_num, stageN, vec_chunkM
             )
             comptime thread_num = num_output_warps * WARP_SIZE
-            comptime assert logical_c_layout.size() % thread_num == 0, (
-                "logical_c_layout.size() must be a multiple of thread_num. Got "
-                + String(logical_c_layout.size())
-                + "."
+            comptime assert logical_c_layout.size() % thread_num == 0, String(
+                t"logical_c_layout.size() must be a multiple of thread_num."
+                t" Got {logical_c_layout.size()}."
             )
             comptime value_shape = logical_c_layout.size() // thread_num
             comptime cN = c_static_N
@@ -1296,10 +1305,8 @@ def zero_output[
     var ptr = c_ptr.unsafe_offset(Int(coord[1]) * c_stride).unsafe_offset(
         Int(coord[0])
     )
-    comptime assert thread_num * simd_size >= output_N, (
-        "output_N must be less than thread_num * simd_size. Got "
-        + String(output_N)
-        + "."
+    comptime assert thread_num * simd_size >= output_N, String(
+        t"output_N must be less than thread_num * simd_size. Got {output_N}."
     )
     comptime row_thread_num = UInt32(output_N // simd_size)
     var row_boundary = (UInt32(c_N) - coord[0]) // UInt32(simd_size)
@@ -1331,8 +1338,8 @@ def zero_output_epilogue[
     /,
     *,
     c_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     c_static_N: Int,
     c_swizzle: TensorMapSwizzle,
     cta_group: Int,
@@ -1420,7 +1427,13 @@ def zero_output_epilogue[
 # splitting. Thus, we simply take the `work_tile_coord` without scaling it
 # in the callee; the scheduler returns element coordinates instead of tile
 # coordinates.
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -1436,9 +1449,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
     b_desc_shape: Coord,
     c_tile_shape: Coord,
     c_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     num_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     num_output_stages: Int = 2,
@@ -1458,6 +1471,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     K_actual: Int = 0,
     a_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
     b_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     expert_usage_stats: ImmPointer[UInt32, ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -1537,6 +1551,12 @@ def blackwell_tma_umma_warp_specialized_kernel[
             CUDA-core fallback (defaults to `type_of(row_major[1, 1]())`).
         b_gmem_layout: Layout of the B global-memory tensor, used only by the
             CUDA-core fallback (defaults to `type_of(row_major[1, 1]())`).
+        pdl_level: Programmatic dependent launch level; above `PDLLevel.OFF`
+            the kernel waits for the predecessor grid immediately before
+            reading `expert_usage_stats`. `PDLLevel.OVERLAP_AT_BEGINNING`
+            releases dependent grids after the TMEM allocation, any other
+            level at the end of the body (defaults to `PDLLevel()`, which is
+            off).
 
     Args:
         expert_usage_stats: Pointer to per-expert usage stats; index 1 holds
@@ -1700,7 +1720,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+                Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
             )
 
         comptime for i in range(num_accum_pipeline_stages):
@@ -1730,13 +1750,27 @@ def blackwell_tma_umma_warp_specialized_kernel[
         mma_shape,
         accum_type=accum_type,
         cta_group=cta_group,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         transpose_b=transpose_b,
     ]()
+
+    # Everything above this point builds descriptors, shared-memory views and
+    # mbarriers, and touches only this CTA's own state, so it runs while the
+    # predecessor grid is still finishing. `expert_usage_stats` is written by
+    # the MoE index kernel that precedes us, so the wait goes immediately
+    # before its first read -- after the TMA descriptor prefetch and the
+    # mbarrier/cluster setup, and before any global load. `b_offsets` is also
+    # written by the predecessor, so the scheduler reads it with plain loads
+    # under PDL: ptxas hoists an invariant `ld.global.nc` of `b_offsets[0]`
+    # above the wait.
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
 
     # num_active_experts is a TileScheduler loop bound, and the persistent grid
     # is fixed at one CTA per SM, so it can be read from the device tensor
@@ -1748,12 +1782,15 @@ def blackwell_tma_umma_warp_specialized_kernel[
     )
     var scheduler = TileScheduler[
         static_MN=expert_m,
-        cluster=Index(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
+        cluster=(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
         cta_group=cta_group,
-        tile_shape=Index(
-            block_tile_shape[0], block_tile_shape[1], block_tile_shape[2]
+        tile_shape=(
+            block_tile_shape[0],
+            block_tile_shape[1],
+            block_tile_shape[2],
         ),
         swapAB=transpose_c,
+        invariant_offsets=pdl_level == PDLLevel.OFF,
     ](num_active_experts, b_offsets_tensor)
 
     var work_info = scheduler.fetch_next_work()
@@ -1863,6 +1900,18 @@ def blackwell_tma_umma_warp_specialized_kernel[
         # non blocking, arrives and proceeds
         named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
+        # The allocation stays below `wait_on_dependent_grids()`: a CTA that
+        # holds the SM's TMEM while it waits can deadlock against a
+        # predecessor CTA that released this grid before its own allocation
+        # and is still resident on the same SM. Releasing dependents here
+        # only decides when they are scheduled; their own wait still blocks
+        # until this grid has completed. A dependent launches only after every
+        # CTA of this grid has released it, so none is left unscheduled behind
+        # it, and each CTA already holds its TMEM, so a dependent that
+        # allocates TMEM before its own wait cannot starve this grid of it.
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
+
         var tmem_addr = ptr_tmem_addr[0]
 
         while not work_info.is_done():
@@ -1889,8 +1938,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
                         cta_group=cta_group,
-                        cluster_shape=Index(
-                            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+                        cluster_shape=(
+                            Int(cluster_shape[0]),
+                            Int(cluster_shape[1]),
+                            Int(cluster_shape[2]),
                         ),
                     ](
                         tmem_offset,
@@ -2029,6 +2080,15 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
         _ = tmem_dealloc_mbar[].arrive()
 
+    # Release the grids that depend on this one: every store has been issued by
+    # the epilogue role above, and a dependent's own `wait_on_dependent_grids`
+    # still blocks until this grid has completed and its stores are visible.
+    # (`OVERLAP_AT_BEGINNING` released them earlier, after the TMEM allocation.)
+    comptime if pdl_level > PDLLevel.OFF and (
+        pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
+        launch_dependent_grids()
+
 
 def grouped_matmul_sm100_persistent[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
@@ -2047,6 +2107,7 @@ def grouped_matmul_sm100_persistent[
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2093,6 +2154,9 @@ def grouped_matmul_sm100_persistent[
             the TMA store (defaults to False).
         a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane
             row offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
+        pdl_level: Programmatic dependent launch level, forwarded to the
+            warp-specialized kernel and to its launch attributes (defaults
+            to `PDLLevel()`, which disables PDL).
 
     Args:
         c: Output C tile tensor in generic address space.
@@ -2136,6 +2200,7 @@ def grouped_matmul_sm100_persistent[
         # Plane-split boundaries (output-column element offsets) for the optional
         # activation plane select, forwarded unchanged across the swapAB boundary.
         a_plane_splits=a_plane_splits,
+        pdl_level=pdl_level,
     ](
         c.ptr.as_unsafe_any_origin(),
         b.ptr.as_unsafe_any_origin(),  # weights (a after swapAB)
@@ -2174,6 +2239,7 @@ def _grouped_matmul_sm100_persistent[
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
     has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
     a_ptr: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
@@ -2385,11 +2451,7 @@ def _grouped_matmul_sm100_persistent[
         config.block_tile_shape,
         config.mma_shape,
         transpose_b=transpose_b,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(cluster_shape[0]),
-            Int32(cluster_shape[1]),
-            Int32(cluster_shape[2]),
-        ),
+        cluster_shape=cluster_shape,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
@@ -2408,11 +2470,12 @@ def _grouped_matmul_sm100_persistent[
         ComputeFnType=ComputeFnType,
         has_compute_fn=has_compute_fn,
         a_plane_splits=a_plane_splits,
+        pdl_level=pdl_level,
     ]
 
-    comptime assert (
-        cluster_shape[1] == 1
-    ), "cluster_shape[1] must be 1. Got " + String(cluster_shape[1])
+    comptime assert cluster_shape[1] == 1, String(
+        t"cluster_shape[1] must be 1. Got {cluster_shape[1]}"
+    )
 
     var grid_dim = (
         B200.sm_count,
@@ -2441,6 +2504,7 @@ def _grouped_matmul_sm100_persistent[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_size)
         ),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
     # Keep the C-descriptor scratch buffer alive until the kernel launch above

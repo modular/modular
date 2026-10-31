@@ -16,9 +16,9 @@ from std.memory import alloc, Pointer
 from std.os import getenv
 from std.testing import assert_equal, assert_raises, assert_true
 
-from _hal import Driver, Context
-from _hal.device import DeviceSpec
-from _hal.event import EVENT_FLAG_CPU_VISIBLE
+from max._driver import Driver, Context
+from max._driver.max_license.hal.device import DeviceSpec
+from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
 
 
 def do_queue_stream_sync_test[

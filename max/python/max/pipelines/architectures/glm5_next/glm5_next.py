@@ -65,26 +65,27 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import ColumnParallelLinear
-from max.nn.norm import RMSNorm
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.transformer import forward_sequential_layers
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import ColumnParallelLinear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.transformer import forward_sequential_layers
 from max.pipelines.architectures.deepseekV3.deepseekV3 import (
     deepseek_logits_postprocess,
 )
 from max.pipelines.architectures.deepseekV3_2.layers import (
     DeepseekV3_2TopKRouter,
 )
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from max.tree import Tree
 
 from .layers.decoder import Glm5NextDecoderLayer
@@ -184,6 +185,9 @@ class Glm5Next(Module):
                 self.embed_tokens.weight if config.tie_word_embeddings else None
             ),
         )
+        # A speculative verify reads only the variable logits, so it skips
+        # the last-token projection, a vocab-wide matmul per step.
+        self.emit_last_token_logits = True
 
     # ------------------------------------------------------------- schedule
 
@@ -214,14 +218,15 @@ class Glm5Next(Module):
         """
         return self.config.mhc and layer_idx < self.config.num_hidden_layers
 
-    def uses_moe(self, layer_idx: int) -> bool:
+    @staticmethod
+    def uses_moe(config: Glm5NextConfig, layer_idx: int) -> bool:
         """Whether ``layer_idx`` has an MoE block rather than a dense MLP.
 
         Layers 0-2 are dense at width ``intermediate_size`` (12288); 3 onward,
         the MTP layer included, are MoE at ``moe_intermediate_size`` (2048)
         with one shared expert and eight of 288 routed.
         """
-        return layer_idx >= self.config.first_k_dense_replace
+        return layer_idx >= config.first_k_dense_replace
 
     def subgraph_layer_groups(self) -> list[list[int]]:
         """Groups the decoder layers that can share one compiled subgraph.
@@ -252,7 +257,10 @@ class Glm5Next(Module):
             return []
         groups: dict[tuple[str, bool], list[int]] = {}
         for layer_idx in range(self.config.num_hidden_layers):
-            key = (self.layer_type(layer_idx), self.uses_moe(layer_idx))
+            key = (
+                self.layer_type(layer_idx),
+                self.uses_moe(self.config, layer_idx),
+            )
             groups.setdefault(key, []).append(layer_idx)
         return [group for group in groups.values() if len(group) > 1]
 
@@ -297,24 +305,36 @@ class Glm5Next(Module):
                     config,
                     layer_idx,
                     self_attn=self_attn,
-                    mlp=self.build_mlp(layer_idx),
+                    mlp=self.build_mlp(config, layer_idx, self.ep_manager),
                 )
             )
         return LayerList(layers)
 
-    def build_mlp(self, layer_idx: int) -> Module:
+    @staticmethod
+    def build_mlp(
+        config: Glm5NextConfig,
+        layer_idx: int,
+        ep_manager: EPBatchManager | None,
+    ) -> Module:
         """Returns the feed-forward sublayer for ``layer_idx``.
 
         Dense at ``intermediate_size`` below ``first_k_dense_replace``, MoE at
         ``moe_intermediate_size`` at and above it. Both clamp before the
         activation; see :mod:`.layers.mlp` for why none of MAX's three existing
         clamped-SwiGLU paths can be reused.
-        """
-        config = self.config
-        mlp = self._mlp_module(layer_idx)
-        return Glm5NextMlpSublayer(mlp, config.devices, config, self.ep_manager)
 
-    def _mlp_module(self, layer_idx: int) -> Glm5NextMLP | Glm5NextMoE:
+        Static so that the MTP draft layer, which is built before its target,
+        can build its MoE the same way.
+        """
+        mlp = Glm5Next._mlp_module(config, layer_idx, ep_manager)
+        return Glm5NextMlpSublayer(mlp, config.devices, config, ep_manager)
+
+    @staticmethod
+    def _mlp_module(
+        config: Glm5NextConfig,
+        layer_idx: int,
+        ep_manager: EPBatchManager | None,
+    ) -> Glm5NextMLP | Glm5NextMoE:
         """Returns the unwrapped dense MLP or MoE block for ``layer_idx``.
 
         Mirrors DeepSeek-V3.2's construction, because GLM-5.3-Flash's MoE *is*
@@ -328,7 +348,6 @@ class Glm5Next(Module):
         dtype. Declaring the dense MLPs at the compute dtype instead is the
         first thing weight loading rejects.
         """
-        config = self.config
         quant_cfg = config.quant_config
         quantized = (
             quant_cfg is not None
@@ -337,7 +356,7 @@ class Glm5Next(Module):
         mlp_dtype = config.dtype if quantized else config.compute_dtype
         layer_quant_config = quant_cfg if quantized else None
 
-        if not self.uses_moe(layer_idx):
+        if not Glm5Next.uses_moe(config, layer_idx):
             dense_mlp = Glm5NextMLP(
                 dtype=mlp_dtype,
                 quantization_encoding=None,
@@ -396,7 +415,7 @@ class Glm5Next(Module):
             * config.moe_intermediate_size,
             dtype=mlp_dtype,
             ep_size=ep_size,
-            ep_batch_manager=self.ep_manager,
+            ep_batch_manager=ep_manager,
             quant_config=layer_quant_config,
             shared_experts_dtype=(
                 quant_cfg.shared_experts_dtype(mlp_dtype)
@@ -452,7 +471,8 @@ class Glm5Next(Module):
 
         Five groups, and the order is the contract:
 
-        1. ``tokens``, device row offsets, host row offsets,
+        1. ``tokens``, the per-device vision embeddings, the per-device vision
+           scatter indices, device row offsets, host row offsets,
            ``return_n_logits``, ``data_parallel_splits``
         2. the allreduce signal buffers
         3. both KV cache leaves, flattened -- ``"mla"`` then ``"indexer"``
@@ -462,13 +482,26 @@ class Glm5Next(Module):
         inputs, matching ``deepseekV3_2.py:840`` -- they are fixed by the
         schedule, so nothing has to supply them per step.
 
-        Groups 1-4 are exactly ``DeepseekV3Inputs.buffers``. The recurrent
+        Groups 1-4 are exactly ``Glm5NextInputs.buffers``. The recurrent
         state needs no group of its own: it is a child of the multi-cache, so
         its pools and row ids are already inside group 3.
         """
-        device = self.config.devices[0]
+        devices = self.config.devices
+        device = devices[0]
         types: list[TensorType | BufferType] = [
             TensorType(DType.int64, shape=["total_seq_len"], device=device),
+            *(
+                TensorType(
+                    DType.bfloat16,
+                    shape=["vision_merged_seq_len", self.config.hidden_size],
+                    device=d,
+                )
+                for d in devices
+            ),
+            *(
+                TensorType(DType.int32, shape=["total_image_tokens"], device=d)
+                for d in devices
+            ),
             TensorType(
                 DType.uint32, shape=["input_row_offsets_len"], device=device
             ),
@@ -512,13 +545,18 @@ class Glm5Next(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the graph, whose inputs are :meth:`input_types` for the KV
-        cache parameters this module was built with.
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        The type list is the one for the KV cache parameters this module was
+        built with. The trace adapts the flat graph inputs to :meth:`__call__`:
+        it splits off the per-device vision rows and scatter indices and the
+        signal buffers, unflattens the MLA, indexer and recurrent state caches,
+        and skips ``batch_context_lengths``, which the graph does not read yet.
 
         Adapts the flat graph inputs to :meth:`__call__`: splits off the
-        signal buffers, unflattens the MLA, indexer and recurrent state
-        caches, and skips ``batch_context_lengths``, which the graph does not
-        read yet.
+        per-device vision rows and scatter indices and the signal buffers,
+        unflattens the MLA, indexer and recurrent state caches, and skips
+        ``batch_context_lengths``, which the graph does not read yet.
 
         Args:
             *input_types: The graph's input types.
@@ -537,14 +575,18 @@ class Glm5Next(Module):
         assert kv_params is not None, "trace needs the KV cache parameters"
         num_devices = len(self.config.devices)
 
-        def forward(
-            tokens: Value[Any],
-            device_input_row_offsets: Value[Any],
-            host_input_row_offsets: Value[Any],
-            return_n_logits: Value[Any],
-            _data_parallel_splits: Value[Any],
-            *variadic: Value[Any],
-        ) -> DecoderOutputs:
+        def forward(tokens: Value[Any], *rest: Value[Any]) -> DecoderOutputs:
+            vision_embeddings = [v.tensor for v in rest[:num_devices]]
+            vision_scatter_indices = [
+                v.tensor for v in rest[num_devices : 2 * num_devices]
+            ]
+            (
+                device_input_row_offsets,
+                host_input_row_offsets,
+                return_n_logits,
+                _data_parallel_splits,
+                *variadic,
+            ) = rest[2 * num_devices :]
             it = iter(variadic)
             signal_buffers = [next(it).buffer for _ in range(num_devices)]
             # The recurrent state is a child of the multi-cache, so one
@@ -570,7 +612,7 @@ class Glm5Next(Module):
                 kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
             )
             # Consumed to keep the input prefix identical to
-            # `DeepseekV3Inputs.buffers`; this graph does not read them yet.
+            # `Glm5NextInputs.buffers`; this graph does not read them yet.
             for _ in range(num_devices):
                 next(it)
             ep_inputs = (
@@ -580,6 +622,8 @@ class Glm5Next(Module):
             )
             return self(
                 tokens.tensor,
+                vision_embeddings,
+                vision_scatter_indices,
                 signal_buffers,
                 mla_kv,
                 indexer_kv,
@@ -602,6 +646,8 @@ class Glm5Next(Module):
     def __call__(
         self,
         tokens: TensorValue,
+        vision_embeddings: list[TensorValue],
+        vision_scatter_indices: list[TensorValue],
         signal_buffers: list[BufferValue],
         mla_kv_collections: list[PagedCacheValues],
         indexer_kv_collections: list[PagedCacheValues],
@@ -617,6 +663,12 @@ class Glm5Next(Module):
         and collapsed once before the final norm; every layer takes and returns
         the widened form. Both attention families receive rank-2 sequences --
         the widening is entirely inside the decoder layer's two mHC sites.
+
+        Vision rows replace the embeddings at their placeholder positions
+        before the widening, which is the whole vision-to-language interface:
+        the decoder is NoPE, so no position ids change. The indices are
+        batch-global, which is right on every device because the embedding is
+        replicated and the token axis is split only inside the MLP.
         """
         config = self.config
         devices = config.devices
@@ -626,7 +678,15 @@ class Glm5Next(Module):
                 "ep_config is set, so the EP communication buffers must be "
                 "passed through from the graph inputs."
             )
-        h = self.embed_tokens(tokens, signal_buffers)
+        h = [
+            merge_multimodal_embeddings(x, embeddings, indices)
+            for x, embeddings, indices in zip(
+                self.embed_tokens(tokens, signal_buffers),
+                vision_embeddings,
+                vision_scatter_indices,
+                strict=True,
+            )
+        ]
         row_offsets = ops.distributed_broadcast(
             input_row_offsets.to(devices[0]), signal_buffers
         )
@@ -708,4 +768,5 @@ class Glm5Next(Module):
             is_data_parallel_attention=config.data_parallel_degree > 1,
             return_logits=config.return_logits,
             return_hidden_states=config.return_hidden_states,
+            emit_last_token_logits=self.emit_last_token_logits,
         )

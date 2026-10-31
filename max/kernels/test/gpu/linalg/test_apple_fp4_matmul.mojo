@@ -147,7 +147,7 @@ def _check_vs_host_ref(
             var got = out_host[i * N + j]
             if abs(got - acc) > Float32(1e-2) + Float32(1.6e-2) * abs(acc):
                 if pass_:
-                    print("FAIL[", name, "]:", i, j, "got", got, "exp", acc)
+                    print(t"FAIL[ {name} ]: {i} {j} got {got} exp {acc}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (", name, "; see FAIL lines above)")
@@ -166,7 +166,7 @@ def _run_stage1_oracle(
     `out = activation[M, K] @ weight[N, K]^T` (transpose_b=True). The host
     reference dequantizes the weight per the formula and accumulates in fp32.
     """
-    print("== stage1", name, M, "x", N, "x", K)
+    print(t"== stage1 {name} {M} x {N} x {K}")
     var packed_k = K // 2
     var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
@@ -230,7 +230,7 @@ def _run_stage1_oracle(
             # bf16 MMA tolerance (matches the matmul test's bf16 bound).
             if abs(got - acc) > Float32(1e-2) + Float32(1.6e-2) * abs(acc):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", acc)
+                    print(t"FAIL: {i} {j} got {got} exp {acc}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -251,7 +251,7 @@ def _run_stage2_fused(
     Both paths do identical dequant arithmetic into bf16 and the same bf16 MMA,
     so they must match to the last bit on every shape.
     """
-    print("== stage2", name, M, "x", N, "x", K)
+    print(t"== stage2 {name} {M} x {N} x {K}")
     var packed_k = K // 2
     var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
@@ -314,7 +314,7 @@ def _run_stage2_fused(
         # Bit-exact: identical dequant + identical MMA.
         if r != f:
             if pass_:
-                print("FAIL: idx", i, "ref", r, "fused", f)
+                print(t"FAIL: idx {i} ref {r} fused {f}")
             pass_ = False
     if not pass_:
         raise Error("FAILED (fused != materialized; see FAIL lines)")
@@ -340,7 +340,7 @@ def _run_stage3_global_scale(
     agree within the bf16-MMA tolerance (the global scalar is applied in fp32 on
     BOTH sides, so it adds no extra error beyond the matmul itself).
     """
-    print("== stage3", name, M, "x", N, "x", K, "scale2", scale2)
+    print(t"== stage3 {name} {M} x {N} x {K} scale2 {scale2}")
     var packed_k = K // 2
     var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
@@ -398,7 +398,7 @@ def _run_stage3_global_scale(
             var got = out_host[i * N + j] * scale2
             if abs(got - exp) > Float32(1e-2) + Float32(1.6e-2) * abs(exp):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", exp)
+                    print(t"FAIL: {i} {j} got {got} exp {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -435,7 +435,7 @@ def _run_stage4_dispatch_paths(
 
     Keep `N*K` small: the host reference is O(M*N*K).
     """
-    print("== stage4", name, M, "x", N, "x", K)
+    print(t"== stage4 {name} {M} x {N} x {K}")
     var packed_k = K // 2
     var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
@@ -530,7 +530,7 @@ def _parity_and_hostref[
     At small shapes also checks the fused output against an independent fp32 host
     reduction (so a bug shared by both device paths cannot pass silently).
     """
-    print("== stage5", "smem" if use_smem else "reg", name, M, "x", N, "x", K)
+    print(t"== stage5 {"smem" if use_smem else "reg"} {name} {M} x {N} x {K}")
     comptime a_type = DType.bfloat16
     comptime c_type = DType.float32
     var packed_k = K // 2
@@ -622,14 +622,8 @@ def _parity_and_hostref[
             nmis += 1
             if nmis <= 8:
                 print(
-                    "  PARITY MISMATCH [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "] fused",
-                    f,
-                    "oracle",
-                    o,
+                    t"  PARITY MISMATCH [ {i // N} , {i % N} ] fused"
+                    t" {f} oracle {o}"
                 )
     if nmis == 0:
         comptime if bit_exact:
@@ -645,14 +639,7 @@ def _parity_and_hostref[
             )
     else:
         print(
-            "  PARITY FAIL:",
-            nmis,
-            "/",
-            M * N,
-            "maxabs=",
-            maxabs,
-            "maxrel=",
-            maxrel,
+            t"  PARITY FAIL: {nmis} / {M * N} maxabs= {maxabs} maxrel= {maxrel}"
         )
         raise Error("matmul2d_fp4 parity mismatch " + name)
 
@@ -680,7 +667,7 @@ def _parity_and_hostref[
         if hmis == 0:
             print("  HOST-REF OK (maxrel=", hmaxrel, ")")
         else:
-            print("  HOST-REF FAIL:", hmis, "/", M * N, "maxrel=", hmaxrel)
+            print(t"  HOST-REF FAIL: {hmis} / {M * N} maxrel= {hmaxrel}")
             raise Error("matmul2d_fp4 host-ref mismatch " + name)
 
     _ = a_dev^

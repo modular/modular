@@ -22,8 +22,8 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
@@ -80,6 +80,7 @@ class Idefics3ModuleV3BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The graph's symbolic inputs, over the ragged KV cache."""
         return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,
@@ -147,6 +148,7 @@ class Idefics3ModuleV3BatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Idefics3Inputs:
+        """Builds the first step's inputs from the replica batches."""
         if len(replica_batches) > 1:
             raise ValueError(
                 "Idefics3ModuleV3BatchProcessor does not support DP>1"
@@ -185,6 +187,7 @@ class Idefics3ModuleV3BatchProcessor(
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
     ) -> ModelOutputs:
+        """Maps the ragged KV graph outputs to model outputs."""
         return process_ragged_kv_outputs(
             outputs,
             return_logits=self.runtime.return_logits,

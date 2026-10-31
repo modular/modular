@@ -25,8 +25,12 @@ from std.sys import size_of
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import TensorEngine, TensorLayout, TileTensor, row_major
-from std.utils.index import IndexList
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
@@ -60,13 +64,16 @@ def _transpose_rscf_to_krsc[
     var _C = Int(C)
     var _F = Int(F)
     var tid = global_idx.x
+
     if tid >= _R * _S * _C * _F:
         return
     var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    dst_ptr.unsafe_store(tid, src.load((r, s, c, k))[0])
+
+    with PDL():
+        dst_ptr.unsafe_store(tid, src.load((r, s, c, k))[0])
 
 
 @__name(t"transpose_fcrs_to_krsc_{dtype}")
@@ -89,13 +96,16 @@ def _transpose_fcrs_to_krsc[
     var _R = Int(R)
     var _S = Int(S)
     var tid = global_idx.x
+
     if tid >= _F * _C * _R * _S:
         return
     var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
     r, rem = divmod(rem, _S * _C)
     var s, c = divmod(rem, _C)
-    dst_ptr.unsafe_store(tid, src.load((k, c, r, s))[0])
+
+    with PDL():
+        dst_ptr.unsafe_store(tid, src.load((k, c, r, s))[0])
 
 
 # =========================================================================
@@ -145,7 +155,7 @@ def dispatch_sm100_conv2d[
     input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    symmetric_padding: IndexList[2],
+    symmetric_padding: Coord[Int, Int],
     ctx: DeviceContext,
     source_ptr: OptionalReg[
         MutPointer[Scalar[output_type], MutAnyOrigin]
@@ -175,7 +185,7 @@ def dispatch_sm100_conv2d[
         input: Input activation tensor in NHWC layout.
         filter: Filter weights tensor.
         output: Output tensor in NHWC layout.
-        symmetric_padding: Symmetric padding (pad_h, pad_w).
+        symmetric_padding: Symmetric padding (pad_h, pad_w) as a `Coord`.
         ctx: Device context for kernel launch.
         source_ptr: Pointer to residual source tensor C (NHWC, same shape
             as output). Only used when has_residual is True.
@@ -251,6 +261,7 @@ def dispatch_sm100_conv2d[
                 Int32(S),
                 grid_dim=grid,
                 block_dim=transpose_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             var R = Int(filter.dim[0]())
@@ -272,6 +283,7 @@ def dispatch_sm100_conv2d[
                 Int32(F),
                 grid_dim=grid,
                 block_dim=transpose_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Construct problem shape and TileTensors

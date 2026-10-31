@@ -22,8 +22,8 @@ from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.pipelines.architectures.llama3.model import (
     Llama3Inputs,
     LlamaModelBase,
@@ -46,6 +46,7 @@ class HYV3Inputs(Llama3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         data_parallel_splits = self.data_parallel_splits
         host_input_row_offsets = self.host_input_row_offsets
         dp_buffers: tuple[Buffer, ...] = ()

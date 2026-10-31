@@ -605,7 +605,10 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   }];
 
   let arguments = (ins
-    KGEN_SymbolConstantAttr:$callee,
+    // TODO: This should take a FuncSymbolAttr directly: it will tighten up the
+    // call-like ops such that they can only take a FuncType (which is
+    // guaranteed to be fully bound) as the callee.
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
     Variadic<AnyType>:$operands,
     DefaultValuedAttr<KGEN_TailKindAttr, "{}">:$tailKind
   );
@@ -618,7 +621,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   }];
 
   let builders = [
-    OpBuilder<(ins "SymbolConstantAttr":$callee, "ValueRange":$operands), [{
+    OpBuilder<(ins "FuncSymbolGenerator":$callee, "ValueRange":$operands), [{
       auto tailKind = TailKindAttr::get($_builder.getContext(), TailKind::None);
       return build($_builder, $_state,
         callee.getType().getBody().getValues().getResults(), callee,
@@ -627,11 +630,15 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   ];
 
   let extraClassDeclaration = [{
-    void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
+    void concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee);
+
+    FuncSymbolGenerator getCalleeGenerator() {
+      return FuncSymbolGenerator(getCallee());
+    }
 
     /// Return the symbol reference to the callee.
     FlatSymbolRefAttr getCalleeSymbol() {
-      return cast<FlatSymbolRefAttr>(getCallee().getSymbol());
+      return cast<FlatSymbolRefAttr>(getCalleeGenerator().getSymbol());
     }
 
     FuncTypeGeneratorType getCalleeType() {
@@ -640,7 +647,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
     /// Return the bound input parameter values.
     ArrayRef<TypedAttr> getParamValues() {
-      return getCallee().getParamValues();
+      return getCalleeGenerator().getParamValues();
     }
   }];
 
@@ -685,7 +692,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   }];
 
   let extraClassDeclaration = [{
-    void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
+    void concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee);
     bool isAllowedInFunc() { return false; }
 
     FuncTypeGeneratorType getCalleeType() {
@@ -1022,82 +1029,35 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
 }
 
 //===----------------------------------------------------------------------===//
-// StageClosureOp
+// CreateFuncPtrOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_StageClosureOp : KGENOp<"stage_closure",
-  [Pure, FunctionLike, DebugInfo_InlinedSubprogramScoped]
->{
-  let summary = "Stage a closure declaring a concrete region";
-  let description = [{
-    The `kgen.stage_closure` operation declares a named concrete region. The
-    region can capture values from its parent region. This operation models
-    nested callable functions within their original scope before lifting them
-    into functions so that we may perform transformations that depend on the
-    original structure of the scopes.
-
-    ```mlir
-    %0 = kgen.stage_closure = () capturing -> index {
-      hlcf.return %arg0 : index
-    }
-    ```
-  }];
-
-  let results = (outs KGEN_FuncTypeGeneratorType:$result);
-  let regions = (region SizedRegion<1>:$bodyRegion);
-
-  let assemblyFormat = [{
-    custom<StageClosureOp>(type($result), $bodyRegion) attr-dict
-  }];
-
-  let extraClassDeclaration = [{
-    ArrayRef<Type> getResultTypes() {
-       return getResult().getType().getBody().getValues().getResults();
-    }
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// CreateClosureOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
+def KGEN_CreateFuncPtrOp : KGEN_CallOpBase<"create_func_ptr", [Pure,
     InferTypeOpAdaptor,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "Create a closure from variables and a function.";
+  let summary = "Materialize a function as a runtime value.";
   let description = [{
-    The `kgen.create_closure` operation represents the instantiation of
-    a closure. This operation models closure creation in terms of a function
-    and local captured variables.
+    The `kgen.create_func_ptr` operation materializes a reference to a function
+    as a runtime function pointer value.
 
     ```mlir
-    %idx0 = index.constant 0
-    %0 = kgen.create_closure[(index) -> index: @h](%idx0)
+    %0 = kgen.create_func_ptr[(index) -> index: @h]()
     ```
   }];
 
-  let arguments = (ins AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
-                       Variadic<AnyType>:$captures);
+  let arguments = (ins AttrOfType<KGEN_FuncTypeGeneratorType>:$callee);
   let results = (outs KGEN_FuncTypeGeneratorType:$result);
   let assemblyFormat = [{
-    `` custom<ParametricCallee>($callee) `(` $captures `)`
-    custom<ClosureCaptureTypes>(ref($callee), ref($captures), type($captures))
-    attr-dict
+    `` custom<ParametricCallee>($callee) `(` `)` attr-dict
   }];
-
-  let builders = [
-    OpBuilder<(ins "TypedAttr":$callee), [{
-      build($_builder, $_state, callee, {});
-    }]>,
-  ];
 
   let extraClassDeclaration = [{
     FuncTypeGeneratorType getCalleeType() {
       return cast<FuncTypeGeneratorType>(getCallee().getType());
     }
-  }];
 
-  let hasVerifier = 1;
+    ValueRange getArguments() { return {}; }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1109,10 +1069,10 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
   let summary = "Create a stub to enforce by-memory arguments for `callee`.";
   let description = [{
 
-    This op is similar to CreateClosureOp (without captures).
+    This op is similar to CreateFuncPtrOp.
     But during LowerArgConvention, some arguments are promoted from by-memory
     to by-value.
-    This would also affect the signature type of CreateClosureOp.
+    This would also affect the signature type of CreateFuncPtrOp.
 
     With CreateRegStubOp, during LowerArgConvention, the signature of `callee`
     might change, but the result signature always remains the same.

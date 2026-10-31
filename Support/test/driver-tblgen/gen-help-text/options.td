@@ -49,24 +49,24 @@ def FirstOptionGroup : OptionGroup<"First Options">, Index<0>,
 
 // CHECK: --foo <FOO>, -F<ALSO-FOO>, -F1 (FOO=1)
 // CHECK-NEXT: Takes a foo and does something with it.
-defm foo : CommandOption<["--", "-"], "foo", FirstOptionGroup, Index<0>,
+defm foo : CommandOption<["--", "-"], "foo", FirstOptionGroup,
   MetaVarName<"FOO">, HelpText<"Takes a foo and does something with it.">>;
-def : Joined<["-"], "F">, Group<FirstOptionGroup>, Index<1>,
+def : Joined<["-"], "F">, Group<FirstOptionGroup>,
   MetaVarName<"ALSO-FOO">, Alias<foo>;
-def : Joined<["-"], "F1">, Group<FirstOptionGroup>, Index<2>,
+def : Joined<["-"], "F1">, Group<FirstOptionGroup>,
   Alias<foo>, AliasArgs<["1"]>;
 
 // Values do not make their way into --help output.
 // CHECK: --bar <BAR>
 // CHECK-NEXT: Takes a bar and does something with it.
 defm bar : CommandOptionWithValues<["--", "-"], "bar", FirstOptionGroup,
-  Index<1>, MetaVarName<"BAR">,
+  MetaVarName<"BAR">,
   HelpText<"Takes a bar and does something with it.">, Values<"a,b,c">>;
 
 // Hidden options don't appear in help text.
 // CHECK-NOT: Don't show me this option in help text
 // CHECK-HIDDEN: Don't show me this option in help text
-def baz : Flag<["--"], "baz">, Group<FirstOptionGroup>, Index<2>,
+def baz : Flag<["--"], "baz">, Group<FirstOptionGroup>,
   Flags<[HelpHidden]>, HelpText<"Don't show me this option in help text.">;
 
 // Hidden option groups don't appear in help text.
@@ -76,5 +76,5 @@ def baz : Flag<["--"], "baz">, Group<FirstOptionGroup>, Index<2>,
 // CHECK-HIDDEN: blong
 def SecondOptionGroup : OptionGroup<"Second Options">, Index<1>,
   Flags<[HelpHidden]>;
-def : Flag<["--"], "blong">, Group<SecondOptionGroup>, Index<0>,
+def : Flag<["--"], "blong">, Group<SecondOptionGroup>,
   HelpText<"Blongs.">;

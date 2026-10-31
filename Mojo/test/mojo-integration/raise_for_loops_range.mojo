@@ -14,7 +14,8 @@
 # Verify `raise-for-loops` turns `for i in range(n)` (an exception-based
 # `hlcf.loop`/`lit.try`) into an ascending, unit-step, `slt`-bounded `hlcf.for`.
 
-# RUN: kgen --emit=llvm --mlir-print-ir-after=raise-for-loops %s -o %t.ll 2>&1 \
+# RUN: kgen --emit=llvm -mllvm --mlir-print-ir-after=raise-for-loops %s \
+# RUN:   -o %t.ll 2>&1 \
 # RUN:   | FileCheck %s
 
 

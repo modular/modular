@@ -379,25 +379,14 @@ def _verify_results[
     # bf16 rounding of the ~1010 peer sum shifts 1-2 ULP on ~24% of elements, so
     # an exact-rate<=3% gate false-fails. A real bug is large (>>4 ULP).
     print(
-        (
-            "TIGHT (GPU two-launch vs host bf16-rounded ref, same algorithm):"
-            " exact-match ="
-        ),
-        (1.0 - rate_bf) * 100.0,
-        "%, max_ulp =",
-        max_ulp_bf,
-        ", fraction>1ULP =",
-        frac_gt1_bf * 100.0,
-        "%, mean_ulp =",
-        mean_ulp_bf,
+        t"TIGHT (GPU two-launch vs host bf16-rounded ref, same algorithm):"
+        t" exact-match = {(1.0 - rate_bf) * 100.0} %, max_ulp = {max_ulp_bf} ,"
+        t" fraction>1ULP = {frac_gt1_bf * 100.0} %, mean_ulp = {mean_ulp_bf}"
     )
     print(
-        "LOOSE (GPU two-launch vs host f32 ref): exact-mismatch =",
-        rate_f * 100.0,
-        "% [fusion-accuracy headroom], max_ulp =",
-        max_ulp_f,
-        ", mean_ulp =",
-        mean_ulp_f,
+        t"LOOSE (GPU two-launch vs host f32 ref): exact-mismatch ="
+        t" {rate_f * 100.0} % [fusion-accuracy headroom], max_ulp ="
+        t" {max_ulp_f} , mean_ulp = {mean_ulp_f}"
     )
 
     # Tight gate: same algorithm, bit-equal apart from block-reduce vs
@@ -427,14 +416,10 @@ def _verify_results[
         fused_max_ulp_bf,
     )
     print(
-        "FUSED LOOSE (kernel vs host f32 ref): exact-mismatch =",
-        fused_rate_f * 100.0,
-        "% [mid-way rounding divergence], max_ulp =",
-        fused_max_ulp_f,
-        "| sum_out mismatches =",
-        fused_sum_mismatch,
-        ", max_ulp =",
-        fused_sum_max_ulp,
+        t"FUSED LOOSE (kernel vs host f32 ref): exact-mismatch ="
+        t" {fused_rate_f * 100.0} % [mid-way rounding divergence], max_ulp ="
+        t" {fused_max_ulp_f} | sum_out mismatches = {fused_sum_mismatch} ,"
+        t" max_ulp = {fused_sum_max_ulp}"
     )
     if fused_frac_gt1_bf > 0.01 or fused_max_ulp_bf > 4:
         raise Error(
@@ -918,9 +903,7 @@ def main() raises:
 
     var num_devices = DeviceContext.number_of_devices()
     if num_devices < num_gpus:
-        print(
-            "Need", num_gpus, "GPUs but only found", num_devices, "- skipping."
-        )
+        print(t"Need {num_gpus} GPUs but only found {num_devices} - skipping.")
         return
 
     # Enable P2P between all GPU pairs before the read-only status check.
@@ -934,14 +917,8 @@ def main() raises:
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "Benchmarking reduce-scatter + RMSNorm (no quant):",
-        num_gpus,
-        "GPUs,",
-        in_dtype,
-        ",",
-        num_rows,
-        "x",
-        num_cols,
+        t"Benchmarking reduce-scatter + RMSNorm (no quant): {num_gpus} GPUs,"
+        t" {in_dtype} , {num_rows} x {num_cols}"
     )
 
     var m = Bench(BenchConfig(num_repetitions=1))

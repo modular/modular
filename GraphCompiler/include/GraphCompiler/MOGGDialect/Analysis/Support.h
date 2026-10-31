@@ -15,22 +15,18 @@
 #define GENERICML_GRAPHCOMPILER_MOGGDIALECT_ANALYSIS_SUPPORT_H
 
 #include "GraphCompiler/MOGGDialect/Analysis/KernelDeclAdaptor.h"
-#include "Mojo/KGENDialect/KGENOps.h"
 
 namespace M::MOGG {
 
 class MojoRegistry;
 
-/// Holds the Mojo registration name and function label for an MLIR operation.
+/// Holds the Mojo registration name of an MLIR operation.
 struct MojoOperationInfo {
-  StringRef operationName, functionLabel;
+  StringRef operationName;
 };
 
-/// Returns the Mojo registration name and function label for `op`.
+/// Returns the Mojo registration name for `op`.
 MojoOperationInfo getMojoOperationInfo(Operation *op);
-
-/// Get the number of DPS outputs attached for the given Mojo code.
-int64_t getNumDPSStyleOutputs(KGEN::GeneratorOp mojoCode);
 
 /// Construct the kernel adaptor for the given operation.
 ErrorOr<KernelDeclAdaptor> getMojoKernelAdaptor(const MojoRegistry &registry,

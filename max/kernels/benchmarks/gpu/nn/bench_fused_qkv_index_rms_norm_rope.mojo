@@ -84,6 +84,7 @@ from nn.kv_cache import (
     fused_qk_rms_norm_rope_ragged_paged,
 )
 from std.utils import IndexList
+from std.utils.index import Index
 
 # Ring size per cache-busted tensor. 1 GiB comfortably exceeds a few x the MI355
 # last-level cache and, even at the largest window (bs=512 decode main-K is
@@ -142,13 +143,23 @@ def bench_fused_qkv_index_rms_norm_rope[
     var pages_per_seq = ceildiv(Int(cache_len) + seq_len, page_size)
     var num_paged_blocks = batch_size * pages_per_seq
 
-    var main_kv_block_shape = IndexList[6](
-        num_paged_blocks, 2, num_layers, page_size, main_kv_heads, head_dim
+    var main_kv_block_shape = Index(
+        num_paged_blocks,
+        2,
+        num_layers,
+        page_size,
+        main_kv_heads,
+        head_dim,
     )
-    var index_kv_block_shape = IndexList[6](
-        num_paged_blocks, 2, num_layers, page_size, index_kv_heads, head_dim
+    var index_kv_block_shape = Index(
+        num_paged_blocks,
+        2,
+        num_layers,
+        page_size,
+        index_kv_heads,
+        head_dim,
     )
-    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_shape = Index(batch_size, pages_per_seq)
 
     # Cache-busted tensors (cold HBM per iter). Q reads are read-only and
     # identical for both variants, so a single ring is shared. The K caches are

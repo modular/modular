@@ -36,29 +36,11 @@ def test_prefill[
     v_depth: Int = kv_depth,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_prefill",
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "qkv_type:",
-        qkv_type,
-        "k_rope_type:",
-        k_rope_type,
-        "output_type:",
-        output_type,
-        "depth:",
-        depth,
-        "kv_depth:",
-        kv_depth,
-        "v_depth:",
-        v_depth,
-        "cache_depth:",
-        cache_depth,
-        "cache_num_heads:",
-        cache_num_heads,
+        t"test_mla_prefill batch_size: {batch_size} seq_len:"
+        t" {seq_len} num_keys: {num_keys} qkv_type: {qkv_type} k_rope_type:"
+        t" {k_rope_type} output_type: {output_type} depth: {depth} kv_depth:"
+        t" {kv_depth} v_depth: {v_depth} cache_depth:"
+        t" {cache_depth} cache_num_heads: {cache_num_heads}"
     )
 
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))

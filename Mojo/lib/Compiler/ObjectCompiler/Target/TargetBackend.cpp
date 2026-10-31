@@ -142,7 +142,6 @@ TargetBackendRegistry::lookup(const llvm::Triple &triple) const {
 }
 
 void TargetBackend::preprocessGenerator(GeneratorOp, GeneratorOp,
-                                        SymbolConstantAttr,
-                                        mlir::ModuleOp) const {}
+                                        FuncSymbolAttr, mlir::ModuleOp) const {}
 
 } // namespace M::KGEN

@@ -13,7 +13,7 @@
 """Defines the MPNet V3 pipeline model.
 
 Implementation is based on MPNetModel from the transformers library,
-using the V3 eager API (max.experimental.nn).
+using the V3 eager API (max.nn).
 """
 
 from __future__ import annotations
@@ -22,13 +22,12 @@ import logging
 from collections.abc import Callable
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,
@@ -43,6 +42,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
     padded_encoder_symbolic_inputs,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.tensor import default_dtype
 
 from .batch_processor import MPNetModuleV3BatchProcessor
 from .graph import MPNetModel
@@ -55,6 +55,8 @@ PAD_VALUE = 1
 
 
 class MPNetPipelineModel(PipelineModel[TextContext, MPNetConfig]):
+    """The MPNet pipeline model."""
+
     model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
     batch_processor_cls: ClassVar[type[MPNetModuleV3BatchProcessor]] = (
         MPNetModuleV3BatchProcessor
@@ -95,6 +97,7 @@ class MPNetPipelineModel(PipelineModel[TextContext, MPNetConfig]):
         self.model = self.compiled_modules[GraphRole.ENCODER]
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the encoder and returns its outputs."""
         assert isinstance(model_inputs, MPNetInputs)
         model_outputs = self.model(
             model_inputs.next_tokens_batch, model_inputs.attention_mask

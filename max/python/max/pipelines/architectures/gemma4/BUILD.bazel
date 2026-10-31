@@ -10,10 +10,13 @@ filegroup(
 modular_py_library(
     name = "gemma4",
     srcs = glob(["**/*.py"]),
-    data = [":recipe_configs"],
+    data = [
+        "formatspec.json",
+        ":recipe_configs",
+    ],
     ignore_extra_deps = [
         # Hooks added for convenience for when we want to print the model layers
-        "//max/python/max/nn/hooks",
+        "//max/python/max/nn/legacy/hooks",
     ],
     deps = [
         requirement("huggingface-hub"),
@@ -21,14 +24,15 @@ modular_py_library(
         requirement("pillow"),
         requirement("transformers"),
         requirement("typing-extensions"),
+        "//max/python/max/_artifact",
         "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         # Hooks added for convenience for when we want to print the model layers
-        "//max/python/max/nn/hooks",
+        "//max/python/max/nn/legacy/hooks",
         "//max/python/max/pipelines/architectures/gemma3",
         "//max/python/max/pipelines/architectures/gpt_oss",
         "//max/python/max/pipelines/architectures/qwen2_5vl",
@@ -42,4 +46,9 @@ modular_py_library(
         "//max/python/max/support",
         "//max/python/max:tree",
     ],
+)
+
+exports_files(
+    ["formatspec.json"],
+    visibility = ["//formatspec:__subpackages__"],
 )

@@ -338,25 +338,8 @@ def check_case[
     ](ctx, rows, 0.0)
     var n = rows * cols
     print(
-        "rows=",
-        rows,
-        " cols=",
-        cols,
-        " mbc=",
-        multiply_before_cast,
-        " | fp8 mismatches=",
-        d.mismatches,
-        "/",
-        n,
-        " max_ulp=",
-        d.max_ulp,
-        " scale_rel_max=",
-        d.scale_rel_max,
-        " cos_fused=",
-        d.cos_fused,
-        " cos_sep=",
-        d.cos_sep,
-        sep="",
+        t"rows={rows} cols={cols} mbc={multiply_before_cast} | fp8"
+        t" mismatches={d.mismatches}/{n} max_ulp={d.max_ulp} scale_rel_max={d.scale_rel_max} cos_fused={d.cos_fused} cos_sep={d.cos_sep}"
     )
     if d.cos_sep < 0.999:
         raise Error("unfused reference pair is off vs the f64 reference")

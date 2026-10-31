@@ -15,20 +15,20 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max import functional as F
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged_gpu,
 )
-from max.experimental.nn.linear import Linear
-from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.linear import Linear
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     apply_multidimensional_rope as _apply_multidimensional_rope,
 )
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
+from max.tensor import Tensor
 
 from ..layers.rms_norm import Gemma4RMSNorm
 
@@ -38,8 +38,11 @@ apply_multidimensional_rope = F.functional(_apply_multidimensional_rope)
 
 
 class Gemma4VisionAttention(Module[..., Tensor]):
-    """Ragged bidirectional attention: per-head q/k norms, weightless v norm,
-    2-D RoPE, scale=1.0. Port of the graph arch's Gemma4VisionAttention.
+    """Ragged bidirectional attention over each image's patches.
+
+    It applies per-head query and key norms, a weightless value norm and 2D
+    RoPE, at scale 1.0. This is the ModuleV3 port of the graph
+    architecture's ``Gemma4VisionAttention``.
     """
 
     def __init__(
@@ -87,6 +90,7 @@ class Gemma4VisionAttention(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seq_len: Tensor,
     ) -> Tensor:
+        """Runs the attention over the patches in each image."""
         xq = self.q_norm(
             self.q_proj(hidden_states).reshape(
                 (-1, self.num_attention_heads, self.head_dim)

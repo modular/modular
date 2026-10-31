@@ -39,7 +39,9 @@ namespace M::KGEN::LIT {
 
 /// This class represents the internal implementation of the parser driver.
 struct MojoParserContext::Impl {
-  Impl(llvm::SourceMgr &sourceMgr, KGEN::LIT::ParserConfig &config);
+  Impl(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+       const KGEN::CompilationOptions &options,
+       const KGEN::FrontendOptions &frontendOptions);
 
   //===--------------------------------------------------------------------===//
   // General State
@@ -76,7 +78,6 @@ struct MojoParserContext::Impl {
   /// subsequent completion requests don't re-parse the entire history.
   struct CompletionCache {
     llvm::SourceMgr sourceMgr;
-    KGEN::LIT::ParserConfig config;
     std::unique_ptr<MojoParserContext> context;
 
     /// The last resolved REPL module in the cached context.
@@ -95,16 +96,19 @@ struct MojoParserContext::Impl {
     /// Used to bound memory growth from stale completion modules.
     size_t completionsSinceRebuild = 0;
 
-    CompletionCache(MLIRContext *mlirCtx,
-                    const KGEN::CompilationOptions &options,
-                    const llvm::SourceMgr &mainSourceMgr)
-        : config(mlirCtx, options) {
+    explicit CompletionCache(const KGEN::LIT::SharedState &mainState) {
       // Suppress diagnostics in the completion cache.
       sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
       // Copy include directories so import resolution works correctly.
-      sourceMgr.setIncludeDirs(mainSourceMgr.getIncludeDirs());
-      config.maxNotesPerDiagnostic = 0;
-      context = std::make_unique<MojoParserContext>(sourceMgr, config);
+      sourceMgr.setIncludeDirs(mainState.getSourceMgr().getIncludeDirs());
+      KGEN::FrontendOptions frontendOptions = mainState.frontendOptions;
+      frontendOptions.autoFixItHandler = nullptr;
+      frontendOptions.useMLIRDiagnostics = false;
+      frontendOptions.parserListener = nullptr;
+      frontendOptions.maxNotesPerDiagnostic = 0;
+      context = std::make_unique<MojoParserContext>(
+          sourceMgr, mainState.getContext(), mainState.options,
+          frontendOptions);
     }
   };
   std::unique_ptr<CompletionCache> completionCache;

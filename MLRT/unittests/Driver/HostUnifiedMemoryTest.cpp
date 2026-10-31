@@ -40,13 +40,13 @@ TEST(HostUnifiedMemoryTest, ReportsReclaimableHostMemoryAndAllocatorBudget) {
   // wider bound.
   constexpr size_t drift = 1024ull * 1024 * 1024;
   constexpr size_t budgetDrift = 2ull * 1024 * 1024 * 1024;
-  EXPECT_LE(deviceInfo.free, deviceInfo.total);
-  EXPECT_GE(deviceInfo.free + drift, hostInfo.free);
-  EXPECT_GE(hostInfo.free + drift, deviceInfo.free);
-  EXPECT_GE(allocatorInfo.total + budgetDrift, hostInfo.free * 90 / 100);
+  EXPECT_LE(deviceInfo.free.value(), deviceInfo.total);
+  EXPECT_GE(deviceInfo.free.value() + drift, hostInfo.free.value());
+  EXPECT_GE(hostInfo.free.value() + drift, deviceInfo.free.value());
+  EXPECT_GE(allocatorInfo.total + budgetDrift, *hostInfo.free * 90 / 100);
   EXPECT_LE(allocatorInfo.total, hostInfo.total);
 
-  std::cerr << "Host-unified device memory: " << deviceInfo.free
+  std::cerr << "Host-unified device memory: " << *deviceInfo.free
             << " bytes available; allocator budget: " << allocatorInfo.total
             << " bytes\n";
 #endif

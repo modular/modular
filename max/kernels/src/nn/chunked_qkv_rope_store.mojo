@@ -17,14 +17,30 @@ from std.math import ceildiv
 from std.sys import align_of
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
-from kv_cache.types import PagedKVCache, PagedKVCacheCollection
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
+from kv_cache.types import (
+    KVCacheStaticParams,
+    PagedKVCache,
+    PagedKVCacheCollection,
+)
 from layout import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.fused_qk_rope import get_safetensors_idx, rope_value
 
 
+def _lanes_per_head(kv_params: KVCacheStaticParams) -> Int:
+    """The 8-wide lanes that cover one head: the whole padded row, or in a
+    split cache the wider of the key and the value, which are not padded."""
+    return max(kv_params.k_head_size(), kv_params.v_head_size) // 8
+
+
 # HACK: K/V views share the collection's mutable origins but write disjoint
-# planes, which the exclusivity checker cannot prove. As in
+# planes (or, in a split cache, disjoint columns of one plane), which the
+# exclusivity checker cannot prove. As in
 # `_rope_split_store_ragged_impl`, disable nested-origin checks until the K/V
 # views have provably disjoint origins. This also covers mutable `q_output`,
 # which must be disjoint from the cache planes and projection inputs.
@@ -54,8 +70,10 @@ def chunked_qkv_rope_store_kernel[
         row_offsets: Ragged offsets [batch_size + 1].
         freqs: Interleaved BF16 RoPE coefficients for NeoX-paired inputs.
         k_cache: Paged key view for the selected layer.
-        v_cache: Disjoint paged value view for the same layer.
-        q_output: Padded rotated queries [tokens, query_heads, head_size].
+        v_cache: Disjoint paged value view for the same layer. In a split
+            cache it is the key's view, and values start at `v_col_base()`.
+        q_output: Rotated queries [tokens, query_heads, key_width], padded
+            to the cache head width unless the cache is split.
         value_scale: FP32 multiplier applied before V's BF16 rounding.
 
     Constraints:
@@ -66,9 +84,10 @@ def chunked_qkv_rope_store_kernel[
         static. Chunk and head counts must be positive, and both query and
         KV head counts must be divisible by chunks. Each chunk must contain
         its Q, K, and V head rows, and query output width must match the cache
-        head width. Q/K and V widths must be positive and fit the cache head;
+        key width. Q/K and V widths must be positive and fit the cache head;
         rotary width must be positive and fit the Q/K head. Q/K, V, cache
-        head, and rotary widths must be multiples of 8.
+        head, and rotary widths must be multiples of 8. A split cache's key
+        and value widths must equal the Q/K and V widths.
     """
     comptime cache_t = type_of(k_cache)
     comptime kv_params = cache_t.kv_params
@@ -106,6 +125,11 @@ def chunked_qkv_rope_store_kernel[
     comptime num_q_heads = Int(q_output.static_shape[1])
     comptime num_kv_heads = kv_params.num_heads
     comptime head_size = kv_params.head_size
+    # A split cache's row packs an unpadded key and value; otherwise the key
+    # width is the padded row and the value has a plane of its own.
+    comptime split = kv_params.is_split()
+    comptime k_head_size = kv_params.k_head_size()
+    comptime v_col_base = kv_params.v_col_base()
     comptime rope_dim = Int(freqs.static_shape[1])
     comptime assert (
         chunks > 0 and num_q_heads > 0 and num_kv_heads > 0
@@ -125,8 +149,11 @@ def chunked_qkv_rope_store_kernel[
         Int(qkv.static_shape[2]) == q_rows + k_rows + v_rows + chunk_padding
     ), "Invalid QKV chunk width"
     comptime assert (
-        Int(q_output.static_shape[2]) == head_size
+        Int(q_output.static_shape[2]) == k_head_size
     ), "Query output width must match cache head size"
+    comptime assert not split or (
+        qk_head_dim == k_head_size and v_head_dim == kv_params.v_head_size
+    ), "a split cache's key and value widths must equal the Q/K and V widths"
     comptime assert (
         qk_head_dim > 0 and v_head_dim > 0
     ), "Q/K and V widths must be positive"
@@ -143,7 +170,7 @@ def chunked_qkv_rope_store_kernel[
         head_size % 8 == 0 and rope_dim % 8 == 0
     ), "cache head and rotary widths must be aligned to 8 elements"
     comptime total_heads = num_q_heads + 2 * num_kv_heads
-    comptime lanes_per_head = head_size // 8
+    comptime lanes_per_head = _lanes_per_head(kv_params)
     comptime width = 8
     comptime half = width // 2
     comptime alignment = align_of[SIMD[DType.bfloat16, width]]()
@@ -179,6 +206,11 @@ def chunked_qkv_rope_store_kernel[
     else:
         source_base = q_rows + k_rows + source_head * v_head_dim
     var real_depth = qk_head_dim if is_q or is_k else v_head_dim
+    comptime if split:
+        # A split row has no padding, and the lanes past a narrower value
+        # would write into the next head's key.
+        if dim >= real_depth:
+            return
     var val = SIMD[DType.bfloat16, width](0)
     if dim < real_depth:
         if (is_q or is_k) and dim < rope_dim:
@@ -232,7 +264,13 @@ def chunked_qkv_rope_store_kernel[
     elif is_k:
         k_cache.store(batch, kv_head, position, dim, val.cast[cache_t.dtype]())
     else:
-        v_cache.store(batch, kv_head, position, dim, val.cast[cache_t.dtype]())
+        v_cache.store(
+            batch,
+            kv_head,
+            position,
+            v_col_base + dim,
+            val.cast[cache_t.dtype](),
+        )
 
 
 def chunked_qkv_rope_store_paged_ragged[
@@ -260,9 +298,10 @@ def chunked_qkv_rope_store_paged_ragged[
         qkv: BF16 chunked projection [tokens, chunks, chunk_width].
         row_offsets: Ragged offsets [batch_size + 1].
         freqs: BF16 RoPE table [max_position, rotary_width].
-        collection: Unquantized, non-MLA paged KV collection.
+        collection: Unquantized, non-MLA paged KV collection, possibly split.
         layer_idx: Layer to append to in both cache planes.
-        q_output: Padded queries [tokens, query_heads, cache_head_size].
+        q_output: Queries [tokens, query_heads, key_width], padded to the
+            cache head size unless the cache is split.
         value_scale: FP32 multiplier; V times this scale is rounded to BF16
             before storing.
         ctx: GPU device context.
@@ -296,7 +335,7 @@ def chunked_qkv_rope_store_paged_ragged[
     comptime total_heads = Int(
         q_output.static_shape[1]
     ) + 2 * cache_t.kv_params.num_heads
-    comptime lanes_per_head = cache_t.kv_params.head_size // 8
+    comptime lanes_per_head = _lanes_per_head(cache_t.kv_params)
     var count = Int(qkv.dim[0]()) * total_heads * lanes_per_head
     if count == 0:
         return
@@ -312,15 +351,18 @@ def chunked_qkv_rope_store_paged_ragged[
         var q_output,
         var value_scale,
     }:
-        chunked_qkv_rope_store_kernel[qk_head_dim, v_head_dim, chunk_padding](
-            qkv,
-            row_offsets,
-            freqs,
-            k_cache,
-            v_cache,
-            q_output,
-            value_scale,
-        )
+        with PDL():
+            chunked_qkv_rope_store_kernel[
+                qk_head_dim, v_head_dim, chunk_padding
+            ](
+                qkv,
+                row_offsets,
+                freqs,
+                k_cache,
+                v_cache,
+                q_output,
+                value_scale,
+            )
 
     comptime assert conforms_to(
         type_of(kernel), DevicePassable
@@ -329,4 +371,5 @@ def chunked_qkv_rope_store_paged_ragged[
         kernel,
         grid_dim=ceildiv(count, 128),
         block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

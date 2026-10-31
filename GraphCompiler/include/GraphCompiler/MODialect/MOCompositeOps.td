@@ -324,6 +324,57 @@ def MOComposite_FusedMatmulAddOp : MO_DotBase<"composite.matmul_add", [MO_Compos
 }
 
 //===----------------------------------------------------------------------===//
+// MatmulSwiGLUOp and MatmulSwiGLUBiasOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_Rank1BF16Tensor : MO_ConfinedTensor<
+  [MO_HasAnyRankOfPred<[1]>,
+   CPred<"cast<::M::MO::TensorType>($_self).getElementType().isBF16()">],
+  "rank-1 tensor with bf16 elements">;
+def MOComposite_Rank2BF16Tensor : MO_ConfinedTensor<
+  [MO_HasAnyRankOfPred<[2]>,
+   CPred<"cast<::M::MO::TensorType>($_self).getElementType().isBF16()">],
+  "rank-2 tensor with bf16 elements">;
+
+def MOComposite_MatmulSwiGLUOp : MO_CompositeOp<"matmul_swiglu", [
+  Pure,
+  MO_SingleDevice,
+]> {
+  let summary = "Fused matrix multiplication and SwiGLU";
+  let description = [{
+    Multiplies `a` of shape [M, K] by the transpose of `permuted_b` of
+    shape [2H, K], then applies SwiGLU to produce a tensor of shape [M, H].
+    The rows of `permuted_b` are interleaved for the fused kernel.
+  }];
+  let arguments = (ins MOComposite_Rank2BF16Tensor:$a,
+                       MOComposite_Rank2BF16Tensor:$permuted_b);
+  let results = (outs MOComposite_Rank2BF16Tensor:$output);
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` functional-type(operands, results)
+  }];
+}
+
+def MOComposite_MatmulSwiGLUBiasOp : MO_CompositeOp<"matmul_swiglu_bias", [
+  Pure,
+  MO_SingleDevice,
+]> {
+  let summary = "Fused matrix multiplication, bias, and SwiGLU";
+  let description = [{
+    Multiplies `a` of shape [M, K] by the transpose of `permuted_b` of
+    shape [2H, K], adds `permuted_bias` of shape [2H], then applies SwiGLU
+    to produce a tensor of shape [M, H]. The weight rows and bias elements
+    are interleaved for the fused kernel.
+  }];
+  let arguments = (ins MOComposite_Rank2BF16Tensor:$a,
+                       MOComposite_Rank2BF16Tensor:$permuted_b,
+                       MOComposite_Rank1BF16Tensor:$permuted_bias);
+  let results = (outs MOComposite_Rank2BF16Tensor:$output);
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // AllReduceAddRMSNormQuantFP8Op
 //===----------------------------------------------------------------------===//
 
@@ -337,6 +388,9 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
     Sum-reduces same-shaped per-device inputs, adds the residual, then applies
     RMSNorm and dynamic FP8 quantization. Returns the quantized output, its
     scale, and the post-add residual.
+
+    `multiply_before_cast` is the fused `mo.reduce.rms_norm`'s cast order. It
+    may be false only when the output is not quantized.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -346,7 +400,8 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
     Variadic<MO_RankedScalarFloatTensor>: $scaleUb,
     MO_Chain:$inChain,
     MO_F32ScalarAttr:$epsilon,
-    MO_F32ScalarAttr:$weight_offset
+    MO_F32ScalarAttr:$weight_offset,
+    BoolAttr:$multiply_before_cast
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -356,7 +411,8 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
   );
   let assemblyFormat = [{
     `(` operands `)`
-    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
+    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
+    `multiply_before_cast` `=` $multiply_before_cast `}`
     attr-dict `:` functional-type(operands, results)
   }];
 }
@@ -764,6 +820,58 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP6Op : MO_DistributedOp<"comp
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
     `` custom<AllGatherRMSNormQuantMXFP6Attrs>($group_size, $fp6_format)
+    attr-dict `:` functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// DistributedAllReduceRMSNormOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_DistributedAllReduceRMSNormOp : MO_DistributedOp<"composite.distributed.allreduce_rms_norm", [
+  MO_MultiDevice,
+  MO_CompositeOpTrait
+]> {
+  string cppNamespace = MODialect.cppNamespace # "::Composite";
+  let summary = "Fused AllreduceSum + RMSNorm across N devices for a single device.";
+  let description = [{
+    Sum-reduces same-shaped per-device inputs and RMSNorm-normalizes the
+    reduced rows in the same launch, so the peer sum never takes a
+    global-memory round-trip through the collective's output. The norm runs
+    on the unrounded float32 sum, so it is not bit-identical to a standalone
+    allreduce (which rounds the sum to the input dtype) followed by a norm.
+
+    `multiply_before_cast` is the norm's gamma cast order, matching
+    `mo.reduce.rms_norm`. bf16 in/out only; no residual and no quantization.
+    `gamma` is one operand per device, but every device must pass the same
+    replicated weight: the 2-stage dispatch arm normalizes each row shard
+    on its owner rank, so a gamma that differed per device would leak the
+    owner's into the other devices' outputs.
+
+    The op is shape-dispatched: small payloads take the fused kernel, and
+    large ones (where the fabric-bound plain allreduce wins) fall back to a
+    standalone allreduce into `summed` followed by a separate norm. Only
+    that arm writes `summed`; the fused arm's peer sum never materializes,
+    so callers that need the raw sum must use `allreduce.sum` instead.
+  }];
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    Variadic<MO_Tensor>:$gamma,
+    MO_Chain:$inChain,
+    MO_F32ScalarAttr:$epsilon,
+    MO_F32ScalarAttr:$weight_offset,
+    BoolAttr:$multiply_before_cast
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$output,
+    Variadic<MO_Tensor>:$summed,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)`
+    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
+    `multiply_before_cast` `=` $multiply_before_cast `}`
     attr-dict `:` functional-type(operands, results)
   }];
 }

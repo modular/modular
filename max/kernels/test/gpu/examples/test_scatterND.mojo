@@ -30,11 +30,15 @@ comptime MAX_THREADS_PER_BLOCK = 256
 def scatter_nd_gpu[
     dtype: DType,
     indices_type: DType,
+    output_origin: MutOrigin,
+    indices_origin: MutOrigin,
+    dims_origin: MutOrigin,
+    updates_origin: MutOrigin,
 ](
-    output_data_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
-    indices_data_ptr: MutPointer[Scalar[indices_type], MutAnyOrigin],
-    element_counts_and_input_dims_ptr: MutPointer[Int64, MutAnyOrigin],
-    updates_data_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    output_data_ptr: MutPointer[Scalar[dtype], output_origin],
+    indices_data_ptr: MutPointer[Scalar[indices_type], indices_origin],
+    element_counts_and_input_dims_ptr: MutPointer[Int64, dims_origin],
+    updates_data_ptr: MutPointer[Scalar[dtype], updates_origin],
     num_indices: Int,
     last_index_dimension: Int,
     num_updates_elements: Int,
@@ -231,7 +235,14 @@ def scatter_nd[
         num_indices *= indices_shape[i]
 
     var num_updates_elements = count_copy
-    comptime kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
+    comptime kernel = scatter_nd_gpu[
+        dtype=dtype,
+        indices_type=indices_type,
+        output_origin=origin_of(output_device),
+        indices_origin=origin_of(indices_device),
+        dims_origin=origin_of(element_counts_and_input_dims_device),
+        updates_origin=origin_of(updates_device),
+    ]
 
     ctx.enqueue_function[kernel](
         output_device,

@@ -180,10 +180,11 @@ def _messages_carry_image(messages: Sequence[SerializedChatMessage]) -> bool:
 def _build_final_payload(
     base_payload: Mapping[str, Any], extra_body: Mapping[str, Any] | None
 ) -> dict[str, Any]:
-    """Return a new payload: a shallow copy of *base_payload* with *extra_body*
-    merged on top, last-writer-wins (an *extra_body* key overrides the managed
-    field of the same name). Not mutated, so *base_payload* keeps its precise
-    type and the result is ``dict[str, Any]``.
+    """Return a new payload with *extra_body* merged over *base_payload*.
+
+    The copy is shallow and last-writer-wins (an *extra_body* key overrides
+    the managed field of the same name). Not mutated, so *base_payload* keeps
+    its precise type and the result is ``dict[str, Any]``.
     """
     payload: dict[str, Any] = dict(base_payload)
     if not extra_body:
@@ -223,6 +224,7 @@ class RequestFuncInput(BaseRequestFuncInput):
     is_cache_warmup: bool = False
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        """Returns the output class this driver produces."""
         return RequestFuncOutput
 
 
@@ -236,6 +238,7 @@ class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
     image_options: PixelGenerationImageOptions | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        """Returns the output class this driver produces."""
         return PixelGenerationRequestFuncOutput
 
 
@@ -1345,6 +1348,7 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a pixel generation request to sglang."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "SglangPixelGenerationRequestDriver requires"
@@ -1430,6 +1434,8 @@ def _add_input_reference(
 
 
 class SglangVideoPayload(TypedDict):
+    """The JSON body of a sglang video generation request."""
+
     model: str
     prompt: str
     width: NotRequired[int]
@@ -1519,6 +1525,7 @@ class SglangVideoRequestDriver(RequestDriver):
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a video generation request to sglang."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "SglangVideoRequestDriver requires"
@@ -1657,12 +1664,15 @@ def _build_vllm_omni_pixel_generation_payload(
 
 
 class VllmOmniPixelGenerationRequestDriver(RequestDriver):
-    """Request driver for vllm-omni's /v1/chat/completions endpoint
-    (diffusion image generation)."""
+    """Request driver for vllm-omni's chat completions endpoint.
+
+    Targets ``/v1/chat/completions`` for diffusion image generation.
+    """
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a pixel generation request to vllm-omni."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "VllmOmniPixelGenerationRequestDriver requires"
@@ -1766,12 +1776,15 @@ def _build_vllm_omni_video_payload(
 
 
 class VllmOmniVideoRequestDriver(RequestDriver):
-    """Request driver for vllm-omni's /v1/videos/sync endpoint
-    (diffusion video generation)."""
+    """Request driver for vllm-omni's videos endpoint.
+
+    Targets ``/v1/videos/sync`` for diffusion video generation.
+    """
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a video generation request to vllm-omni."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "VllmOmniVideoRequestDriver requires"

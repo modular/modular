@@ -19,20 +19,20 @@ modular_py_library(
         # Leaving these two alone for now, occasionally they are silently used by things.
         # TODO: Likely these should be pushed closer to where they specifically are used.
         requirement("gguf"),  # Needed for loading gguf files
-        requirement("sentencepiece"),  # Very few select models use this
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines:logging_utils",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
         "//max/python/max/profiler",
         "//max/python/max/serve",
         "//max/python/max/serve:config",
@@ -43,11 +43,11 @@ modular_py_library(
         "//max/python/max/support",
         requirement("click"),
         requirement("gguf"),
+        requirement("pillow"),
         requirement("psutil"),
         requirement("pydantic"),
         requirement("pydantic-core"),
         requirement("requests"),
-        requirement("sentencepiece"),
         requirement("sse-starlette"),
         requirement("typing-extensions"),
         requirement("tqdm"),

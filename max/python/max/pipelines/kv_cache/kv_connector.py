@@ -19,8 +19,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 
 
 class KVLoadRefused(Exception):
@@ -271,6 +271,49 @@ class CompletedLookup:
 
 
 @runtime_checkable
+class KVProbe(Protocol):
+    """Handle for one :meth:`KVConnector.start_probe`, polled by the manager.
+
+    Read whenever the manager prices or allocates the request rather than
+    waited for, so a handle that has not answered by then costs nothing but
+    the hit it could have reported.
+    """
+
+    def is_complete(self) -> bool:
+        """Returns whether the connector has answered. Never blocks."""
+        ...
+
+    def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        """Returns what :meth:`KVConnector.probe` would have returned.
+
+        ``None`` when the connector has no answer after all, which the
+        manager reads as knowing nothing: it prices the device tier alone
+        and leaves a lease to find out what the connector holds.
+
+        Raises:
+            RuntimeError: If the connector has not answered yet.
+        """
+        ...
+
+
+class CompletedProbe:
+    """An already-answered :class:`KVProbe`."""
+
+    def __init__(
+        self, answers: Sequence[Mapping[str, Sequence[bool]]] | None
+    ) -> None:
+        self._answers = answers
+
+    def is_complete(self) -> bool:
+        """Returns ``True`` because the answer is already here."""
+        return True
+
+    def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        """Returns the answers the probe came back with, or ``None``."""
+        return self._answers
+
+
+@runtime_checkable
 class KVConnector(Protocol):
     """Protocol for KV cache connectors managing external (non-device) tiers.
 
@@ -313,6 +356,7 @@ class KVConnector(Protocol):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Reports which of ``block_hashes`` each leaf holds. Presence only.
 
@@ -339,6 +383,11 @@ class KVConnector(Protocol):
             hint: As :meth:`load`, and it must be the SAME hint, or a lookup
                 would ask the co-located store about a peer-held prefix and
                 report it absent.
+            chain_start: The chain index of ``block_hashes[0]`` counted from
+                the root, so a connector can tell a hint that cannot serve
+                this lookup from one that describes another chain. ``None``
+                when unknown, which leaves the connector unable to tell the
+                two apart.
 
         Returns:
             One mask per leaf, keyed as :attr:`leaves` keys them, each exactly
@@ -404,6 +453,7 @@ class KVConnector(Protocol):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         """Starts a :meth:`lookup` and returns at once.
 
@@ -417,7 +467,12 @@ class KVConnector(Protocol):
         which is right for a connector that answers from local memory.
         """
         return CompletedLookup(
-            self.lookup(block_hashes, replica_idx=replica_idx, hint=hint)
+            self.lookup(
+                block_hashes,
+                replica_idx=replica_idx,
+                hint=hint,
+                chain_start=chain_start,
+            )
         )
 
     def defers_lookup(self, replica_idx: int = 0) -> bool:
@@ -428,6 +483,17 @@ class KVConnector(Protocol):
         connector that answers in place is asked in place about the gap a
         short device hit leaves. ``False`` by default, matching the default
         :meth:`start_lookup`.
+        """
+        return False
+
+    def probe_is_lookup(self) -> bool:
+        """Returns whether :meth:`probe` answers as :meth:`lookup` would.
+
+        Only a connector whose lookup holds nothing a load reads out of can
+        say so. The manager then loads from a fresh pricing answer rather
+        than looking up again, and a block gone since then surfaces as
+        :class:`KVLoadRefused`, as it would after a lookup. ``False`` by
+        default.
         """
         return False
 
@@ -480,6 +546,25 @@ class KVConnector(Protocol):
         caller reads them and never changes them. ``None`` means the
         connector has no such answer, and the manager prices each replica
         with a :meth:`lookup`. No-op by default.
+        """
+        return None
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        """Starts a :meth:`probe` and returns at once.
+
+        Same arguments and same answer as :meth:`probe`, read off the handle
+        once it completes. Asked once per arriving request, before it is
+        bound, so the scheduler thread never waits on the round trip a
+        presence query is. The manager prices the request from the device
+        tier alone until the handle answers, and reads the answer at the
+        request's first allocation, where a miss leases nothing. ``None``
+        means the connector has no such handle, and the manager asks
+        :meth:`probe` in place as before. No-op by default.
         """
         return None
 

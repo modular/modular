@@ -447,6 +447,11 @@ def LIT_OriginType : LITType<"Origin", "origin",
 
     /// Remove any OriginMutCast and Rebind if present.
     static TypedAttr stripMutCastAndRebind(TypedAttr origin);
+
+    /// Returns true when `wider` is at least as wide as `narrower`, i.e.
+    /// `union(wider, mutcast(narrower, wider's mutability))` collapses to
+    /// `wider`; this compares origin sets, not mutability.
+    static bool covers(TypedAttr wider, TypedAttr narrower);
   }];
 }
 
@@ -565,7 +570,8 @@ def LIT_RefType : LITType<"Ref", "ref",
 
 class ReferenceElementType<string lhs, string rhs> : TypesMatchWith<
     "reference element type", lhs, rhs,
-    "llvm::cast<RefType>($_self).getElementType()",
+    "llvm::isa<RefType>($_self) ? "
+    "llvm::cast<RefType>($_self).getElementType() : Type()",
     "typeRangeMatches">;
 
 class RefOf<Type type> : ConfinedType<LIT_RefType,

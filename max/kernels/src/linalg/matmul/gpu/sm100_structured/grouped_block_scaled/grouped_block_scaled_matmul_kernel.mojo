@@ -338,19 +338,19 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         group_sfb_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         tma_a: MutPointer[
             TMATensorTile[a_dtype, a_tile_shape, a_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
         tma_b: MutPointer[
             TMATensorTile[b_dtype, b_tile_shape, b_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
         tma_sfa: MutPointer[
             TMATensorTile[sfa_dtype, sfa_tile_shape, sfa_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
         tma_sfb: MutPointer[
             TMATensorTile[sfb_dtype, sfb_tile_shape, sfb_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
     ):
         """Update A/B/SFA/SFB tensormaps for the specified group.
@@ -461,7 +461,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         group_c_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         tma_c: MutPointer[
             TMATensorTile[c_dtype, c_tile_shape, c_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
     ):
         """Update C tensormap for the specified group.
@@ -658,7 +658,7 @@ struct GroupedBlockScaledMatmulKernel[
     # Grouped GEMM parameters
     max_groups: Int,
     # Cluster shape (for LLVM metadata)
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     # Epilogue fusion parameters
     ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     has_compute_fn: Bool = False,
@@ -899,7 +899,11 @@ struct GroupedBlockScaledMatmulKernel[
         Self.sfb_dtype,
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -998,7 +1002,11 @@ struct GroupedBlockScaledMatmulKernel[
         a_type=Self.a_type,
         accum_type=Self.accum_type,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         opc=Self.opc,
         c_swizzle=Self.config.c_swizzle,
         transpose_c=Self.config.AB_swapped,
@@ -1335,7 +1343,13 @@ struct GroupedBlockScaledMatmulKernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)

@@ -175,16 +175,16 @@ def test_conv_transposed[
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
-    var input_shape = extend_shape(input_dims, N, C)
-    var input = TileTensor(input_ptr, row_major(Coord(input_shape)))
+    var input_shape = extend_shape(Coord(input_dims), N, C)
+    var input = TileTensor(input_ptr, row_major(input_shape))
     var input_ref = TileTensor(
         input_ptr,
         row_major(Coord(extend_shape_5d(input_dims, N, C))),
     )
 
     # Filter buffer.
-    var filter_shape = append_shape(filter_dims, F, C_per_group)
-    var filter = TileTensor(filter_ptr, row_major(Coord(filter_shape)))
+    var filter_shape = append_shape(Coord(filter_dims), F, C_per_group)
+    var filter = TileTensor(filter_ptr, row_major(filter_shape))
     var filter_ref = TileTensor(
         filter_ptr,
         row_major(Coord(append_shape_5d(filter_dims, F, C_per_group))),
@@ -199,8 +199,8 @@ def test_conv_transposed[
         row_major(Coord(rebind[IndexList[rank + 3]](packed_filter_shape))),
     )
 
-    var output_shape = extend_shape(output_dims, N, F)
-    var output = TileTensor(output_ptr, row_major(Coord(output_shape)))
+    var output_shape = extend_shape(Coord(output_dims), N, F)
+    var output = TileTensor(output_ptr, row_major(output_shape))
     var output_ref = TileTensor(
         output_ref_ptr,
         row_major(Coord(extend_shape_5d(output_dims, N, F))),

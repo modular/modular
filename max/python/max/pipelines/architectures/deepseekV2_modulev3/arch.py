@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for the ModuleV3 DeepSeek-V2."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext

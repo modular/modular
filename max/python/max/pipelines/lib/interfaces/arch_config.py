@@ -34,10 +34,11 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, cast, runtime_checkable
 from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheParamInterface,
 )
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache.config import (
     KVCacheConfig,
     cache_dtype_for_encoding,
@@ -56,6 +57,24 @@ from typing_extensions import Self, override
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
     from max.pipelines.lib.config.model_config import MAXModelConfig
+
+
+@dataclass(frozen=True)
+class ModelOutputConfig:
+    """The outputs a pipeline requires from the modules it builds.
+
+    An architecture's ``finalize`` reads this to decide which logits and
+    hidden states its decoder returns.
+    """
+
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    """The logits the decoder must produce."""
+
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """The hidden states the decoder must produce."""
+
+    target_layer_ids: tuple[int, ...] | None = None
+    """The target layers a speculative draft reads, when selected."""
 
 
 @runtime_checkable
@@ -219,8 +238,8 @@ class ArchConfigWithStoredKVParams(ArchConfigWithBoundedMaxSeqLen):
     """Mixin that implements :meth:`get_kv_params` as the ``kv_params`` field.
 
     Architecture dataclasses that precompute a :class:`KVCacheParamInterface`
-    (typically :class:`~max.nn.kv_cache.KVCacheParams`, or
-    :class:`~max.nn.kv_cache.MultiKVCacheParams` for hybrid SWA + full trees)
+    (typically :class:`~max.nn.legacy.kv_cache.KVCacheParams`, or
+    :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams` for hybrid SWA + full trees)
     during ``initialize`` can inherit this mixin together with
     :class:`ArchConfigWithKVCache` to avoid duplicating the trivial accessor.
 

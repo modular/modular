@@ -25,7 +25,7 @@ import numpy.typing as npt
 from max import _kv_core
 from max._kv_core import InsufficientBlocksError as InsufficientBlocksError
 from max._kv_core import LittleKVCacheBlock as LittleKVCacheBlock
-from max.nn.kv_cache.cache_params import KVHashAlgo
+from max.nn.legacy.kv_cache.cache_params import KVHashAlgo
 from max.pipelines.context import TokenHashOverride
 from max.profiler import traced
 from typing_extensions import Self

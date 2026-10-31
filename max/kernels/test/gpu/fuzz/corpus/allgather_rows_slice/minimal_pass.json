@@ -1,0 +1,14 @@
+{
+  "target": "allgather_rows_slice",
+  "spec": {
+    "rows_per_rank": 1,
+    "col_units": 0,
+    "repeats": 2,
+    "order": 2,
+    "data_seed": 1
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "Minimum 16-byte row block; nonempty, empty, and nonempty launches reuse signals.",
+  "findings": []
+}

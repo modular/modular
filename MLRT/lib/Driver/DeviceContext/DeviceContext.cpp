@@ -45,16 +45,21 @@ static_assert(
 #include "Support/AssertStream.h"
 #include "Support/ErrorOr.h"
 #include "Support/HashUtils.h"
+#include "Support/Profiling/CaptureLabels.h"
 #include "Support/SymbolExport.h"
 #include "Support/max_license/Tracy/Tracy.h"
 #include "Target/DriverPlugin.h"
 #include "Virtual/VirtualDeviceContext.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/JSON.h"
@@ -167,9 +172,9 @@ MODULAR_CXX_EXPORT size_t getPreferredAlignment(std::string label) {
 // ===== Device ===== //
 //
 Device::Device(API api, std::string name, int id, MemInfo memInfo,
-               size_t allocAlignment)
+               size_t allocAlignment, bool useMemoryManager)
     : name_(std::move(name)), id_(id), api_(api), memInfo_(memInfo),
-      allocAlignment_(allocAlignment),
+      allocAlignment_(allocAlignment), useMemoryManager_(useMemoryManager),
       hostMemoryManager_(MemoryManager::onHost(*this, allocAlignment)) {}
 
 Device::~Device() {
@@ -254,6 +259,10 @@ ErrorOr<size_t> Device::maxSingleAllocationSize() const {
 
 ErrorOr<Device::AllocationRange> Device::allocationRange(void *) const {
   return Error("allocation range queries are not supported on this device");
+}
+
+ErrorOr<std::optional<std::array<uint8_t, 16>>> Device::getUuid() const {
+  return std::optional<std::array<uint8_t, 16>>();
 }
 
 // Default VMM implementations: unsupported. Backends that support VMM (CUDA)
@@ -1040,7 +1049,17 @@ ErrorOrSuccess DeviceGraphCollection::debugVerifyReplay(
         (*graphs[graphIdx])->baselineLaunchTrace();
 
     // Compute the diff between current trace and baseline
-    LaunchTraceDiff diff = computeLaunchTraceDiff(currentTrace, baseline);
+    // The baseline also holds launches on streams forked into the capture,
+    // which the eager run cannot attribute to this stream: it is not
+    // capturing, so a forked stream has no capture id to resolve. Compare
+    // only the capture stream's own operations.
+    std::vector<KernelLaunchMetadata> captureStreamOps;
+    llvm::copy_if(baseline, std::back_inserter(captureStreamOps),
+                  [](const KernelLaunchMetadata &entry) {
+                    return entry.streamIndex == 0;
+                  });
+    LaunchTraceDiff diff =
+        computeLaunchTraceDiff(currentTrace, captureStreamOps);
 
     // If there are any differences, report them
     if (!diff.empty()) {
@@ -1137,6 +1156,12 @@ beginCaptureAndExecute(ArrayRef<DeviceStreamRef> streams,
 ErrorOr<DeviceGraphCollection>
 DeviceGraph::capture(CPUDevice &cpuDevice, ArrayRef<DeviceStreamRef> streams,
                      llvm::function_ref<ErrorOrSuccess()> execute) {
+  // Op spans that run during the capture label the operations they enqueue;
+  // the labels are what a profiler resolves replayed kernels through.
+  M::Profiling::beginCaptureLabeling();
+  auto endLabeling =
+      llvm::scope_exit([] { M::Profiling::endCaptureLabeling(); });
+  uint64_t minOpSeq = M::Profiling::nextCaptureOpSeq();
   SmallVector<DeviceGraphCaptureContext, 8> captures;
   if (ErrorOrSuccess err = beginCaptureAndExecute(streams, execute, captures))
     return err.takeError();
@@ -1152,6 +1177,24 @@ DeviceGraph::capture(CPUDevice &cpuDevice, ArrayRef<DeviceStreamRef> streams,
     if (graphOr.isError())
       return graphOr.takeError();
     uninstantiatedGraphs.push_back(graphOr.takeValue());
+  }
+  uint64_t maxOpSeq = M::Profiling::nextCaptureOpSeq();
+  std::shared_ptr<const CapturedOpTable> capturedOps =
+      collectCapturedOps(uninstantiatedGraphs, minOpSeq, maxOpSeq);
+  StringRef logDir = DeviceContext::configAsString("log_graph_capture", "");
+  for (DeviceGraphRef &graph : uninstantiatedGraphs) {
+    graph->recordProfilerManifest(capturedOps);
+    // Next to the backends' DOT dumps, so a captured graph's nodes can be
+    // checked against what its manifest names.
+    if (!logDir.empty()) {
+      std::error_code ec;
+      llvm::raw_fd_ostream os((llvm::Twine(logDir) + "/graph_manifest_" +
+                               llvm::Twine(graph->profilerId()) + ".json")
+                                  .str(),
+                              ec);
+      if (!ec)
+        os << graph->profilerManifest();
+    }
   }
 
   // Phase 2: Instantiate graphs in PARALLEL using AsyncRT.
@@ -1215,6 +1258,129 @@ ErrorOrSuccess DeviceGraph::patchStableAddresses() const {
         assignment.stableAddress, &assignment.ptr, sizeof(assignment.ptr)));
   }
   return success();
+}
+
+// Profiler traces carry the manifest verbatim as a metadata value, and the
+// trace writer strips backslashes, so no string in it may need escaping.
+static std::string manifestString(llvm::StringRef s) {
+  std::string out = s.str();
+  for (char &c : out) {
+    if (c == '"' || c == '\\' || static_cast<unsigned char>(c) < 0x20)
+      c = '\'';
+  }
+  return out;
+}
+
+std::shared_ptr<const DeviceGraph::CapturedOpTable>
+DeviceGraph::collectCapturedOps(ArrayRef<DeviceGraphRef> graphs,
+                                uint64_t minOpSeq, uint64_t maxOpSeq) {
+  llvm::SmallSetVector<uint64_t, 4> threads;
+  // (thread, opSeq) of ops pushed before the capture, by an overlapping one.
+  llvm::SmallSetVector<std::pair<uint64_t, uint64_t>, 4> earlier;
+  for (const DeviceGraphRef &graph : graphs) {
+    for (const KernelLaunchMetadata &entry : graph->baselineLaunchTrace_) {
+      if (entry.opThread == 0)
+        continue;
+      threads.insert(entry.opThread);
+      if (entry.opSeq < minOpSeq)
+        earlier.insert({entry.opThread, entry.opSeq});
+    }
+  }
+  auto table = std::make_shared<CapturedOpTable>();
+  auto append = [&](uint64_t thread, uint64_t lo, uint64_t hi) {
+    for (M::Profiling::CaptureOp &op :
+         M::Profiling::capturedOps(thread, lo, hi))
+      table->push_back(
+          {op.opSeq, op.parentSeq, op.thread, std::move(op.label)});
+  };
+  for (auto [thread, opSeq] : earlier)
+    append(thread, opSeq, opSeq);
+  for (uint64_t thread : threads)
+    append(thread, minOpSeq, maxOpSeq);
+  llvm::sort(*table, [](const CapturedOp &a, const CapturedOp &b) {
+    return a.opSeq < b.opSeq;
+  });
+  return table;
+}
+
+void DeviceGraph::recordProfilerManifest(
+    std::shared_ptr<const CapturedOpTable> ops) {
+  static std::atomic<uint64_t> nextProfilerId{1};
+  profilerId_ = nextProfilerId.fetch_add(1, std::memory_order_relaxed);
+  capturedOps_ = std::move(ops);
+}
+
+const std::string &DeviceGraph::profilerManifest() const {
+  std::call_once(profilerManifestOnce_, [this] {
+    if (profilerId_ != 0)
+      profilerManifest_ = buildProfilerManifest();
+  });
+  return profilerManifest_;
+}
+
+std::string DeviceGraph::buildProfilerManifest() const {
+  // Strings are interned so a graph with hundreds of launches of a few dozen
+  // kernels stays compact.
+  llvm::StringMap<int64_t> stringIndex;
+  llvm::json::Array strings;
+  auto intern = [&](llvm::StringRef value) -> int64_t {
+    auto [it, inserted] = stringIndex.try_emplace(value, strings.size());
+    if (inserted)
+      strings.push_back(manifestString(value));
+    return it->second;
+  };
+
+  // The capture's table also holds other devices' ops; this graph's are the
+  // ones on the threads that enqueued its operations.
+  llvm::SmallDenseSet<uint64_t, 4> threads;
+  for (const KernelLaunchMetadata &entry : baselineLaunchTrace_) {
+    if (entry.opThread != 0)
+      threads.insert(entry.opThread);
+  }
+  ArrayRef<CapturedOp> capturedOps;
+  if (capturedOps_)
+    capturedOps = *capturedOps_;
+  llvm::DenseMap<uint64_t, llvm::StringRef> labels;
+  for (const CapturedOp &op : capturedOps)
+    labels[op.opSeq] = op.label;
+
+  // Each entry: [kind, name, label, opSeq, streamIndex]; kind is k (kernel),
+  // c (memcpy) or s (memset).
+  llvm::json::Array entries;
+  for (const KernelLaunchMetadata &entry : baselineLaunchTrace_) {
+    llvm::StringRef kind =
+        entry.kind == KernelLaunchMetadata::OperationKind::KernelLaunch ? "k"
+        : entry.kind == KernelLaunchMetadata::OperationKind::Memcpy     ? "c"
+                                                                        : "s";
+    entries.push_back(llvm::json::Array{
+        kind, intern(entry.kernelName), intern(labels.lookup(entry.opSeq)),
+        static_cast<int64_t>(entry.opSeq),
+        static_cast<int64_t>(entry.streamIndex)});
+  }
+
+  // Every op pushed during the capture on the threads that enqueued this
+  // graph's work, including ops that enqueued nothing MAX recorded (vendor
+  // library calls): [opSeq, parentSeq, label].
+  llvm::json::Array ops;
+  for (const CapturedOp &op : capturedOps) {
+    if (!threads.contains(op.thread))
+      continue;
+    ops.push_back(llvm::json::Array{static_cast<int64_t>(op.opSeq),
+                                    static_cast<int64_t>(op.parentSeq),
+                                    intern(op.label)});
+  }
+
+  llvm::json::Object manifest;
+  manifest["v"] = 1;
+  manifest["graph"] = static_cast<int64_t>(profilerId_);
+  manifest["device"] = static_cast<int64_t>(device().id());
+  manifest["strings"] = std::move(strings);
+  manifest["entries"] = std::move(entries);
+  manifest["ops"] = std::move(ops);
+  std::string out;
+  llvm::raw_string_ostream os(out);
+  os << llvm::json::Value(std::move(manifest));
+  return out;
 }
 
 //
@@ -1840,6 +2006,14 @@ ErrorOr<DeviceContextRef> DeviceContext::selectStream(unsigned streamId) {
   return DeviceContextRef::copy(this);
 }
 
+bool DeviceContext::flushIdleStreamViews() { return false; }
+
+ErrorOr<DeviceEventRef> DeviceContext::enqueueBaseStreamEvent() {
+  return DeviceEventRef();
+}
+
+bool DeviceContext::isBaseStreamCapturing() const { return false; }
+
 MemoryManagerFreeList &DeviceContext::freeList() const { return *freeList_; }
 MemoryManagerFreeList &DeviceContext::hostFreeList() const {
   return *hostFreeList_;
@@ -1903,8 +2077,11 @@ MemoryManager &Device::memoryManager() const {
   // is alive: an access during or after subclass destruction queries the base
   // vmmSupported() (always false) and silently builds a non-VMM manager.
   std::call_once(memoryManagerOnce_, [&] {
-    memoryManager_.reset(MemoryManager::onDevice(const_cast<Device &>(*this),
-                                                 memInfo_, allocAlignment_));
+    Device &device = const_cast<Device &>(*this);
+    memoryManager_.reset(
+        useMemoryManager_
+            ? MemoryManager::onDevice(device, memInfo_, allocAlignment_)
+            : MemoryManager::disabled(device, allocAlignment_));
   });
   return *memoryManager_;
 }
@@ -2118,7 +2295,10 @@ MODULAR_CXX_EXPORT const std::string &Device::getAcceleratorArchOrEmpty() {
   return arch;
 }
 
-ErrorOrSuccess Device::enablePeerAccess(const Device &peer) {
+// Exported so dynamically linked consumers can reach it: the Python bindings
+// have to go through the AsyncRT C bridge for the all-pairs variant, and a
+// consumer that is not Python (the driver C API) has no bridge to use.
+MODULAR_CXX_EXPORT ErrorOrSuccess Device::enablePeerAccess(const Device &peer) {
   // Call device-specific implementation.
   ErrorOrSuccess result = enablePeerAccessImpl(peer);
   // If successful, set the bitvector to indicate that the peer is accessible.
@@ -2265,7 +2445,10 @@ llvm::json::Value KernelLaunchMetadata::formatJSON() const {
   return llvm::json::Value(std::move(json));
 }
 
-ErrorOrSuccess Device::enableAllPeerAccess() {
+// Exported for the same reason as `enablePeerAccess` above: the Python
+// bindings reach the all-pairs variant through the AsyncRT C bridge, which
+// only exists for Mojo and Python.
+MODULAR_CXX_EXPORT ErrorOrSuccess Device::enableAllPeerAccess() {
   int numDevices = Device::numberOfDevices(Device::gpuAPI);
   if (numDevices <= 1)
     return success();
@@ -2291,7 +2474,7 @@ ErrorOrSuccess Device::enableAllPeerAccess() {
   return success();
 }
 
-ErrorOr<bool> Device::allPeerAccessEnabled() {
+MODULAR_CXX_EXPORT ErrorOr<bool> Device::allPeerAccessEnabled() {
   if (g_allPeerAccessEnabled.load(std::memory_order_relaxed))
     return true;
 

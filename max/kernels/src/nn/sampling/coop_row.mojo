@@ -87,7 +87,9 @@ def coop_group_size(
         return 1
     if batch_size <= 0:
         return 1
-    var cu_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var cu_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
     var group_size = 1
     var c = 2
     while c <= _MAX_COOP_GROUP:

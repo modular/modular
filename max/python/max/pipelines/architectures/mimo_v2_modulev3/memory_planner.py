@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 
 from max.dtype import DType
-from max.nn.comm.ep.ep_config import (
+from max.nn.legacy.comm.ep.ep_config import (
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
 )
@@ -38,6 +38,41 @@ from transformers import AutoConfig
 logger = logging.getLogger(__name__)
 
 
+def ep_dispatch_row_budget(pipeline_config: PipelineConfig) -> int:
+    """Returns the rows one forward step carries; sizes the EP buffers.
+
+    The scheduler's ``max_batch_input_tokens`` bounds a step's active rows
+    -- chunked prefill makes it hard -- so a forward's dispatch buffers fit
+    it. A speculative verify merges ``draft_width`` draft rows beside each
+    request's active token through every MoE layer, rows the budget never
+    charges, so it counts them too, as DeepSeek-V4.1's DSpark EP config
+    does: the dispatch buffers are fixed at build and the dispatch kernel
+    rejects a wider shard.
+
+    Args:
+        pipeline_config: The pipeline whose scheduler budget and verify
+            width bound the step's rows.
+
+    Raises:
+        ValueError: Speculating without ``max_batch_size``, which bounds the
+            requests a verify step carries and so the draft rows too.
+    """
+    runtime = pipeline_config.runtime
+    speculative = pipeline_config.speculative
+    if speculative is None:
+        return runtime.max_batch_input_tokens
+    if runtime.max_batch_size is None:
+        raise ValueError(
+            "MiMo-V2 speculative decoding under expert parallelism needs"
+            " max_batch_size, which bounds the draft rows a verify step"
+            " adds to max_batch_input_tokens"
+        )
+    return (
+        runtime.max_batch_input_tokens
+        + runtime.max_batch_size * speculative.draft_width
+    )
+
+
 class MiMoV2ModuleV3MemoryPlanner(PagedMemoryPlanner):
     """Reserves the EP communication buffers and their peak activations."""
 
@@ -46,6 +81,7 @@ class MiMoV2ModuleV3MemoryPlanner(PagedMemoryPlanner):
     def estimate_activation_memory(
         self, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
+        """Estimates the activation memory one step needs."""
         ep_size = pipeline_config.runtime.ep_size
         if ep_size <= 1:
             # The tensor-parallel build owns no EP buffers; the inherited
@@ -62,7 +98,7 @@ class MiMoV2ModuleV3MemoryPlanner(PagedMemoryPlanner):
         ep_dispatch_dtype = DType.float8_e4m3fn
 
         ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
-            max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+            max_batch_input_tokens=ep_dispatch_row_budget(pipeline_config),
             ep_size=ep_size,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             use_allreduce=pipeline_config.runtime.ep_use_allreduce,

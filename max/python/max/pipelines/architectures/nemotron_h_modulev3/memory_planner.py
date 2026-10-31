@@ -146,9 +146,11 @@ def _bf16_routed_padding_bytes(config: NemotronHConfig) -> int:
 
 
 def _nvfp4_expert_padding_bytes(config: NemotronHConfig) -> int:
-    """Returns the bytes one NVFP4 expert, routed or shared slice, is padded
-    by on the devices.
+    """Returns the bytes one NVFP4 expert is padded by on the devices.
 
+    It covers both projections, routed or shared slice. Each device's share of
+    the channels of both projections is padded, and the interleaved scales pad
+    their rows to whole granules of 128.
     Each device's share of the channels of both projections is padded, and
     the interleaved scales pad their rows to whole granules of 128.
     """

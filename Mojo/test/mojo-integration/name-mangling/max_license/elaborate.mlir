@@ -28,11 +28,11 @@ kgen.generator export @get_gpu_linkage_name() {
                                          tune_cpu = "sm_80",
                                          data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64">>
   // CHECK: constant: string = <"_42kernel">
-  %0 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@"42kernel"> : !kgen.generator<() -> ()>>>
+  %0 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.gen<#kgen.func.symbol<@"42kernel">> : !kgen.generator<() -> ()>>>
   // CHECK: constant: string = <"_42kernel_with_special_chars6A6AsA">
-  %1 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@"42kernel_with::special,chars"> : !kgen.generator<() -> ()>>>
+  %1 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.gen<#kgen.func.symbol<@"42kernel_with::special,chars">> : !kgen.generator<() -> ()>>>
   // CHECK: constant: string = <"normal_but_special6A6A">
-  %2 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@"normal_but::special"> : !kgen.generator<() -> ()>>>
+  %2 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.gen<#kgen.func.symbol<@"normal_but::special">> : !kgen.generator<() -> ()>>>
   hlcf.return
 }
 
@@ -55,7 +55,7 @@ kgen.generator export @get_gpu_linkage_name() {
                                          tune_cpu = "sm_80",
                                          data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64">>
   // CHECK: constant: string = <"_42_sanitize_this_kernel_{{[0-9a-f]+}}">
-  %0 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@"42kernel"> : !kgen.generator<() -> ()>>>
+  %0 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.gen<#kgen.func.symbol<@"42kernel">> : !kgen.generator<() -> ()>>>
   hlcf.return
 }
 
@@ -66,31 +66,31 @@ kgen.generator export @get_gpu_linkage_name() {
 
 // A parametric linkage name concatenating the linkage name of its function
 // parameter with a constant string.
-kgen.generator @HELLO<x: () capturing -> index>() capturing -> !kgen.none
+kgen.generator @HELLO<x: () -> index>() -> !kgen.none
  attributes {
    linkageName = #kgen.linkage_name<
      #pop.string_concat<
        #kgen.get_linkage_name<
          current_target(),
-         #kgen.param.decl.ref<"x"> : !kgen.generator<() capturing -> index>
+         #kgen.param.decl.ref<"x"> : !kgen.generator<() -> index>
        >  : !kgen.string,
        "_hello"
       > : !kgen.string,
      false>
   } {
   %none = kgen.param.constant: none = <#kgen.none>
-  %0 = kgen.call_param[() capturing -> index: x]()
+  %0 = kgen.call_param[() -> index: x]()
   hlcf.return %none : !kgen.none
 }
 
-kgen.generator @FOO() capturing -> index
+kgen.generator @FOO() -> index
     attributes { linkageName = #kgen.linkage_name<"bar" : !kgen.string, false> } {
   %0 = index.constant 1
   hlcf.return %0 : index
 }
 
 // This linkage name needs sanitization for the nvptx target
-kgen.generator @FLIP() capturing -> index
+kgen.generator @FLIP() -> index
     attributes { linkageName = #kgen.linkage_name<"1bar" : !kgen.string, false> } {
   %0 = index.constant 1
   hlcf.return %0 : index
@@ -98,8 +98,8 @@ kgen.generator @FLIP() capturing -> index
 
 // CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry() {
-  kgen.param.declare *"foo()": () capturing -> index = <@FOO>
-  kgen.param.declare *"flip()": () capturing -> index = <@FLIP>
+  kgen.param.declare *"foo()": () -> index = <@FOO>
+  kgen.param.declare *"flip()": () -> index = <@FLIP>
 
   kgen.param.declare nvptx: target =
       <#kgen.target<triple = "nvptx64-nvidia-cuda",
@@ -119,7 +119,7 @@ kgen.generator export @entry() {
   // CHECK-SAME: define dso_local ptx_kernel void @bar_hello(
   %1 = kgen.compile_offload<
           nvptx, 2, "", "",
-          :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">
+          :() -> !kgen.none @HELLO<:() -> index *"foo()">
        > : !kgen.struct<(string, string)>
 
   // Check that inside the offloaded module, the PTX kernel is given the right name.
@@ -130,7 +130,7 @@ kgen.generator export @entry() {
   // CHECK-SAME: define dso_local ptx_kernel void @_1bar_hello(
   %2 = kgen.compile_offload<
           nvptx, 2, "", "",
-          :() capturing -> !kgen.none @HELLO<:() capturing -> index *"flip()">
+          :() -> !kgen.none @HELLO<:() -> index *"flip()">
        > : !kgen.struct<(string, string)>
   hlcf.return
 }

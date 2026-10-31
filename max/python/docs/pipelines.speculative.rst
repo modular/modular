@@ -11,6 +11,14 @@ max.pipelines.speculative
 
 .. currentmodule:: max.pipelines.speculative
 
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   pipelines.speculative.driver
+   pipelines.speculative.spec_adapters
+   pipelines.speculative.spec_width_policy
+
 Configuration
 -------------
 

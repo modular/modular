@@ -11,9 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Process spawning, signalling, and shutdown helpers."""
+
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import logging
 import multiprocessing
 import signal
@@ -21,6 +24,7 @@ import time
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from multiprocessing.context import BaseContext
 from multiprocessing.synchronize import Event
 from typing import ParamSpec, TypeVar
 
@@ -43,7 +47,30 @@ def _event_wait_clear(event: Event, timeout: float) -> None:
     event.clear()
 
 
+class Liveness:
+    """Readiness and liveness signals from a subprocess to its parent.
+
+    The subprocess calls :py:meth:`set_ready` once at startup and
+    :py:meth:`beat` on every iteration. Beats are a lock-free shared
+    counter, so they never block on the parent.
+    """
+
+    def __init__(self, ctx: BaseContext) -> None:
+        self._ready = ctx.Event()
+        self._beats = ctx.RawValue(ctypes.c_uint64)
+
+    def set_ready(self) -> None:
+        """Marks the process as ready to serve."""
+        self._ready.set()
+
+    def beat(self) -> None:
+        """Records a heartbeat."""
+        self._beats.value += 1
+
+
 class SubprocessExit(Exception):
+    """A worker subprocess exited; the message carries its exit status."""
+
     def __init__(self, info: str | int | None):
         if isinstance(info, int):
             try:
@@ -54,7 +81,7 @@ class SubprocessExit(Exception):
 
 
 async def _read_ready(fd: int) -> None:
-    """async helper to wait for fd to enter readable state"""
+    """Async helper to wait for fd to enter readable state."""
     loop = asyncio.get_running_loop()
     ready = loop.create_future()
     loop.add_reader(fd, lambda: ready.set_result(True))
@@ -80,7 +107,7 @@ async def run_subprocess(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> None:
-    """async coroutine to run func(*args,**kwargs) in a subprocess.
+    """Async coroutine to run func(*args,**kwargs) in a subprocess.
 
     ``daemon`` controls the child's ``daemon`` flag. Passing ``True`` matches
     multiprocessing's safety behaviour of auto-terminating the child with the
@@ -109,7 +136,6 @@ async def run_subprocess(
     seconds in the worst case, but we're shutting down -- nothing else
     needs the loop.
     """
-
     proc = _DebugSpawnProcess(
         target=func,
         args=args,
@@ -159,10 +185,10 @@ class ProcessManager:
     Example::
 
         async with subprocess_manager("worker") as proc:
-            alive = mp.Event()
-            task = proc.start(work, alive)
-            await proc.ready(alive, timeout=10)
-            proc.watch_heartbeat(alive, timeout=2)
+            liveness = Liveness(mp)
+            task = proc.start(work, liveness)
+            await proc.ready(liveness, timeout=10)
+            proc.watch_heartbeat(liveness, timeout=2)
             await task  # blocks until subprocess exits
     """
 
@@ -198,15 +224,15 @@ class ProcessManager:
 
         return self.task
 
-    async def ready(self, event: Event, timeout: float | None) -> None:
-        """Waits for ``event`` to be set (then clears it).
+    async def ready(self, liveness: Liveness, timeout: float | None) -> None:
+        """Waits for the subprocess to call :py:meth:`Liveness.set_ready`.
 
-        Fails fast if the subprocess exits before the event is set --
+        Fails fast if the subprocess exits before it is ready --
         otherwise we'd wait the full timeout for an event that's never
         going to come.
 
         Args:
-            event: The readiness event the subprocess will set.
+            liveness: The signals shared with the subprocess.
             timeout: Total wait in seconds. ``None`` waits forever.
 
         Raises:
@@ -221,7 +247,9 @@ class ProcessManager:
         while True:
             # loop so thread is interruptible for cancellation
             try:
-                await loop.run_in_executor(None, _event_wait_clear, event, 1)
+                await loop.run_in_executor(
+                    None, _event_wait_clear, liveness._ready, 1
+                )
                 break
             except TimeoutError:
                 pass
@@ -237,30 +265,34 @@ class ProcessManager:
                 ) from None
 
     def watch_heartbeat(
-        self, event: Event, timeout: float
+        self, liveness: Liveness, timeout: float
     ) -> asyncio.Task[None]:
-        """Adds a background watcher that requires ``event`` to keep being set.
+        """Adds a background watcher that requires the subprocess to keep beating.
 
-        If the subprocess fails to set ``event`` within ``timeout``
-        seconds (repeatedly), :py:class:`TimeoutError` is raised, the
-        body is cancelled, and the error propagates out of the
-        :py:func:`subprocess_manager` block.
+        If :py:meth:`Liveness.beat` isn't called for ``timeout`` seconds,
+        :py:class:`TimeoutError` is raised, the body is cancelled, and the
+        error propagates out of the :py:func:`subprocess_manager` block.
         """
         assert self.heartbeat is None, "watch_heartbeat may only be called once"
 
         async def run_task() -> None:
-            try:
-                while True:
-                    await self.ready(event, timeout)
-            except TimeoutError:
-                raise TimeoutError(
-                    f"{self.name} failed heartbeat check"
-                ) from None
+            last_value = liveness._beats.value
+            last_change = time.monotonic()
+            while True:
+                await asyncio.sleep(min(timeout, 1.0))
+                now = time.monotonic()
+                value = liveness._beats.value
+                if value != last_value:
+                    last_value = value
+                    last_change = now
+                elif now - last_change > timeout:
+                    raise TimeoutError(f"{self.name} failed heartbeat check")
 
         self.heartbeat = self.group.create_task(run_task())
         return self.heartbeat
 
     def cancel(self) -> None:
+        """Cancels the manager's heartbeat task."""
         if self.heartbeat and not self.heartbeat.done():
             self.heartbeat.cancel()
         if self.task and not self.task.done():

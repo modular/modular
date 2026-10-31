@@ -129,6 +129,7 @@ class MuseGlimmerReasoningParser(ReasoningParser):
         self.reset()
 
     def reset(self) -> None:
+        """Clears the parser back to its initial state."""
         self._channel: _Channel | None = None
         self._header: list[int] = []
         # Ids held at the end of the last delta, and their items by type.

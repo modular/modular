@@ -123,11 +123,12 @@ def _ep_wait_copy_kernel[
     hidden_size: Int,
     top_k: Int,
     warps_per_block: Int,
+    aoff_origin: ImmOrigin,
 ](
     output_tokens: TileTensor[quant_dtype, out_layout, MutUntrackedOrigin],
     output_scales: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
     recv_buf: Pointer[UInt8, MutUntrackedOrigin],
-    a_offsets: TileTensor[.uint32, aoff_layout, ImmutAnyOrigin],
+    a_offsets: TileTensor[.uint32, aoff_layout, aoff_origin],
     msg_bytes_dev: Int32,
     num_active_dev: Int32,
     total_tokens_dev: Int32,
@@ -208,20 +209,9 @@ def _run_fusion_check[
     var slot_bytes = num_active * max_padded_M * scale_K
 
     print(
-        "  ",
-        fmt_name,
-        " ",
-        name,
-        " active=",
-        num_active,
-        " total_tokens=",
-        total_tokens,
-        " hidden=",
-        hidden_size,
-        " scale_K=",
-        scale_K,
-        " max_padded_M=",
-        max_padded_M,
+        t"   {fmt_name}   {name}  active= {num_active}  total_tokens="
+        t" {total_tokens}  hidden= {hidden_size}  scale_K= {scale_K} "
+        t" max_padded_M= {max_padded_M}"
     )
 
     comptime hw = ctx.default_device_info
@@ -231,7 +221,7 @@ def _run_fusion_check[
         total_tokens * output_dim
     )
     fused_tok_d.enqueue_fill(Scalar[quant_dtype](0))
-    var fused_tok_tt = TileTensor[origin=MutAnyOrigin](
+    var fused_tok_tt = TileTensor(
         fused_tok_d, row_major(total_tokens, Idx[output_dim])
     )
 
@@ -240,12 +230,11 @@ def _run_fusion_check[
     var dummy_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](scale_K)
     var dummy_fmt = MXTokenFormat[hidden_size, top_k](
         fused_tok_tt,
-        TileTensor[origin=MutAnyOrigin](
-            dummy_scales_d, row_major(1, Idx[scale_K])
-        ),
+        TileTensor(dummy_scales_d, row_major(1, Idx[scale_K])),
         max_padded_M=0,
     )
     comptime FmtType = type_of(dummy_fmt)
+    _ = dummy_fmt
     var scales_off = FmtType.scales_offset()
     var msg_bytes = FmtType.token_size()
     # A wrong `bits_per_element` shifts the scale writer and reader together, so
@@ -280,9 +269,7 @@ def _run_fusion_check[
     var a_off_d = ctx.enqueue_create_buffer[.uint32](n_off)
     ctx.enqueue_copy(recv_d, recv_h)
     ctx.enqueue_copy(a_off_d, a_off_h)
-    var a_off_tt = TileTensor[origin=ImmutAnyOrigin](
-        a_off_d, row_major[n_off]()
-    )
+    var a_off_tt = TileTensor(a_off_d, row_major[n_off]()).as_imm()
 
     var grid_blocks = ceildiv(total_tokens, warps_per_block)
     if grid_blocks == 0:
@@ -295,10 +282,10 @@ def _run_fusion_check[
     var ref_d = ctx.enqueue_create_buffer[.uint8](slot_bytes)
     ref_d.enqueue_fill(UInt8(0))
 
-    var raw_scales_bytes = TileTensor[origin=ImmutAnyOrigin](
+    var raw_scales_bytes = TileTensor(
         raw_scales_d, row_major(total_tokens, Idx[scale_K])
-    )
-    var ref_slots_tt = TileTensor[origin=MutAnyOrigin](
+    ).as_imm()
+    var ref_slots_tt = TileTensor(
         ref_d, row_major(num_active * max_padded_M, Idx[scale_K])
     )
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
@@ -316,7 +303,7 @@ def _run_fusion_check[
     # ---- Path B (fused): copy writes the slot layout directly. ----
     var fused_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](slot_bytes)
     fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
-    var fused_slots_tt = TileTensor[origin=MutAnyOrigin](
+    var fused_slots_tt = TileTensor(
         fused_scales_d,
         row_major(num_active * max_padded_M, Idx[scale_K]),
     )
@@ -329,6 +316,7 @@ def _run_fusion_check[
         hidden_size=hidden_size,
         top_k=top_k,
         warps_per_block=warps_per_block,
+        aoff_origin=a_off_tt.origin,
     ]
     ctx.enqueue_function[kernel_fused](
         fused_tok_tt,
@@ -389,11 +377,8 @@ def _run_fusion_check[
     assert_equal(quant_mismatches, 0, "copied quant bytes do not decode")
 
     print(
-        "    OK: ",
-        slot_bytes,
-        " slot bytes match; ",
-        tok_bytes,
-        " quant bytes decode",
+        t"    OK:  {slot_bytes}  slot bytes match;  {tok_bytes}  quant bytes"
+        t" decode"
     )
 
 

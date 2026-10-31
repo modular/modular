@@ -26,7 +26,7 @@ from max.gpu.host import DeviceContext
 from nn.concat import fused_concat
 
 from std.utils import StaticTuple
-from std.utils.coord import coord_to_index_list
+from std.utils.coord import DynamicCoord, coord_to_index_list
 from std.utils.index import IndexList
 
 
@@ -88,9 +88,16 @@ struct ConcatOpaque:
         ctx: DeviceContext,
     ) raises:
         comptime assert 0 <= axis < rank, "axis out of range"
-        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+        var input_shapes = StaticTuple[DynamicCoord[.int, rank], inputs.size]()
         comptime for i in range(inputs.size):
-            input_shapes[i] = inputs[i].shape()
+            # `fused_concat` threads the input shapes as dynamic `Coord`s. One
+            # is built explicitly per input because the tensors' `shape_coord`
+            # types can differ in their static-vs-dynamic split, while the
+            # tuple's element type must be uniform.
+            var input_shape = DynamicCoord[.int, rank]()
+            comptime for d in range(rank):
+                input_shape.replace_dynamic[d](inputs[i].dim_size[d]())
+            input_shapes[i] = input_shape
 
         # Copy-captured, as in `mo.concat`'s kernel: a by-reference capture
         # leaves a device kernel holding a host pointer on Metal.

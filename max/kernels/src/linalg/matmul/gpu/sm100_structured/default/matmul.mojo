@@ -27,7 +27,7 @@ from std.sys import size_of
 
 from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from max.gpu.host._legacy.device_attribute import DeviceAttribute
+from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
@@ -46,6 +46,7 @@ from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
 from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
 from std.collections import OptionalReg
 from std.utils.static_tuple import StaticTuple
 
@@ -292,11 +293,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
         c_type,
         transpose_b,
         config=config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
@@ -1082,7 +1079,7 @@ comptime _SPLITK_SLOT_COUNTS = _Global[
 struct _SplitKContext(ImplicitlyCopyable, Movable):
     """A device context's parallel split-K state."""
 
-    var workspace: OptionalPointer[UInt8, MutUntrackedOrigin]
+    var workspace: Optional[Pointer[UInt8, MutUntrackedOrigin]]
     """The context's persistent fp32 partials; none without a slot."""
     var slot: Int
     """The context's slot in each kernel's counter global, or -1."""
@@ -1106,13 +1103,13 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
         The state; it lives as long as the process.
     """
     var key = String(
-        "LINALG_SM100_SPLITK_", ctx.id(), "_", Int(ctx._handle.value())
+        "LINALG_SM100_SPLITK_", ctx.device().id, "_", Int(ctx._handle.value())
     )
     var cached = _get_global_or_null(key)
     if cached:
         return cached.unsafe_value().unsafe_bitcast[_SplitKContext]()[]
     var slot = -1
-    var device = ctx.id()
+    var device = ctx.device().id
     if device < _SPLITK_MAX_DEVICES:
         var counts = _SPLITK_SLOT_COUNTS.get_or_create_ptr()
         var taken = Int(
@@ -1122,7 +1119,7 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
         )
         if taken < SPLITK_COUNTER_SLOTS:
             slot = taken
-    var workspace = OptionalPointer[UInt8, MutUntrackedOrigin]()
+    var workspace = Optional[Pointer[UInt8, MutUntrackedOrigin]]()
     if slot >= 0:
         var buf = ctx.enqueue_create_buffer[DType.uint8](
             _SPLITK_WORKSPACE_BYTES
@@ -1252,11 +1249,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         c_type,
         transpose_b,
         config=config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         max_profiled_tiles_per_SM=max_profiled_tiles,
         pdl_level=pdl_level,
     ]
@@ -1349,17 +1342,17 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     # The kernel indexes the workspace and locks over the launch grid, which
     # is built from the swapped dims when AB_swapped; size them the same way.
     var output_tiles = get_num_tiles(
-        Index(M_maybe_swapped, N_maybe_swapped, K),
-        Index(BM, MMA_N, BK),
-        Index(cluster_shape[0], cluster_shape[1]),
+        (M_maybe_swapped, N_maybe_swapped, K),
+        (BM, MMA_N, BK),
+        (Int(cluster_shape[0]), Int(cluster_shape[1])),
     )
     var num_output_tiles = output_tiles[0] * output_tiles[1]
     var lock_buffer_size_bytes = get_required_locks_buffer_size_bytes[
         config.accum_type
     ](
-        Index(M_maybe_swapped, N_maybe_swapped, K),
-        Index(BM, MMA_N, BK),
-        Index(cluster_shape[0], cluster_shape[1]),
+        (M_maybe_swapped, N_maybe_swapped, K),
+        (BM, MMA_N, BK),
+        (Int(cluster_shape[0]), Int(cluster_shape[1])),
     )
 
     # The parallel reduction gives every split its own slot and keeps its
@@ -1391,7 +1384,9 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
                 c_row_stride,
             )
         var ctas = grid_dim[0] * grid_dim[1] * grid_dim[2]
-        var resident = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        var resident = ctx.device().get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
         if ctas > resident:
             raise Error(
                 "split-K parallel reduction needs every CTA resident: grid of ",
@@ -1630,8 +1625,8 @@ def matmul_sm100_fallback[
     b_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: Tuple[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     has_compute_fn: Bool = False,
@@ -1701,7 +1696,7 @@ def matmul_sm100_fallback[
         type_of(c).LayoutType,
         type_of(c).Engine,
         block_tile_shape,
-        umma_shape,
+        (umma_shape[0], umma_shape[1], umma_shape[2]),
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,

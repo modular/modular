@@ -21,6 +21,7 @@
 
 #include "AsyncRT/Runtime/Globals/Globals.h"
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
+#include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 #include "MetalDriver.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/ErrorOr.h"
@@ -31,6 +32,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -145,9 +147,9 @@ static ErrorOr<MTL::Buffer *> wrapExistingPages(MTL::Device *metalDev,
 //
 MetalDevice::MetalDevice(int id, NS::SharedPtr<MTL::Device> device,
                          std::string name, Device::MemInfo memInfo,
-                         size_t allocAlignment)
-    : Device(api, name, id, memInfo, allocAlignment), device_(device),
-      memInfo_(memInfo), driverVersion_([]() -> std::string {
+                         size_t allocAlignment, bool useMemoryManager)
+    : Device(api, name, id, memInfo, allocAlignment, useMemoryManager),
+      device_(device), memInfo_(memInfo), driverVersion_([]() -> std::string {
         // Metal drivers ship with macOS, Darwin release is the driver version
         struct utsname systemInfo;
         uname(&systemInfo);
@@ -164,7 +166,11 @@ ErrorOr<Device::MemInfo> MetalDevice::getMemInfo(MTL::Device *metalDev) {
   Device::MemInfo info;
   info.total = metalDev->recommendedMaxWorkingSetSize();
   size_t used = metalDev->currentAllocatedSize();
-  info.free = info.total > used ? info.total - used : 0;
+  size_t budget = info.total > used ? info.total - used : 0;
+  // The working-set budget ignores other processes, which draw on the same
+  // unified memory.
+  DEFINE_OR_RETURN_ERROR(Device::MemInfo, host, getHostMemoryInfo());
+  info.free = std::min(budget, host.free.value_or(budget));
   return info;
 }
 
@@ -447,8 +453,16 @@ ErrorOr<MetalDevice &> MetalDevice::get(int id) {
   if (id != 0)
     RETURN_ERROR("Apple Metal device only supports id == 0.");
 
+  // Guards the lazy creation below. `get` is reached from whichever thread
+  // asks for a device, and a consumer that does not hold the GIL -- a worker
+  // pool, or the Rust driver binding -- can enter it concurrently. Two threads
+  // would then both build a device and assign to the same counted reference,
+  // and the loser's release frees the device the winner is about to return.
+  // CUDA and HIP guard their device maps the same way.
+  static std::mutex mu;
   static RCRef<MetalDevice> metalDeviceInstance;
 
+  std::lock_guard<std::mutex> lock(mu);
   if (!metalDeviceInstance) {
     NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
         NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -470,8 +484,8 @@ ErrorOr<MetalDevice &> MetalDevice::get(int id) {
 
     size_t allocAlignment = 64;
 
-    metalDeviceInstance =
-        RCRef<MetalDevice>::create(id, device, name, memInfo, allocAlignment);
+    metalDeviceInstance = RCRef<MetalDevice>::create(
+        id, device, name, memInfo, allocAlignment, useMemoryManager);
   }
 
   return *metalDeviceInstance;

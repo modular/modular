@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 3's vision encoder."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
@@ -23,8 +25,8 @@ from max.graph import (
     TensorValue,
     Weight,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.norm import LayerNorm
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.norm import LayerNorm
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .attention import Gemma3VisionAttention
@@ -32,7 +34,7 @@ from .projection import Gemma3VisionMLP
 
 
 class Gemma3VisionEncoderLayer(Module):
-    """An individual layer of encoding within a stack of encoding layers"""
+    """An individual layer of encoding within a stack of encoding layers."""
 
     def __init__(
         self,
@@ -40,8 +42,10 @@ class Gemma3VisionEncoderLayer(Module):
         layer_idx: int,
         device: DeviceRef | None = None,
     ):
-        """prepare the two normalisation layers, the self attention, and the
-        multi-layer perceptrion"""
+        """Builds the layer's norms, attention and MLP.
+
+        The config supplies the widths and the activation.
+        """
         self.config = config
         vision_config = config.vision_config
         vision_dtype = DType.bfloat16
@@ -76,7 +80,7 @@ class Gemma3VisionEncoderLayer(Module):
         hidden_states: TensorValue,
         signal_buffers: BufferValue,
     ) -> TensorValue:
-        """process the input hidden states through each of the sub-layers"""
+        """Process the input hidden states through each of the sub-layers."""
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
         hidden_states = self.self_attn(hidden_states)
@@ -92,6 +96,7 @@ class Gemma3VisionEncoderLayer(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the layer's weights are split across devices."""
         return self.self_attn.sharding_strategy
 
     @sharding_strategy.setter
@@ -110,6 +115,7 @@ class Gemma3VisionEncoderLayer(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma3VisionEncoderLayer]:
+        """Splits the layer's weights across ``devices``."""
         assert self.sharding_strategy
 
         norm1_weight_shards = self.layer_norm1.weight.shard(devices)
@@ -167,11 +173,13 @@ class Gemma3VisionEncoderLayer(Module):
 
 
 class Gemma3VisionEncoder(Module):
-    """Wrapper class for a stack of vision encoder layers"""
+    """Wrapper class for a stack of vision encoder layers."""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
-        """Initialise the stack of encoder layers based on config, and prepare
-        sharding strategy"""
+        """Builds the encoder stack from the config.
+
+        The layers are laid out on ``config.devices`` and sharded there.
+        """
         super().__init__()
         self.config = config
         self.devices = config.devices
@@ -198,8 +206,11 @@ class Gemma3VisionEncoder(Module):
         hidden_states: TensorValue | Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> TensorValue | Sequence[TensorValue]:
-        """Process hidden states through the stack of encoder layers,
-        applying multi-device functionality if required"""
+        """Runs the stack over ``hidden_states``.
+
+        Each layer's outputs are exchanged across devices before the next layer
+        reads them.
+        """
         # if hidden_states is a list, we are sharding across devices.  each device has a replication of the weights
         if isinstance(hidden_states, Sequence):
             outputs = []

@@ -388,8 +388,9 @@ trait PluginHooks:
     """Override for `_printf`, which formats its arguments into `fmt` with the
     target's own `printf`.
 
-    Where this is `None`, `_printf` calls the C `fprintf` on a CPU and writes
-    `fmt` through `print_emit_fn` on a GPU.
+    Where this is `None`, `_printf` writes `fmt` alone, without its
+    arguments, through `print_emit_fn` when the target sets it, and otherwise
+    calls the C `fprintf` on a target that is not a GPU.
 
     Parameters:
         fmt: The C `printf` format string.

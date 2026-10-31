@@ -22,8 +22,8 @@ comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
 
 def readfirstlane_kernel[
-    dtype: DType
-](y: MutPointer[Scalar[dtype], MutAnyOrigin], x: Scalar[dtype]):
+    dtype: DType, y_origin: MutOrigin
+](y: MutPointer[Scalar[dtype], y_origin], x: Scalar[dtype]):
     y[0] = readfirstlane(x)
 
 
@@ -32,7 +32,7 @@ def test_readfirstlane_scalar_types() raises:
     scalar type."""
 
     var ir_f32 = _compile_code[
-        readfirstlane_kernel[.float32],
+        readfirstlane_kernel[.float32, MutUntrackedOrigin],
         target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
@@ -42,7 +42,7 @@ def test_readfirstlane_scalar_types() raises:
     )
 
     var ir_u32 = _compile_code[
-        readfirstlane_kernel[.uint32],
+        readfirstlane_kernel[.uint32, MutUntrackedOrigin],
         target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
@@ -52,7 +52,7 @@ def test_readfirstlane_scalar_types() raises:
     )
 
     var ir_f16 = _compile_code[
-        readfirstlane_kernel[.float16],
+        readfirstlane_kernel[.float16, MutUntrackedOrigin],
         target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
@@ -62,7 +62,7 @@ def test_readfirstlane_scalar_types() raises:
     )
 
     var ir_f64 = _compile_code[
-        readfirstlane_kernel[.float64],
+        readfirstlane_kernel[.float64, MutUntrackedOrigin],
         target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
@@ -76,13 +76,13 @@ def test_readfirstlane_u64() raises:
     """Verifies that readfirstlane on a 64-bit type emits the correct
     LLVM intrinsic (llvm.amdgcn.readfirstlane.i64)."""
 
-    def readfirstlane_u64_kernel(
-        y: MutPointer[UInt64, MutAnyOrigin], x: UInt64
-    ):
+    def readfirstlane_u64_kernel[
+        y_origin: MutOrigin
+    ](y: MutPointer[UInt64, y_origin], x: UInt64):
         y[0] = readfirstlane(x)
 
     var ir = _compile_code[
-        readfirstlane_u64_kernel,
+        readfirstlane_u64_kernel[MutUntrackedOrigin],
         target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
@@ -99,14 +99,14 @@ def test_warp_id_broadcast_single_readfirstlane() raises:
     so thread_idx.x / WARP_SIZE fits in 32 bits and the second
     readfirstlane for the high bits should be elided."""
 
-    def warp_id_broadcast_kernel(
-        y: MutPointer[Int, MutAnyOrigin],
-    ):
+    def warp_id_broadcast_kernel[
+        y_origin: MutOrigin
+    ](y: MutPointer[Int, y_origin]):
         var res = ufloordiv(thread_idx.x, WARP_SIZE)
         y[0] = readfirstlane(res)
 
     var asm = _compile_code[
-        warp_id_broadcast_kernel,
+        warp_id_broadcast_kernel[MutUntrackedOrigin],
         target=MI355X_TARGET,
         emission_kind="asm",
     ]().asm

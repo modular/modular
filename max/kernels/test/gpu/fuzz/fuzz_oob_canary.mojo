@@ -97,12 +97,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "num_elems=",
-                specs[i].num_elems,
-                "overflow=",
-                specs[i].overflow,
+                t"FUZZ_SPEC idx= {i} num_elems= {specs[i].num_elems} overflow="
+                t" {specs[i].overflow}"
             )
         return
 
@@ -115,7 +111,7 @@ def main() raises:
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print("=== fuzz_oob_canary seed=", the_seed, "budget=", the_budget, "===")
+    print(t"=== fuzz_oob_canary seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

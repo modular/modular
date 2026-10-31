@@ -134,7 +134,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         such as `--target-triple`, `--target-cpu`, and `--target-features`.
 
     * Within an accelerator "offload" compilation, this is the accelerator
-        target, typically equivalent to `max.gpu.host._legacy.default_accelerator()`.
+        target, typically equivalent to `max.gpu.host.default_accelerator()`.
 
     Returns:
         A value representing the current compilation target.

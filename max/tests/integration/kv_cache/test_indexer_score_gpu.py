@@ -32,8 +32,8 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import indexer_score_ragged
-from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.legacy.kernels import indexer_score_ragged
+from max.nn.legacy.kv_cache import MLAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 PAGE_SIZE = 128

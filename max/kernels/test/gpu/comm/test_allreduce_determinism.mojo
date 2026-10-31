@@ -207,17 +207,7 @@ def allreduce_determinism_test[
         ngpus, sm_version, allreduce_tuning_table
     ](num_bytes)
     print(
-        "  ngpus=",
-        ngpus,
-        " dtype=",
-        dtype,
-        " length=",
-        length,
-        " bytes=",
-        num_bytes,
-        " algo=",
-        cfg.algorithm,
-        sep="",
+        t"  ngpus={ngpus} dtype={dtype} length={length} bytes={num_bytes} algo={cfg.algorithm}"
     )
 
     var ref_hash = UInt64(0)
@@ -242,14 +232,8 @@ def allreduce_determinism_test[
             var rank_hash = hash_output(host_out[i], length)
             if rank_hash != run_hash:
                 print(
-                    "CROSS-RANK DIVERGENCE at run",
-                    run,
-                    "rank",
-                    i,
-                    "hash",
-                    rank_hash,
-                    "!= rank0 hash",
-                    run_hash,
+                    t"CROSS-RANK DIVERGENCE at run {run} rank {i} hash"
+                    t" {rank_hash} != rank0 hash {run_hash}"
                 )
             assert_equal(rank_hash, run_hash)
 
@@ -258,12 +242,8 @@ def allreduce_determinism_test[
         else:
             if run_hash != ref_hash:
                 print(
-                    "RUN-TO-RUN DIVERGENCE at run",
-                    run,
-                    "hash",
-                    run_hash,
-                    "!= run0 hash",
-                    ref_hash,
+                    t"RUN-TO-RUN DIVERGENCE at run {run} hash {run_hash} !="
+                    t" run0 hash {ref_hash}"
                 )
             assert_equal(run_hash, ref_hash)
 

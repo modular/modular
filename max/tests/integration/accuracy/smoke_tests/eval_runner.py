@@ -62,13 +62,22 @@ EvalSamples = list[dict[str, Any]]
 
 # Prometheus field where each framework exposes its generated-token count.
 _COMPLETION_TOKEN_METRICS = (
-    "maxserve_num_output_tokens_total",  # max / max-ci
+    "max_num_output_tokens_total",  # max / max-ci
+    "max_request_output_tokens_total",  # mach-ci
+    # TODO(MAX-1007): Remove after rollout and the rollback window close.
+    "maxserve_num_output_tokens_total",  # historical max / max-ci
     "vllm:generation_tokens_total",  # vllm
     "sglang:generation_tokens_total",  # sglang
+    # TODO(MAX-1007): Remove after rollout and the rollback window close.
+    "mach_request_output_tokens_total",  # historical mach-ci
 )
 
-_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC = (
-    "maxserve_spec_decode_avg_acceptance_length"
+_SPEC_DECODE_ACCEPTANCE_LENGTH_METRICS = (
+    "max_spec_decode_avg_acceptance_length",
+    # TODO(MAX-1007): Remove both legacy aliases after rollout and the
+    # rollback window close.
+    "maxserve_spec_decode_avg_acceptance_length",
+    "mach_spec_decode_avg_acceptance_length",
 )
 
 
@@ -172,6 +181,7 @@ def call_eval(
     num_questions: int,
     disable_timeouts: bool,
     metrics_url: str | None = None,
+    metrics_delay_s: float = 0,
     lm_eval_metadata: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ",max_gen_toks=4096"
@@ -223,7 +233,12 @@ def call_eval(
 
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
-        eval_timeout = None if disable_timeouts else 600
+        eval_timeout = (
+            None
+            if disable_timeouts
+            else (1800 if model.casefold() == "moonshotai/kimi-k3" else 600)
+        )
+        time.sleep(metrics_delay_s)
         tokens_before = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
@@ -239,6 +254,7 @@ def call_eval(
                 f"Evals did not finish within the expected timeout={eval_timeout}s. "
                 "You can pass --disable-timeouts to opt-out of this."
             ) from None
+        time.sleep(metrics_delay_s)
         tokens_after = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
@@ -292,29 +308,33 @@ def get_spec_decode_acceptance_totals(
     metrics_url: str,
 ) -> tuple[float, float] | None:
     """Reads the cumulative (sum, count) of the spec-decode acceptance-length
-    histogram from Prometheus."""
+    histogram from Prometheus. The histogram observes accepted drafts per
+    verification; callers add the bonus token."""
     try:
         r = requests.get(metrics_url, timeout=(5, 30))
         r.raise_for_status()
     except requests.RequestException:
         return None
 
-    total_sum = 0.0
-    total_count = 0.0
-    for line in r.text.splitlines():
-        if not line or line.startswith("#"):
-            continue
-        # A sample line is ``name{labels} value`` or ``name value``.
-        name = line.split("{", 1)[0].split(" ", 1)[0]
-        if not name.startswith(_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC):
-            continue
-        # Skips the ``_bucket`` rows of the same family.
-        if name.endswith("_sum"):
-            total_sum += float(line.rsplit(" ", 1)[1])
-        elif name.endswith("_count"):
-            total_count += float(line.rsplit(" ", 1)[1])
-
-    return total_sum, total_count
+    for metric in _SPEC_DECODE_ACCEPTANCE_LENGTH_METRICS:
+        total_sum = 0.0
+        total_count = 0.0
+        found = False
+        for line in r.text.splitlines():
+            if not line or line.startswith("#"):
+                continue
+            name = line.split("{", 1)[0].split(" ", 1)[0]
+            if not name.startswith(metric):
+                continue
+            if name.endswith("_sum"):
+                total_sum += float(line.rsplit(" ", 1)[1])
+                found = True
+            elif name.endswith("_count"):
+                total_count += float(line.rsplit(" ", 1)[1])
+                found = True
+        if found:
+            return total_sum, total_count
+    return 0.0, 0.0
 
 
 def _spec_decode_acceptance_length_delta(
@@ -323,7 +343,11 @@ def _spec_decode_acceptance_length_delta(
 ) -> float | None:
     """Computes the windowed acceptance length from two cumulative
     (sum, count) snapshots, or None if either snapshot is missing or the
-    count didn't advance (guards the division)."""
+    count didn't advance (guards the division).
+
+    The histogram observes accepted drafts per verification, so the result
+    adds the bonus token and counts tokens committed per verify step, as the
+    benchmark reports for every backend."""
     if before is None or after is None:
         return None
     sum_before, count_before = before
@@ -331,7 +355,7 @@ def _spec_decode_acceptance_length_delta(
     count_delta = count_after - count_before
     if count_delta <= 0:
         return None
-    return (sum_after - sum_before) / count_delta
+    return 1 + (sum_after - sum_before) / count_delta
 
 
 def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:

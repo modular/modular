@@ -322,44 +322,50 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
         return NicheIndex(0) if Self.isa_niche(memory) else NicheIndex.NotANiche
 
 
-struct _FieldNiche[T: AnyType, name: StringLiteral]:
-    """Implements the niches of `T` as those of its field named `name`, for a
-    type that wraps a nicheable value."""
+trait _FieldNicheable(UnsafeNicheable):
+    """Implements `UnsafeNicheable` for a type that has a field that already
+    implements the trait.
+    """
 
-    comptime Field = downcast[
-        reflect[Self.T].field[Self.name].T, UnsafeNicheable
+    comptime _KgenNichedFieldName: __mlir_type.`!kgen.string`
+    comptime _NichedField: UnsafeNicheable = downcast[
+        reflect[Self].field[StringLiteral[Self._KgenNichedFieldName]()].T,
+        UnsafeNicheable,
     ]
 
     @staticmethod
     @inline(.always)
-    def _field[
-        origin: Origin, //
-    ](memory: Pointer[MaybeUninit[Self.T], origin]) -> Pointer[
-        MaybeUninit[Self.Field], origin
+    def _niched_field[
+        memory_origin: Origin, //
+    ](memory: Pointer[MaybeUninit[Self], memory_origin]) -> Pointer[
+        MaybeUninit[Self._NichedField], memory_origin
     ]:
-        comptime offset = reflect[Self.T].field_offset[name=Self.name]()
+        comptime offset = reflect[Self].field_offset[
+            name=StringLiteral[Self._KgenNichedFieldName]()
+        ]()
         return (
             memory.unsafe_bitcast[Byte]()
             .unsafe_offset(offset)
-            .unsafe_bitcast[MaybeUninit[Self.Field]]()
+            .unsafe_bitcast[MaybeUninit[Self._NichedField]]()
         )
 
     @staticmethod
     @inline(.always)
+    @doc_hidden
     def niche_count() -> Int:
-        return Self.Field.niche_count()
+        return Self._NichedField.niche_count()
 
     @staticmethod
     @inline(.always)
-    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self.T], _]):
-        Self.Field.write_niche[index](Self._field(memory))
+    @doc_hidden
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
+        Self._NichedField.write_niche[index](Self._niched_field(memory))
 
     @staticmethod
     @inline(.always)
-    def classify_niche(
-        memory: ImmPointer[MaybeUninit[Self.T], _]
-    ) -> NicheIndex:
-        return Self.Field.classify_niche(Self._field(memory))
+    @doc_hidden
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
+        return Self._NichedField.classify_niche(Self._niched_field(memory))
 
 
 struct _NonNegativeScalarNiche[

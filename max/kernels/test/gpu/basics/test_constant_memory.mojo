@@ -44,14 +44,16 @@ def test_constant_mem(ctx: DeviceContext) raises:
             ptr[i] = Float32(i)
         return ptr
 
-    def static_constant_kernel[n: Int](data: MutPointer[Float32, MutAnyOrigin]):
+    def static_constant_kernel[
+        n: Int, data_origin: MutOrigin
+    ](data: MutPointer[Float32, data_origin]):
         comptime val = _fill_impl[n]()
         data[thread_idx.x] = val[thread_idx.x]
 
     var res_device = ctx.enqueue_create_buffer[.float32](16)
     res_device.enqueue_fill(0)
 
-    comptime kernel = static_constant_kernel[16]
+    comptime kernel = static_constant_kernel[16, origin_of(res_device)]
     ctx.enqueue_function[kernel](res_device, grid_dim=1, block_dim=16)
 
     with res_device.map_to_host() as res_host:
@@ -74,15 +76,18 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
     def static_constant_kernel[
         get_constant_memory: def() thin -> MutPointer[
             Float32, MutUntrackedOrigin, address_space=.CONSTANT
-        ]
-    ](data: MutPointer[Float32, MutAnyOrigin]):
+        ],
+        data_origin: MutOrigin,
+    ](data: MutPointer[Float32, data_origin]):
         comptime val = get_constant_memory()
         data[thread_idx.x] = val[thread_idx.x]
 
     var res_device = ctx.enqueue_create_buffer[.float32](16)
     res_device.enqueue_fill(0)
 
-    comptime kernel = static_constant_kernel[_fill_impl[20]]
+    comptime kernel = static_constant_kernel[
+        _fill_impl[20], origin_of(res_device)
+    ]
     ctx.enqueue_function[kernel](res_device, grid_dim=1, block_dim=16)
 
     with res_device.map_to_host() as res_host:
@@ -93,7 +98,9 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
 def test_external_constant_mem(ctx: DeviceContext) raises:
     print("== test_external_constant_mem")
 
-    def static_constant_kernel(data: MutPointer[Float32, MutAnyOrigin]):
+    def static_constant_kernel[
+        data_origin: MutOrigin
+    ](data: MutPointer[Float32, data_origin]):
         var static_constant = unsafe_stack_allocation[
             16,
             Float32,
@@ -129,7 +136,7 @@ def test_external_constant_mem(ctx: DeviceContext) raises:
         constant_memory.T, origin_of(constant_memory)
     ] = constant_memory.unsafe_ptr()
 
-    comptime kernel = static_constant_kernel
+    comptime kernel = static_constant_kernel[origin_of(res_device)]
     ctx.enqueue_function[kernel](
         res_device,
         grid_dim=1,

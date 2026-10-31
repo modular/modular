@@ -19,9 +19,11 @@ from shmem import *
 from std.testing import assert_equal
 
 
-def set_and_shift_kernel(
-    send_data: Pointer[Float32, MutAnyOrigin],
-    recv_data: Pointer[Float32, MutAnyOrigin],
+def set_and_shift_kernel[
+    send_origin: MutOrigin, recv_origin: MutOrigin
+](
+    send_data: Pointer[Float32, send_origin],
+    recv_data: Pointer[Float32, recv_origin],
     num_elems: Int,
     mype: Int32,
     npes: Int32,
@@ -72,7 +74,9 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
 
     ctx.barrier_all()
 
-    ctx.enqueue_function[set_and_shift_kernel](
+    ctx.enqueue_function[
+        set_and_shift_kernel[origin_of(send_data), origin_of(recv_data)]
+    ](
         send_data,
         recv_data,
         num_elems,
@@ -101,7 +105,7 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
             String(t"unexpected value on PE: {mype} at idx: {i}"),
         )
 
-    print("[", mype, "of", npes, "] run complete. use_nbi=", use_nbi)
+    print(t"[ {mype} of {npes} ] run complete. use_nbi= {use_nbi}")
 
 
 def main() raises:

@@ -24,13 +24,16 @@
 # https://github.com/OpenRouterTeam/benchmark-harness. It is TypeScript and only
 # talks to the OpenRouter Responses API, so this runs an Inspect task that
 # reproduces its GPQA instead (exacto_gpqa_task.py, samples ported in
-# exacto_gpqa_openrouter.py and unit-tested against the harness's own shuffle):
+# exacto_gpqa_openrouter.py and answers extracted by exacto_mcq.py, both
+# unit-tested against the harness's own output):
 #   * the same prompt, system message, dataset, temperature 0.5 and 10 epochs;
 #   * the same per-question option shuffle, so correct answers spread over A-D.
 #     openbench's gpqa_diamond, which this runner used before, puts every
 #     correct answer at 'B';
-#   * the same answer extraction: the harness ports openbench's MCQ scorer,
-#     which the task reuses;
+#   * the same answer extraction: exacto_mcq.py ports the harness's extract.ts.
+#     This runner used openbench 0.5.3's MCQ scorer before, which extract.ts
+#     started from but has drifted from: extract.ts ranks "Answer: $C" with
+#     its English patterns and reads multilingual A-J;
 #   * reasoning effort "high", which the harness sends on every request. On
 #     GLM-5.3 the chat template renders a missing effort as "Max", so leaving
 #     it unset asks for longer reasoning than the harness does;
@@ -47,9 +50,9 @@
 # translates Responses into each provider's own API, so that is the request a
 # provider receives.
 #
-# The harness venv is openbench's, pinned: it brings Inspect, the MCQ scorer and
-# datasets. It has its own dependency tree, so — like run_omnidocbench_local.sh —
-# this is a shell runner around a pinned venv rather than a single bazel target.
+# The harness venv is openbench's, pinned: it brings Inspect and datasets. It
+# has its own dependency tree, so — like run_omnidocbench_local.sh — this is a
+# shell runner around a pinned venv rather than a single bazel target.
 # The venv persists under .derived/cache, so repeat runs skip straight to
 # inference.
 #
@@ -239,7 +242,8 @@ REPORT="$(find_module exacto_report.py)"
 # The task imports its sibling modules from its own directory, so they must all
 # resolve to the same place.
 TASK="$(find_module exacto_gpqa_task.py)"
-for sibling in exacto_gpqa_openrouter.py exacto_streaming.py; do
+for sibling in \
+  exacto_gpqa_openrouter.py exacto_mcq.py exacto_streaming.py exacto_media.py; do
   [[ -f "$(dirname "$TASK")/$sibling" ]] || {
     echo "ERROR: $sibling is not next to $TASK" >&2
     exit 1

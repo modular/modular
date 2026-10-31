@@ -102,6 +102,7 @@ M_PrimitiveArrayAttr      # PrimitiveArrayAttr; referenced by ArrayElementsAttr
 MOComposite_DistributedAllGatherRMSNormOp            # CompositeDistributedAllgatherRmsNormOp
 MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op  # CompositeDistributedAllgatherRmsNormQuantMxfp8Op
 MOComposite_DistributedAllGatherRMSNormQuantMXFP6Op  # CompositeDistributedAllgatherRmsNormQuantMxfp6Op
+MOComposite_DistributedAllReduceRMSNormOp            # CompositeDistributedAllreduceRmsNormOp
 MOComposite_DistributedReduceScatterRMSNormOp        # CompositeDistributedReduceScatterRmsNormOp
 MOComposite_FusedMatmulAddOp                         # CompositeMatmulAddOp; declares output params; graph.py reaches it structurally
 MOComposite_GroupedMatmulBlockScaledOp               # CompositeGroupedMatmulBlockScaledOp

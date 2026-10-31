@@ -110,12 +110,8 @@ def _run[
         var index = Int(indices_h[i])
         if index < 0 or index >= n:
             print(
-                "FUZZ_NUMERIC_FAIL reason=index_range position=",
-                i,
-                " index=",
-                index,
-                " n=",
-                n,
+                t"FUZZ_NUMERIC_FAIL reason=index_range position= {i}  index="
+                t" {index}  n= {n}"
             )
             raise Error("argsort returned an invalid index")
         if seen[index]:
@@ -140,12 +136,8 @@ def _run[
             var value = input_h[Int(indices_h[i])]
             if value != reference[i]:
                 print(
-                    "FUZZ_NUMERIC_FAIL reason=sorted_value position=",
-                    i,
-                    " actual=",
-                    value,
-                    " expected=",
-                    reference[i],
+                    t"FUZZ_NUMERIC_FAIL reason=sorted_value position= {i} "
+                    t" actual= {value}  expected= {reference[i]}"
                 )
                 raise Error("argsort values differ from the CPU reference")
 
@@ -197,16 +189,9 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "n=",
-                specs[i].n,
-                "ascending=",
-                specs[i].ascending,
-                "dist=",
-                specs[i].dist,
-                "data_seed=",
-                specs[i].data_seed,
+                t"FUZZ_SPEC idx= {i} n= {specs[i].n} ascending="
+                t" {specs[i].ascending} dist= {specs[i].dist} data_seed="
+                t" {specs[i].data_seed}"
             )
         return
 

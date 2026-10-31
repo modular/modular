@@ -19,10 +19,11 @@ from std.testing import assert_equal
 
 
 def apply_closure[
-    closure_type: (def(Int32, MutPointer[Int32, MutAnyOrigin]) -> None)
+    dst_origin: MutOrigin,
+    closure_type: (def(Int32, MutPointer[Int32, dst_origin]) -> None)
     & DevicePassable
-    & ImplicitlyCopyable
-](value: Int32, dst: MutPointer[Int32, MutAnyOrigin], closure: closure_type,):
+    & ImplicitlyCopyable,
+](value: Int32, dst: MutPointer[Int32, dst_origin], closure: closure_type,):
     closure(value, dst)
 
 
@@ -41,13 +42,13 @@ def test_enqueue_compiled_kernel_accepts_closure_argument(
     var captured = Int32(42)
 
     def closure(
-        value: Int32, dst: MutPointer[Int32, MutAnyOrigin]
+        value: Int32, dst: MutPointer[Int32, MutUntrackedOrigin]
     ) {var captured}:
         dst[] = captured + value
 
     assert_closure_encodable[type_of(closure)]()
 
-    comptime kernel = apply_closure[type_of(closure)]
+    comptime kernel = apply_closure[MutUntrackedOrigin, type_of(closure)]
     var compiled = ctx.compile_function[kernel]()
     ctx.enqueue_function(
         compiled,

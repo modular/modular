@@ -109,11 +109,7 @@ def test_gemv() raises:
         Float64(bytes_per_iteration) / serial_perf.mean()
     ) / gigabyte
     print(
-        "Serial GEMV Bandwidth: ",
-        serial_bandwidth,
-        "(",
-        serial_perf.mean(),
-        ")",
+        t"Serial GEMV Bandwidth:  {serial_bandwidth} ( {serial_perf.mean()} )"
     )
     print("Serial GEMV GFLOP/s", 1e-9 * ((2 * m * k) / serial_perf.mean()))
 
@@ -136,13 +132,7 @@ def test_gemv() raises:
     var par_bandwidth = (
         Float64(bytes_per_iteration) / par_perf.mean()
     ) / gigabyte
-    print(
-        "Parallel GEMV Bandwidth: ",
-        par_bandwidth,
-        "(",
-        par_perf.mean(),
-        ")",
-    )
+    print(t"Parallel GEMV Bandwidth:  {par_bandwidth} ( {par_perf.mean()} )")
     print("Parallel GEMV GFLOP/s", 1e-9 * ((2 * m * k) / par_perf.mean()))
 
     var bandwidth_increase = par_bandwidth / serial_bandwidth

@@ -104,9 +104,10 @@ public:
   static constexpr API metalAPI = "metal"; // Apple Metal device
 
   struct MemInfo {
-    MemInfo() : total(0), free(0) {}
+    MemInfo() : total(0) {}
     size_t total;
-    size_t free;
+    // Unset when the driver cannot measure free memory.
+    std::optional<size_t> free;
   };
 
   struct GraphMemInfo {
@@ -120,6 +121,8 @@ public:
 
   /// Returns the number of devices available that support `api`.
   static int numberOfDevices(StringRef api);
+  /// Unlike legacy, skips devices whose plugin lacks the peer extension.
+  static ErrorOrSuccess enableAllPeerAccess();
 
   /// Creates a device handle for device `id` of `api`.
   static ErrorOr<DeviceRef> create(StringRef api, int id = 0);
@@ -326,6 +329,9 @@ public:
   ErrorOrSuccess copyTo(DeviceBuffer &dst, size_t srcByteOffset,
                         size_t srcByteSize);
 
+  /// Copies `byteSize()` bytes from host memory at `src`.
+  ErrorOrSuccess copyFrom(const void *src);
+
   /// Either do a blocking synchronize or set up events with an external
   /// stream. The HAL backend does not support external streams, so passing
   /// one fails.
@@ -360,6 +366,10 @@ private:
   /// When set, runs in place of the default free (legacy semantics); the
   /// Mojo box is then released without freeing the wrapped memory.
   llvm::unique_function<void()> destructorFn_;
+  /// Set by `createBufferOwning(owning=true)`, whose Mojo box wraps the memory
+  /// non-owning: frees through the driver on destruction unless a destructor
+  /// was set or the pointer was released.
+  bool freeOnDestroy_ = false;
 };
 
 /// RAII guard that makes a context's driver context current on the calling
@@ -433,11 +443,8 @@ public:
   ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
                                         uint64_t value) const;
 
-  /// Enqueues a host callback on this stream. Like the non-CUDA legacy
-  /// implementation's backends, the HAL backend does not support it.
-  ErrorOrSuccess enqueueHostFunc(void (*fn)(void *), void *userData) const {
-    return Error("enqueueHostFunc is not supported on this device");
-  }
+  /// CUDA and HIP only, as in legacy.
+  ErrorOrSuccess enqueueHostFunc(void (*fn)(void *), void *userData) const;
 
   /// Raw device driver stream handle, to enable passing to PyTorch and
   /// similar APIs. Null if the handle cannot be queried.
@@ -581,6 +588,14 @@ public:
   /// The HAL backend never creates instances, so this is unreachable.
   DeviceContext &context() const;
 
+  /// Profiler identity and manifest, as on the legacy DeviceGraph. Unreachable
+  /// at runtime, since no instance exists; empty so replay tracing is a no-op.
+  uint64_t profilerId() const { return 0; }
+  const std::string &profilerManifest() const {
+    static const std::string empty;
+    return empty;
+  }
+
 private:
   llvm::SmallVector<DeviceBufferRef> inputs_;
   llvm::SmallVector<AsyncRT::AnyAsyncValueRef> outputs_;
@@ -697,6 +712,19 @@ public:
     }
     return success();
   }
+
+  // `crossStreamSync` orders the copy against `src`'s stream both ways. The
+  // graph compiler passes false because it orders its streams itself.
+  inline ErrorOrSuccess enqueueCopyDeviceToDevice(DeviceBuffer &dst,
+                                                  DeviceBuffer &src,
+                                                  bool crossStreamSync = true) {
+    return enqueueCopyDeviceToDevice(dst, src, 0, dst.byteSize(),
+                                     crossStreamSync);
+  }
+  ErrorOrSuccess enqueueCopyDeviceToDevice(DeviceBuffer &dst, DeviceBuffer &src,
+                                           size_t srcByteOffset,
+                                           size_t srcByteSize,
+                                           bool crossStreamSync = true);
 
   ErrorOrSuccess enqueueCopyFromDevice(void *dst, const void *src,
                                        size_t byteSize);

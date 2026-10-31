@@ -21,7 +21,7 @@ from std.sys import CompilationTarget, size_of
 from std.ffi import external_call
 
 from max.gpu.host import DeviceContext, HostBuffer
-from max.gpu.host._legacy.device_context import (
+from max.gpu.host import (
     _checked,
     _CString,
     _DeviceContextPtr,

@@ -13,7 +13,9 @@
 """Implements comparison and equality traits for Mojo types."""
 
 from std.builtin.constrained import _field_conforms_to_error
-from std.builtin._enum import __Enum
+from std.builtin.enum_like import EnumLike
+from std.builtin.variadics import ParameterList, TypeList
+from std.os import abort
 from std.reflection import reflect
 
 
@@ -65,17 +67,15 @@ trait Equatable:
             of equality, False otherwise.
         """
 
+        # An `EnumLike` type compares its active case and that case's payload,
+        # not its fields.
+        comptime if conforms_to(Self, EnumLike):
+            return _enum_reflection_eq(self, other)
+
         # Default implementation using reflection: compare all fields
         comptime r = reflect[Self]
         comptime names = r.field_names()
         comptime types = r.field_types()
-
-        # Just so we have a better error message: the assert on `Equatable`
-        # below also rejects an enum's hidden storage field, but reports that
-        # field instead of the enum itself.
-        comptime assert not conforms_to(
-            Self, __Enum
-        ), "deriving `__eq__` is not yet supported for enums; write `__eq__`"
 
         comptime for i in range(names.length):
             comptime T = types[i]
@@ -101,6 +101,31 @@ trait Equatable:
             definition of equality, False otherwise.
         """
         return not self == other
+
+
+@inline(.always)
+def _enum_reflection_eq[T: EnumLike & Equatable](this: T, other: T) -> Bool:
+    """Compares the index of the active case, then the payloads of that case."""
+    var discriminant = this._get_enum_discriminant()
+    if discriminant != other._get_enum_discriminant():
+        return False
+    comptime names = ParameterList[T._enum_case_names]()
+    comptime types = TypeList[Trait=AnyType, T._enum_case_types]()
+    comptime for i in range(names.length):
+        if discriminant == i:
+            comptime PayloadType = types[i]
+            comptime if PayloadType != NoneType:
+                comptime assert conforms_to(PayloadType, Equatable), (
+                    "the payload of every case must conform to `Equatable` to"
+                    " use the default `Equatable` implementation for an"
+                    " `EnumLike` type"
+                )
+                return (
+                    this._unsafe_get_enum_payload[i]()
+                    == other._unsafe_get_enum_payload[i]()
+                )
+            return True
+    abort("`_get_enum_discriminant` returned an index that names no case")
 
 
 trait Comparable(Equatable):

@@ -58,6 +58,7 @@ from nn.kv_cache import (
     fused_qk_rms_norm_rope_ragged_paged,
 )
 from std.utils import IndexList
+from std.utils.index import Index
 
 
 def _bench_name[
@@ -103,7 +104,7 @@ def bench_fused_qk_rms_norm_rope[
     var pages_per_seq = ceildiv(Int(cache_len) + seq_len, page_size)
     var num_paged_blocks = batch_size * pages_per_seq
 
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -111,7 +112,7 @@ def bench_fused_qk_rms_norm_rope[
         num_kv_heads,
         head_dim,
     )
-    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_shape = Index(batch_size, pages_per_seq)
 
     # row_offsets is a cumulative per-batch offset array (cu_seqlens-style):
     # one entry per batch boundary, not per token -- must be sized

@@ -1128,7 +1128,7 @@ def permlane_swap[
     comptime assert bit_width_of[dtype]() == 32, "Unsupported dtype"
     comptime assert stride in (16, 32), "Unsupported stride"
 
-    comptime asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
+    comptime asm = String(t"llvm.amdgcn.permlane{stride}.swap")
     var result = llvm_intrinsic[
         asm,
         _RegisterPackType[Int32, Int32],

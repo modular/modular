@@ -24,6 +24,7 @@
 #include "AsyncRT/Runtime/HostSystem.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
+#include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Buffer.h"
@@ -41,9 +42,6 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#else
-#include <sys/resource.h>
-#include <unistd.h>
 #endif
 
 #define CHECK_IS_CPU_ERR(dev)                                                  \
@@ -59,8 +57,9 @@ namespace M::Driver {
 // ===== CpuDevice ===== //
 //
 // TODO(iposva): Consider using the actual device name.
-CpuDevice::CpuDevice(Device::MemInfo memInfo)
-    : Device(api, "cpu", 0, memInfo, M::kPreferredMemoryAlignment) {}
+CpuDevice::CpuDevice(Device::MemInfo memInfo, bool useMemoryManager)
+    : Device(api, "cpu", 0, memInfo, M::kPreferredMemoryAlignment,
+             useMemoryManager) {}
 
 CpuDevice::~CpuDevice() { clearMemoryManager(); }
 
@@ -121,44 +120,8 @@ ErrorOr<Device::MemInfo> CpuDevice::getMemoryInfo() const {
 
 #else // _WIN32
 
-// Call sysconf() and check for errors.
-static ErrorOr<size_t> getSystemValue(int name) {
-  errno = 0;
-  auto value = sysconf(name);
-  if (errno != 0)
-    RETURN_ERROR(strerror(errno));
-  return static_cast<size_t>(value);
-}
-
 ErrorOr<Device::MemInfo> CpuDevice::getMemoryInfo() const {
-  Device::MemInfo info;
-  auto numPages = getSystemValue(_SC_PHYS_PAGES);
-  if (numPages.isError())
-    return numPages.takeError();
-  auto pageSize = getSystemValue(_SC_PAGE_SIZE);
-  if (pageSize.isError())
-    return pageSize.takeError();
-
-  rusage usage;
-  if (-1 == getrusage(RUSAGE_SELF, &usage))
-    RETURN_ERROR("Failed to get current memory usage via rusage");
-
-// The unit for the _SC_PAGE_SIZE is bytes. The unit for the ru_maxrss is
-// kilobytes on Linux and bytes on MacOS.
-#if MODULAR_LINUX
-  const size_t maxrssMultiple = 1024;
-#else // macOS
-  const size_t maxrssMultiple = 1;
-#endif
-
-  // This is the maximum resident set size used.
-  // Current memory use may be lower, this is the "high water mark".
-  size_t used = usage.ru_maxrss * maxrssMultiple;
-  // Total memory = number of pages times the page size.
-  info.total = numPages.takeValue() * pageSize.takeValue();
-  // Free memory = total memory minus memory in use.
-  info.free = info.total - used;
-  return info;
+  return getHostMemoryInfo();
 }
 
 #endif // _WIN32
@@ -178,7 +141,9 @@ ErrorOr<CpuDevice &> CpuDevice::get(int id) {
     RETURN_ERROR("CPU device only supports id == 0.");
   }
 
-  static CpuDevice *device = new CpuDevice(Device::MemInfo());
+  // We rely on malloc optimizations instead of a MemoryManager.
+  static CpuDevice *device =
+      new CpuDevice(Device::MemInfo(), /*useMemoryManager=*/false);
   return *device;
 }
 
@@ -564,6 +529,13 @@ ErrorOrSuccess CpuDeviceContext::enqueueWaitFor(DeviceEvent &event) {
 ErrorOrSuccess CpuDeviceContext::enqueueWaitFor(DeviceContext &ctx) {
   TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueWaitFor", TRACY_COLOR_PURPLE);
   RETURN_IF_PENDING_ERROR(*this);
+
+  // Waiting for this context is already satisfied: everything queued here is
+  // ordered ahead of what this call would order. Without the guard the two
+  // `streamChainMutex` locks below take the same non-recursive mutex twice and
+  // deadlock, which is why MetalDeviceContext has the same guard.
+  if (&ctx == this)
+    return success();
 
   auto &other = static_cast<CpuDeviceContext &>(ctx);
   auto eventChain =

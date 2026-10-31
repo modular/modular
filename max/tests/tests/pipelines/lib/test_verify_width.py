@@ -32,7 +32,7 @@ from click.testing import CliRunner
 from max._entrypoints.cli.config import config_to_flag
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.lib import PipelineArgs
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,

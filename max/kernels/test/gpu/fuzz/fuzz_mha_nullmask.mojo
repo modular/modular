@@ -151,12 +151,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "seq_len=",
-                specs[i].seq_len,
-                "num_keys=",
-                specs[i].num_keys,
+                t"FUZZ_SPEC idx= {i} seq_len= {specs[i].seq_len} num_keys="
+                t" {specs[i].num_keys}"
             )
         return
 
@@ -169,7 +165,7 @@ def main() raises:
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print("=== fuzz_mha_nullmask seed=", the_seed, "budget=", the_budget, "===")
+    print(t"=== fuzz_mha_nullmask seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

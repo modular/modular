@@ -1,8 +1,8 @@
 # Code examples and tests for death of a value
 
-This directory contains Code examples and tests for the
-[Death of a value](../../../../manual/lifecycle/death.mdx) section of
-the Mojo Manual.
+This directory contains code examples and tests for the
+[Automatic value destruction](../../../../manual/lifecycle/death.mdx)
+section of the Mojo Manual.
 
 Contents:
 

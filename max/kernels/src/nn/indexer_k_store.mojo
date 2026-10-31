@@ -20,6 +20,11 @@ from layout.coord import Coord, Idx
 from layout.tile_layout import Layout as InternalLayout
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 import max.gpu.primitives.warp as warp
 from nn.paged_store_utils import (
     dense_pointer,
@@ -76,64 +81,65 @@ def _indexer_k_store[
     var page_size = Int(page_size_arg)
     var page_stride = Int(page_stride_arg)
     var row = block_idx.x * 8 + thread_idx.x // 16
-    if row >= count:
-        return
-    var slot = Int(slots[unsafe_offset=row])
-    var position = Int(positions[unsafe_offset=row])
-    if slot < 0 or (position + 1) % ratio != 0:
-        return
-    var lane = thread_idx.x % 16
-    var channel = lane * 8
-    var values = keys.unsafe_load[width=8, alignment=16](
-        row * key_stride + channel
-    ).cast[.float32]()
-    var norm = rsqrt(
-        warp.lane_group_sum[num_lanes=16]((values * values).reduce_add())
-        / Float32(INDEX_KEY_CHANNELS)
-        + epsilon
-    )
-    values = (
-        (
-            values
-            * norm
-            * weight.unsafe_load[width=8, alignment=16](channel).cast[
-                .float32
-            ]()
+    with PDL():
+        if row >= count:
+            return
+        var slot = Int(slots[unsafe_offset=row])
+        var position = Int(positions[unsafe_offset=row])
+        if slot < 0 or (position + 1) % ratio != 0:
+            return
+        var lane = thread_idx.x % 16
+        var channel = lane * 8
+        var values = keys.unsafe_load[width=8, alignment=16](
+            row * key_stride + channel
+        ).cast[.float32]()
+        var norm = rsqrt(
+            warp.lane_group_sum[num_lanes=16]((values * values).reduce_add())
+            / Float32(INDEX_KEY_CHANNELS)
+            + epsilon
         )
-        .cast[.bfloat16]()
-        .cast[.float32]()
-    )
-    if channel >= 64:
-        var frequency = load_frequencies[4](
-            frequencies,
-            position // ratio * ratio * frequency_stride,
-            (channel - 64) // 2,
+        values = (
+            (
+                values
+                * norm
+                * weight.unsafe_load[width=8, alignment=16](channel).cast[
+                    .float32
+                ]()
+            )
+            .cast[.bfloat16]()
+            .cast[.float32]()
         )
-        values = gptj_rotate[4](values, frequency[0], frequency[1])
-    # Both rounding points are part of the caller's BF16 contract.
-    values = values.cast[.bfloat16]().cast[.float32]()
-    comptime value_bytes = (
-        MXFP4_INDEX_VALUE_BYTES if fp4 else FP8_INDEX_VALUE_BYTES
-    )
-    var data, scales = paged_record[value_bytes, INDEX_KEY_SCALE_BYTES](
-        cache, slot, page_size, page_stride
-    )
-    comptime if fp4:
-        var packed, scale = mxfp4_quantize[lanes=4](values)
-        data.unsafe_offset(lane * 4).unsafe_bitcast[UInt32]()[
-            unsafe_offset=0
-        ] = packed[0]
-        if lane % 4 == 0:
-            scales[unsafe_offset=lane // 4] = bitcast[.uint8](scale)
-    else:
-        var quantized, scale = mxfp8_quantize[lanes=16](values)
-        data.unsafe_store[width=8, alignment=4](
-            lane * 8, bitcast[.uint8, 8](quantized)
+        if channel >= 64:
+            var frequency = load_frequencies[4](
+                frequencies,
+                position // ratio * ratio * frequency_stride,
+                (channel - 64) // 2,
+            )
+            values = gptj_rotate[4](values, frequency[0], frequency[1])
+        # Both rounding points are part of the caller's BF16 contract.
+        values = values.cast[.bfloat16]().cast[.float32]()
+        comptime value_bytes = (
+            MXFP4_INDEX_VALUE_BYTES if fp4 else FP8_INDEX_VALUE_BYTES
         )
-        if lane == 0:
-            scales.unsafe_bitcast[Float32]()[unsafe_offset=0] = scale.cast[
-                .float32
-            ]()
+        var data, scales = paged_record[value_bytes, INDEX_KEY_SCALE_BYTES](
+            cache, slot, page_size, page_stride
+        )
+        comptime if fp4:
+            var packed, scale = mxfp4_quantize[lanes=4](values)
+            data.unsafe_offset(lane * 4).unsafe_bitcast[UInt32]()[
+                unsafe_offset=0
+            ] = packed[0]
+            if lane % 4 == 0:
+                scales[unsafe_offset=lane // 4] = bitcast[.uint8](scale)
+        else:
+            var quantized, scale = mxfp8_quantize[lanes=16](values)
+            data.unsafe_store[width=8, alignment=4](
+                lane * 8, bitcast[.uint8, 8](quantized)
+            )
+            if lane == 0:
+                scales.unsafe_bitcast[Float32]()[unsafe_offset=0] = scale.cast[
+                    .float32
+                ]()
 
 
 def indexer_k_norm_rope_store[
@@ -222,6 +228,7 @@ def indexer_k_norm_rope_store[
         epsilon,
         grid_dim=ceildiv(count, 8),
         block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

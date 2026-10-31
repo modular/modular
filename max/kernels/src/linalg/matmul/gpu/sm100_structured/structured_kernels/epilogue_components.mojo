@@ -55,7 +55,6 @@ from layout.tile_layout import (
 )
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
-from std.utils.index import Index, IndexList
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
@@ -698,8 +697,8 @@ struct TMAReduceExecutor[
 ](TrivialRegisterPassable):
     """Execute TMA reduce-add from SMEM to GMEM.
 
-    Mirrors TMAStoreExecutor but uses cp_async_bulk_tensor_reduce_global_shared_cta (add)
-    instead of cp_async_bulk_tensor_global_shared_cta (store).
+    Mirrors TMAStoreExecutor but uses cp_async_bulk_tensor_reduce_global_shared_cta(add)
+    instead of cp_async_bulk_tensor_global_shared_cta(store).
     Takes a typed TMATensorTile value (not a raw pointer) so the
     descriptor keeps its grid_constant provenance end-to-end -- otherwise
     the compiler drops the constant-memory optimization and each TMA
@@ -753,7 +752,7 @@ struct TMAReduceExecutor[
                 ](
                     c_smem_split._storage,
                     Pointer(to=c_tma_op.descriptor).unsafe_bitcast[NoneType](),
-                    Index(
+                    (
                         store_coords.coord_n,
                         store_coords.coord_m,
                         store_coords.coord_b,
@@ -765,7 +764,7 @@ struct TMAReduceExecutor[
                 ](
                     c_smem_split._storage,
                     Pointer(to=c_tma_op.descriptor).unsafe_bitcast[NoneType](),
-                    Index(store_coords.coord_n, store_coords.coord_m),
+                    (store_coords.coord_n, store_coords.coord_m),
                 )
 
             cp_async_bulk_commit_group()
@@ -1461,12 +1460,12 @@ struct TMEMToSMemWriter[
                 )
                 var c_smem_warp_tile = tiled.reshape(coalesced)
 
-                var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-                    Self.stageN, Self.data_paths
-                ](Coord(Idx[0], Idx[0]))
-                var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                    Self.stageN, Self.data_paths
-                ](Coord(Idx[0], Idx[1]))
+                var c_smem_warp_tile_upper = c_smem_warp_tile[
+                    :, : Idx[Self.data_paths]
+                ]
+                var c_smem_warp_tile_lower = c_smem_warp_tile[
+                    :, Idx[Self.data_paths] : Idx[2 * Self.data_paths]
+                ]
 
                 var warp_offset = warp_i * tile_width
                 store_fragment_to_smem[
@@ -1586,9 +1585,7 @@ struct TMEMToSMemWriter[
             Coord(Int(self.warp_id), Idx[0])
         )
 
-        var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-            Self.data_paths, Self.stageN
-        ](Coord(Idx[0], Idx[0]))
+        var c_smem_warp_tile_upper = c_smem_warp_tile[: Idx[Self.data_paths], :]
         store_fragment_to_smem[
             Self.swizzle,
             Self.stageN,
@@ -1597,21 +1594,15 @@ struct TMEMToSMemWriter[
         ](upper_casted, c_smem_warp_tile_upper)
 
         comptime if is_lower_required:
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                Self.data_paths, Self.stageN
-            ](Coord(Idx[1], Idx[0]))
+            var c_smem_warp_tile_lower = c_smem_warp_tile[
+                Idx[Self.data_paths] : Idx[2 * Self.data_paths], :
+            ]
             store_fragment_to_smem[
                 Self.swizzle,
                 Self.stageN,
                 transpose_c=Self.transpose_c,
                 c_swizzle=Self.c_swizzle,
             ](lower_casted, c_smem_warp_tile_lower)
-
-
-# =============================================================================
-# Imports for IndexList
-# =============================================================================
-from std.utils.index import IndexList
 
 
 # =============================================================================
@@ -1774,12 +1765,12 @@ struct SMemEpilogueWriter[
             )
             var c_smem_warp_tile = tiled.reshape(coalesced)
 
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-                Self.stageN, Self.data_paths
-            ](Coord(Idx[0], Idx[0]))
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                Self.stageN, Self.data_paths
-            ](Coord(Idx[0], Idx[1]))
+            var c_smem_warp_tile_upper = c_smem_warp_tile[
+                :, : Idx[Self.data_paths]
+            ]
+            var c_smem_warp_tile_lower = c_smem_warp_tile[
+                :, Idx[Self.data_paths] : Idx[2 * Self.data_paths]
+            ]
 
             var warp_offset = warp_i * tile_width
             store_fragment_to_smem[
@@ -1881,16 +1872,14 @@ struct SMemEpilogueWriter[
             Coord(Int(self.warp_id), Idx[0])
         )
 
-        var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-            Self.data_paths, Self.stageN
-        ](Coord(Idx[0], Idx[0]))
+        var c_smem_warp_tile_upper = c_smem_warp_tile[: Idx[Self.data_paths], :]
         store_fragment_to_smem[
             Self.swizzle, Self.stageN, transpose_c=Self.transpose_c
         ](upper_frag, c_smem_warp_tile_upper)
 
-        var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-            Self.data_paths, Self.stageN
-        ](Coord(Idx[1], Idx[0]))
+        var c_smem_warp_tile_lower = c_smem_warp_tile[
+            Idx[Self.data_paths] : Idx[2 * Self.data_paths], :
+        ]
 
         comptime if Self.is_lower_frag_required:
             store_fragment_to_smem[

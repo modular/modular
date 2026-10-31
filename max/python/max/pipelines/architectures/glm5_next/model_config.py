@@ -27,7 +27,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     CacheLeafParamInterface,
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
@@ -37,7 +37,7 @@ from max.nn.kv_cache.cache_params import (
     recurrent_leaf,
     spec_decode_cache_slack,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     indexer_selection_width,
 )
@@ -47,6 +47,8 @@ from max.pipelines.architectures.deepseekV3_2.model_config import (
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces import ArchConfigWithVisionCache
+from max.pipelines.lib.memory_estimation import FreeMemory
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -55,12 +57,15 @@ from max.pipelines.weights import resolve_hf_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from ..qwen3_5.state_cache import ring_len_for_window
+from .image_processor import Glm5NextImageProcessor
 from .quantization import Glm5NextQuantScheme, parse_quant_scheme
 from .state_cache import (
     INDEXER_CACHE_KEY,
     MLA_CACHE_KEY,
     STATE_CACHE_KEY,
     state_regions,
+    with_verify_ring,
 )
 
 __all__ = ["Glm5NextConfig", "Glm5NextVisionConfig"]
@@ -156,6 +161,7 @@ class Glm5NextVisionConfig:
 
     @property
     def head_dim(self) -> int:
+        """The width of one vision attention head."""
         return self.hidden_size // self.num_heads
 
     @classmethod
@@ -219,8 +225,11 @@ def layer_indices(layer_types: Sequence[str], kind: str) -> tuple[int, ...]:
 def recurrent_state_bytes(
     kv_params: KVCacheParamInterface, num_devices: int
 ) -> int:
-    """Returns GPU bytes one request's recurrent state occupies, summed over
-    ``num_devices``, read off the leaf the cache declares."""
+    """Returns the bytes one request's recurrent state occupies.
+
+    The total is summed over ``num_devices``, read off the leaf the cache
+    declares.
+    """
     state = recurrent_leaf(kv_params)
     if state is None:
         return 0
@@ -250,10 +259,8 @@ def state_bounded_batch_size(
     if per_request_bytes == 0:
         return 32
     try:
-        free_bytes = int(sum(d.stats.get("free_memory", 0) for d in devices))
+        free_bytes = FreeMemory.summed(devices).hi
     except Exception:
-        free_bytes = 0
-    if free_bytes <= 0:
         # Only the minimized bring-up fixture lands here.
         return 8
     budget = int(free_bytes * device_memory_utilization) - weights_size
@@ -263,7 +270,7 @@ def state_bounded_batch_size(
 
 
 @dataclass(kw_only=True)
-class Glm5NextConfig(DeepseekV3_2Config):
+class Glm5NextConfig(DeepseekV3_2Config, ArchConfigWithVisionCache):
     """Configuration for GLM-5.3-Flash."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
@@ -458,6 +465,33 @@ class Glm5NextConfig(DeepseekV3_2Config):
         """Extracts the text sub-config, tolerating a flat text-only config."""
         return getattr(huggingface_config, "text_config", huggingface_config)
 
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Bytes one largest-budget image occupies in the vision cache."""
+        spec = cls.get_vision_cache_row_spec(huggingface_config)
+        if spec is None:
+            return 0
+        hidden_size, dtype = spec
+        max_tokens = Glm5NextImageProcessor().max_image_tokens
+        return max_tokens * hidden_size * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """One decoder-width bfloat16 row per merged vision token.
+
+        ``None`` for a checkpoint without a vision tower. The config shim
+        always sets a ``vision_config``, so its presence alone does not say.
+        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if not hasattr(vision_config, "patch_size"):
+            return None
+        text_config = cls._get_text_config(huggingface_config)
+        return text_config.hidden_size, DType.bfloat16
+
     @staticmethod
     def resolve_layer_types(text_config: AutoConfig) -> list[str]:
         """Returns the per-layer attention family list.
@@ -550,6 +584,7 @@ class Glm5NextConfig(DeepseekV3_2Config):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The text config's hidden layer count."""
         text_config = Glm5NextConfig._get_text_config(huggingface_config)
         return text_config.num_hidden_layers
 
@@ -588,10 +623,17 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 f"layer_types resolved to {len(layer_types)} entries with none."
             )
         if pipeline_config.speculative:
-            # The MTP draft layer is itself sparse MLA and owns a latent.
-            num_cached_layers += getattr(
+            num_draft_layers = getattr(
                 text_config, "num_nextn_predict_layers", 1
             )
+            if num_draft_layers == 0:
+                raise ValueError(
+                    "GLM-5.3-Flash speculates with the MTP layer its "
+                    "checkpoint ships, but this checkpoint declares none "
+                    "(num_nextn_predict_layers is 0)."
+                )
+            # The MTP draft layer is itself sparse MLA and owns a latent.
+            num_cached_layers += num_draft_layers
 
         speculative_method = None
         num_draft_tokens = 0
@@ -703,6 +745,21 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 devices=mla_kv_params.devices,
                 data_parallel_degree=mla_kv_params.data_parallel_degree,
             )
+            if pipeline_config.speculative:
+                # A speculative verify records its window's KDA updates in
+                # this scratch leaf, which the rollback folds once acceptance
+                # is known.
+                state = children[STATE_CACHE_KEY]
+                assert isinstance(state, RecurrentStateParams)
+                children[STATE_CACHE_KEY] = replace(
+                    state,
+                    regions=with_verify_ring(
+                        state.regions,
+                        ring_len_for_window(
+                            1 + pipeline_config.speculative.draft_width
+                        ),
+                    ),
+                )
         return MultiKVCacheParams.from_params(children)
 
     # --------------------------------------------------------- state sizing
@@ -738,8 +795,10 @@ class Glm5NextConfig(DeepseekV3_2Config):
         weights_size: int,
         device_memory_utilization: float,
     ) -> int:
-        """Returns a memory-safe default ``max_batch_size``; see
-        :func:`state_bounded_batch_size`."""
+        """Returns a memory-safe default ``max_batch_size``.
+
+        See :func:`state_bounded_batch_size`.
+        """
         return state_bounded_batch_size(
             self.per_request_state_bytes(),
             devices,
@@ -769,6 +828,18 @@ class Glm5NextConfig(DeepseekV3_2Config):
                 "config.json file."
             )
         text_config = cls._get_text_config(huggingface_config)
+        # Every GLM MTP pairing encodes images, so a checkpoint without a
+        # tower would otherwise fail only after the fused graph compiled and
+        # the cache was allocated.
+        if (
+            pipeline_config.speculative
+            and cls.get_vision_cache_row_spec(huggingface_config) is None
+        ):
+            raise ValueError(
+                "--speculative-method mtp needs GLM-5.3-Flash's vision tower, "
+                "and this checkpoint has none. Serve it without speculative "
+                "decoding."
+            )
 
         kv_cache_config = model_config.kv_cache
         quantization_encoding = _select_quantization_encoding(
@@ -801,6 +872,23 @@ class Glm5NextConfig(DeepseekV3_2Config):
         ):
             vision_config = Glm5NextVisionConfig.initialize_from_config(
                 hf_vision_config, dtype=declared_dtype or DType.bfloat16
+            )
+        # With the cache off, a step's encoder rows cover only the images in
+        # its window while the scatter indices cover every image, so a prompt
+        # that spans steps gets rows on the wrong placeholders.
+        runtime = pipeline_config.runtime
+        if (
+            vision_config is not None
+            and runtime.vision_cache_utilization == 0
+            and (
+                runtime.enable_chunked_prefill
+                or kv_cache_config.enable_prefix_caching
+            )
+        ):
+            raise ValueError(
+                "GLM-5.3-Flash needs the vision encoder cache with chunked "
+                "prefill or prefix caching on: set --vision-cache-utilization "
+                "above 0."
             )
 
         return cls(

@@ -23,7 +23,9 @@ comptime _N = 8
 comptime _THREADS = 64
 
 
-def _kernel(output: MutPointer[Float32, MutAnyOrigin]):
+def _kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     # Threadgroup memory is where losing the address space shows up: a
     # pointer rebuilt from an integer address cannot reach it on Metal.
     var shared = unsafe_stack_allocation[
@@ -49,7 +51,9 @@ def _kernel(output: MutPointer[Float32, MutAnyOrigin]):
         )
 
 
-def _atomic_kernel(counters: MutPointer[Int32, MutAnyOrigin]):
+def _atomic_kernel[
+    counters_origin: MutOrigin
+](counters: MutPointer[Int32, counters_origin]):
     prefetch(counters)
     # Default orderings; Metal rejects sequentially consistent ones.
     _ = Atomic[Int32].fetch_add(counters, Int32(1))
@@ -60,7 +64,7 @@ def main() raises:
     with DeviceContext() as ctx:
         var counters = ctx.enqueue_create_buffer[DType.int32](2)
         counters.enqueue_fill(0)
-        ctx.enqueue_function[_atomic_kernel](
+        ctx.enqueue_function[_atomic_kernel[origin_of(counters)]](
             counters, grid_dim=1, block_dim=_THREADS
         )
         with counters.map_to_host() as host:
@@ -68,7 +72,9 @@ def main() raises:
             assert_equal(host[1], Int32(_THREADS - 1), msg="max")
 
         var out_device = ctx.enqueue_create_buffer[.float32](16)
-        ctx.enqueue_function[_kernel](out_device, grid_dim=1, block_dim=1)
+        ctx.enqueue_function[_kernel[origin_of(out_device)]](
+            out_device, grid_dim=1, block_dim=1
+        )
         # One row of 4 per operation, in the order `_kernel` writes them.
         var expected: List[SIMD[DType.float32, 4]] = [
             SIMD[DType.float32, 4](6, 4, 2, 0),  # unsafe_gather

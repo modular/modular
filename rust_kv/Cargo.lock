@@ -129,6 +129,7 @@ version = "0.1.0"
 dependencies = [
  "itertools",
  "kv-core",
+ "libc",
  "libloading",
  "max-profiler",
  "parking_lot",

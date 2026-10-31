@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """The fungible page pool that every flat KV cache draws from.
 
-The pool itself, :class:`JengaBlockPool`, lives in Rust (``kv-core``) and is
-re-exported here; this module plans the geometry it is built with.
+The allocation bookkeeping lives in Rust (``kv-core``). Allocation results
+report retypes to the Python memory owner, which clears its device slabs.
 """
 
 from __future__ import annotations
@@ -271,7 +271,7 @@ def plan_jenga_geometry(
         cache_sizes: Each cache's page size in bytes, before padding.
         stride_alignments: Each cache's stride alignment, or ``None`` for a
             cache that must stay packed; see
-            :attr:`~max.nn.kv_cache.KVLeafRegion.stride_alignment`.
+            :attr:`~max.nn.legacy.kv_cache.KVLeafRegion.stride_alignment`.
         include_null_block: Whether to include the null block.
         max_padding_fraction: The most of a page any one cache may spend on
             padding. Caps the search rather than the result: a geometry needing

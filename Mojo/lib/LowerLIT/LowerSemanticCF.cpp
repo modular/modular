@@ -115,7 +115,7 @@ private:
   /// Pass through an `HLCF::MatchOp`, rewriting nested regions.
   /// Returns true when the match does not fall through (caller should stop).
   bool lowerMatchOp(HLCF::MatchOp matchOp, CodeEffects &effects);
-  bool checkSelfRecursion(Block &block, bool isConditional);
+  Operation *checkSelfRecursion(Block &block, bool isConditional);
 };
 } // end anonymous namespace
 
@@ -1008,10 +1008,13 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
 ///
 /// This function is invoked on blocks after SemanticCF lowering is done on the
 /// function. The "isConditional" argument indicates whether this is being
-/// called in a conditional context (e.g. under an if check).  This returns
-/// `true` if the block might early return out of the enclosing function with a
-/// return or throw, `false` if it will fall through.
-bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
+/// called in a conditional context (e.g. under an if check). This returns the
+/// operation that early exits from the block (either `theFunc` for a return or
+/// throw, or the target loop for a break), or `nullptr` if it falls through.
+Operation *LowerSemanticCF::checkSelfRecursion(Block &block,
+                                               bool isConditional) {
+  Operation *earlyExit = nullptr;
+
   for (Operation &op : llvm::make_early_inc_range(block)) {
     // Notice self-recursive calls so we can check them out later.  If we are
     // invoked in an unconditional area, we can emit the warning.
@@ -1027,7 +1030,11 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // LIT::TryRaiseOp/break/continue/etc are used for transfers to an enclosing
     // try, which doesn't completely exit the function.
     if (isa<HLCF::ReturnOp, LIT::ErrorReturnOp>(op))
-      return true;
+      return theFunc;
+
+    // Break exits to its control flow parent loop.
+    if (isa<HLCF::BreakOp, HLCF::ComptimeForBreakOp>(op))
+      return HLCF::getParentNode(cast<HLCF::ControlFlowTerminator>(op));
 
     // Most ops don't have regions and are just fallthrough.
     if (!op.getNumRegions())
@@ -1041,15 +1048,27 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // operation, then the subregions are executed conditionally.
     bool isSubregionConditional =
         isConditional || isa<HLCF::ComptimeIfOp, HLCF::IfOp, HLCF::MatchOp>(op);
-    // Handle things like if statements, HLCF::Loop, try, etc.
+
+    // Handle things like if statements, loops, try, etc.
     for (auto &region : op.getRegions()) {
-      if (checkSelfRecursion(region.front(), isSubregionConditional))
-        return true;
+      Operation *exit =
+          checkSelfRecursion(region.front(), isSubregionConditional);
+
+      if (exit) {
+        if (exit == theFunc)
+          return theFunc;
+
+        // If break targets outer loop, code after `op` is conditional
+        if (exit != &op) {
+          isConditional = true;
+          earlyExit = exit;
+        }
+      }
     }
   }
 
   // If we made it this far then we didn't early return.
-  return false;
+  return earlyExit;
 }
 
 /// Lower all lexical terminators in the function and remove dead code.

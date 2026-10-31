@@ -6,6 +6,12 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# Tests outside this package check their vision layouts against this snapshot.
+exports_files(
+    ["testdata/vision_metadata.json"],
+    visibility = ["//mach/crates/multimodal:__pkg__"],
+)
+
 # Skip only in macOS CI, so the tests still run on a developer's Mac.
 config_setting(
     name = "macos_ci",
@@ -35,9 +41,9 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         "//max/python/max/experimental/torch",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/graph",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
@@ -47,14 +53,30 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/deepseekV4",
         "//max/python/max/pipelines/architectures/eagle_common",
         "//max/python/max/pipelines/architectures/flux2",
-        "//max/python/max/pipelines/architectures/gemma3",
+        "//max/python/max/pipelines/architectures/gemma3_modulev3",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
         "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gpt_oss",
+        "//max/python/max/pipelines/architectures/gpt_oss_modulev3",
+        "//max/python/max/pipelines/architectures/granite",
+        "//max/python/max/pipelines/architectures/granite_modulev3",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/architectures/llama4",
         "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mistral",
+        "//max/python/max/pipelines/architectures/mistral3",
+        "//max/python/max/pipelines/architectures/olmo",
+        "//max/python/max/pipelines/architectures/olmo2",
+        "//max/python/max/pipelines/architectures/olmo2_modulev3",
+        "//max/python/max/pipelines/architectures/olmo3",
+        "//max/python/max/pipelines/architectures/phi3",
+        "//max/python/max/pipelines/architectures/phi3_modulev3",
+        "//max/python/max/pipelines/architectures/qwen2",
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
+        "//max/python/max/pipelines/architectures/qwen3",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
         "//max/python/max/pipelines/architectures/step3p5",
@@ -113,7 +135,9 @@ modular_py_test(
     # The architecture registry imports them by name, so pydeps sees them as
     # unused.
     ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
         "//max/python/max/pipelines/architectures/mtp_inkling",
         "//max/python/max/pipelines/architectures/mtp_qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3_5",
@@ -124,7 +148,9 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
         "//max/python/max/pipelines/architectures/mtp_inkling",
         "//max/python/max/pipelines/architectures/mtp_qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3_5",

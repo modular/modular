@@ -21,7 +21,6 @@ from std.math import ceildiv
 from std.sys import size_of
 from max.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host.info import H100
-from std.utils.index import Index, IndexList
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
 from std.collections import Optional
 
@@ -31,7 +30,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
+](Equatable, Hashable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Static configuration for SM90 (Hopper) GPU warp-specialized matmul.
 
     Encapsulates all compile-time parameters that define a matmul kernel
@@ -48,9 +47,9 @@ struct MatmulConfig[
     """
 
     # Mandatory parameters
-    var block_tile_shape: IndexList[3]
-    var mma_shape: IndexList[3]
-    var cluster_shape: IndexList[3]
+    var block_tile_shape: Tuple[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
     var num_pipeline_stages: Int
     var num_k_partitions: Int
     var num_consumer: Int
@@ -60,9 +59,9 @@ struct MatmulConfig[
 
     def __init__(
         out self,
-        block_tile_shape: IndexList[3],
-        mma_shape: IndexList[3],
-        cluster_shape: IndexList[3],
+        block_tile_shape: Tuple[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
+        cluster_shape: Tuple[Int, Int, Int],
         num_pipeline_stages: Int,
         num_k_partitions: Int,
         num_consumer: Int,
@@ -170,13 +169,13 @@ struct MatmulConfig[
                 min_num_waves = num_waves
                 mma_mn[1] = mma_n
 
-        self.block_tile_shape = Index(
-            mma_mn[0] * num_consumer_groups, mma_mn[1], BK
+        self.block_tile_shape = (mma_mn[0] * num_consumer_groups, mma_mn[1], BK)
+        self.mma_shape = (
+            mma_mn[0],
+            mma_mn[1],
+            K_bytes_per_mma // size_of[Self.a_type](),
         )
-        self.mma_shape = IndexList[3](
-            mma_mn[0], mma_mn[1], K_bytes_per_mma // size_of[Self.a_type]()
-        )
-        self.cluster_shape = Index(1, 1, 1)
+        self.cluster_shape = (1, 1, 1)
         self.num_k_partitions = num_k_partitions
         self.num_consumer = num_consumer_groups
         self.partitioned_multicast = partitioned_multicast
@@ -342,9 +341,10 @@ struct MatmulConfig[
         Self.b_type.__hash__(hasher)
         Self.c_type.__hash__(hasher)
         Self.transpose_b.__hash__(hasher)
-        self.block_tile_shape.__hash__(hasher)
-        self.mma_shape.__hash__(hasher)
-        self.cluster_shape.__hash__(hasher)
+        comptime for i in range(3):
+            Int(self.block_tile_shape[i]).__hash__(hasher)
+            Int(self.mma_shape[i]).__hash__(hasher)
+            Int(self.cluster_shape[i]).__hash__(hasher)
         self.num_pipeline_stages.__hash__(hasher)
         self.num_k_partitions.__hash__(hasher)
         self.num_consumer.__hash__(hasher)
@@ -441,7 +441,7 @@ def swapAB_smallM[
     m: Int,
     n: Int,
     k: Int,
-    cluster_shape: IndexList[3],
+    cluster_shape: Tuple[Int, Int, Int],
     num_k_partitions: Int,
     num_consumer: Int,
     partitioned_multicast: Bool,
@@ -533,9 +533,9 @@ def swapAB_smallM[
     var temp_num_pipeline_stages: Int = num_pipeline_stages
 
     var config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        Index(BM, final_mma_n, 64),
-        Index(64, final_mma_n, 16),
-        cluster_shape,
+        (BM, final_mma_n, 64),
+        (64, final_mma_n, 16),
+        (Int(cluster_shape[0]), Int(cluster_shape[1]), Int(cluster_shape[2])),
         temp_num_pipeline_stages,
         num_k_partitions,
         num_consumer,
@@ -587,9 +587,9 @@ def swapAB_smallM_ceildiv[
     """
     var bn = ualign_up(m, 8)
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(64, bn, 64),
-        mma_shape=Index(64, bn, 16),
-        cluster_shape=Index(1, 1, 1),
+        block_tile_shape=(64, bn, 64),
+        mma_shape=(64, bn, 16),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=12,
         num_k_partitions=1,
         num_consumer=1,
@@ -628,9 +628,9 @@ def swapAB_midM_linear[
     var bucket = ufloordiv(m - 65, 16)
     var bn = 40 + bucket * 8
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(64, bn, 64),
-        mma_shape=Index(64, bn, 16),
-        cluster_shape=Index(1, 1, 1),
+        block_tile_shape=(64, bn, 64),
+        mma_shape=(64, bn, 16),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_k_partitions=1,
         num_consumer=1,
@@ -680,9 +680,9 @@ def swapAB_largeM_clustered[
         stages = 8
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(64, bn, 64),
-        mma_shape=Index(64, bn, 16),
-        cluster_shape=Index(2, 1, 1),
+        block_tile_shape=(64, bn, 64),
+        mma_shape=(64, bn, 16),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=stages,
         num_k_partitions=1,
         num_consumer=1,

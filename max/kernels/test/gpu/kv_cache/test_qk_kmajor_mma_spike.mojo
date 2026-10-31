@@ -89,6 +89,8 @@ from layout import (
     TileTensor,
     coord,
     row_major,
+    coord,
+    Idx,
 )
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -100,9 +102,11 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
+from std.utils.coord import DynamicCoord
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
+from std.utils.coord import Coord
 
 
 # Core-matrix row count for the WGMMA/UMMA descriptor canonical layout. Matches
@@ -248,8 +252,8 @@ def qk_mma_kernel[
     k_tile_shape: Coord,
     k_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     swizzle_mode: TensorMapSwizzle,
     use_native: Bool,
     num_threads: Int = 128,
@@ -370,7 +374,7 @@ def qk_mma_kernel[
         accum_type,
         ab_type,
         ab_type,
-        Index[dtype=DType.uint32](MMA_M, MMA_N),
+        (UInt32(MMA_M), UInt32(MMA_N)),
         transpose_b=True,
     ]()
 
@@ -476,25 +480,13 @@ def run_qk_spike[
     comptime MMA_M = 64
     comptime MMA_N = N
     comptime MMA_K = 16  # tcgen05 bf16/F16 native instruction-K (fp8 would be 32)
-    comptime block_tile_shape = Index(BM, BN, BK)
-    comptime mma_shape = Index(MMA_M, MMA_N, MMA_K)
+    comptime block_tile_shape = (BM, BN, BK)
+    comptime mma_shape = (MMA_M, MMA_N, MMA_K)
     comptime gran = swizzle_mode.bytes() // size_of[ab_type]()
 
     print(
-        "qk_kmajor_spike native="
-        + String(use_native)
-        + " "
-        + String(swizzle_mode)
-        + " MNK="
-        + String(M)
-        + "x"
-        + String(N)
-        + "x"
-        + String(K)
-        + " gran="
-        + String(gran)
-        + " num_chunks(BK/gran)="
-        + String(BK // gran)
+        t"qk_kmajor_spike"
+        t" native={use_native} {swizzle_mode} MNK={M}x{N}x{K} gran={gran} num_chunks(BK/gran)={BK // gran}"
     )
 
     # Q is M x D, K is N x D (both row-major, D = head_size = contraction).
@@ -517,9 +509,6 @@ def run_qk_spike[
     comptime block_dim = 128
     comptime smem_use = (BM + BN) * size_of[ab_type]() * BK + 64
     comptime native_box = coord[_CM_NUM_ROWS, gran]
-    # `create_tma_descriptor` still takes IndexList for shared_mem_shape (low-level
-    # TMA-builder API); only the high-level TMATensorTile uses Coord.
-    comptime native_box_idx = Index(_CM_NUM_ROWS, gran)
 
     # The kernel + enqueue is duplicated in each comptime-if arm because the two
     # arms produce K tiles with different `desc_shape` (default `(BN, gran)` vs
@@ -536,16 +525,16 @@ def run_qk_spike[
         # chunk boxes contiguously (chunk-inner / row-major atoms), matching
         # `_tile_layout_k_major_pagedense`.
         var k_ptr = k.device_tensor().unsafe_ptr()
-        var k_desc = create_tma_descriptor[ab_type, 2, swizzle_mode](
+        var k_desc = create_tma_descriptor[ab_type, swizzle_mode=swizzle_mode](
             DeviceBuffer(
                 ctx,
                 k_ptr,
                 1,
                 owning=False,
             ),
-            Index(N, K),  # gmem [seq_k, head_size], row-major
-            Index(K, 1),  # head_size contiguous
-            native_box_idx,  # (_CM_NUM_ROWS, gran) core-matrix box
+            coord[N, K],  # gmem [seq_k, head_size], row-major
+            (K, 1),  # head_size contiguous
+            native_box,  # (_CM_NUM_ROWS, gran) core-matrix box
         )
         var k_tma_op = TMATensorTile[
             ab_type, coord[BN, BK], native_box, is_k_major=True
@@ -629,14 +618,8 @@ def run_qk_spike[
             except e:
                 if mismatches < 8:
                     print(
-                        "  MISMATCH ["
-                        + String(m)
-                        + ","
-                        + String(n)
-                        + "] got="
-                        + String(o_host[m, n])
-                        + " ref="
-                        + String(o_host_ref[m, n])
+                        t"  MISMATCH [{m},{n}]"
+                        t" got={o_host[m, n]} ref={o_host_ref[m, n]}"
                     )
                 mismatches += 1
     if mismatches == 0:
@@ -674,7 +657,7 @@ def _print_layouts[mn: Int, k: Int]():
     comptime pdns_lbo = type_of(pdns).static_stride[3] * 2
     comptime cinr_sbo = type_of(cinr).static_stride[1] * 2
     comptime cinr_lbo = type_of(cinr).static_stride[3] * 2
-    print("---- k-major layout diagnostics (mn=", mn, " k=", k, ") ----")
+    print(t"---- k-major layout diagnostics (mn= {mn}  k= {k} ) ----")
     print("baseline    SBO,LBO=", base_sbo, base_lbo)
     print("pagedense   SBO,LBO=", pdns_sbo, pdns_lbo)
     print("chunkinner  SBO,LBO=", cinr_sbo, cinr_lbo)
@@ -688,12 +671,8 @@ def _print_layouts[mn: Int, k: Int]():
     comptime pdns_mn = Int(pdns(Coord(Idx[8], Idx[0])))
     comptime cinr_mn = Int(cinr(Coord(Idx[8], Idx[0])))
     print(
-        "mn=8,k=0 (next 8-row page) base=",
-        base_mn,
-        " pdns=",
-        pdns_mn,
-        " cinr=",
-        cinr_mn,
+        t"mn=8,k=0 (next 8-row page) base= {base_mn}  pdns= {pdns_mn}  cinr="
+        t" {cinr_mn}"
     )
 
 

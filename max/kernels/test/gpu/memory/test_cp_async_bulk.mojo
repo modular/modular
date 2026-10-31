@@ -42,11 +42,8 @@ from layout.tma_async import SharedMemBarrier
 
 
 def kernel_bulk_g2s[
-    NUM_ELEMS: Int
-](
-    src: ImmPointer[Float32, ImmutAnyOrigin],
-    dst: MutPointer[Float32, MutAnyOrigin],
-):
+    NUM_ELEMS: Int, src_origin: ImmOrigin, dst_origin: MutOrigin
+](src: ImmPointer[Float32, src_origin], dst: MutPointer[Float32, dst_origin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
@@ -88,7 +85,11 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_dev, in_host)
     ctx.enqueue_copy(out_dev, out_host)
 
-    ctx.enqueue_function[kernel_bulk_g2s[NUM_ELEMS]](
+    ctx.enqueue_function[
+        kernel_bulk_g2s[
+            NUM_ELEMS, ImmOrigin(origin_of(in_dev)), origin_of(out_dev)
+        ]
+    ](
         in_dev,
         out_dev,
         grid_dim=(1,),
@@ -111,8 +112,8 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
 
 
 def kernel_bulk_s2g[
-    NUM_ELEMS: Int
-](dst: MutPointer[Float32, MutAnyOrigin],):
+    NUM_ELEMS: Int, dst_origin: MutOrigin
+](dst: MutPointer[Float32, dst_origin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
@@ -138,7 +139,7 @@ def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
-    ctx.enqueue_function[kernel_bulk_s2g[NUM_ELEMS]](
+    ctx.enqueue_function[kernel_bulk_s2g[NUM_ELEMS, origin_of(out_dev)]](
         out_dev,
         grid_dim=(1,),
         block_dim=(NUM_ELEMS,),
@@ -159,8 +160,8 @@ def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
 
 
 def kernel_bulk_reduce_s2g[
-    NUM_ELEMS: Int
-](dst: MutPointer[Float32, MutAnyOrigin],):
+    NUM_ELEMS: Int, dst_origin: MutOrigin
+](dst: MutPointer[Float32, dst_origin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
@@ -192,7 +193,7 @@ def test_bulk_reduce_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
-    ctx.enqueue_function[kernel_bulk_reduce_s2g[NUM_ELEMS]](
+    ctx.enqueue_function[kernel_bulk_reduce_s2g[NUM_ELEMS, origin_of(out_dev)]](
         out_dev,
         grid_dim=(1,),
         block_dim=(NUM_ELEMS,),

@@ -71,13 +71,10 @@ def _run_case[
     comptime K = expert_shape[1]
 
     print(
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts, (N, K) =",
-        N,
-        K,
-        " tokens:",
+        (
+            t"{num_active_experts} active of {num_experts} experts, (N, K) ="
+            t" {N} {K}  tokens:"
+        ),
         end="",
     )
     for i in range(len(num_tokens_by_expert)):
@@ -283,39 +280,37 @@ def main() raises:
         comptime BF16 = DType.bfloat16
 
         # --- Small aligned: single group, tile-aligned N/K. ---
-        _run_case[BF16, num_experts=1, expert_shape=Index(64, 32)](
-            1, [8], [0], ctx
-        )
+        _run_case[BF16, num_experts=1, expert_shape=(64, 32)](1, [8], [0], ctx)
 
         # --- Small routing: multiple groups, incl. a 0-token group. ---
-        _run_case[BF16, num_experts=4, expert_shape=Index(128, 64)](
+        _run_case[BF16, num_experts=4, expert_shape=(128, 64)](
             4, [3, 0, 5, 2], [2, 0, 3, 1], ctx
         )
 
         # --- Tile-unaligned N and K (ragged store guard + K tail). ---
-        _run_case[BF16, num_experts=4, expert_shape=Index(70, 40)](
+        _run_case[BF16, num_experts=4, expert_shape=(70, 40)](
             3, [7, 0, 20], [1, 0, 3], ctx
         )
 
         # --- Inactive LoRA group (expert_ids == -1) must produce zeros. ---
-        _run_case[BF16, num_experts=2, expert_shape=Index(128, 64)](
+        _run_case[BF16, num_experts=2, expert_shape=(128, 64)](
             2, [16, 24], [0, -1], ctx
         )
 
         # --- c32-decode-like: many tiny (1-3 token) groups over many experts. ---
-        _run_case[BF16, num_experts=16, expert_shape=Index(128, 96)](
+        _run_case[BF16, num_experts=16, expert_shape=(128, 96)](
             8, [1, 2, 1, 3, 1, 1, 2, 1], [0, 5, 2, 9, 1, 12, 7, 3], ctx
         )
 
         # --- Real Nemotron-30B-A3B MoE up-proj dims (N=1856, K=2688). ---
         # Reduced expert count keeps the weight buffer small; per-group M is
         # tiny (batch-1 / c32 decode) incl. a 0-token group.
-        _run_case[BF16, num_experts=8, expert_shape=Index(1856, 2688)](
+        _run_case[BF16, num_experts=8, expert_shape=(1856, 2688)](
             6, [1, 1, 2, 0, 1, 1], [0, 3, 1, 4, 5, 2], ctx, rtol=2e-2
         )
 
         # --- Real Nemotron-30B-A3B MoE down-proj dims (N=2688, K=1856). ---
-        _run_case[BF16, num_experts=8, expert_shape=Index(2688, 1856)](
+        _run_case[BF16, num_experts=8, expert_shape=(2688, 1856)](
             6, [2, 1, 1, 0, 3, 1], [1, 0, 4, 2, 5, 3], ctx, rtol=2e-2
         )
 

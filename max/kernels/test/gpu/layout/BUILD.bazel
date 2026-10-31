@@ -146,6 +146,7 @@ _FILECHECK_EXTRA_DEPS = {
             # targets below so they are not coupled to `nn`/`linalg`.
             "test_device_pointer_tile_storage_kernel.mojo",
             "test_optional_device_pointer_tile.mojo",
+            "test_owned_tensor_gpu_engine.mojo",
             "test_tile_layout_device_launch.mojo",
             # Blackwell-only `TmemEngine` probe; dedicated target below.
             "test_tmem_engine.mojo",
@@ -192,6 +193,7 @@ mojo_test(
     for src in [
         "test_device_pointer_tile_storage_kernel.mojo",
         "test_optional_device_pointer_tile.mojo",
+        "test_owned_tensor_gpu_engine.mojo",
         "test_tile_layout_device_launch.mojo",
         "test_tensor_engine_plugin_gpu.mojo",
     ]

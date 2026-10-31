@@ -37,14 +37,18 @@
 #include "Support/DeviceSpecs.h"
 #include "Support/HashUtils.h"
 #include "Support/ML/CommonAttributes.h"
+#include "Support/Profiling/Ranges.h"
 #include "Support/max_license/Tracy/Tracy.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <vector>
 
 using namespace M;
@@ -205,10 +209,11 @@ Model::setup(CPUDevice &cpuDevice, const WeightsRegistry *weightsRegistry,
   initArgs.append(std::make_move_iterator(deviceContextsOr->begin()),
                   std::make_move_iterator(deviceContextsOr->end()));
 
-  // Pre-create side streams before any capture begins. Defaults to 2 (base +
-  // one side); see the device-context.stream-count config key.
+  // Pre-create side streams before any capture begins. Defaults to 3 (base +
+  // two side streams, so a host-gated side stream need not share one with
+  // compute); see the device-context.stream-count config key.
   const int64_t streamCount =
-      Driver::DeviceContext::configAsInt("stream-count", 2);
+      Driver::DeviceContext::configAsInt("stream-count", 3);
   ErrorOrSuccess streamError = ensureStreamCountForDevices(
       llvm::ArrayRef(initArgs).take_back(getDevices().size()), streamCount);
   if (streamError.isError())
@@ -738,8 +743,35 @@ ExecutableModel::launchDeviceGraphs(ArrayRef<uint64_t> normalizedKeys) const {
       return err.takeError();
   }
 
+  // While a profiler trace is live, attach each graph's capture manifest,
+  // which maps its replayed kernels back to the op spans that ran only at
+  // capture time. Done here rather than in launchGraph so that building a
+  // manifest on its first replay, and the store's lock, stay out of the gated
+  // launch below and cannot hold back the peers' collective kernels.
+  if (M::Profiling::isRangeRecordingActive()) {
+    for (const auto *entry : entries) {
+      const Driver::DeviceGraph &graph = **entry->graph;
+      if (!graph.profilerManifest().empty())
+        M::Profiling::setTraceMetadata(
+            (llvm::Twine("MAX device graph ") + llvm::Twine(graph.profilerId()))
+                .str(),
+            graph.profilerManifest());
+    }
+  }
+
   auto launchGraph = [&](size_t deviceIdx) {
-    if (ErrorOrSuccess err = (*entries[deviceIdx]->graph)->replay())
+    // While a profiler trace is live, give each replay its own span so its
+    // kernels correlate to it rather than to the enclosing host call.
+    const Driver::DeviceGraph &graph = **entries[deviceIdx]->graph;
+    std::optional<M::Profiling::RangeScope> replaySpan;
+    if (M::Profiling::isRangeRecordingActive()) {
+      M::Profiling::registerCurrentThreadIfEnabled();
+      replaySpan.emplace(
+          (llvm::Twine("max.graph.replay g=") + llvm::Twine(graph.profilerId()))
+              .str());
+    }
+
+    if (ErrorOrSuccess err = graph.replay())
       errors[deviceIdx] = err.takeError();
   };
 

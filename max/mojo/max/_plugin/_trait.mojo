@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.bit import count_trailing_zeros
+from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
 from std.collections.string.string_span import _get_kgen_string
+from std.reflection import SourceLocation
 from std.utils.index import IndexList
 from std._gpu import lane_id
 from std._gpu.host.info import (
@@ -23,11 +25,23 @@ from std._gpu.host.info import (
     TargetAcceleratorType,
 )
 from std._plugin.selector import Plugin
-from std.sys.info import CompilationTarget, _accelerator_arch
+from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
 from max.gpu import PDLLevel
 from max.gpu.globals import WARP_SIZE
-from max.gpu.host import DeviceContext
+from max.gpu.host import (
+    ConstantMemoryMapping,
+    DeviceContext,
+    Dim,
+    LaunchAttribute,
+)
+
+# Hooks the legacy `DeviceContext` calls take its types. It still compiles when
+# `--config=hal-device-context` points `max.gpu.host` at the HAL one.
+from max.gpu.host._legacy.device_context import (
+    DeviceContext as _LegacyDeviceContext,
+    DeviceFunction,
+)
 from max.gpu.host.info import get_gpu_info
 from max.gpu.memory.memory import (
     _AsyncCopyGroupPluginHookFnType,
@@ -54,6 +68,14 @@ trait MaxPlugin(Plugin):
 
 trait MaxPluginHooks:
     """Defines compile-time hooks for target-specific MAX behavior."""
+
+    comptime _raw_mlir_target: _TargetType
+    """The target these hooks are for, as its raw MLIR value."""
+
+    comptime hooks_target = CompilationTarget[
+        _mlir_value=Self._raw_mlir_target
+    ]()
+    """The target these hooks are for."""
 
     @staticmethod
     def elementwise_fn[
@@ -348,6 +370,114 @@ trait MaxPluginHooks:
         var active = Self.vote_fn[mask_type](True)
         return matched if matched == active else Scalar[mask_type](0)
 
+    @staticmethod
+    def enqueue_function_fn[
+        *Ts: DevicePassable
+    ](
+        ctx: _LegacyDeviceContext.Generic[Self.hooks_target],
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim],
+        shared_mem_bytes: OptionalReg[Int],
+        var attributes: List[LaunchAttribute],
+        var constant_memory: List[ConstantMemoryMapping],
+        location: SourceLocation,
+    ) raises:
+        """Per-target plugin hook for launching a compiled `DeviceFunction`.
+
+        Parameters:
+            Ts: The argument types.
+
+        Args:
+            ctx: The device context to launch on.
+            f: The compiled function, whose target selects this plugin.
+            args: The arguments to pass to `f`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mappings.
+            location: Source location of the launch.
+
+        Only invoked when `_handles_enqueue_function` is `True`; the default
+        is never called and is a no-op.
+
+        Raises:
+            If the launch fails.
+        """
+        pass
+
+    comptime _handles_enqueue_function: Bool = False
+    """Whether this plugin overrides launching a compiled `DeviceFunction`."""
+
+    comptime ClosureKernel[
+        ClosureType: RegisterPassable & def() -> None
+    ]: ImplicitlyCopyable & Deinitable = NoneType
+    """The compiled form of a closure kernel, from `compile_closure_fn`."""
+
+    @staticmethod
+    def compile_closure_fn[
+        ClosureType: RegisterPassable & def() -> None
+    ](ctx: _LegacyDeviceContext) raises -> Self.ClosureKernel[ClosureType]:
+        """Per-target plugin hook for `DeviceContext.compile_function[ClosureType]`.
+
+        Parameters:
+            ClosureType: The closure's type.
+
+        Args:
+            ctx: The device context to compile for.
+
+        Returns:
+            The compiled kernel.
+
+        Raises:
+            If compilation fails, or always when `_handles_closure_kernels` is
+            `False`.
+        """
+        raise Error("closure kernels are not supported on this target")
+
+    @staticmethod
+    def enqueue_closure_fn[
+        ClosureType: RegisterPassable & def() -> None
+    ](
+        ctx: _LegacyDeviceContext,
+        kernel: Self.ClosureKernel[ClosureType],
+        closure: ClosureType,
+        grid_dim: Dim,
+        block_dim: Dim,
+        location: SourceLocation,
+    ) raises:
+        """Per-target plugin hook for launching a closure kernel.
+
+        Parameters:
+            ClosureType: The closure's type.
+
+        Args:
+            ctx: The device context to launch on.
+            kernel: The kernel `compile_closure_fn` compiled for `ClosureType`.
+            closure: The closure whose captures to launch with.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            location: Source location of the launch.
+
+        Only invoked when `_handles_closure_kernels` is `True`; the default
+        is never called and is a no-op.
+        """
+        pass
+
+    comptime _handles_closure_kernels: Bool = False
+    """Whether this plugin compiles and launches closure kernels."""
+
+    comptime _supports_default_compile_function: Bool = True
+    """Whether `DeviceContext.compile_function[func]` can compile `func`
+    unchanged for this target."""
+
+    comptime _supports_external_function: Bool = True
+    """Whether a `DeviceExternalFunction` can launch on this target."""
+
 
 struct DefaultMaxPlugin(MaxPlugin):
     """Provides the default MAX plugin behavior."""
@@ -357,6 +487,7 @@ struct DefaultMaxPlugin(MaxPlugin):
 
 
 struct DefaultMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
+    comptime _raw_mlir_target = Self.target._mlir_value
     comptime warp_size = _accelerator_warp_size()
 
 

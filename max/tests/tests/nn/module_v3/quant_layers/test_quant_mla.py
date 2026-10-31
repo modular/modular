@@ -20,28 +20,10 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from max import functional as F
 from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_mla import (
-    QuantizedLatentAttentionWithRope,
-    tensor_parallel_latent_attention_with_rope,
-)
-from max.experimental.nn.common_layers.quant_tensor import (
-    FP8BlockTensor,
-    NVFP4Tensor,
-)
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Partial,
-    Replicated,
-    Sharded,
-)
-from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import (
     BufferType,
     BufferValue,
@@ -51,17 +33,35 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
-from max.nn.kv_cache import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_mla import (
+    QuantizedLatentAttentionWithRope,
+    tensor_parallel_latent_attention_with_rope,
+)
+from max.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
+    NVFP4Tensor,
+)
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MLAKVCacheParams,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3.model_config import (
     mla_kv_cache_quant_config,
 )
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.sparse_mla import (
     QuantizedSparseLatentAttentionWithRope,
     tensor_parallel_sparse_latent_attention_with_rope,
+)
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Replicated,
+    Sharded,
 )
 
 # Block-aligned dimensions (multiples of 128 on the quantized axes) so the FP8

@@ -16,7 +16,9 @@ from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 
-def read_dim[grid: Bool, axis: Int](output: MutPointer[Int32, MutAnyOrigin]):
+def read_dim[
+    grid: Bool, axis: Int, output_origin: MutOrigin
+](output: MutPointer[Int32, output_origin]):
     # Read one axis per kernel: when a kernel reads several axes, their loads
     # can merge into one wide load and hide a wrong load of a single axis.
     if (
@@ -52,7 +54,7 @@ def check_axis[
 
     # Distinct sizes for every axis of the grid and the block, so reading the
     # wrong axis cannot pass.
-    ctx.enqueue_function[read_dim[grid, axis]](
+    ctx.enqueue_function[read_dim[grid, axis, origin_of(output_buffer)]](
         output_buffer,
         grid_dim=(6, 5, 3),
         block_dim=(8, 4, 2),

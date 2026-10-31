@@ -71,7 +71,8 @@ public:
   };
 
   MetalDevice(int id, NS::SharedPtr<MTL::Device> device, std::string name,
-              Device::MemInfo memInfo, size_t allocAlignment);
+              Device::MemInfo memInfo, size_t allocAlignment,
+              bool useMemoryManager);
 
   ErrorOr<int> getApiVersion() const override;
   ErrorOr<DriverVersion &> getDriverVersion() const override;

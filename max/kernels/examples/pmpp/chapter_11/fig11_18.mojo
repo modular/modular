@@ -98,8 +98,8 @@ def block_scan(val: Float32) -> Float32:
 def inter_block_scan(
     val: Float32,
     bid: UInt32,
-    partial_sums: MutPointer[Float32, MutAnyOrigin],
-    flags: MutPointer[UInt32, MutAnyOrigin],
+    partial_sums: MutPointer[Float32, _],
+    flags: MutPointer[UInt32, _],
 ) -> Float32:
     """Inter-block scan using atomic operations for synchronization.
 
@@ -142,11 +142,11 @@ def inter_block_scan(
 
 # ========================== KERNEL CODE ==========================
 def scan_kernel(
-    input: MutPointer[Float32, MutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
-    block_counter: MutPointer[UInt32, MutAnyOrigin],
-    partial_sums: MutPointer[Float32, MutAnyOrigin],
-    flags: MutPointer[UInt32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmUntrackedOrigin],
+    output: MutPointer[Float32, MutUntrackedOrigin],
+    block_counter: MutPointer[UInt32, MutUntrackedOrigin],
+    partial_sums: MutPointer[Float32, MutUntrackedOrigin],
+    flags: MutPointer[UInt32, MutUntrackedOrigin],
     N: UInt32,
 ):
     """Full scan kernel with coarsening, register tiling, and dynamic block assignment.

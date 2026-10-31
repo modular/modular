@@ -14,8 +14,6 @@
 from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 
-from std.utils.index import Index
-
 from layout import Idx
 
 # NOTE: This test originally tested hilbert_swizzle=True functionality,
@@ -24,10 +22,10 @@ from layout import Idx
 # to include this parameter and pass it to warp_specialize_gemm_with_multicasting.
 
 # Helper to calculate block_tile_shape - fixed for bfloat16
-comptime block_tile_shape[wgmma_n: Int] = Index(128, wgmma_n, 64)
+comptime block_tile_shape[wgmma_n: Int] = (128, wgmma_n, 64)
 
 # Helper to calculate wgmma_shape - fixed for bfloat16
-comptime wgmma_shape[wgmma_n: Int] = Index(64, wgmma_n, 16)
+comptime wgmma_shape[wgmma_n: Int] = (64, wgmma_n, 16)
 
 
 def main() raises:
@@ -40,13 +38,13 @@ def main() raises:
             "Running warp specialize gemm test (Note: hilbert swizzle"
             " not supported in testbed)"
         )
-        print("Test configuration: M=", M, ", N=", N, ", K=", K)
+        print(t"Test configuration: M= {M} , N= {N} , K= {K}")
 
         test_matmul_sm90[
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),
+            (1, 1, 1),
             block_tile_shape[64],
             wgmma_shape[64],
         ](ctx, Int(M), Idx[N], Idx[K])

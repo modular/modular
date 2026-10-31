@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/indexing.mdx
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 hidden = Tensor.ones((2, 4, 8))  # (batch=2, seq_len=4, features=8)
 

@@ -356,26 +356,36 @@ def multistage_mma[
             return rows if rows_are_per_tile else max(0, rows - k_tile * BK)
         return iter_valid_rows
 
-    # Prefetch (num_pipeline_stages - 1) stages.
+    # Prefetch (num_pipeline_stages - 1) stages. A stage past the last k tile
+    # stays empty: its copy would read past the operands and write past a
+    # non-circular shared-memory iterator.
     comptime if prefetch_init:
+        var prefetch_iters = (
+            static_num_iters if static_num_iters >= 0 else num_iters
+        )
         comptime for stage in range(num_pipeline_stages - 1):
-            comptime if a_iter.address_space == .GENERIC:
-                var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
-                _copy_tile_to_sram[async_copy_a_layout, swizzle_a, a_masked](
-                    a_smem_tile, a_iter[], a_iter.num_valid_rows
-                )
+            if stage < prefetch_iters:
+                comptime if a_iter.address_space == .GENERIC:
+                    var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
+                    _copy_tile_to_sram[
+                        async_copy_a_layout, swizzle_a, a_masked
+                    ](a_smem_tile, a_iter[], a_iter.num_valid_rows)
 
-                a_iter._incr()
+                    a_iter._incr()
 
-            comptime if b_iter.address_space == .GENERIC:
-                var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
-                _copy_tile_to_sram[async_copy_b_layout, swizzle_b, b_masked](
-                    b_smem_tile,
-                    b_iter[],
-                    _b_valid_rows(b_iter.num_valid_rows, transpose_b, stage),
-                )
+                comptime if b_iter.address_space == .GENERIC:
+                    var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
+                    _copy_tile_to_sram[
+                        async_copy_b_layout, swizzle_b, b_masked
+                    ](
+                        b_smem_tile,
+                        b_iter[],
+                        _b_valid_rows(
+                            b_iter.num_valid_rows, transpose_b, stage
+                        ),
+                    )
 
-                b_iter._incr()
+                    b_iter._incr()
 
             async_copy_commit_group()
 
@@ -537,29 +547,40 @@ def multistage_mma[
                         ](b_wtile_coord0, b_wtile_coord1)
 
                     comptime kidx = Int(k_mma_next % UInt32(num_k_mmas))
+                    # Same guard as the runtime path below: only the lookahead
+                    # that crosses a k tile boundary touches the next k tile,
+                    # and there is none past this call's last k tile.
+                    comptime crosses_tile = k_mma_next == UInt32(num_k_mmas)
 
-                    comptime if a_iter.address_space == .SHARED:
-                        mma_op.load_a[swizzle_a_pattern](
-                            a_warp_tile,
-                            a_reg_native.tile[num_m_mmas, a_frag_size](next, 0),
+                    comptime if (
+                        not crosses_tile or k_tile_id + 1 < static_num_iters
+                    ):
+                        comptime if a_iter.address_space == .SHARED:
+                            mma_op.load_a[swizzle_a_pattern](
+                                a_warp_tile,
+                                a_reg_native.tile[num_m_mmas, a_frag_size](
+                                    next, 0
+                                ),
+                                kidx,
+                            )
+                        else:
+                            # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
+                            _pack_c_frags_as_a_frags(
+                                a_reg_native.tile[num_m_mmas, a_frag_size](
+                                    next, 0
+                                ),
+                                a_iter[],
+                            )
+                            a_iter._incr()
+
+                        _load_b_frags(
+                            b_warp_tile,
+                            next,
                             kidx,
+                            Int(warp_x),
+                            mma_op,
+                            b_reg_native,
                         )
-                    else:
-                        # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
-                        _pack_c_frags_as_a_frags(
-                            a_reg_native.tile[num_m_mmas, a_frag_size](next, 0),
-                            a_iter[],
-                        )
-                        a_iter._incr()
-
-                    _load_b_frags(
-                        b_warp_tile,
-                        next,
-                        kidx,
-                        Int(warp_x),
-                        mma_op,
-                        b_reg_native,
-                    )
 
                 comptime for k_mma1 in range(k_group_size):
                     comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
@@ -688,14 +709,31 @@ def multistage_mma[
                     ](b_wtile_coord0, b_wtile_coord1)
 
                 comptime kidx = Int(k_mma_next % UInt32(num_k_mmas))
-                mma_op.load_a[swizzle_a_pattern](
-                    a_warp_tile,
-                    a_reg_native.tile[num_m_mmas, a_frag_size](next, 0),
-                    kidx,
-                )
-                _load_b_frags(
-                    b_warp_tile, next, kidx, Int(warp_x), mma_op, b_reg_native
-                )
+                # A lookahead that crosses a k tile boundary
+                # (`k_mma_next == num_k_mmas`) reads the *next* k tile's
+                # fragments out of the shared-memory iterator, and on this
+                # call's last k tile there is no next tile: the slot belongs to
+                # whichever call stages into the iterator next, and the
+                # registers it would load are never consumed -- the next call
+                # primes its own fragments in the prologue above. Skip that
+                # load, as the prologue skips its copies past the last k tile
+                # (#106374). A lookahead inside a k tile reads the tile the
+                # loop is already on and stays live, so it is not guarded.
+                comptime crosses_tile = k_mma_next == UInt32(num_k_mmas)
+                if not crosses_tile or k_tile_id + 1 < num_iters:
+                    mma_op.load_a[swizzle_a_pattern](
+                        a_warp_tile,
+                        a_reg_native.tile[num_m_mmas, a_frag_size](next, 0),
+                        kidx,
+                    )
+                    _load_b_frags(
+                        b_warp_tile,
+                        next,
+                        kidx,
+                        Int(warp_x),
+                        mma_op,
+                        b_reg_native,
+                    )
 
             comptime for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)

@@ -27,6 +27,11 @@ from std.math.uutils import udivmod
 from std.sys import align_of, simd_width_of, size_of
 from max.gpu import block_dim, block_idx, global_idx, thread_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     TensorLayout,
@@ -35,7 +40,6 @@ from layout import (
     row_major,
 )
 from linalg.matmul.gpu import _matmul_gpu
-from std.utils import IndexList
 from nn.conv.conv_utils import (
     ConvSimdComputeFn,
     ConvSimdEpilogueFn,
@@ -103,6 +107,7 @@ def _im2col_ndhwc_kernel[
     var _m_offset = Int(m_offset)
     var _m_count = Int(m_count)
     var local_m = block_idx.x
+
     if local_m >= _m_count:
         return
 
@@ -148,23 +153,25 @@ def _im2col_ndhwc_kernel[
 
     var row_base = local_m * K
     var k = thread_idx.x * simd_width
-    while k < K:
-        var q, rsc = udivmod(k, RSC)
-        var r, sc = udivmod(rsc, SC)
-        var s, c = udivmod(sc, C)
 
-        var d_in = d_in_base + q
-        var h_in = h_in_base + r
-        var w_in = w_in_base + s
+    with PDL():
+        while k < K:
+            var q, rsc = udivmod(k, RSC)
+            var r, sc = udivmod(rsc, SC)
+            var s, c = udivmod(sc, C)
 
-        var val = SIMD[input_dtype, simd_width](0)
-        if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
-            val = input.load[
-                width=simd_width, alignment=align_of[input_dtype]()
-            ](Coord(batch, d_in, h_in, w_in, c))
+            var d_in = d_in_base + q
+            var h_in = h_in_base + r
+            var w_in = w_in_base + s
 
-        im2col_ptr.unsafe_store(row_base + k, val)
-        k += block_dim.x * simd_width
+            var val = SIMD[input_dtype, simd_width](0)
+            if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
+                val = input.load[
+                    width=simd_width, alignment=align_of[input_dtype]()
+                ](Coord(batch, d_in, h_in, w_in, c))
+
+            im2col_ptr.unsafe_store(row_base + k, val)
+            k += block_dim.x * simd_width
 
 
 @__name(t"conv3d_transpose_qrscf_to_nk_{dtype}")
@@ -190,6 +197,7 @@ def _transpose_qrscf_to_nk[
     comptime K = Q * R * S * C
     comptime total = F * K
     var tid = global_idx.x
+
     if tid >= total:
         return
 
@@ -201,7 +209,8 @@ def _transpose_qrscf_to_nk[
     var r, sc = udivmod(rsc, SC)
     var s, c = udivmod(sc, C)
 
-    dst_ptr.unsafe_store(tid, filter[q, r, s, c, f])
+    with PDL():
+        dst_ptr.unsafe_store(tid, filter[q, r, s, c, f])
 
 
 @__name(t"conv3d_transpose_fcqrs_to_nk_{dtype}")
@@ -227,6 +236,7 @@ def _transpose_fcqrs_to_nk[
     comptime K = Q * R * S * C
     comptime total = F * K
     var tid = global_idx.x
+
     if tid >= total:
         return
 
@@ -238,7 +248,8 @@ def _transpose_fcqrs_to_nk[
     var r, sc = udivmod(rsc, SC)
     var s, c = udivmod(sc, C)
 
-    dst_ptr.unsafe_store(tid, filter[f, c, q, r, s])
+    with PDL():
+        dst_ptr.unsafe_store(tid, filter[f, c, q, r, s])
 
 
 # =========================================================================
@@ -264,9 +275,9 @@ def dispatch_im2col_matmul_conv3d[
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    stride: IndexList[3],
-    dilation: IndexList[3],
-    symmetric_padding: IndexList[3],
+    stride: Coord[Int, Int, Int],
+    dilation: Coord[Int, Int, Int],
+    symmetric_padding: Coord[Int, Int, Int],
     num_groups: Int,
     ctx: DeviceContext,
     epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,
@@ -382,6 +393,7 @@ def dispatch_im2col_matmul_conv3d[
             filter_nk_buf,
             grid_dim=transpose_grid,
             block_dim=transpose_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         ctx.enqueue_function[
@@ -393,6 +405,7 @@ def dispatch_im2col_matmul_conv3d[
             filter_nk_buf,
             grid_dim=transpose_grid,
             block_dim=transpose_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     # --- Decide M-tile size so scratch stays bounded. ---
@@ -449,6 +462,7 @@ def dispatch_im2col_matmul_conv3d[
             Int32(_m_count),
             grid_dim=_m_count,
             block_dim=im2col_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
         var a_tt = TileTensor(im2col_buf, row_major(_m_count, K))

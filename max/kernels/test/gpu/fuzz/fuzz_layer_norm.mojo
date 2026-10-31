@@ -90,7 +90,7 @@ def run_one_case[
 ](ctx: DeviceContext, spec: CaseSpec, check: Bool = False) raises:
     var rows = spec.rows
     var cols = spec.cols
-    var shape = Index(rows, cols)
+    var shape = (rows, cols)
 
     var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
     var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
@@ -181,12 +181,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "rows=",
-                specs[i].rows,
-                "cols=",
-                specs[i].cols,
+                t"FUZZ_SPEC idx= {i} rows= {specs[i].rows} cols="
+                t" {specs[i].cols}"
             )
         return
 
@@ -199,7 +195,7 @@ def main() raises:
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print("=== fuzz_layer_norm seed=", the_seed, "budget=", the_budget, "===")
+    print(t"=== fuzz_layer_norm seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

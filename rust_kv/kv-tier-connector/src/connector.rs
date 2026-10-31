@@ -284,6 +284,54 @@ struct Metrics {
     disk_write_bytes: AtomicU64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LeafRecency {
+    /// The whole sequence, last block first, so the shared prefix at its
+    /// start is evicted last.
+    FullSequence,
+    /// The last `blocks` of the sequence, in order, so blocks the window
+    /// slid past age toward eviction.
+    SlidingWindow { blocks: usize },
+    /// The whole sequence, in order, so the latest state is evicted last.
+    Recurrent,
+}
+
+/// Returns `hashes` in the order a leaf with `recency` touches them.
+fn touch_order(recency: LeafRecency, hashes: &[BlockHash]) -> Vec<BlockHash> {
+    match recency {
+        LeafRecency::FullSequence => hashes.iter().rev().copied().collect(),
+        LeafRecency::SlidingWindow { blocks } => {
+            hashes[hashes.len().saturating_sub(blocks)..].to_vec()
+        }
+        LeafRecency::Recurrent => hashes.to_vec(),
+    }
+}
+
+/// Moves the host block holding `block_hash` to the most-recently-used end of
+/// `leaf_idx`'s free queue, if the host tier holds one.
+fn touch_host(pool: &mut JengaBlockPool<BlockHash>, leaf_idx: usize, block_hash: BlockHash) {
+    if let Some(host_bid) = pool.lookup_hash(leaf_idx, block_hash) {
+        pool.refresh(leaf_idx, host_bid);
+    }
+}
+
+/// Refreshes `leaf_idx`'s recency for `ordered` in both tiers, each block in
+/// turn becoming the most recently used.
+fn touch_run(
+    pool: &mut JengaBlockPool<BlockHash>,
+    disk: &DiskTier,
+    leaf_idx: usize,
+    ordered: &[BlockHash],
+) {
+    for &block_hash in ordered {
+        touch_host(pool, leaf_idx, block_hash);
+    }
+    disk.touch(ordered.iter().map(|&block_hash| LeafHash {
+        leaf_idx,
+        block_hash,
+    }));
+}
+
 /// The tiered KV connector: host tier plus an optional disk last level.
 pub struct TieredConnector {
     num_leaves: usize,
@@ -291,6 +339,7 @@ pub struct TieredConnector {
     pub disk: Arc<DiskTier>,
     engine: Arc<CopyEngine>,
     bytes_per_leaf: Vec<usize>,
+    recency: Vec<LeafRecency>,
 
     onload_lanes: Vec<Arc<TransferLane>>,
     onload_rr: AtomicUsize,
@@ -313,6 +362,10 @@ fn next_onload_lane(rr: &AtomicUsize, n: usize) -> usize {
 
 impl TieredConnector {
     /// Builds a connector.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "connector construction threads through all tier and leaf config"
+    )]
     pub fn new(
         total_num_host_blocks: usize,
         cache_ratios: Vec<usize>,
@@ -321,11 +374,19 @@ impl TieredConnector {
         bytes_per_leaf: Vec<usize>,
         only_last_level: bool,
         num_h2d_onload_lanes: usize,
+        recency: Vec<LeafRecency>,
     ) -> crate::error::Result<Self> {
         if num_h2d_onload_lanes == 0 {
             return Err(crate::error::ConnectorError::Config(
                 "num_h2d_onload_lanes must be at least 1".to_owned(),
             ));
+        }
+        if recency.len() != cache_ratios.len() {
+            return Err(crate::error::ConnectorError::Config(format!(
+                "got a recency for {} leaves, expected {}",
+                recency.len(),
+                cache_ratios.len()
+            )));
         }
         let skip_host_cache_tier = only_last_level && disk.enabled;
         Ok(TieredConnector {
@@ -342,6 +403,7 @@ impl TieredConnector {
             disk,
             engine,
             bytes_per_leaf,
+            recency,
             // Each onload lane does a blocking `memcpy; sync` per copy on its
             // own H2D stream. N>1 lets host-hit admits overlap. N=1 is the
             // historical FIFO that yields the copy engine after every block.
@@ -361,6 +423,13 @@ impl TieredConnector {
     fn pick_onload_lane(&self) -> (usize, Arc<TransferLane>) {
         let i = next_onload_lane(&self.onload_rr, self.onload_lanes.len());
         (i, Arc::clone(&self.onload_lanes[i]))
+    }
+
+    /// The connector's leaf count, carried from construction: the width of
+    /// the per-leaf lists [`Self::load`] and [`Self::offload`] take.
+    #[must_use]
+    pub fn num_leaves(&self) -> usize {
+        self.num_leaves
     }
 
     /// Which of `hashes` each of `leaf_idxs` holds, one mask per leaf.
@@ -398,6 +467,43 @@ impl TieredConnector {
             .lookup_hash(leaf_hash.leaf_idx, leaf_hash.block_hash)
             .is_some()
             || self.disk.contains(leaf_hash)
+    }
+
+    /// Refreshes each leaf's recency for the blocks of `hashes` it reads,
+    /// ordered by the leaf's [`LeafRecency`], so a later-touched block is
+    /// evicted after an earlier one.
+    ///
+    /// `hashes` is the whole sequence, in order. A host block goes to the
+    /// most-recently-used end of its free queue; one a transfer still pins goes
+    /// there when the pin drops. Hashes neither tier holds are skipped.
+    pub fn touch(&mut self, hashes: &[BlockHash]) {
+        for (leaf_idx, ordered) in self.touch_plan(hashes) {
+            self.touch_leaf(leaf_idx, &ordered);
+        }
+    }
+
+    /// [`Self::touch`] as data: each leaf and the hashes it refreshes, in the
+    /// order `touch` applies them. Applying every entry with
+    /// [`Self::touch_leaf`] in turn is `touch`, so a caller can let other
+    /// calls in between leaves. Each entry goes in one call: a full-sequence
+    /// leaf refreshes its tail first, so an eviction partway through an entry
+    /// would take the head that entry was about to refresh.
+    #[must_use]
+    pub fn touch_plan(&self, hashes: &[BlockHash]) -> Vec<(usize, Vec<BlockHash>)> {
+        self.recency
+            .iter()
+            .enumerate()
+            .map(|(leaf_idx, &recency)| (leaf_idx, touch_order(recency, hashes)))
+            .collect()
+    }
+
+    /// Refreshes `leaf_idx`'s recency for `ordered`, each block in turn
+    /// becoming the most recently used: one entry of [`Self::touch_plan`].
+    ///
+    /// # Panics
+    /// If the connector has no leaf `leaf_idx`.
+    pub fn touch_leaf(&mut self, leaf_idx: usize, ordered: &[BlockHash]) {
+        touch_run(&mut self.pool, &self.disk, leaf_idx, ordered);
     }
 
     /// Applies the host block events the lanes handed back: publishes filled
@@ -494,9 +600,10 @@ impl TieredConnector {
         }
         let mut disk_pins = disk_pins.into_iter();
 
+        // The H2D moves only each block's units, not its host row's padding.
         let h2d_bytes: u64 = hits
             .iter()
-            .map(|hit| self.bytes_per_leaf[hit.hash.leaf_idx] as u64)
+            .map(|hit| self.engine.logical_row_bytes(hit.hash.leaf_idx) as u64)
             .sum();
         self.metrics
             .h2d_bytes
@@ -617,7 +724,7 @@ impl TieredConnector {
 
         let d2h_bytes: u64 = plan
             .iter()
-            .map(|hit| self.bytes_per_leaf[hit.hash.leaf_idx] as u64)
+            .map(|hit| self.engine.logical_row_bytes(hit.hash.leaf_idx) as u64)
             .sum();
         self.metrics
             .d2h_bytes
@@ -830,8 +937,9 @@ mod tests {
     };
 
     use super::{
-        BlockHash, DiskTier, Hit, JengaBlockPool, LeafHash, PoolOptions, next_onload_lane,
-        plan_load, plan_offload, reserve_disk_promotions,
+        BlockHash, DiskTier, Hit, JengaBlockPool, LeafHash, LeafRecency, PoolOptions,
+        next_onload_lane, plan_load, plan_offload, reserve_disk_promotions, touch_host,
+        touch_order, touch_run,
     };
 
     fn hashes(count: u128) -> Vec<BlockHash> {
@@ -845,6 +953,102 @@ mod tests {
         assert_eq!(next_onload_lane(&rr, 2), 1);
         assert_eq!(next_onload_lane(&rr, 2), 0);
         assert_eq!(rr.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn a_full_sequence_is_touched_last_block_first() {
+        assert_eq!(
+            touch_order(LeafRecency::FullSequence, &hashes(3)),
+            [BlockHash(2, 2), BlockHash(1, 1), BlockHash(0, 0)]
+        );
+    }
+
+    #[test]
+    fn a_sliding_window_touches_only_its_window_in_order() {
+        let window = LeafRecency::SlidingWindow { blocks: 2 };
+        assert_eq!(
+            touch_order(window, &hashes(4)),
+            [BlockHash(2, 2), BlockHash(3, 3)]
+        );
+        // A window wider than the sequence is the whole sequence.
+        assert_eq!(touch_order(window, &hashes(1)), [BlockHash(0, 0)]);
+    }
+
+    #[test]
+    fn a_recurrent_leaf_is_touched_in_order() {
+        assert_eq!(touch_order(LeafRecency::Recurrent, &hashes(2)), hashes(2));
+    }
+
+    #[test]
+    fn a_touched_host_block_is_evicted_after_an_untouched_one() {
+        let mut pool = JengaBlockPool::new(2, vec![1], PoolOptions::default()).expect("a pool");
+        let [first, second] = [BlockHash(1, 1), BlockHash(2, 2)];
+        for hash in [first, second] {
+            let bid = pool.alloc_block(0).expect("a block");
+            pool.commit_into_prefix_cache(0, hash, bid);
+            pool.free_block(0, bid);
+        }
+
+        touch_host(&mut pool, 0, first);
+        pool.alloc_block(0).expect("a block");
+
+        assert!(pool.lookup_hash(0, first).is_some());
+        assert!(pool.lookup_hash(0, second).is_none());
+    }
+
+    /// A pool holding `run` in leaf 0 and nothing else: every block committed
+    /// and free, two to a huge block, so a refresh reorders huge blocks too.
+    fn holding(run: &[BlockHash]) -> JengaBlockPool<BlockHash> {
+        let mut pool = JengaBlockPool::new(run.len().div_ceil(2), vec![2], PoolOptions::default())
+            .expect("a pool");
+        for &hash in run {
+            let bid = pool.alloc_block(0).expect("a block");
+            pool.commit_into_prefix_cache(0, hash, bid);
+            pool.free_block(0, bid);
+        }
+        pool
+    }
+
+    /// The order leaf 0 evicts `run` in, allocating until all of it is gone.
+    fn eviction_order(mut pool: JengaBlockPool<BlockHash>, run: &[BlockHash]) -> Vec<BlockHash> {
+        let mut evicted = Vec::new();
+        while evicted.len() < run.len() {
+            pool.alloc_block(0).expect("a block");
+            let gone: Vec<BlockHash> = run
+                .iter()
+                .copied()
+                .filter(|&h| pool.lookup_hash(0, h).is_none() && !evicted.contains(&h))
+                .collect();
+            evicted.extend(gone);
+        }
+        evicted
+    }
+
+    #[test]
+    fn a_full_sequence_touch_leaves_its_head_evicted_last() {
+        let run = hashes(6);
+        let mut pool = holding(&run);
+        touch_run(
+            &mut pool,
+            &DiskTier::disabled(),
+            0,
+            &touch_order(LeafRecency::FullSequence, &run),
+        );
+        assert_eq!(
+            eviction_order(pool, &run),
+            run.iter().rev().copied().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn an_eviction_partway_through_a_full_sequence_touch_takes_the_head() {
+        // Why `touch_plan` asks for each entry in one call: the tail goes
+        // first, so until the rest lands the head is the coldest block.
+        let run = hashes(6);
+        let ordered = touch_order(LeafRecency::FullSequence, &run);
+        let mut pool = holding(&run);
+        touch_run(&mut pool, &DiskTier::disabled(), 0, &ordered[..3]);
+        assert_eq!(eviction_order(pool, &run)[0], run[0]);
     }
 
     /// A disk promotion awaiting its host block.
@@ -1150,5 +1354,77 @@ mod tests {
 
         assert!(matches!(error, crate::error::ConnectorError::Config(_)));
         assert_eq!(pool.num_used_blocks(0), 0, "a refusal allocates nothing");
+    }
+
+    /// What one released request's touch costs the thread that applies it, on
+    /// a host tier of a one-block sliding window beside five full-attention
+    /// leaves at mixed page ratios, 1,000 blocks a request and 250 requests
+    /// resident, every block committed and free.
+    ///
+    /// Run with `cargo test --release -p kv-tier-connector --lib -- --ignored
+    /// --nocapture touch_cost`. It needs about 1.3 GB.
+    #[test]
+    #[ignore = "a benchmark: run it in release with --nocapture"]
+    #[allow(clippy::print_stdout, reason = "a benchmark reports its timings")]
+    fn touch_cost() {
+        const BLOCKS: usize = 1000;
+        const RESIDENT: usize = 250;
+        const TOUCHES: usize = 128;
+        let recency = [
+            LeafRecency::SlidingWindow { blocks: 1 },
+            LeafRecency::FullSequence,
+            LeafRecency::FullSequence,
+            LeafRecency::FullSequence,
+            LeafRecency::FullSequence,
+            LeafRecency::FullSequence,
+        ];
+        let ratios = vec![1, 16, 8, 64, 32, 64];
+        let huge_per_request: usize = recency
+            .iter()
+            .zip(&ratios)
+            .map(|(&r, &ratio)| {
+                touch_order(r, &hashes(BLOCKS as u128))
+                    .len()
+                    .div_ceil(ratio)
+            })
+            .sum();
+        let mut pool =
+            JengaBlockPool::new(RESIDENT * huge_per_request, ratios, PoolOptions::default())
+                .expect("a pool");
+        let requests: Vec<Vec<BlockHash>> = (0..RESIDENT as u128)
+            .map(|r| {
+                (0..BLOCKS as u128)
+                    .map(|b| BlockHash(r << 32 | b, b.wrapping_mul(0x9e37_79b9) ^ r))
+                    .collect()
+            })
+            .collect();
+        for run in &requests {
+            for (leaf_idx, &r) in recency.iter().enumerate() {
+                for hash in touch_order(r, run) {
+                    let bid = pool.alloc_block(leaf_idx).expect("room for every request");
+                    pool.commit_into_prefix_cache(leaf_idx, hash, bid);
+                    pool.free_block(leaf_idx, bid);
+                }
+            }
+        }
+        let disk = DiskTier::disabled();
+        let mut refreshed = 0;
+        let start = std::time::Instant::now();
+        for i in 0..TOUCHES {
+            let run = &requests[i * 7 % RESIDENT];
+            for (leaf_idx, &r) in recency.iter().enumerate() {
+                let ordered = touch_order(r, run);
+                refreshed += ordered.len();
+                touch_run(&mut pool, &disk, leaf_idx, &ordered);
+            }
+        }
+        let elapsed = start.elapsed();
+        println!(
+            "{TOUCHES} touches of {BLOCKS} blocks over {} leaves: {:.0} us per touch, \
+             {:.0} ns per refreshed block",
+            recency.len(),
+            elapsed.as_secs_f64() * 1e6 / TOUCHES as f64,
+            elapsed.as_secs_f64() * 1e9 / refreshed as f64,
+        );
     }
 }

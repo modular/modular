@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V4.1 ViT, aligner and image span assembly (ModuleV3 API)."""
 
 from __future__ import annotations
@@ -18,18 +17,18 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged_gpu,
 )
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm.rms_norm import rms_norm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
-from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.linear import Linear
+from max.nn.norm.rms_norm import rms_norm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 
 @dataclass(frozen=True)
@@ -70,6 +69,7 @@ class DeepseekV41VisionConfig:
 
     @property
     def head_dim(self) -> int:
+        """The width of one attention head."""
         return self.dim // self.n_heads
 
     @property
@@ -79,6 +79,7 @@ class DeepseekV41VisionConfig:
 
     @property
     def patch_dim(self) -> int:
+        """The number of values one patch carries."""
         return 3 * self.patch_size**2
 
 
@@ -91,6 +92,7 @@ class VisionRMSNorm(Module[[Tensor], Tensor]):
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` in float32 and casts the result back."""
         return rms_norm(x.cast(DType.float32), self.weight, self.eps).cast(
             x.dtype
         )
@@ -123,6 +125,7 @@ class VisionAttention(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seqlen: Tensor,
     ) -> Tensor:
+        """Runs multi-head attention over the patch sequence."""
         shape = (-1, self.n_heads, self.head_dim)
         q, k, v = (t.reshape(shape) for t in F.chunk(self.wqkv(x), 3, axis=-1))
         out = flash_attention_ragged_gpu(
@@ -138,17 +141,22 @@ class VisionAttention(Module[..., Tensor]):
 
 
 class VisionMLP(Module[[Tensor], Tensor]):
+    """The vision encoder's feed-forward block."""
+
     def __init__(self, config: DeepseekV41VisionConfig) -> None:
         super().__init__()
         self.w1 = Linear(config.dim, 2 * config.inter_dim, bias=False)
         self.w2 = Linear(config.inter_dim, config.dim, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the gated feed-forward over ``x``."""
         gate, up = F.chunk(self.w1(x), 2, axis=-1)
         return self.w2(F.silu(gate) * up)
 
 
 class VisionBlock(Module[..., Tensor]):
+    """One vision encoder block."""
+
     def __init__(self, config: DeepseekV41VisionConfig) -> None:
         super().__init__()
         self.norm1 = VisionRMSNorm(config.dim, config.norm_eps)
@@ -164,6 +172,7 @@ class VisionBlock(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seqlen: Tensor,
     ) -> Tensor:
+        """Runs attention and the feed-forward block over ``x``."""
         x = x + self.attn(
             self.norm1(x), rot_cos, rot_sin, cu_seqlens, max_seqlen
         )
@@ -171,11 +180,14 @@ class VisionBlock(Module[..., Tensor]):
 
 
 class PatchEmbed(Module[[Tensor], Tensor]):
+    """Projects image patches into the vision hidden size."""
+
     def __init__(self, config: DeepseekV41VisionConfig) -> None:
         super().__init__()
         self.proj = Linear(config.patch_dim, config.dim)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Projects the patches into the hidden size."""
         return self.proj(x)
 
 
@@ -198,6 +210,7 @@ class DeepseekV41ViT(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seqlen: Tensor,
     ) -> Tensor:
+        """Runs the vision transformer over the patches."""
         x = self.patch_embed(patches)
         for block in self.blocks:
             x = block(x, rot_cos, rot_sin, cu_seqlens, max_seqlen)
@@ -214,6 +227,7 @@ class DeepseekV41Aligner(Module[..., Tensor]):
         self.w2 = Linear(config.text_dim, config.text_dim)
 
     def forward(self, x: Tensor, aligner_index: Tensor) -> Tensor:
+        """Projects the vision features into the text hidden size."""
         # The appended zero row is what the grid padding gathers.
         x = F.gather(F.pad(x, [0, 1, 0, 0]), aligner_index, axis=0)
         n, dim = x.shape
@@ -254,6 +268,7 @@ class DeepseekV41VisionModel(Module[..., Tensor]):
         aligner_index: Tensor,
         span_index: Tensor,
     ) -> Tensor:
+        """Runs the vision tower and the aligner over the patches."""
         h = self.vision(patches, rot_cos, rot_sin, cu_seqlens, max_seqlen)
         rows = self.aligner(h, aligner_index)
         delimiters = F.stack(

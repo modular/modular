@@ -241,7 +241,7 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
 
   // If the expected type is concrete, then we can filter the overload set down
   // to a single entry and emit errors if not.
-  if (!paramFinder.hasReferences(expectedType)) {
+  if (!hasReferences(expectedType)) {
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
       return getMojoDiag(loc);
     };
@@ -260,6 +260,21 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   // Otherwise, we don't have a contextual error.
   emitWrongTypeDiag(expectedType);
   return failure(); // TODO: Improve this.
+}
+
+/// Returns true if argument `argIdx` of a call to `declIfKnown` is the
+/// receiver of a struct method, typed as the method's own struct.
+static bool isSelfArg(ASTDecl *declIfKnown, size_t argIdx, CallSyntax syntax,
+                      ASTType expectedType, SharedState &shared) {
+  if (syntax == CallSyntax::kParamBindings || argIdx != 0)
+    return false;
+  auto *fnDecl = dyn_cast_if_present<DefASTDecl>(declIfKnown);
+  if (!fnDecl)
+    return false;
+  FnOp fnOp = fnDecl->getOp();
+  if (fnOp.getIsStatic() || !isa<StructDeclOp>(fnOp->getParentOp()))
+    return false;
+  return expectedType.getDecl(shared) == fnDecl->getParentDecl();
 }
 
 /// Core type matching logic for parameter inference, handling the expected
@@ -307,7 +322,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
   // We have a non-parametric expected type, and a wildcard type, we can
   // match any operand.
   if (sugarIsa<NameLookupArgWildcardType>(argType) &&
-      !paramFinder.hasReferences(expectedType))
+      !hasReferences(expectedType))
     return success();
 
   // TODO: Optionally compute fitness metrics (# implicit conversions,
@@ -340,7 +355,19 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
       // as much of a mismatch as a normal implicit conversion.  This enables
       // exact matches to be more specific, and literals to be more compatible
       // than an actual conversion.
-      ++numImplicitConversions;
+      //
+      // FIXME: We +2 on the counter when the current arg is self purely for
+      // backward compatibility reason: To support custom self type, we used to
+      // enter the function twice for self argument, so the extra count is to
+      // compensate for the old behavior.
+      // We should really instead have two separate overload sets for
+      // non-materializable and always evaluate the overloads collected from the
+      // type itself before evaluating the set collected from the nmtarget type.
+      // See `OverloadSet::lookup`.
+      if (isSelfArg(declIfKnown, argIdx, syntax, expectedType, getShared()))
+        numImplicitConversions += 2;
+      else
+        numImplicitConversions += 1;
       return success();
     }
 
@@ -366,7 +393,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
   // If the expected type has been fully resolved, check it for implicit
   // conversions using the normal type machinery.  This will handle things like
   // function pointer conversions that the code below doesn't.
-  if (!paramFinder.hasReferences(expectedType)) {
+  if (!hasReferences(expectedType)) {
     auto conversion = IREmitter::classifyImplicitConversionWithDetails(
         {argVal, operand.expr}, expectedType, getDeclScope(),
         /*additionalAssumptions=*/{}, /*deferralCtx=*/nullptr);
@@ -606,7 +633,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // argument.  This is a non-trivial operation because we support inferring
   // from the value directly, but also inferring as a result of implicit
   // conversions.
-  if (paramFinder.hasReferences(expectedType)) {
+  if (hasReferences(expectedType)) {
     OperandsNeedingOriginsList paramOrigins;
     if (failed(inferFromRVType(binding, paramIdx, expectedType,
                                declaredParamPogs, CallSyntax::kParamBindings,
@@ -620,7 +647,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
       // If we take the implicit conversion path and need to turn the value into
       // a reference. The expected type must have be fully concretized in order
       // for conversion to be successful.
-      assert(!paramFinder.hasReferences(expectedType));
+      assert(!hasReferences(expectedType));
 
       if (paramOrigins.front().getArgConvention() != ArgConvention::OwnedMem)
         binding.ir = PMBValue::getFromPValue(binding.ir.getIfPValue());
@@ -635,7 +662,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     }
   }
 
-  if (paramFinder.hasReferences(expectedType)) {
+  if (hasReferences(expectedType)) {
     deferredGivenParams.set(paramIdx);
     return TypedAttr(); // Deferred.
   }
@@ -809,7 +836,7 @@ LogicalResult ParamInf::inferFromParamList() {
       }
 
       Type mergedTypeBound;
-      if (paramFinder.hasReferences(varArgsEltType) &&
+      if (hasReferences(varArgsEltType) &&
           sugarIsa<AnyTraitType>(ASTType(varArgsEltType).extractMetaType())) {
         if (pogAssignment.posVariadicIdxs.empty()) {
           // TODO: The correct thing is to infer to `NeverTrait` such that an
@@ -907,6 +934,17 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   CrashReporter handler(paramBindings.getExprLoc(), "ParamInf::inferForStruct",
                         getShared());
 
+  // A failed binding drops everything it deferred. Declared first so it runs
+  // after `attachNoteOnError`.
+  DeferredTypingContext::Checkpoint deferralCheckpoint;
+  if (deferredTypingContext)
+    deferralCheckpoint = deferredTypingContext->getCheckpoint();
+  bool succeeded = false;
+  auto rollbackOnFailure = llvm::scope_exit([&]() {
+    if (!succeeded && deferredTypingContext)
+      deferredTypingContext->rollback(deferralCheckpoint);
+  });
+
   auto attachNoteOnError = llvm::scope_exit([&]() {
     if (diag.hasErrorEmitted() && declIfKnown) {
       auto *defDecl = llvm::dyn_cast<DefASTDecl>(declIfKnown);
@@ -927,10 +965,8 @@ VerifiedParamBindings ParamInf::inferForStruct() {
       // the body-unprovable constraints there and suppress the error.
       // Otherwise, fall back to the existing hard-error path.
       if (deferredTypingContext) {
-        SMLoc deferralLoc = paramBindings.getExprLoc();
         for (ConstraintAttr c : bodyUnprovableConstraints)
-          deferredTypingContext->deferredConstraints.push_back(
-              {c, deferralLoc});
+          deferredTypingContext->addInconclusive(c, paramBindings.getExprLoc());
       } else {
         emitUnprovableConstraintsFromFitness(
             bodyUnprovableConstraints, paramBindings.shared,
@@ -958,6 +994,7 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   if (failed(checkBodyConstraints()))
     return {};
 
+  succeeded = true;
   ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
       getShared().getContext(), evaluator.getIndexBindings());
   return VerifiedParamBindings(rawBindings,
@@ -981,7 +1018,7 @@ LogicalResult ParamInf::inferFromDefaults() {
     //
     // TODO: If the references points to a `_` parameter, we might still want to
     // install it without erasing the index reference.
-    if (paramFinder.hasReferences(value))
+    if (hasReferences(value))
       return success();
 
     ASTType argType = evaluator.getReboundType(declaredParamTypes[idx]);
@@ -1154,7 +1191,7 @@ void ParamInf::inferOriginParams() {
 
         paramType = cast<LIT::StructType>(evaluator.getReboundType(paramType));
         // Make sure the origin type is fully resolved before instantiating it.
-        if (paramFinder.hasReferences(paramType))
+        if (hasReferences(paramType))
           continue;
 
         auto origin = // Get the Origin value.
@@ -1225,8 +1262,8 @@ LogicalResult ParamInf::inferFromBodyConstraints() {
     // has unbound parameters.
     TypedAttr lhs = evaluator.getReboundAttribute(eq.first);
     TypedAttr rhs = evaluator.getReboundAttribute(eq.second);
-    bool lhsOpen = paramFinder.hasReferences(lhs);
-    bool rhsOpen = paramFinder.hasReferences(rhs);
+    bool lhsOpen = hasReferences(lhs);
+    bool rhsOpen = hasReferences(rhs);
     if (lhsOpen == rhsOpen)
       continue;
 
@@ -1337,6 +1374,16 @@ LogicalResult ParamInf::finalizeWithUnbound() {
     if (installUnbound) {
       Type targetType =
           evaluator.getReboundType(getCanonicalType(declaredParamTypes[idx]));
+      // Declare an implicit parameter for the hole if supported.
+      if (deferredTypingContext &&
+          deferredTypingContext->canDeclareImplicitParams()) {
+        ParamDeclAttr implicitParam =
+            deferredTypingContext->declareImplicitParam(
+                targetType, pog.getName(), paramBindings.getExprLoc());
+        evaluator.overwriteIndexBinding(idx,
+                                        ParamDeclRefAttr::get(implicitParam));
+        continue;
+      }
       evaluator.overwriteIndexBinding(idx, UnboundAttr::get(targetType));
       continue;
     }
@@ -1491,7 +1538,7 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
       // here (instead of in matchTypes) because function arguments can be
       // rebound when origins disagree, but this isn't correct/possible in
       // arbitrary nested positions.
-      if (!paramFinder.hasReferences(expectedType)) {
+      if (!hasReferences(expectedType)) {
         if (!IREmitter::canZeroCostConvert(valueRefType, expectedType,
                                            getShared(), getDeclScope())
                  .isTrue()) {
@@ -1642,9 +1689,8 @@ LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
                               getShared()))
     ++numMismatchedConventions;
 
-  bool needsAddrSpace =
-      paramFinder.hasReferences(expectedRef.getAddressSpace());
-  bool needsOrigin = paramFinder.hasReferences(expectedRef.getOrigin());
+  bool needsAddrSpace = hasReferences(expectedRef.getAddressSpace());
+  bool needsOrigin = hasReferences(expectedRef.getOrigin());
   if (!needsAddrSpace && !needsOrigin)
     return success(); // Nothing to do.
 
@@ -1678,63 +1724,6 @@ LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
                                           expectedRef.getOrigin())))
     return failure();
   return success();
-}
-
-/// Given an incomplete parameter binding set, try to infer parameters on Self
-/// of a method from the first argument.
-LogicalResult CallParamInf::inferCTADParams() {
-  // Consider "conditional conformance" cases like:
-  //     struct X[A: AnyType]:
-  //       def foo[B: Movable](self: X[B]): ...
-  //
-  // When resolving a function call like `someX.foo()`, we install the
-  // bindings for 'A' from the typeof(someX) when resolving the
-  // AttributeRefExpr and then infer 'B' from someX again.
-  //
-  // However, when we have something like `X.foo(someX)` we cannot install the
-  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
-  // bound by parameter inference to 'B'.  Notice this and infer the parameter
-  // directly from A.  This is also important for operator resolution, which
-  // works effectively the same way.
-  //
-  // TODO: Provide a first class representation for conditional conformance
-  // that doesn't have us shadowing parameters like this!
-
-  // We can only do this if we have an argument.
-  assert(!callOperands.empty() && !callOperands[0].keyword &&
-         "init should have positional self argument");
-
-  auto selfConvention = calleeSignature.getArgConventions()[0];
-  ASTType declaredSelfType = RefType::stripRefConvention(
-      calleeSignature.getArgument(0), selfConvention);
-
-  // Get the ASTDecl for the declared self type.  This will give us the struct
-  // that we are referring to without bound parameters.
-  auto *decl =
-      cast_or_null<StructASTDecl>(declaredSelfType.getDecl(getShared()));
-  if (!decl)
-    return success();
-
-  // Get the Self type, with parameters bound to the structs CTAD parameters.
-  ASTType selfType = decl->getSelfType();
-  if (!selfType)
-    return success();
-
-  // We need to convert named parameters like "T", which are ParamDeclRefAttr
-  // into ParamIndexRefAttr(0) style of representation.
-  IndexRefRemapper remapper(decl->getOp().getParams(), /*resultParams*/ {});
-  selfType = remapper.replace(selfType.mlirType);
-
-  // If passing self by reference, wrap the Self type with the RefType
-  // paraphernalia like origins.
-  if (hasAddress(selfConvention))
-    selfType = sugarCast<RefType>(calleeSignature.getArgument(0))
-                   .getWithElement(selfType);
-
-  // Infer the first operand against this type - it was presumably already
-  // inferred against the methods declared type of 'self' as well.
-  return inferOneOperand(callOperands[0], /*operandIdx*/ 0, /*argIdx*/ 0,
-                         selfType, selfConvention);
 }
 
 LogicalResult CallParamInf::inferOptionalLiteralSize() {
@@ -2285,32 +2274,6 @@ VerifiedParamBindings CallParamInf::inferForCall() {
     diag << "assigning " << numOperands << " operand" << plural(numOperands)
          << " to an unresolvable variadic pack argument";
     return {};
-  }
-
-  // Check to see if this is a CTAD parameter - a parameter on the struct
-  // that encloses the method.  Consider "conditional conformance" cases like:
-  //     struct X[A: AnyType]:
-  //       def foo[B: Movable](self: X[B]): ...
-  // When resolving a function call like `someX.foo()`, we install the
-  // bindings for 'A' from the typeof(someX) when resolving the
-  // AttributeRefExpr and then infer 'B' from someX again.
-  //
-  // However, when we have something like `X.foo(someX)` we cannot install the
-  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
-  // bound by parameter inference to 'B'.  Notice this and infer the parameter
-  // directly from A.  This is also important for operator resolution, which
-  // works effectively the same way.
-  //
-  // TODO: Provide a first class representation for conditional conformance
-  // that doesn't have us shadowing parameters like this!
-  // A trait member's enclosing declaration is a trait rather than a struct, so
-  // the struct-shaped CTAD inference never applies to one.
-  if (auto *fnDecl = dyn_cast_if_present<DefASTDecl>(declIfKnown)) {
-    auto fnOp = fnDecl->getOp();
-    if (!fnOp.getIsStatic() && isa<StructDeclOp>(fnOp->getParentOp())) {
-      if (failed(inferCTADParams()))
-        return {};
-    }
   }
 
   // Fills in any inferrable origin parameters.

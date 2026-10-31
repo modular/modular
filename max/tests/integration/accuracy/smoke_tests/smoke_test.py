@@ -97,11 +97,14 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": "max/pipelines/architectures/deepseekV4/recipes/flash_0731_fp8_tp2_b200.yaml",
+    "deepseek-ai/DeepSeek-V4.1-Flash-1017": "max/pipelines/architectures/deepseekV41/recipes/flash_1017_mxfp4_dp4_ep4_dspark_4x_b200.yaml",
+    "nvidia/DeepSeek-V4.1-Flash-NVFP4": "max/pipelines/architectures/deepseekV41/recipes/flash_nvfp4_dp4_ep4_dspark_4x_b200.yaml",
     "google/gemma-4-12B-it__device_graph_synthesis": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_device_graph_synthesis.yaml",
     "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
     "google/gemma-4-31B-it__cascade": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_cascade.yaml",
     "google/gemma-4-31B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_31b.yaml",
+    "google/gemma-4-31B-it__rust_tiered_kvconnector": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_rust_tiered_kvconnector.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
@@ -115,6 +118,8 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_8x_b200.yaml",
+    "poolside/Laguna-S-2.1-NVFP4": "max/pipelines/architectures/laguna/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
+    "poolside/Laguna-S-2.1-NVFP4__modulev3": "max/pipelines/architectures/laguna_modulev3/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
@@ -123,18 +128,24 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
+    "zai-org/GLM-5.3-Flash__mtp_tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_mtp_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3-Flash__tpep_mi355_modulev3": "max/pipelines/architectures/glm5_next_modulev3/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3__fp8_tpep_mi355": "max/pipelines/architectures/glm5_1_modulev3/recipes/glm_5_3_fp8_tp_ep_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": "max/pipelines/architectures/kimik2_5_modulev3/recipes/nvfp4_kimi_k2_7_code_b200.yaml",
+    "moonshotai/Kimi-K3": "max/pipelines/architectures/kimi_k3_modulev3/recipes/tp8_mxfp4_fp8kv_8x_mi355.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4_dspark.yaml",
+    "XiaomiMiMo/MiMo-V2.6-Flash-RL__modulev3": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_modulev3_b200.yaml",
+    "XiaomiMiMo/MiMo-V2.6-Flash-RL__modulev3_dflash": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_modulev3_dflash_b200.yaml",
     "tencent/Hy4-preview-FP8__mtp": "max/pipelines/architectures/hy_v4/recipes/hy4_preview_fp8_tp_ep_8x_b200.yaml",
+    "thinkingmachines/Inkling-Small-NVFP4__modulev3": "max/pipelines/architectures/inkling_modulev3/recipes/inkling_small_nvfp4.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
+    "Qwen/Qwen3.8-27B__rust_tiered_kvconnector": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_rust_tiered_kvconnector.yaml",
 })
 # fmt: on
 
@@ -189,12 +200,22 @@ class ServerCommand(NamedTuple):
     env: dict[str, str]
 
 
+# Repos a variant without a recipe needs beside its base repo, such as the
+# draft a Mach speculative variant exports with.
+VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
+    "google/gemma-4-31B-it__pp_mtp": ("google/gemma-4-31B-it-assistant",),
+}
+
+
 # Servers for frameworks whose serving code is internal. Their internal
 # entrypoint registers them here before running the smoke test. Each takes the
-# model, the startup timeout in seconds, and whether the model is a vision
-# model, so a framework that builds its vision graph separately builds it.
+# model key (an HF repo, or `<repo>__<variant>`), the startup timeout in
+# seconds, and whether the model is a vision model, so a framework that builds
+# its vision graph separately builds it. They get no MAX recipe: a server maps
+# a variant to its own config and refuses one it has none for.
 SERVERS: dict[
-    str, Callable[[str, int, bool], AbstractContextManager[RunningServer]]
+    str,
+    Callable[[str, int, bool], AbstractContextManager[RunningServer]],
 ] = {}
 
 
@@ -202,8 +223,11 @@ SERVERS: dict[
 def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
-    # gemma-4-12B is served text-only in MAX (gemma4_unified arch).
-    if any(kw in model for kw in ("gemma-3-1b", "gemma-4-12b")):
+    # gemma-4-12B is served text-only in MAX (gemma4_unified arch), and Mach
+    # serves its pipeline-parallel variants (`__pp`, `__pp_mtp`) text-only.
+    if any(
+        kw in model for kw in ("gemma-3-1b", "gemma-4-12b")
+    ) or model.endswith(("__pp", "__pp_mtp")):
         return False
     return any(
         kw in model
@@ -328,6 +352,8 @@ def hf_repos_for_model(model: str) -> list[str]:
     if recipe_path is not None:
         add_recipe_repos(recipe_path)
     add(model.split("__", 1)[0])
+    for repo in VARIANT_REPOS.get(model, ()):
+        add(repo)
     # A private recipe can serve a different repo than the variant; adding its
     # repos after the variant keeps it as the base repo callers get back.
     if recipe_path is None:
@@ -536,6 +562,9 @@ def get_server_cmd(
 
     if framework == "vllm" and accelerator(serve_image) == "amd":
         env["VLLM_ROCM_USE_AITER"] = "1"
+        # GLM-5.3-Flash recipes test text only; skip vision encoder warmup.
+        if "glm-5.3-flash" in model.casefold():
+            VLLM += ["--language-model-only"]
         # AITER's unquantized MoE rejects Nemotron-H's non-gated MLP.
         if "nemotron" in model.casefold():
             VLLM += ["--moe-backend", "triton"]
@@ -552,6 +581,10 @@ def get_server_cmd(
         # VMM on 8 GPUs at the default memory budget.
         if gpu_name.startswith("AMD") and gpu_count <= 4:
             env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM"] = "1"
+        # Without this, the registry falls back to an unquantized matmul
+        # that rejects the packed checkpoint's weight shapes.
+        if "kimi-k3" in model.casefold() and gpu_name.startswith("AMD"):
+            env["MAX_KIMI_K3_AMD_W4A8"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
@@ -752,6 +785,8 @@ def smoke_test(
         result_dir = output_path / safe_model_name(model)
         result_dir.mkdir(parents=True, exist_ok=True)
 
+    if recipe_path and framework in SERVERS:
+        raise ValueError(f"{framework} serves its own config, not a recipe")
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cascade = recipe_path is not None and _load_recipe(recipe_path).cascade
     if cascade and framework not in ("max", "max-ci"):
@@ -766,11 +801,10 @@ def smoke_test(
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
     if framework in SERVERS:
-        if recipe_path:
-            raise ValueError(f"{framework} does not support recipes")
-        serving = SERVERS[framework](
-            hf_model_path, timeout, is_vision_model(model)
-        )
+        # A variant selects how the server serves its base repo, which
+        # requests name.
+        served = model.split("__", 1)[0]
+        serving = SERVERS[framework](model, timeout, is_vision_model(model))
     else:
         cmd, server_env = get_server_cmd(
             framework,
@@ -814,6 +848,8 @@ def smoke_test(
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
+                # Mach refreshes /metrics every 2s; wait so reads aren't stale.
+                metrics_delay_s=2 if framework == "mach-ci" else 0,
                 lm_eval_metadata=lm_eval_metadata,
             )
 

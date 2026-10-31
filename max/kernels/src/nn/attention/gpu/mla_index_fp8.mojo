@@ -32,12 +32,19 @@ from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
+    block_dim,
     block_idx,
+    grid_dim,
     lane_id,
     thread_idx,
 )
 import max.gpu.primitives.warp as warp
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
+from max.gpu.host import DeviceContext, FuncAttribute
 
 from kv_cache.paged_sparse_kv_index_remap import NoRemap, SparseIndexRemap
 from kv_cache.types import (
@@ -276,6 +283,75 @@ def _block_kept_score[
 # Threads per CTA of the kept-block selection's pre- and post-pass.
 comptime _KEEP_PASS_THREADS = 256
 
+# Threads and CTAs of the scratch fill.
+comptime _FILL_THREADS = 256
+comptime _FILL_VECTOR_BYTES = 16
+
+
+def _fill_pattern_kernel(
+    dst: MutPointer[UInt8, MutAnyOrigin],
+    bytes: Int64,
+    pattern: UInt32,
+    width: Int32,
+):
+    """Writes `pattern`, repeated every four bytes from `dst`, over `bytes`
+    bytes.
+
+    `width` is the widest store `dst` is aligned for: 16, 4 or 1 bytes. A PDL
+    kernel rather than a memset, which the stream serializes against the
+    kernels on both sides of it. The dependents turn resident at entry: they
+    wait for this grid to complete before they read what it wrote.
+    """
+    with PDL[overlap_at_beginning=True]():
+        var tid = Int(block_idx.x * block_dim.x + thread_idx.x)
+        var stride = Int(grid_dim.x * block_dim.x)
+        var done = 0
+        if width == 16:
+            var word = SIMD[DType.uint32, 4](pattern)
+            done = Int(bytes) // _FILL_VECTOR_BYTES * _FILL_VECTOR_BYTES
+            for i in range(tid * _FILL_VECTOR_BYTES, done, stride * 16):
+                dst.unsafe_offset(i).unsafe_bitcast[UInt32]().unsafe_store[
+                    alignment=_FILL_VECTOR_BYTES
+                ](word)
+        elif width == 4:
+            done = Int(bytes) // 4 * 4
+            for i in range(tid * 4, done, stride * 4):
+                dst.unsafe_offset(i).unsafe_bitcast[UInt32]().unsafe_store[
+                    alignment=4
+                ](pattern)
+        for i in range(done + tid, Int(bytes), stride):
+            dst[i] = UInt8((pattern >> UInt32(8 * (i % 4))) & 0xFF)
+
+
+def _enqueue_fill_pattern(
+    ctx: DeviceContext,
+    dst: MutPointer[UInt8, MutAnyOrigin],
+    bytes: Int,
+    pattern: UInt32,
+) raises:
+    """Fills `bytes` bytes at `dst` with `pattern` repeated every four bytes
+    from `dst`.
+
+    A kernel that joins the stream's PDL chain, unlike a memset node. Stores
+    are 16 bytes wide when `dst` is 16-byte aligned, 4 when it is 4-byte
+    aligned, else bytes.
+    """
+    if bytes <= 0:
+        return
+    var width = 16 if Int(dst) % 16 == 0 else (4 if Int(dst) % 4 == 0 else 1)
+    ctx.enqueue_function[_fill_pattern_kernel](
+        dst,
+        Int64(bytes),
+        pattern,
+        Int32(width),
+        grid_dim=min(
+            ceildiv(bytes, _FILL_VECTOR_BYTES * _FILL_THREADS),
+            ctx.default_device_info.sm_count * 4,
+        ),
+        block_dim=_FILL_THREADS,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
 
 def _pin_kept_block_kernel[
     block_size: Int
@@ -293,15 +369,17 @@ def _pin_kept_block_kernel[
     `((position + 1) // ratio - 1) // block_size`; that block's maximum
     becomes `+inf` so the selection always keeps it. One thread per row.
     """
-    var row = Int(block_idx.x) * _KEEP_PASS_THREADS + Int(thread_idx.x)
+    var row = block_idx.x * _KEEP_PASS_THREADS + thread_idx.x
     if row >= Int(rows):
         return
     var n = Int(num_blocks)
-    # Floor division: a token before the first key pins nothing.
-    var pinned = ((Int(positions[row]) + 1) // Int(ratio) - 1) // block_size
-    live[row] = Int32(clamp(pinned + 1, 0, n))
-    if pinned >= 0 and pinned < n:
-        block_max[row * n + pinned] = inf[DType.float32]()
+
+    with PDL():
+        # Floor division: a token before the first key pins nothing.
+        var pinned = ((Int(positions[row]) + 1) // Int(ratio) - 1) // block_size
+        live[row] = Int32(clamp(pinned + 1, 0, n))
+        if pinned >= 0 and pinned < n:
+            block_max[row * n + pinned] = inf[DType.float32]()
 
 
 def _drop_dead_kept_blocks_kernel(
@@ -315,15 +393,19 @@ def _drop_dead_kept_blocks_kernel(
 
     One thread per id slot.
     """
-    var i = Int(block_idx.x) * _KEEP_PASS_THREADS + Int(thread_idx.x)
+    var i = block_idx.x * _KEEP_PASS_THREADS + thread_idx.x
     if i >= Int(slots):
         return
-    var b = Int(ids[i])
-    if b < 0:
-        return
-    var row = i // Int(top_k)
-    if not (block_max[row * Int(num_blocks) + b] > neg_inf[DType.float32]()):
-        ids[i] = -1
+
+    with PDL():
+        var b = Int(ids[i])
+        if b < 0:
+            return
+        var row = i // Int(top_k)
+        if not (
+            block_max[row * Int(num_blocks) + b] > neg_inf[DType.float32]()
+        ):
+            ids[i] = -1
 
 
 # Threads per row expanding kept block ids into flags.
@@ -340,13 +422,15 @@ def _expand_kept_blocks_kernel(
     top_k: Int32,
 ):
     """Sets the flag of each kept block id, one row per CTA."""
-    var row = Int(block_idx.x)
+    var row = block_idx.x
     var k = Int(top_k)
     var n = Int(num_blocks)
-    for j in range(Int(thread_idx.x), k, _EXPAND_THREADS):
-        var b = Int(ids[row * k + j])
-        if b >= 0 and b < n:
-            keep[row * n + b] = 1
+
+    with PDL():
+        for j in range(thread_idx.x, k, _EXPAND_THREADS):
+            var b = Int(ids[row * k + j])
+            if b >= 0 and b < n:
+                keep[row * n + b] = 1
 
 
 struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
@@ -444,14 +528,11 @@ struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
         Returns:
             The hook; its scratch row 0 is query token `first_row`.
         """
-        ctx.enqueue_memset(
-            DeviceBuffer(
-                ctx,
-                self.block_max.as_unsafe_any_origin(),
-                rows * Int(self.num_blocks),
-                owning=False,
-            ),
-            neg_inf[DType.float32](),
+        _enqueue_fill_pattern(
+            ctx,
+            self.block_max.unsafe_bitcast[UInt8]().as_unsafe_any_origin(),
+            4 * rows * Int(self.num_blocks),
+            neg_inf[DType.float32]().to_bits[DType.uint32](),
         )
         return self
 
@@ -485,6 +566,7 @@ struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
             self.ratio,
             grid_dim=ceildiv(rows, _KEEP_PASS_THREADS),
             block_dim=_KEEP_PASS_THREADS,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         persistent_topk_block_split(
             ctx,
@@ -503,6 +585,7 @@ struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
             Int32(rows * k),
             grid_dim=ceildiv(rows * k, _KEEP_PASS_THREADS),
             block_dim=_KEEP_PASS_THREADS,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     @inline(.always)
@@ -626,14 +709,11 @@ struct BlockTopKMaskScoreHook[block_size: Int](IndexerScoreHook):
         Returns:
             The hook; its scratch row 0 is query token `first_row`.
         """
-        ctx.enqueue_memset(
-            DeviceBuffer(
-                ctx,
-                self.keep.as_unsafe_any_origin(),
-                rows * Int(self.num_blocks),
-                owning=False,
-            ),
-            UInt8(0),
+        _enqueue_fill_pattern(
+            ctx,
+            self.keep.as_unsafe_any_origin(),
+            rows * Int(self.num_blocks),
+            UInt32(0),
         )
         var ids = self.ids.unsafe_offset(first_row * Int(self.top_k))
         ctx.enqueue_function[_expand_kept_blocks_kernel](
@@ -643,6 +723,7 @@ struct BlockTopKMaskScoreHook[block_size: Int](IndexerScoreHook):
             self.top_k,
             grid_dim=rows,
             block_dim=_EXPAND_THREADS,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         return self
 
@@ -1596,7 +1677,7 @@ def _mla_indexer_paged_impl[
     remap: R,
     score_hook: H,
     scores_budget_bytes: Int,
-    q_sf: OptionalPointer[UInt32, ImmutAnyOrigin] = None,
+    q_sf: Optional[Pointer[UInt32, ImmutAnyOrigin]] = None,
 ) raises:
     """Scores, bounds and selects the indexer's top-k over one paged K cache.
 
@@ -1937,6 +2018,7 @@ def _mla_indexer_paged_impl[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(smem_available)
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # The bounded top-k writes `output_indices` directly: a row's bound is

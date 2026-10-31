@@ -30,6 +30,8 @@
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/POPDialect/POPAttrs.h"
 
+#include "llvm/ADT/DenseMap.h"
+
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
@@ -70,10 +72,13 @@ static StringRef getNameFromSymbolRef(SymbolRefAttr symbol) {
 /// decoding failed.
 static std::pair<SymbolRefAttr, ArrayRef<TypedAttr>>
 tryGetSymbolNameAndParams(TypedAttr param) {
-  param = ParamOperatorAttr::stripRebind(param);
-  if (auto symbolCst = sugarDynCast<SymbolConstantAttr>(param))
-    return {symbolCst.getSymbol(), symbolCst.getParamValues()};
-  return {{}, {}};
+  auto symbol =
+      FuncSymbolGenerator::dynCast(ParamOperatorAttr::stripRebind(param));
+  if (!symbol)
+    return {{}, {}};
+  if (!symbol.isFullyBound())
+    return {symbol.getSymbol(), {}};
+  return {symbol.getSymbol(), symbol.getParamValues()};
 }
 
 /// If the value is a call to an implicit constructor of the value's type,
@@ -676,6 +681,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return printParam(os, cast.getArg(), ctx);
   if (auto cast = dyn_cast<CastToBuiltinAttr>(param))
     return printParam(os, cast.getArg(), ctx);
+  if (auto upcast = dyn_cast<UpcastAttr>(param))
+    return printParam(os, upcast.getInputTypeValue(), ctx);
 
   // It is pretty common for function arguments to use default conversions
   // from the actual value they want, and may not be an
@@ -691,6 +698,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     removeImplicitCtorCall(param, ctx.shared);
     if (param != oldParam) // Only allow one implicit conversion.
       hasContextualType = false;
+  }
+
+  // Checked after the transparent unwrapping above so elided wrappers don't
+  // consume labels of their own.
+  if (ctx.dedup && isNonTrivialParamAttr(param)) {
+    bool isRepeat = false;
+    os << ctx.dedup->mark(param.getAsOpaquePointer(), isRepeat);
+    if (isRepeat)
+      return;
   }
 
   auto printOperands =
@@ -749,10 +765,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
-    printSymbol(os, symbolCst.getSymbol(), diagShared);
-    if (!symbolCst.getParamValues().empty())
-      printOperands(symbolCst.getParamValues(), ", ", "[", "]");
+  if (auto symbol = FuncSymbolGenerator::dynCast(param)) {
+    printSymbol(os, symbol.getSymbol(), diagShared);
+    if (symbol.isFullyBound() && !symbol.getParamValues().empty())
+      printOperands(symbol.getParamValues(), ", ", "[", "]");
     return;
   }
   if (auto refPack = dyn_cast<RefPackAttr>(param)) {
@@ -1108,9 +1124,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     ASTType(typeAttr.getMlirType()).print(os, ctx);
     return;
   }
-  if (auto upcast = dyn_cast<UpcastAttr>(param))
-    return printParam(os, upcast.getInputTypeValue(), ctx);
-
   if (auto downcast = dyn_cast<DowncastAttr>(param)) {
     printParam(os, downcast.getInputTypeValue(), ctx);
     os << "(";
@@ -1559,7 +1572,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   if (auto fnLiteralGen = type.getIfFnLiteralTypeGenerator()) {
     os << " "
        << getNameFromSymbolRef(
-              fnLiteralGen.getSymbolConstantAttr().getSymbol());
+              fnLiteralGen.getBody().getTargetLiteral().getSymbol());
   }
 
   FuncType fnType = type.getBodyFnType();
@@ -1655,11 +1668,8 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       os << ", /";
   }
   os << ')';
-  for (auto [enabled, effect] :
-       {std::make_pair(fnType.isThrows(), "raises"),
-        std::make_pair(fnType.isCapturing() && !isClosureSignature,
-                       "capturing"),
-        std::make_pair(fnType.isCABI(), "abi(\"C\")")})
+  for (auto [enabled, effect] : {std::make_pair(fnType.isThrows(), "raises"),
+                                 std::make_pair(fnType.isCABI(), "abi(\"C\")")})
 
     if (enabled)
       os << ' ' << effect;

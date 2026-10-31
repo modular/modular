@@ -19,6 +19,11 @@ from std.testing import (
     assert_raises,
     TestSuite,
 )
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 from test_utils import (
     CopyCounter,
     ExplicitDestroy,
@@ -413,6 +418,47 @@ def test_tuple_conditional_register_passable() raises:
     # Mixture of RP and non-RP
     assert_false(conforms_to(Tuple[Int, String], RegisterPassable))
     assert_false(conforms_to(Tuple[Bool, List[Int], Int], RegisterPassable))
+
+
+def test_tuple_trivial_lifecycle() raises:
+    assert_true(IsTriviallyCopyable[Tuple[Int, Float64, Bool]])
+    assert_true(IsTriviallyMovable[Tuple[Int, Float64, Bool]])
+    assert_true(IsTriviallyDeinitable[Tuple[Int, Float64, Bool]])
+    assert_true(IsTriviallyCopyable[Tuple[Tuple[Int, Int], Int]])
+    assert_true(IsTriviallyCopyable[Tuple[]])
+
+    assert_false(IsTriviallyCopyable[Tuple[Int, String]])
+    assert_false(IsTriviallyMovable[Tuple[Int, MoveCounter[Int]]])
+    assert_false(IsTriviallyDeinitable[Tuple[Int, List[Int]]])
+
+
+def test_tuple_trivial_copy_skips_element_copy() raises:
+    # A counter that claims a trivial copy is copied bitwise, so its own copy
+    # initializer never runs.
+    var t = (1, CopyCounter[trivial_copy=True]())
+    var c = t.copy()
+    assert_equal(c[1].copy_count, 0)
+
+
+def test_tuple_trivial_move_skips_element_move() raises:
+    var t = (1, MoveCounter[Int, trivial_move=True](7))
+    var before = t[1].move_count
+    var m = t^
+    assert_equal(m[1].move_count, before)
+    assert_equal(m[1].value, 7)
+
+
+def test_tuple_nontrivial_copy_calls_element_copy() raises:
+    var t = (1, CopyCounter[]())
+    var c = t.copy()
+    assert_equal(c[1].copy_count, 1)
+
+
+def test_tuple_nontrivial_move_calls_element_move() raises:
+    var t = (1, MoveCounter[Int](7))
+    var before = t[1].move_count
+    var m = t^
+    assert_equal(m[1].move_count, before + 1)
 
 
 # ===-------------------------------------------------------------------===#

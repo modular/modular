@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from max import tree
 from max.graph import (
@@ -29,13 +29,16 @@ from max.graph import (
     Type,
     Value,
 )
-from max.nn.graph_groups import HiddenStates
-from max.nn.transformer import DecoderOutputs
+from max.nn.legacy.graph_groups import HiddenStates
+from max.nn.legacy.transformer import DecoderOutputs
 from max.pipelines.context import BaseContextType
 from max.tree import Tree
 
 from ..interfaces import PipelineModel
 from ..pipeline_stage import PipelineStage
+
+if TYPE_CHECKING:
+    from ..config import PipelineConfig
 
 
 class StageTraced(Exception):
@@ -209,3 +212,17 @@ class PipelinedModel(PipelineModel[BaseContextType]):
     model's. A stage after the first takes what the previous stage's
     decoder returned after them.
     """
+
+    @classmethod
+    def stage_speculation_error(
+        cls, pipeline_config: PipelineConfig
+    ) -> str | None:
+        """Returns why this model can't build a speculating last stage.
+
+        Returns ``None`` if it can under ``pipeline_config``. A model that
+        speculates only inherits a stage's layers from its target, so it
+        refuses unless it overrides this. An exporter asks before anything
+        loads.
+        """
+        del pipeline_config
+        return f"{cls.__name__} does not speculate on a pipeline stage"

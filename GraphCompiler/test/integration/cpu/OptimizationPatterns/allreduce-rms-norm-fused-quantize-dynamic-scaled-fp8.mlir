@@ -53,7 +53,7 @@ mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8<total_seq_len>(
 
 // CHECK-LABEL: mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8
 // CHECK: mo.composite.distributed.allreduce_add_rms_norm_quant_fp8(
-// CHECK-SAME: {epsilon = #M.dense_array<9.99999997E-7> : tensor<f32>, weight_offset = #M.dense_array<0.000000e+00> : tensor<f32>}
+// CHECK-SAME: {epsilon = #M.dense_array<9.99999997E-7> : tensor<f32>, weight_offset = #M.dense_array<0.000000e+00> : tensor<f32>, multiply_before_cast = true}
 
 mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_residual_use<total_seq_len>(
   %input0: !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
@@ -181,3 +181,36 @@ mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_amax_floor<total_seq_l
 // CHECK: mo.distributed.allreduce.sum
 // CHECK-NOT: mo.composite.distributed.allreduce_add_rms_norm_quant_fp8
 // CHECK-COUNT-4: symbol = "mo.quantize_dynamic_scaled_float8"{{.*}}amax_floor = "0.0001"
+
+// The FP8 epilogue applies gamma before it quantizes, so a cast-first norm
+// followed by a quantize must stay unfused.
+mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_cast_first<seq>(
+  %in0: !mo.tensor<[seq, 16384], bf16, gpu:0>,
+  %in1: !mo.tensor<[seq, 16384], bf16, gpu:1>,
+  %sig0: !mo.buffer<[537919488], ui8, gpu:0>,
+  %sig1: !mo.buffer<[537919488], ui8, gpu:1>,
+  %c: !mo.chain,
+  %res0: !mo.tensor<[seq, 16384], bf16, gpu:0>,
+  %res1: !mo.tensor<[seq, 16384], bf16, gpu:1>,
+  %gamma0: !mo.tensor<[16384], bf16, gpu:0>,
+  %gamma1: !mo.tensor<[16384], bf16, gpu:1>
+) -> (!mo.tensor<[seq, 16384], f8e4m3fn, gpu:0>, !mo.tensor<[seq, 16384], f8e4m3fn, gpu:1>, !mo.chain) {
+  %allred:2, %out_chain = mo.distributed.allreduce.sum(%in0, %in1, %sig0, %sig1, %c) : (!mo.tensor<[seq, 16384], bf16, gpu:0>, !mo.tensor<[seq, 16384], bf16, gpu:1>, !mo.buffer<[537919488], ui8, gpu:0>, !mo.buffer<[537919488], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[seq, 16384], bf16, gpu:0>, !mo.tensor<[seq, 16384], bf16, gpu:1>, !mo.chain)
+
+  %scale_ub = mo.constant <#M.dense_array<1.200000e+03> : tensor<f32>> : !mo.tensor<[], f32>
+
+  %add0 = mo.add(%res0, %allred#0) : !mo.tensor<[seq, 16384], bf16, gpu:0>
+  %norm0 = mo.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[seq, 16384], bf16, gpu:0>, !mo.tensor<[16384], bf16, gpu:0>) -> !mo.tensor<[seq, 16384], bf16, gpu:0>
+  %q0:2 = mo.custom [symbol = "mo.quantize_dynamic_scaled_float8", device = #M.device_ref<"gpu", 0>, parameters = {group_size_or_per_token = 16384 : index}](%norm0, %scale_ub) : (!mo.tensor<[seq, 16384], bf16, gpu:0>, !mo.tensor<[], f32>) -> (!mo.tensor<[seq, 16384], f8e4m3fn, gpu:0>, !mo.tensor<[1, seq], bf16, gpu:0>)
+
+  %add1 = mo.add(%res1, %allred#1) : !mo.tensor<[seq, 16384], bf16, gpu:1>
+  %norm1 = mo.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[seq, 16384], bf16, gpu:1>, !mo.tensor<[16384], bf16, gpu:1>) -> !mo.tensor<[seq, 16384], bf16, gpu:1>
+  %q1:2 = mo.custom [symbol = "mo.quantize_dynamic_scaled_float8", device = #M.device_ref<"gpu", 1>, parameters = {group_size_or_per_token = 16384 : index}](%norm1, %scale_ub) : (!mo.tensor<[seq, 16384], bf16, gpu:1>, !mo.tensor<[], f32>) -> (!mo.tensor<[seq, 16384], f8e4m3fn, gpu:1>, !mo.tensor<[1, seq], bf16, gpu:1>)
+
+  mo.output %q0#0, %q1#0, %out_chain : !mo.tensor<[seq, 16384], f8e4m3fn, gpu:0>, !mo.tensor<[seq, 16384], f8e4m3fn, gpu:1>, !mo.chain
+}
+
+// CHECK-LABEL: mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_cast_first
+// CHECK-NOT: mo.composite.distributed.allreduce_add_rms_norm_quant_fp8
+// CHECK: mo.distributed.allreduce.sum
+// CHECK-NOT: mo.composite.distributed.allreduce_add_rms_norm_quant_fp8

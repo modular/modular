@@ -32,6 +32,11 @@ that took a scale row from its value row would read other tokens' scales.
 Each case also runs a canary: the scales of one selected row of the packed cache
 are raised after the reference is built, and the outputs must then differ, so a
 passing case cannot be one that never reads the scales.
+
+The scale rows come from `_remap_scale_one`, the indexer's own encoder. With
+`scale_block_base` the scale block ids start there, so their rows can pass
+2**31 as a production scale pool's do (247380 blocks of 9984 rows); a kernel
+that read such a row as signed would take it for an unused slot.
 """
 
 from std.math import ceildiv
@@ -42,6 +47,7 @@ from std.testing import assert_equal, assert_true
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
+from kv_cache.paged_sparse_kv_index_remap import _remap_scale_one
 from kv_cache.types import (
     KVCacheStaticParams,
     KVCacheT,
@@ -196,25 +202,13 @@ def run_nvfp4_vs_fp8[
     valid_topk: Int = -1,
     with_sink: Bool = False,
     unit_scales: Bool = False,
+    scale_block_base: Int = 0,
 ) raises:
     var n_valid = topk if valid_topk < 0 else valid_topk
     print(
-        "test:",
-        name,
-        " batch:",
-        batch_size,
-        " seq:",
-        seq_len,
-        " heads:",
-        num_heads,
-        " row_depth:",
-        row_depth,
-        " kv_tokens:",
-        num_kv_tokens,
-        " topk:",
-        topk,
-        " valid:",
-        n_valid,
+        t"test: {name}  batch: {batch_size}  seq: {seq_len}  heads:"
+        t" {num_heads}  row_depth: {row_depth}  kv_tokens: {num_kv_tokens} "
+        t" topk: {topk}  valid: {n_valid}"
     )
 
     comptime rope_depth = row_depth - V_DEPTH
@@ -247,12 +241,14 @@ def run_nvfp4_vs_fp8[
         page_offset += pages_per_batch
 
     # The scales' own page table: a permutation of the value block ids, as a
-    # Jenga scales leaf has block ids of its own.
+    # Jenga scales leaf has block ids of its own, starting at
+    # `scale_block_base`.
     var scale_mult = _coprime_multiplier(total_pages)
     var scales_lookup_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         scales_lookup_host[i] = UInt32(
             (Int(lookup_table_host[i]) * scale_mult + 1) % total_pages
+            + scale_block_base
         )
 
     var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
@@ -285,11 +281,12 @@ def run_nvfp4_vs_fp8[
                 lookup_table_host[b * pages_per_batch + page_idx]
             )
             var row = block_id * PAGE_SIZE + tok_in_page
+            # Row in the scale buffer, which holds blocks from
+            # `scale_block_base` on.
             var scale_row = (
                 Int(scales_lookup_host[b * pages_per_batch + page_idx])
-                * PAGE_SIZE
-                + tok_in_page
-            )
+                - scale_block_base
+            ) * PAGE_SIZE + tok_in_page
             for g in range(sf_per_row):
                 var sf_byte = _scale_byte(rng)
                 if unit_scales:
@@ -353,16 +350,29 @@ def run_nvfp4_vs_fp8[
                         lookup_table_host[b * pages_per_batch + page_idx]
                     )
                     var row = block_id * PAGE_SIZE + tok_in_page
-                    var scale_row = (
-                        Int(scales_lookup_host[b * pages_per_batch + page_idx])
-                        * PAGE_SIZE
-                        + tok_in_page
-                    )
                     h_indices[bs * topk + i] = UInt32(row)
                     h_wide[bs * 2 * topk + i] = UInt32(row)
-                    h_wide[bs * 2 * topk + topk + i] = UInt32(scale_row)
+                    h_wide[bs * 2 * topk + topk + i] = bitcast[DType.uint32, 1](
+                        _remap_scale_one(
+                            Int32(t),
+                            UInt32(b),
+                            scales_lookup_host.unsafe_ptr().as_imm(),
+                            pages_per_batch,
+                            batch_size,
+                            PAGE_SIZE,
+                            UInt32(scale_block_base + total_pages),
+                            NUM_LAYERS * PAGE_SIZE,
+                        )
+                    )
                     if bs == 0 and i == 0:
-                        first_selected_scale_row = scale_row
+                        first_selected_scale_row = (
+                            Int(
+                                scales_lookup_host[
+                                    b * pages_per_batch + page_idx
+                                ]
+                            )
+                            - scale_block_base
+                        ) * PAGE_SIZE + tok_in_page
                 else:
                     h_indices[bs * topk + i] = UInt32(0xFFFFFFFF)
 
@@ -438,27 +448,23 @@ def run_nvfp4_vs_fp8[
             Idx[packed_row],
         ),
     )
+    # The scale pool spans blocks 0 .. scale_block_base + total_pages, but only
+    # the last total_pages are ever read, so its view starts scale_block_base
+    # blocks before the buffer rather than allocating the blocks below.
+    var sf_view_offset = -scale_block_base * NUM_LAYERS * PAGE_SIZE * sf_per_row
+    var sf_layout = row_major(
+        Int64(scale_block_base + total_pages),
+        Idx[kv_dim2],
+        Int64(NUM_LAYERS),
+        Idx[PAGE_SIZE],
+        Idx[KV_NUM_HEADS],
+        Idx[sf_per_row],
+    )
     var sf_tt = TileTensor(
-        sf_dev,
-        row_major(
-            Int64(total_pages),
-            Idx[kv_dim2],
-            Int64(NUM_LAYERS),
-            Idx[PAGE_SIZE],
-            Idx[KV_NUM_HEADS],
-            Idx[sf_per_row],
-        ),
+        sf_dev.unsafe_ptr().unsafe_offset(sf_view_offset), sf_layout
     )
     var sf_canary_tt = TileTensor(
-        sf_canary_dev,
-        row_major(
-            Int64(total_pages),
-            Idx[kv_dim2],
-            Int64(NUM_LAYERS),
-            Idx[PAGE_SIZE],
-            Idx[KV_NUM_HEADS],
-            Idx[sf_per_row],
-        ),
+        sf_canary_dev.unsafe_ptr().unsafe_offset(sf_view_offset), sf_layout
     )
     var cache_lengths_tt = TileTensor(
         cache_lengths_dev, row_major(Int64(batch_size))
@@ -600,12 +606,8 @@ def run_nvfp4_vs_fp8[
         if a != b:
             if mismatches < 4:
                 print(
-                    "  mismatch at",
-                    i,
-                    ": fp8 ref",
-                    out_fp8[i],
-                    " nvfp4",
-                    out_fp4[i],
+                    t"  mismatch at {i} : fp8 ref {out_fp8[i]}  nvfp4"
+                    t" {out_fp4[i]}"
                 )
             mismatches += 1
         if a != c:
@@ -617,14 +619,8 @@ def run_nvfp4_vs_fp8[
             nonfinite += 1
 
     print(
-        "  mismatches:",
-        mismatches,
-        "/",
-        out_size,
-        " canary_mismatches:",
-        canary_mismatches,
-        " nonzero:",
-        nonzero,
+        t"  mismatches: {mismatches} / {out_size}  canary_mismatches:"
+        t" {canary_mismatches}  nonzero: {nonzero}"
     )
     assert_equal(nonfinite, 0)
     assert_true(nonzero > out_size // 2, "reference output is mostly zero")
@@ -671,7 +667,7 @@ def run_nvfp4_vs_fp8[
             / Float64(perf_iters)
             / 1000.0
         )
-        print("PERF", name, " fp8_us:", fp8_us, " nvfp4_us:", fp4_us)
+        print(t"PERF {name}  fp8_us: {fp8_us}  nvfp4_us: {fp4_us}")
 
     _ = fp8_dev
     _ = fp4_dev
@@ -710,6 +706,16 @@ def main() raises:
                 "h8_tiny", 2, 4, 100, ctx, valid_topk=5
             )
             run_nvfp4_vs_fp8[8]("h8_sink", 2, 8, 4096, ctx, with_sink=True)
+            # Scale rows on both sides of 2**31: blocks from 2**24 - 32 on, at
+            # 128 rows each (MODELS-1696).
+            run_nvfp4_vs_fp8[8](
+                "h8_scale_rows_past_int32",
+                2,
+                16,
+                4096,
+                ctx,
+                scale_block_base=(1 << 24) - 32,
+            )
             run_nvfp4_vs_fp8[16]("h16_b2", 2, 8, 3000, ctx)
             run_nvfp4_vs_fp8[32]("h32_b2", 2, 8, 4096, ctx, valid_topk=1500)
             run_nvfp4_vs_fp8[64]("h64_b2", 2, 8, 4096, ctx)

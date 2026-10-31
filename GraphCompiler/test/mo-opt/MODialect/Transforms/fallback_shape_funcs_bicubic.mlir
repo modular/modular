@@ -11,7 +11,7 @@ mo.graph @resize_bicubic_fallback<() -> D0, D1>(
   %size: !mo.tensor<[4], si64>
 ) -> !mo.tensor<[D0, D1], f32> {
 
-  %res = mo.resize.bicubic<() -> D2, D3>(%input, %size) : (!mo.tensor<[1, 3, 224, 224], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D2, D3], f32>
+  %res = mo.resize.bicubic<() -> D2, D3>(%input, %size) [antialias = true] : (!mo.tensor<[1, 3, 224, 224], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[D2, D3], f32>
   mo.output<D2, D3> %res : !mo.tensor<[D2, D3], f32>
 }
 // CHECK-LABEL: mo.graph @resize_bicubic_fallback

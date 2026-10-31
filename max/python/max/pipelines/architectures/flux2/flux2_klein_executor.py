@@ -38,7 +38,6 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
 from max.graph import Module as GraphModule
 from max.graph.weights import load_weights
@@ -62,6 +61,7 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.modeling.base import TensorStruct
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.profiler import Tracer, traced
+from max.tensor import Tensor
 from typing_extensions import Self
 
 from .components import (
@@ -71,7 +71,7 @@ from .components import (
     ImageEncoder,
     VaeDecoder,
 )
-from .flux2_executor import Flux2ExecutorOutputs
+from .flux2_executor import Flux2ExecutorOutputs, repeat_per_image
 
 logger = logging.getLogger("max.pipelines")
 
@@ -90,7 +90,7 @@ class Flux2KleinExecutorInputs(TensorStruct):
     """Positive-prompt token IDs for the text encoder, shape ``(S,)``."""
 
     text_ids: Buffer
-    """Positive-prompt text position IDs, shape ``(1, S, 4)`` int64."""
+    """Positive-prompt text position IDs, shape ``(B, S, 4)`` int64."""
 
     attention_bias: Buffer
     """Pre-built additive attention bias for the positive prompt, shape
@@ -141,7 +141,7 @@ class Flux2KleinExecutorInputs(TensorStruct):
     negative prompt was supplied."""
 
     negative_text_ids: Buffer | None = None
-    """Negative-prompt text position IDs, shape ``(1, S', 4)`` int64."""
+    """Negative-prompt text position IDs, shape ``(B, S', 4)`` int64."""
 
     negative_attention_bias: Buffer | None = None
     """Pre-built additive attention bias for the negative prompt,
@@ -364,6 +364,7 @@ class Flux2KleinExecutor(
     def prepare_inputs(
         self, contexts: list[PixelContext]
     ) -> Flux2KleinExecutorInputs:
+        """Builds the executor's inputs from the request contexts."""
         if len(contexts) != 1:
             raise ValueError(
                 "Flux2KleinExecutor currently supports batch_size=1. "
@@ -504,23 +505,29 @@ class Flux2KleinExecutor(
 
     @traced(message="Flux2KleinExecutor.execute")
     def execute(self, inputs: Flux2KleinExecutorInputs) -> Flux2ExecutorOutputs:
+        """Runs the graphs over the prepared inputs."""
         inputs = inputs.to(
             transformer_device=self._model_device,
             text_encoder_device=self._text_encoder_device,
         )
 
         do_cfg = inputs.guidance_scale is not None
+        num_images = inputs.latents.shape[0]
 
-        prompt_embeds = self._encode_prompt(
-            inputs.tokens, inputs.attention_bias
+        prompt_embeds = repeat_per_image(
+            self._encode_prompt(inputs.tokens, inputs.attention_bias),
+            num_images,
         )
 
         negative_prompt_embeds: Buffer | None = None
         if do_cfg:
             assert inputs.negative_tokens is not None
             assert inputs.negative_attention_bias is not None
-            negative_prompt_embeds = self._encode_prompt(
-                inputs.negative_tokens, inputs.negative_attention_bias
+            negative_prompt_embeds = repeat_per_image(
+                self._encode_prompt(
+                    inputs.negative_tokens, inputs.negative_attention_bias
+                ),
+                num_images,
             )
 
         if inputs.input_image is not None:
@@ -530,6 +537,8 @@ class Flux2KleinExecutor(
         else:
             image_latents = self._empty_image_latents()
             image_latent_ids = self._empty_image_latent_ids()
+        image_latents = repeat_per_image(image_latents, num_images)
+        image_latent_ids = repeat_per_image(image_latent_ids, num_images)
 
         latents = self._run_denoising_loop(
             latents=inputs.latents,
@@ -660,7 +669,7 @@ class Flux2KleinExecutor(
             latents,
             image_latents,
             prompt_embeds,
-            timestep,
+            repeat_per_image(timestep, latents.shape[0]),
             guidance,
             latent_image_ids,
             image_latent_ids,

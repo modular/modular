@@ -20,12 +20,14 @@ sublayer's output back into all of them.
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.nn import HyperConnection, Module, RMSNorm
-from max.experimental.nn.common_layers.quant_moe import ExpertParallelMoE
-from max.experimental.sharding import DeviceMapping, Sharded, auto_reshard
-from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPCommBuffers
+from max import functional as F
+from max.nn import HyperConnection, Module, RMSNorm
+from max.nn.common_layers.functional_kernels import mhc_post
+from max.nn.common_layers.quant_moe import ExpertParallelMoE
+from max.nn.legacy.comm.ep import EPCommBuffers
+from max.nn.legacy.kernels import mhc_post_preferred
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, Sharded, auto_reshard
 
 from ...deepseekV3_2_modulev3.layers.moe import DeepseekV3_2TensorParallelMoE
 from ..model_config import Glm5NextConfig
@@ -40,8 +42,14 @@ def write_back(
 
     ``streams' = post * y + comb^T @ streams``. ``comb``'s columns sum to one,
     so contracting over its first stream axis makes the mix a convex
-    combination of the incoming streams.
+    combination of the incoming streams. On AMD GPUs, for shapes it supports,
+    the ``mhc_post`` kernel evaluates it in float32 and rounds once to the
+    streams' dtype; elsewhere it is an outer product plus a small batched
+    matmul in the streams' dtype.
     """
+    hc_mult, hidden_size = streams.shape[1], streams.shape[2]
+    if mhc_post_preferred(int(hc_mult), int(hidden_size), streams.dtype):
+        return mhc_post(streams, y, post, comb)
     dtype = streams.dtype
     placed = post.cast(dtype).unsqueeze(-1) * y.unsqueeze(1)
     mixed = comb.cast(dtype).transpose(-1, -2) @ streams
@@ -55,6 +63,7 @@ def _site(config: Glm5NextConfig) -> HyperConnection:
         hc_sinkhorn_iters=config.hc_sinkhorn_iters,
         hc_eps=config.hc_eps,
         rms_norm_eps=config.rms_norm_eps,
+        hc_fn_dtype=config.hc_fn_dtype,
     )
 
 
@@ -91,14 +100,14 @@ class Glm5NextDecoderLayer(Module[..., Tensor]):
         attn_args: tuple[object, ...],
         comm_buffers: EPCommBuffers | None,
     ) -> Tensor:
+        """Runs the layer's attention, then its MLP."""
         replicated = DeviceMapping.replicated(streams.mesh)
-        post, comb, collapsed = self.hc_attn(streams)
+        post, comb, h = self.hc_attn(streams, self.input_layernorm)
         # The attention output is a sum of per-device partials.
-        y = self.self_attn(self.input_layernorm(collapsed), *attn_args)
+        y = self.self_attn(h, *attn_args)
         streams = write_back(streams, y.to(replicated), post, comb)
 
-        post, comb, collapsed = self.hc_ffn(streams)
-        h = self.post_attention_layernorm(collapsed)
+        post, comb, h = self.hc_ffn(streams, self.post_attention_layernorm)
         if isinstance(self.mlp, DeepseekV3_2TensorParallelMoE):
             # Its experts are split by columns, so every device needs every
             # row. Its float32 combine is a sum of per-device partials, and

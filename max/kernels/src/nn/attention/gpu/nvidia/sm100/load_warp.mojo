@@ -22,7 +22,6 @@ from layout import Coord, TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
-    ExplicitTMEMCrossP,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -48,7 +47,6 @@ from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.mha_tile_scheduler import SeqInfo
 from nn.attention.mha_utils import OptionallyStaticInt, _is_decoding
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from .smem import SM100AttentionSMem
 
@@ -88,7 +86,7 @@ def fa4_load[
         KVLUTType.dtype,
         config.swizzle_mode,
         BN=kv_sub_tile_rows(config.k_rows_per_cta(), KVLUTType.page_size),
-        BK=config.BK0,
+        BK=config.k_tma_box_cols(),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
@@ -269,6 +267,14 @@ def fa4_load[
     comptime q_bytes = size_of[qkv_type]() * (
         q_elements - q_pad_rows * config.BK0
     )
+    # `q_elements` is per TMA call, so in 2Q each half would subtract the whole
+    # tile's pad and under-expect, and the zero-fill only covers the second
+    # half's tail. This holds for any non-dividing fused group, whichever
+    # route admits it.
+    comptime assert q_pad_rows == 0 or num_q == 1, (
+        "a non-dividing fused group is only wired for the 1Q route; the 2Q"
+        " Q1 barriers still expect the full `q_bytes`"
+    )
 
     var q_gmem_row: UInt32 = PositionType.get_q_gmem_row[ragged=ragged](
         seq_info, max_seq_len
@@ -276,11 +282,11 @@ def fa4_load[
 
     # Pair-CTA: each CTA loads different Q positions and half of K/V.
     var k_row_offset = UInt32(0)
-    var v_col_offset = 0
+    var v_col_offset = KVLUTType.v_col_base
     comptime if not is_leader:
         q_gmem_row += UInt32(config.BM_eff())
         k_row_offset = UInt32(BN // 2)
-        v_col_offset = config.v_cols_per_cta()
+        v_col_offset += config.v_cols_per_cta()
 
     var e = elect()
 
@@ -394,7 +400,7 @@ def fa4_load[
     comptime k_fold_chunks = kv_tma_fold_chunks[
         qkv_type,
         config.swizzle_mode,
-        BK=config.BK0,
+        BK=config.k_tma_box_cols(),
         head_size=config.qk_depth,
         box_rows=kv_sub_tile_rows(config.k_rows_per_cta(), page_size),
         smem_BN=config.k_rows_per_cta(),
@@ -407,7 +413,11 @@ def fa4_load[
     comptime v_desc_cols = config.v_tma_box_cols()
     comptime v_desc_rows = config.v_tma_box_rows(page_size)
     comptime v_row_major = False if config.m_pack == 2 else config.v_row_major()
-    comptime v_fold_chunks = 1 if config.m_pack == 2 else kv_tma_fold_chunks[
+    # A split cache's V copies select their columns of the shared K|V row by
+    # depth offset, which the folded descriptor cannot express.
+    comptime v_fold_chunks = 1 if (
+        config.m_pack == 2 or KVLUTType.v_col_base > 0
+    ) else kv_tma_fold_chunks[
         qkv_type,
         config.swizzle_mode,
         BK=v_desc_cols,
@@ -570,6 +580,51 @@ def fa4_load[
                 mbar[],
                 depth_idx=UInt32(d_idx),
             )
+        comptime if config.k_tail():
+            # The nope chunks fill the ring slot here; `_produce_k_tail` loads
+            # the rest into a rope buffer on the same barrier, which the
+            # `expect_bytes` above already counts.
+            comptime gran = config.k_tma_box_cols()
+            comptime for c in range(config.padded_nope_depth // gran):
+                kv_paged_rows.tma_copy_k[
+                    needs_partial=partial,
+                    smem_BN=config.k_rows_per_cta(),
+                    fold_chunks=k_fold_chunks,
+                    row_major=k_row_major,
+                ](
+                    k_tma_op,
+                    smem_ptr.unsafe_offset(c * config.k_rows_per_cta() * gran),
+                    mbar[],
+                    kv_head_idx=kv_head_idx,
+                    elect=e,
+                    k_num_valid_pages=k_num_valid_pages,
+                    depth_offset=UInt32(c * gran),
+                )
+        else:
+            kv_paged_rows.tma_copy_k[
+                needs_partial=partial,
+                smem_BN=config.k_rows_per_cta(),
+                fold_chunks=k_fold_chunks,
+                row_major=k_row_major,
+            ](
+                k_tma_op,
+                smem_ptr,
+                mbar[],
+                kv_head_idx=kv_head_idx,
+                elect=e,
+                k_num_valid_pages=k_num_valid_pages,
+                depth_offset=UInt32(d_idx),
+            )
+
+    @inline(.always)
+    def _produce_k_tail[
+        partial: Bool,
+    ](
+        kv_paged_rows: KVPagedRows,
+        smem_ptr: SharedMemPointer[Scalar[qkv_type]],
+        mbar: SharedMemPointer[SharedMemBarrier],
+        k_num_valid_pages: UInt32,
+    ) {imm}:
         kv_paged_rows.tma_copy_k[
             needs_partial=partial,
             smem_BN=config.k_rows_per_cta(),
@@ -582,7 +637,7 @@ def fa4_load[
             kv_head_idx=kv_head_idx,
             elect=e,
             k_num_valid_pages=k_num_valid_pages,
-            depth_offset=UInt32(d_idx),
+            depth_offset=UInt32(config.padded_nope_depth),
         )
 
     @inline(.always)
@@ -708,6 +763,9 @@ def fa4_load[
         # `_produce_v_e` is Layout-E-only (m_pack==2 => use_ws), so the non-WS
         # per-page byte count `_produce_v` carries never applies: V bytes are
         # always the full `v_expect_bytes`, and OOB-fill reduces to `partial`.
+        comptime assert (
+            KVLUTType.v_col_base == 0
+        ), "the Layout-E V producer reads V from column 0 of its row"
         comptime v_oob_fill = partial
         comptime if is_leader:
             expect_bytes_pred(mbar, Int32(v_expect_bytes), e)
@@ -831,26 +889,25 @@ def fa4_load[
             smem.k_smem_base()
         )
         # Per-CTA SMEM per ring slot. WS: one 256x64 sub-tile (matches
-        # smem.ws_subtile_bytes); non-WS shared: one full-depth K/V tile.
+        # smem.ws_subtile_bytes); non-WS shared: one full-depth tile of the
+        # wider of K_nope and V.
         comptime kv_stage_elems = (
             (config.shared_kv_cols() // config.num_qk_stages) * BN // cta_group
-        ) if config.use_ws else (config.padded_ov_depth * BN // cta_group)
-        # Anti-drift: the producer per-slot stride MUST equal the struct sub-tile
+        ) if config.use_ws else (config.shared_kv_cols() * BN // cta_group)
+        # Anti-drift: the producer per-slot stride MUST equal the per-CTA slot
         # size the reservation + consumer (mma_warp) use. A mismatch is exactly
-        # the class of latent 2x-overrun this migration fixed. (cta_group==1 for
-        # WS, so per-CTA == full.) A non-WS-shared analog would need the per-CTA
-        # form `kv_stage_elems * size == k_stage_bytes` (no *cta_group) to stay
-        # pair-CTA-correct; left as a follow-up since nope==ov holds on the
-        # reachable fa4 path today.
-        comptime if config.use_ws:
-            comptime assert (
-                kv_stage_elems * cta_group * size_of[qkv_type]()
-                == SM100AttentionSMem[config].k_stage_bytes
-            ), "WS producer kv_stage_elems must match the struct sub-tile size"
+        # the class of latent 2x-overrun this migration fixed.
+        comptime assert (
+            kv_stage_elems * size_of[qkv_type]()
+            == SM100AttentionSMem[config].k_stage_bytes
+        ), "producer kv_stage_elems must match the struct ring slot size"
 
         comptime KVPipeType = StagedPipeline[config.num_kv_stages, 1]
         var kv_pipeline: KVPipeType = {mbars.get_k_mbars()}
         kv_pipeline.state._phase = 1  # producer starts at phase 1
+
+        # The rope buffer the next K tile's tail goes to (`k_tail()`).
+        var k_tail_idx: UInt32 = 0
 
         # Per-stage emit closures. Each bundles the KV producer-pipeline
         # lifecycle (acquire / mbar / smem-offset / produce / step) that
@@ -866,7 +923,9 @@ def fa4_load[
             partial: Bool,
             with_q: Bool = False,
             acquire: Bool = True,
-        ](rows: KVPagedRows, k_num_valid_pages: UInt32) {mut kv_pipeline, imm}:
+        ](rows: KVPagedRows, k_num_valid_pages: UInt32) {
+            mut kv_pipeline, mut k_tail_idx, imm
+        }:
             # WS shared sub-tile ring: emit num_qk_stages K depth-half sub-tiles
             # (each a 32768-B ring slot with its own barrier); Q (when with_q)
             # rides every K sub-tile (q_elements is per-sub-tile). Folds to one
@@ -883,6 +942,21 @@ def fa4_load[
                 _produce_k[partial=partial, qk_stage=qk_stage, with_q=with_q](
                     rows, smem_ptr, mbar, k_num_valid_pages
                 )
+                comptime if config.k_tail():
+                    comptime k_tail_elems = (
+                        config.k_rows_per_cta() * config.rope_depth()
+                    )
+                    _produce_k_tail[partial=partial](
+                        rows,
+                        smem.rope_smem_base()
+                        .unsafe_bitcast[Scalar[qkv_type]]()
+                        .unsafe_offset(k_tail_idx * UInt32(k_tail_elems)),
+                        mbar,
+                        k_num_valid_pages,
+                    )
+                    k_tail_idx = (k_tail_idx + 1) % UInt32(
+                        config.num_rope_buffers()
+                    )
                 kv_pipeline.state.step()
 
         @inline(.always)
@@ -1236,12 +1310,15 @@ def fa4_load[
                 comptime check_mask_crossp = mask.nonfull_sets[BM_mask, BN]()[
                     0
                 ] == TileMaskStatus.UNKNOWN_MASK
-                comptime assert not (
-                    ExplicitTMEMCrossP and (needs_partial or check_mask_crossp)
-                ), (
-                    "FA4_TMEM_CROSS_P=true was requested but the K-ahead load"
-                    " is implemented for the headline regime only (no partial"
-                    " pages, no mid-range FULL_MASK skip)"
+                # Headline regime only, by construction: `CrossPEffective`
+                # (kernel.mojo) requires `crossp_on()`, whose full-pages
+                # conjunct is the negation of `needs_partial`, and excludes
+                # UNKNOWN_MASK -- the two conditions this producer cannot
+                # handle.
+                comptime assert not (needs_partial or check_mask_crossp), (
+                    "the cross-stage-P K-ahead load is implemented for the"
+                    " headline regime only (no partial pages, no mid-range"
+                    " FULL_MASK skip)"
                 )
                 # NT = total K-tiles (== total V-tiles). iter_count is the last
                 # masked set end minus one; for the dense contiguous regime that is
@@ -1368,10 +1445,8 @@ def fa4_load[
                         if (
                             mask.status(
                                 seq_info.prompt_idx,
-                                Index[dtype=DType.int32](
-                                    Int(score_row), Int(kv_row)
-                                ),
-                                Index[dtype=DType.int32](BM_mask, BN),
+                                (Int(score_row), Int(kv_row)),
+                                (Int(BM_mask), Int(BN)),
                             )
                             == TileMaskStatus.FULL_MASK
                         ):
@@ -1397,10 +1472,8 @@ def fa4_load[
                             if (
                                 mask.status(
                                     seq_info.prompt_idx,
-                                    Index[dtype=DType.int32](
-                                        Int(score_row), Int(kv_row)
-                                    ),
-                                    Index[dtype=DType.int32](BM_mask, BN),
+                                    (Int(score_row), Int(kv_row)),
+                                    (Int(BM_mask), Int(BN)),
                                 )
                                 == TileMaskStatus.FULL_MASK
                             ):
@@ -1514,8 +1587,8 @@ def fa4_load[
                 if (
                     mask.status(
                         seq_info.prompt_idx,
-                        Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                        Index[dtype=DType.int32](BM_mask, BN),
+                        (Int(score_row), Int(kv_row)),
+                        (Int(BM_mask), Int(BN)),
                     )
                     == TileMaskStatus.FULL_MASK
                 ):
@@ -1564,10 +1637,8 @@ def fa4_load[
                     if (
                         mask.status(
                             seq_info.prompt_idx,
-                            Index[dtype=DType.int32](
-                                Int(score_row), Int(kv_row)
-                            ),
-                            Index[dtype=DType.int32](BM_mask, BN),
+                            (Int(score_row), Int(kv_row)),
+                            (Int(BM_mask), Int(BN)),
                         )
                         == TileMaskStatus.FULL_MASK
                     ):

@@ -33,36 +33,22 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 #define DRIVER_OPTIONS_PATH "Demangle/DemangleOptions.inc"
+#include "Demangle/DemangleOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct DemangleOptTable : public llvm::opt::OptTable {
-  DemangleOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 /// Given a user-provided string that could be a mangled symbol name, prints the
 /// demangled name to stdout. Returns an integer representing a successful exit
 /// code if demangling succeeded, otherwise returns a failure code.
-static int demangle(const State &state) {
+static int demangle(const State &subcommandState) {
   // Parse command line arguments.
-  DemangleOptTable options;
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
+  State state = subcommandState;
+  options::Table optTable;
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(optTable, options::helpTexts(), args))
+    return *exitCode;
 
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
-#include "Demangle/DemangleOptionsHelpText.inc"
-    );
-  } else if (args.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
-#include "Demangle/DemangleOptionsHelpHiddenText.inc"
-    );
-  }
-
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
+  if (int result = state.rejectInvalidArguments(args))
     return result;
 
   if (args.hasMultipleArgs(options::OPT_INPUT)) {

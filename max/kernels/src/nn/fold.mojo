@@ -17,8 +17,7 @@ from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 from layout import TileTensor
 
-from std.utils.coord import Coord
-from std.utils.index import IndexList
+from std.utils.coord import Coord, DynamicCoord
 
 
 def fold[
@@ -30,8 +29,8 @@ def fold[
 ](
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
-    output_size: IndexList[2],
-    kernel_size: IndexList[2],
+    output_size: Coord[Int, Int],
+    kernel_size: Coord[Int, Int],
     ctx: DeviceContext,
 ) raises:
     """Folds array of sliding local blocks into a single output tensor.
@@ -89,11 +88,11 @@ def fold[
 
     if num_blocks != Scalar[input.linear_idx_type](expected_blocks):
         raise Error(
-            "Input tensor must have the same number of blocks ("
-            + String(num_blocks)
-            + ") as the expected number of blocks ("
-            + String(expected_blocks)
-            + ")."
+            String(
+                t"Input tensor must have the same number of blocks"
+                t" ({num_blocks}) as the expected number of blocks"
+                t" ({expected_blocks})."
+            )
         )
 
     var kernel_w = kernel_size[1]
@@ -158,14 +157,14 @@ def fold[
 
 
 def fold_shape(
-    input_shape: IndexList[3],
-    output_size: IndexList[2],
-    kernel_size: IndexList[2],
-) raises -> IndexList[4]:
+    input_shape: DynamicCoord[.int64, 3],
+    output_size: Coord[Int, Int],
+    kernel_size: Coord[Int, Int],
+) raises -> Coord[Int, Int, Int, Int]:
     """Returns the shape of the output tensor of the fold operation."""
-    var output_shape = IndexList[4]()
-    output_shape[0] = input_shape[0]
-    output_shape[1] = input_shape[1] // (kernel_size[0] * kernel_size[1])
-    output_shape[2] = output_size[0]
-    output_shape[3] = output_size[1]
-    return output_shape
+    return (
+        Int(input_shape[0]),
+        Int(input_shape[1]) // (kernel_size[0] * kernel_size[1]),
+        output_size[0],
+        output_size[1],
+    )

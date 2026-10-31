@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Generates text from text or conversations in-process with a model."""
+"""Generates text or images in-process with a model."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ import functools
 from collections.abc import Mapping, Sequence
 from types import TracebackType
 from typing import overload
+
+from PIL import Image
 
 from .auto_model import AutoModel, AutoTokenizer
 from .auto_processor import _model_inputs
@@ -30,12 +32,15 @@ _TEXT_TYPE_ERROR = "text must be a string, a conversation, or a list of either."
 
 
 class AutoPipeline:
-    """Generates text with an :class:`~max.pipelines.AutoModel`.
+    """Generates text or images with an :class:`~max.pipelines.AutoModel`.
 
-    A string prompt goes to the model as is, without a chat template, and its
-    output starts with the prompt exactly as passed. A conversation, in the
-    message format :class:`~max.pipelines.AutoProcessor` takes, goes through
-    the chat template with its images, and its output is only the new text.
+    For a text model, a string prompt goes to the model as is, without a
+    chat template, and its output starts with the prompt exactly as passed.
+    A conversation, in the message format
+    :class:`~max.pipelines.AutoProcessor` takes, goes through the chat
+    template with its images, and its output is only the new text. For an
+    image model, each prompt becomes a list of PIL images, through
+    :meth:`~max.pipelines.AutoModel.generate` with ``prompt``.
 
     .. Skipped: the example downloads a model.
     .. skip: next
@@ -66,6 +71,17 @@ class AutoPipeline:
         )
         print(text)
 
+    An image model takes the image arguments of
+    :meth:`~max.pipelines.AutoModel.generate`.
+
+    .. skip: next
+
+    .. code-block:: python
+
+        pipe = AutoPipeline("black-forest-labs/FLUX.2-klein-4B")
+        images = pipe("a red fox in snow", height=512, width=512)
+        images[0].save("fox.png")
+
     Args:
         model_path: A Hugging Face repo ID or a local model directory.
         max_batch_size: The most prompts per data-parallel replica, as for
@@ -77,7 +93,7 @@ class AutoPipeline:
         prefer_module_v3: Whether to load the architecture's ModuleV3
             version, as for :class:`~max.pipelines.AutoModel`.
         **config_overrides: Flat :class:`~max.pipelines.lib.PipelineArgs`
-            field names. The tokenizer loads with the revision and
+            field names. A text model's tokenizer loads with the revision and
             ``trust_remote_code`` of the resolved config.
 
     Raises:
@@ -103,6 +119,12 @@ class AutoPipeline:
             prefer_module_v3=prefer_module_v3,
             **config_overrides,
         )
+        self._model = model
+        self._tokenizer: AutoTokenizer | None = None
+        # An image model has no main model config and no text tokenizer.
+        self._generates_images = model._image_pipeline is not None
+        if self._generates_images:
+            return
         try:
             # Serve builds its tokenizer from these resolved fields.
             model_config = model.pipeline_config.model
@@ -114,7 +136,6 @@ class AutoPipeline:
         except BaseException:
             model.close()
             raise
-        self._model = model
 
     @property
     def model(self) -> AutoModel:
@@ -123,7 +144,18 @@ class AutoPipeline:
 
     @property
     def tokenizer(self) -> AutoTokenizer:
-        """The tokenizer that encodes prompts and decodes outputs."""
+        """The tokenizer that encodes prompts and decodes outputs.
+
+        Raises:
+            ValueError: If the model generates images, which takes no text
+                tokenizer.
+        """
+        if self._tokenizer is None:
+            raise ValueError(
+                "AutoPipeline loaded "
+                f"{self._model.pipeline_config.models.model_name}, an image "
+                "generation model, which has no text tokenizer."
+            )
         return self._tokenizer
 
     @overload
@@ -168,6 +200,40 @@ class AutoPipeline:
         seed: int = 0,
     ) -> list[str]: ...
 
+    @overload
+    def __call__(
+        self,
+        text: str,
+        *,
+        images: Sequence[Sequence[bytes | Image.Image]] | None = None,
+        negative_prompt: str | Sequence[str] | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
+        true_cfg_scale: float | None = None,
+        strength: float | None = None,
+        num_images_per_prompt: int = 1,
+        seed: int = 0,
+    ) -> list[Image.Image]: ...
+
+    @overload
+    def __call__(
+        self,
+        text: list[str] | tuple[str, ...],
+        *,
+        images: Sequence[Sequence[bytes | Image.Image]] | None = None,
+        negative_prompt: str | Sequence[str] | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
+        true_cfg_scale: float | None = None,
+        strength: float | None = None,
+        num_images_per_prompt: int = 1,
+        seed: int = 0,
+    ) -> list[list[Image.Image]]: ...
+
     def __call__(
         self,
         text: str
@@ -176,7 +242,7 @@ class AutoPipeline:
         | Sequence[Sequence[Mapping[str, object]]],
         *,
         chat_template_kwargs: Mapping[str, object] | None = None,
-        max_new_tokens: int,
+        max_new_tokens: int | None = None,
         min_new_tokens: int | None = None,
         temperature: float | None = None,
         top_k: int | None = None,
@@ -188,26 +254,44 @@ class AutoPipeline:
         ignore_eos: bool = False,
         stop_token_ids: Sequence[int] | None = None,
         seed: int = 0,
-    ) -> str | list[str]:
-        """Returns the text the model generates for each prompt or conversation.
+        images: Sequence[Sequence[bytes | Image.Image]] | None = None,
+        negative_prompt: str | Sequence[str] | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
+        true_cfg_scale: float | None = None,
+        strength: float | None = None,
+        num_images_per_prompt: int = 1,
+    ) -> str | list[str] | list[Image.Image] | list[list[Image.Image]]:
+        """Returns what the model generates for each prompt or conversation.
 
-        ``text`` is a prompt, a conversation, or a list of either, which run
-        as one batch. A prompt's output starts with the prompt. A
-        conversation's output is only the new text. ``chat_template_kwargs``
-        applies to every conversation's chat template, and the sampling
-        arguments are those of :meth:`~max.pipelines.AutoModel.generate`.
+        For a text model, ``text`` is a prompt, a conversation, or a list of
+        either, which run as one batch. A prompt's output starts with the
+        prompt. A conversation's output is only the new text.
+        ``chat_template_kwargs`` applies to every conversation's chat
+        template, and the sampling arguments are those of
+        :meth:`~max.pipelines.AutoModel.generate`.
+
+        For an image model, ``text`` is a prompt or a list of prompts, and
+        the image arguments, including ``images`` with one list of input
+        images per prompt, are those of
+        :meth:`~max.pipelines.AutoModel.generate` with ``prompt``. A text
+        model takes its images inside conversations.
 
         Returns:
-            A string for one prompt or conversation, or a list with one
-            string per item.
+            For a text model, a string for one prompt or conversation, or a
+            list with one string per item. For an image model, one prompt's
+            list of PIL images, or one such list per prompt.
 
         Raises:
             TypeError: If ``text`` is not a prompt, a conversation, or a list
-                of either, or as described for
-                :class:`~max.pipelines.AutoProcessor`.
+                of either, if a text model gets no ``max_new_tokens``, or as
+                described for :class:`~max.pipelines.AutoProcessor`.
             ValueError: If ``text`` is empty, if ``chat_template_kwargs``
-                comes with string prompts, or as described for
-                :class:`~max.pipelines.AutoProcessor` and
+                comes with string prompts, if an argument is for the other
+                kind of model, if an image model gets a conversation, or as
+                described for :class:`~max.pipelines.AutoProcessor` and
                 :meth:`~max.pipelines.AutoModel.generate`.
             RuntimeError: If the model has been closed, or as described for
                 :meth:`~max.pipelines.AutoModel.generate`.
@@ -234,6 +318,65 @@ class AutoPipeline:
             )
         ):
             raise TypeError(_TEXT_TYPE_ERROR)
+        if self._generates_images:
+            self._model._reject_arguments(
+                {
+                    "chat_template_kwargs": (chat_template_kwargs, None),
+                    "max_new_tokens": (max_new_tokens, None),
+                    "min_new_tokens": (min_new_tokens, None),
+                    "temperature": (temperature, None),
+                    "top_k": (top_k, None),
+                    "top_p": (top_p, None),
+                    "min_p": (min_p, None),
+                    "frequency_penalty": (frequency_penalty, None),
+                    "presence_penalty": (presence_penalty, None),
+                    "repetition_penalty": (repetition_penalty, None),
+                    "ignore_eos": (ignore_eos, False),
+                    "stop_token_ids": (stop_token_ids, None),
+                },
+                "text",
+                "",
+            )
+            if not all_prompts:
+                raise ValueError(
+                    "An image generation model takes string prompts, not "
+                    "conversations."
+                )
+            generated = self._model.generate(
+                prompt=prompts,
+                images=images,
+                negative_prompt=negative_prompt,
+                height=height,
+                width=width,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                true_cfg_scale=true_cfg_scale,
+                strength=strength,
+                num_images_per_prompt=num_images_per_prompt,
+                seed=seed,
+            )
+            return generated.images[0] if single else generated.images
+        self._model._reject_arguments(
+            {
+                "images": (images, None),
+                "negative_prompt": (negative_prompt, None),
+                "height": (height, None),
+                "width": (width, None),
+                "num_inference_steps": (num_inference_steps, None),
+                "guidance_scale": (guidance_scale, None),
+                "true_cfg_scale": (true_cfg_scale, None),
+                "strength": (strength, None),
+                "num_images_per_prompt": (num_images_per_prompt, 1),
+            },
+            "image",
+            "",
+        )
+        if max_new_tokens is None:
+            raise TypeError(
+                "AutoPipeline.__call__() missing 1 required keyword-only "
+                "argument: 'max_new_tokens'"
+            )
+        tokenizer = self.tokenizer
         generate_rows = functools.partial(
             generate,
             self._model.pipeline,
@@ -257,7 +400,7 @@ class AutoPipeline:
                     "Pass chat_template_kwargs with conversations, since "
                     "string prompts get no chat template."
                 )
-            prompt_ids: list[list[int]] = self._tokenizer(prompts)["input_ids"]
+            prompt_ids: list[list[int]] = tokenizer(prompts)["input_ids"]
             sequences = generate_rows(prompt_ids).sequences
             texts = [
                 self._with_prompt(prompt, ids, sequence)
@@ -270,7 +413,7 @@ class AutoPipeline:
                 **_model_inputs(text),
                 chat_template_kwargs=chat_template_kwargs,
             )
-            texts = self._tokenizer.batch_decode(
+            texts = tokenizer.batch_decode(
                 [
                     sequence[length:]
                     for sequence, length in zip(
@@ -288,8 +431,8 @@ class AutoPipeline:
         # return_full_text, this cuts the decoded prompt off the decoded
         # sequence, so the caller's prompt comes back unchanged and the
         # spacing where the new text starts stays right.
-        full = self._tokenizer.decode(sequence, skip_special_tokens=True)
-        decoded_prompt = self._tokenizer.decode(
+        full = self.tokenizer.decode(sequence, skip_special_tokens=True)
+        decoded_prompt = self.tokenizer.decode(
             prompt_ids, skip_special_tokens=True
         )
         return prompt + full[len(decoded_prompt) :]

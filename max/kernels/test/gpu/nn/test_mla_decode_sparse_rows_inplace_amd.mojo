@@ -407,22 +407,8 @@ def _run_case(
             Float64(scale),
         )
         print(
-            name,
-            " num_partitions=",
-            num_partitions,
-            " fp32_err rows=",
-            rows_err,
-            " gather=",
-            gather_err,
-            " max_abs_diff=",
-            max_abs,
-            " max_abs_ref=",
-            max_ref,
-            " mismatches=",
-            bad,
-            "/",
-            out_size,
-            sep="",
+            t"{name} num_partitions={num_partitions} fp32_err"
+            t" rows={rows_err} gather={gather_err} max_abs_diff={max_abs} max_abs_ref={max_ref} mismatches={bad}/{out_size}"
         )
         assert_true(bad == 0, "in-place sparse decode differs from gather")
         # Split-K changes rounding (fp8 P per partition, bf16 partials), not

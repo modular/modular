@@ -21,7 +21,9 @@ comptime N = 16
 comptime VecLayout = RowMajorLayout[ComptimeInt[N]]
 
 
-def add_one_kernel(t: TileTensor[.float32, VecLayout, MutAnyOrigin]):
+def add_one_kernel[
+    t_origin: MutOrigin
+](t: TileTensor[.float32, VecLayout, t_origin]):
     var i = Int(global_idx.x)
     if i < N:
         t[i] += 1
@@ -55,7 +57,7 @@ def test_round_trip() raises:
     for i in range(N):
         host[i] = Float32(i)
     t.to_device()
-    ctx.enqueue_function[add_one_kernel](
+    ctx.enqueue_function[add_one_kernel[t_origin=origin_of(t)]](
         t.device_tensor(), grid_dim=1, block_dim=N
     )
     t.to_host()

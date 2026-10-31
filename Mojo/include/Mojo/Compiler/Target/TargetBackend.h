@@ -61,7 +61,7 @@ namespace M::KGEN {
 // pass-manager headers stay out of this widely-included header.
 struct PassManagerConfigOptions;
 class GeneratorOp;
-class SymbolConstantAttr;
+class FuncSymbolAttr;
 } // namespace M::KGEN
 
 namespace M::Cache {
@@ -176,7 +176,7 @@ public:
   /// `sourceFuncTypeGenerator` still carries the signature the offload ABI
   /// erased. The default does nothing.
   virtual void preprocessGenerator(GeneratorOp entry, GeneratorOp source,
-                                   SymbolConstantAttr symbol,
+                                   FuncSymbolAttr symbol,
                                    mlir::ModuleOp module) const;
 
   virtual SplitStrategy

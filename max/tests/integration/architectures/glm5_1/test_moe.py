@@ -23,8 +23,8 @@ from max.driver import Accelerator, Device, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.linear import Linear
-from max.nn.moe import MoE
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.moe import MoE
 from max.pipelines.architectures.deepseekV3_2.layers import (
     DeepseekV3_2MLP,
     DeepseekV3_2TopKRouter,

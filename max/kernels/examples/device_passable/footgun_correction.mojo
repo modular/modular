@@ -47,7 +47,7 @@ struct AffineRead(InputFusion):
 # compiled over the host callable, and `host_args=` delivers exactly that.
 def read_host_closure[
     CbType: ImplicitlyCopyable & RegisterPassable & def(Int) -> Float32
-](dst: MutPointer[Float32, MutAnyOrigin], n: Int32, cb: CbType):
+](dst: MutPointer[Float32, MutUntrackedOrigin], n: Int32, cb: CbType):
     var i = global_idx.x
     if i >= Int(n):
         return

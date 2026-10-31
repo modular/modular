@@ -1,0 +1,29 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_tool_call_grammar",
+    size = "small",
+    srcs = ["test_tool_call_grammar.py"],
+    deps = [
+        "//max/python/max/_xgrammar",
+        "//max/python/max/pipelines/architectures/hy_v4",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_reasoning",
+    size = "small",
+    srcs = ["test_reasoning.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/hy_v4",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)

@@ -35,7 +35,7 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     CacheLeafParamInterface,
     KVCacheBuffer,
     KVCacheParamInterface,

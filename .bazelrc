@@ -41,6 +41,18 @@ build:public-cache --build_metadata=VISIBILITY=PUBLIC
 build:public-cache --remote_downloader=grpcs://modular-public.buildbuddy.io
 build:public-cache --remote_cache=grpcs://modular-public.buildbuddy.io
 
+# Read-only access to the same cache, for anyone without a key of their own.
+# The key is already published in .github/workflows/build_and_test.yml, so it
+# discloses nothing to put it here. It sits on its own config rather than on
+# `public-cache` because --remote_header accumulates: a trusted CI run passes
+# its own read-write key, and must not end up sending two.
+build:public-cache-readonly --config=public-cache
+build:public-cache-readonly --remote_header=x-buildbuddy-api-key=gJPttl2LQEONgD2aKziQ
+# BES needs its own header: --remote_header does not reach the build event
+# stream, so without this the upload authenticates anonymously and fails.
+build:public-cache-readonly --bes_header=x-buildbuddy-api-key=gJPttl2LQEONgD2aKziQ
+build:public-cache-readonly --remote_upload_local_results=false
+
 # Check for a local gitignored bazel config.
 # NOTE: Import this last so that local configs can override.
 try-import %workspace%/local.bazelrc

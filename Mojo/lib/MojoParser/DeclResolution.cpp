@@ -665,17 +665,18 @@ static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
     return name.substr(0, name.find_first_of("(["));
   };
 
-  if (auto cst = dyn_cast<SymbolConstantAttr>(attr))
+  if (auto cst = FuncSymbolGenerator::dynCast(attr))
     return extractFromSymbolRef(cst.getSymbol());
   if (auto fnLiteral = dyn_cast<FnLiteralTypeGeneratorType>(attr.getType()))
-    return extractDecoratorName(fnLiteral.getSymbolConstantAttr());
+    return extractFromSymbolRef(
+        fnLiteral.getBody().getTargetLiteral().getSymbol());
 
   if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
     // Only process if it's an Apply operator with at least one operand
     if (call.getOpcode() != POC::Apply || call.getOperands().empty())
       return std::nullopt;
 
-    if (auto firstOp = dyn_cast<SymbolConstantAttr>(call.getOperands().front()))
+    if (auto firstOp = FuncSymbolGenerator::dynCast(call.getOperands().front()))
       return extractFromSymbolRef(firstOp.getSymbol());
   }
 
@@ -743,7 +744,7 @@ void Decorators::applyBodyDecorators(
     if (PValue decoVal = emitter.emitExprPValue(decorator, EC_Decorator)) {
       // DecoVal wants the symbol constant attr.
       if (auto fnLit = dyn_cast<FnLiteralTypeGeneratorType>(decoVal.getType()))
-        decoVal = PValue(fnLit.getSymbolConstantAttr());
+        decoVal = PValue(fnLit.getFuncSymbolAttr());
 
       if (failed(validateCompilerDecorator(decoVal))) {
         emitError(decorator->getLoc(), "unsupported compiler decorator")
@@ -3111,7 +3112,7 @@ static LogicalResult resolvePropagatedConstraints(
 /// compiler injects into every struct's parent list when the stdlib is
 /// available (e.g., `AnyType`, `Deinitable`). These are treated
 /// as unconditionally available and never require explicit listing. The set
-/// may be empty when builtins are disabled (`--mojo-disable-builtins`).
+/// may be empty when builtins are disabled (`--disable-builtins`).
 ///
 /// Returns failure if any constraint errors were found.
 static LogicalResult buildTraitConstraintsMap(

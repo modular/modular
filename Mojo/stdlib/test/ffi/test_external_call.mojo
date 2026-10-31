@@ -22,7 +22,7 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 struct RegisterPassablePointer(RegisterPassable):
-    var pointer: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+    var pointer: Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
 
 
 def test_external_call_handles_rp_return_types() raises:
@@ -107,7 +107,7 @@ def test_fcntl_forwards_variadic_argument() raises:
         pass
 
     with open(path, "w") as f:
-        var fd = c_int(f.handle)
+        var fd = f._get_raw_fd()._value
         assert_true(
             fcntl(fd, FcntlCommands.F_SETFD, FcntlFDFlags.FD_CLOEXEC) != -1
         )

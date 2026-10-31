@@ -57,7 +57,6 @@ from std.math.constants import log2e
 from std.os.env import getenv
 from std.sys.info import align_of, size_of
 from std.sys.intrinsics import llvm_intrinsic
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 
@@ -605,10 +604,10 @@ def fa_prefill_apple_core[
         # m, l, and O all unchanged), so skipping it is equivalent to processing
         # it. Decided over the whole threadgroup row span so the skip/break is
         # identical across simdgroups (barrier lockstep).
-        var tg_tile_status = mask_functor.status[element_type=DType.uint32](
+        var tg_tile_status = mask_functor.status(
             UInt32(batch_id),
-            Index[dtype=DType.uint32](tg_score_row_base, kv0),
-            Index[dtype=DType.uint32](NumSimdgroups * SQ, SK),
+            (Int(tg_score_row_base), Int(kv0)),
+            (Int(NumSimdgroups * SQ), Int(SK)),
         )
         if tg_tile_status == TileMaskStatus.FULL_MASK:
             comptime if causal_monotonic:
@@ -617,10 +616,10 @@ def fa_prefill_apple_core[
                 continue
 
         # Per-simdgroup status drives this simdgroup's fast-path / mask decision.
-        var tile_status = mask_functor.status[element_type=DType.uint32](
+        var tile_status = mask_functor.status(
             UInt32(batch_id),
-            Index[dtype=DType.uint32](score_row_base, kv0),
-            Index[dtype=DType.uint32](SQ, SK),
+            (Int(score_row_base), Int(kv0)),
+            (Int(SQ), Int(SK)),
         )
 
         # Whole-tile KV validity: every key in [kv0, kv0+SK) is < cur_cache_len.
@@ -728,14 +727,20 @@ def fa_prefill_apple_core[
                     var s_lo = scores[ni].slice[4, offset=0]()
                     var s_hi = scores[ni].slice[4, offset=4]()
                     var m_lo = mask_functor.mask(
-                        Index(
-                            batch_id, head_id, score_row_base + lrow_lo, kbase
+                        (
+                            Int(batch_id),
+                            Int(head_id),
+                            Int(score_row_base + lrow_lo),
+                            Int(kbase),
                         ),
                         s_lo,
                     )
                     var m_hi = mask_functor.mask(
-                        Index(
-                            batch_id, head_id, score_row_base + lrow_hi, kbase
+                        (
+                            Int(batch_id),
+                            Int(head_id),
+                            Int(score_row_base + lrow_hi),
+                            Int(kbase),
                         ),
                         s_hi,
                     )
@@ -760,11 +765,11 @@ def fa_prefill_apple_core[
                         var qrow = q_row0 + lrow
                         if qrow < cur_query_len and key < cur_cache_len:
                             frag[el] = mask_functor.mask(
-                                Index(
-                                    batch_id,
-                                    head_id,
-                                    score_row_base + lrow,
-                                    key,
+                                (
+                                    Int(batch_id),
+                                    Int(head_id),
+                                    Int(score_row_base + lrow),
+                                    Int(key),
                                 ),
                                 frag[el],
                             )

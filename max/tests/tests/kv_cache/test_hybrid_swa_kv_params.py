@@ -17,9 +17,10 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
@@ -130,3 +131,107 @@ def test_hybrid_swa_full_kv_params_step3p5_unequal_heads() -> None:
     assert full.n_kv_heads == 8
     assert sliding.window_size == 512
     assert full.window_size is None
+
+
+@pytest.mark.parametrize(
+    ("sliding_head_dim", "full_head_dim", "sliding_shape", "full_shape"),
+    [
+        # gpt-oss: 24 layers alternating, 8 KV heads of 64.
+        (None, None, [2, 12, 128, 8, 64], [2, 12, 128, 8, 64]),
+        # Gemma 4: 256-wide sliding heads, 512-wide full heads.
+        (256, 512, [2, 12, 128, 8, 256], [2, 12, 128, 8, 512]),
+    ],
+    ids=["equal-head-dims", "per-group-head-dims"],
+)
+def test_hybrid_swa_full_kv_params_unsplit_by_default(
+    sliding_head_dim: int | None,
+    full_head_dim: int | None,
+    sliding_shape: list[int],
+    full_shape: list[int],
+) -> None:
+    """Callers that pass no value head dims keep a key and a value plane."""
+    params = hybrid_swa_full_kv_params(
+        layer_types=["sliding_attention", "full_attention"] * 12,
+        sliding_window=128,
+        pipeline_config=_pipeline_config(),
+        devices=[DeviceRef.CPU()],
+        kv_cache_config=KVCacheConfig(),
+        cache_dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=64,
+        sliding_head_dim=sliding_head_dim,
+        full_head_dim=full_head_dim,
+    )
+    sliding, full = params.children.values()
+    assert isinstance(sliding, MHAKVCacheParams)
+    assert isinstance(full, MHAKVCacheParams)
+    for leaf in (sliding, full):
+        assert not leaf.has_split_head_dims
+        assert leaf.v_head_dim is None
+    assert sliding.shape_per_block == sliding_shape
+    assert full.shape_per_block == full_shape
+
+
+def test_hybrid_swa_full_kv_params_split_head_dims() -> None:
+    """MiMo-V2.6-Flash: 192-wide keys and 128-wide values in both groups."""
+    params = hybrid_swa_full_kv_params(
+        layer_types=["sliding_attention"] * 3 + ["full_attention"],
+        sliding_window=128,
+        pipeline_config=_pipeline_config(),
+        devices=[DeviceRef.CPU()],
+        kv_cache_config=KVCacheConfig(),
+        cache_dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=192,
+        sliding_n_kv_heads=8,
+        sliding_v_head_dim=128,
+        full_v_head_dim=128,
+    )
+    sliding, full = params.children.values()
+    assert isinstance(sliding, MHAKVCacheParams)
+    assert isinstance(full, MHAKVCacheParams)
+    assert sliding.shape_per_block == [1, 3, 128, 8, 320]
+    assert full.shape_per_block == [1, 1, 128, 4, 320]
+
+
+def test_hybrid_swa_full_kv_params_laguna_pattern() -> None:
+    # Laguna S-2.1: one full layer then three sliding, twelve times over.
+    layer_types = (["full_attention"] + ["sliding_attention"] * 3) * 12
+    params = hybrid_swa_full_kv_params(
+        layer_types=layer_types,
+        sliding_window=512,
+        pipeline_config=_pipeline_config(),
+        devices=[DeviceRef.CPU()],
+        kv_cache_config=KVCacheConfig(),
+        cache_dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+    )
+    sliding, full = params.children.values()
+    assert isinstance(sliding, MHAKVCacheParams)
+    assert isinstance(full, MHAKVCacheParams)
+    assert sliding.num_layers == 36
+    assert full.num_layers == 12
+    assert sliding.window_size == 512
+    assert full.window_size is None
+
+    # The saving the Jenga manager buys: a sliding leaf reserves only the
+    # pages its window looks back at plus the one it is writing, however long
+    # the sequence gets, while a full leaf reserves a block per page of history.
+    leaves = {leaf.group_id: leaf for leaf in params.leaves().values()}
+    sliding_leaf = leaves[sliding.group_id]
+    full_leaf = leaves[full.group_id]
+    page_size = KVCacheConfig().kv_cache_page_size
+    blocks_for_262k = 262144 // page_size
+    assert (
+        sliding_leaf.blocks_to_reserve(
+            blocks_for_262k, enable_prefix_caching=False
+        )
+        == 512 // page_size + 1
+    )
+    assert (
+        full_leaf.blocks_to_reserve(
+            blocks_for_262k, enable_prefix_caching=False
+        )
+        == blocks_for_262k
+    )

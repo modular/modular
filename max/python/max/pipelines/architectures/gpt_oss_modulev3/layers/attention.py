@@ -17,21 +17,21 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Linear, Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.rotary_embedding import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.rotary_embedding import (
     YarnRotaryEmbedding,
 )
-from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.tensor import Tensor
 
 
 class GptOssAttention(Module[..., Tensor]):
@@ -75,8 +75,10 @@ class GptOssAttention(Module[..., Tensor]):
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
+            local_window_size: The number of tokens a sliding layer attends
+                over.
+            mask_variant: Which attention mask this layer applies.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -153,6 +155,7 @@ class GptOssAttention(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> Tensor:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 

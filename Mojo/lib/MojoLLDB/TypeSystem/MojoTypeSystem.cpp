@@ -136,9 +136,8 @@ struct MojoTypeSystem::Impl {
     compilationOptions.enableParallelLLC = false;
 
     // Configure the parser context.
-    LIT::ParserConfig parserConfig(&mlirContext, compilationOptions);
-    parserContext =
-        std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
+    parserContext = std::make_unique<MojoParserContext>(
+        sourceMgr, &mlirContext, compilationOptions, KGEN::FrontendOptions());
 
     auto targetInfoOr = M::getTargetInfoFor(
         &mlirContext, compilationOptions.targetTriple,
@@ -571,7 +570,7 @@ ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
   // that perform queries based on type names can operate also on decorators. An
   // example of this are the data formatters.
   for (TypedAttr decorator : getStructDecorators(opaqueType)) {
-    if (auto constantSymbol = dyn_cast<KGEN::SymbolConstantAttr>(decorator)) {
+    if (auto constantSymbol = KGEN::FuncSymbolGenerator::dynCast(decorator)) {
       os << " {@" << M::getFlattenedSymbolName(constantSymbol.getSymbol())
          << "}";
     }

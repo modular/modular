@@ -96,6 +96,7 @@ from shmem.ep import (
     ep_dispatch_async_kernel_api,
     ep_dispatch_wait_kernel_api,
     ep_fused_dispatch_kernel_api,
+    ep_token_recv,
 )
 from shmem.ep_comm import (
     BF16TokenFormat,
@@ -103,6 +104,7 @@ from shmem.ep_comm import (
     MXTokenFormat,
     NVBlockScaledTokenFormat,
     TokenFormat,
+    ep_dispatch_recv_size,
 )
 
 from std.math import align_up
@@ -257,15 +259,12 @@ def report_routing[
     for g in range(n_ranks):
         max_gpu = max(max_gpu, per_gpu[g])
 
+    var routing_mode = "skewed" if skew_enabled() else "uniform"
     print(
-        "ROUTING mode:",
-        "skewed" if skew_enabled() else "uniform",
-        "expert_imbalance:",
-        Float64(max_expert) * Float64(n_experts) / Float64(total),
-        "busiest_gpu_share:",
-        Float64(max_gpu) / Float64(total),
-        "even_share:",
-        1.0 / Float64(n_ranks),
+        t"ROUTING mode: {routing_mode} expert_imbalance:"
+        t" {Float64(max_expert) * Float64(n_experts) / Float64(total)} busiest_gpu_share:"
+        t" {Float64(max_gpu) / Float64(total)} even_share:"
+        t" {1.0 / Float64(n_ranks)}"
     )
 
 
@@ -600,28 +599,29 @@ def bench_dispatch_common[
     comptime msg_bytes = token_fmt_type.msg_size()
     comptime n_local_experts = n_experts // n_ranks
     comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
+    # One slot's receive buffer, as `ep.init` sizes it, padded so each slot
+    # starts aligned.
+    comptime recv_bytes = align_up(
+        ep_dispatch_recv_size(
+            n_experts=n_experts,
+            n_ranks=n_ranks,
+            max_tokens_per_rank=n_tokens_per_rank,
+            msg_bytes=msg_bytes,
+            token_recv=ep_token_recv[1](),
+        ),
+        256,
+    )
 
     comptime num_bytes = msg_bytes * top_k * n_tokens_per_rank
 
     var dispatch_test = DispatchTestType(list_of_ctx)
 
     print(
-        "Running ep_dispatch bench:",
-        token_fmt_type.get_type_name(),
-        "hidden_size:",
-        hidden_size,
-        "top_k:",
-        top_k,
-        "n_experts:",
-        n_experts,
-        "n_ranks:",
-        n_ranks,
-        "n_tokens_per_rank:",
-        n_tokens_per_rank,
-        "msg_bytes:",
-        msg_bytes,
-        "send_bytes_per_rank:",
-        num_bytes,
+        t"Running ep_dispatch bench:"
+        t" {token_fmt_type.get_type_name()} hidden_size: {hidden_size} top_k:"
+        t" {top_k} n_experts: {n_experts} n_ranks: {n_ranks} n_tokens_per_rank:"
+        t" {n_tokens_per_rank} msg_bytes: {msg_bytes} send_bytes_per_rank:"
+        t" {num_bytes}"
     )
 
     # fmt: off
@@ -642,7 +642,7 @@ def bench_dispatch_common[
     for i in range(n_ranks):
         var ctx = list_of_ctx[i]
         send_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[.uint8](n_slots * n_tokens_per_rank * msg_bytes))
-        recv_bufs_list.append(ctx.enqueue_create_buffer[.uint8](n_slots * max_recv_num_tokens * msg_bytes))
+        recv_bufs_list.append(ctx.enqueue_create_buffer[.uint8](n_slots * recv_bytes))
         recv_count_bufs_list.append(ctx.enqueue_create_buffer[.uint64](n_slots * n_experts))
         atomic_counters_list.append(ctx.enqueue_create_buffer[.int32](
             n_slots * EPLocalSyncCounters[n_experts].total_size()
@@ -705,7 +705,7 @@ def bench_dispatch_common[
                 Int(send_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * msg_bytes))
             )
             recv_ptrs_inputs[ptr_idx] = UInt64(
-                Int(recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * msg_bytes))
+                Int(recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * recv_bytes))
             )
             recv_count_ptrs_inputs[ptr_idx] = UInt64(
                 Int(recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts))
@@ -855,7 +855,7 @@ def bench_dispatch_common[
 
     @inline(.always)
     def call_fn_dispatch(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_dispatch_async(dev_id, cache_iter)
 
     def per_gpu_dispatch(i: Int) raises {mut results_b, imm}:
@@ -895,7 +895,7 @@ def bench_dispatch_common[
 
     @inline(.always)
     def call_fn_dispatch_wait(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_dispatch_async_wait(dev_id, cache_iter)
 
     def per_gpu_dispatch_wait(i: Int) raises {mut results_b, imm}:
@@ -944,7 +944,7 @@ def bench_dispatch_common[
 
     @inline(.always)
     def call_fn_e2e_split(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_e2e(dev_id, cache_iter + 1)
 
     def per_gpu_e2e_split(i: Int) raises {mut results_b, imm}:
@@ -989,7 +989,7 @@ def bench_dispatch_common[
 
     @inline(.always)
     def call_fn_e2e_fused(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_fused_dispatch(dev_id, cache_iter + 1)
 
     def per_gpu_e2e_fused(i: Int) raises {mut results_b, imm}:
@@ -1132,17 +1132,9 @@ def bench_all_formats[
 ](list_of_ctx: List[DeviceContext]) raises:
     """Runs every token format this vendor dispatches with, at one shape."""
     print(
-        "\n===== dispatch shape: tokens_per_rank=",
-        n_tokens_per_rank,
-        " slots=",
-        n_slots,
-        " hidden=",
-        HIDDEN,
-        " top_k=",
-        TOP_K,
-        " n_experts=",
-        N_EXPERTS,
-        " =====",
+        t"\n===== dispatch shape: tokens_per_rank= {n_tokens_per_rank}  slots="
+        t" {n_slots}  hidden= {HIDDEN}  top_k= {TOP_K}  n_experts= {N_EXPERTS} "
+        t" ====="
     )
 
     bench_dispatch_bf16[

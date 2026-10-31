@@ -8,7 +8,7 @@ modular_py_library(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/speculators_common",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",

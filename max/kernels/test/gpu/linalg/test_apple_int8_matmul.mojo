@@ -93,7 +93,7 @@ def _run_gemm_vs_quant_ref[
     name: String,
     i32_override: Optional[Bool] = None,
 ) raises:
-    print("== stage1", name, M, "x", N, "x", K, "bias", with_bias)
+    print(t"== stage1 {name} {M} x {N} x {K} bias {with_bias}")
 
     var af = ctx.enqueue_create_host_buffer[.float32](M * K)
     var bf = ctx.enqueue_create_host_buffer[.float32](N * K)
@@ -163,7 +163,7 @@ def _run_gemm_vs_quant_ref[
                 expected
             ):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", expected)
+                    print(t"FAIL: {i} {j} got {got} exp {expected}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -210,14 +210,14 @@ def _run_act_quant(ctx: DeviceContext, M: Int, K: Int, name: String) raises:
         var exp_scale = amax / 127.0 if amax != 0.0 else Float32(0)
         if abs(s_h[i] - exp_scale) > Float32(1e-6) * (exp_scale + 1.0):
             if pass_:
-                print("FAIL scale row", i, "got", s_h[i], "exp", exp_scale)
+                print(t"FAIL scale row {i} got {s_h[i]} exp {exp_scale}")
             pass_ = False
         var mult = 127.0 / amax if amax != 0.0 else Float32(0)
         for j in range(K):
             var qi = Int(round(Float32(af[i * K + j]) * mult))
             if Int(q_h[i * K + j]) != qi:
                 if pass_:
-                    print("FAIL q", i, j, "got", Int(q_h[i * K + j]), "exp", qi)
+                    print(t"FAIL q {i} {j} got {Int(q_h[i * K + j])} exp {qi}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -232,7 +232,7 @@ def _run_act_quant(ctx: DeviceContext, M: Int, K: Int, name: String) raises:
 def _run_end_to_end(
     ctx: DeviceContext, M: Int, N: Int, K: Int, name: String
 ) raises:
-    print("== stage3 e2e", name, M, "x", N, "x", K)
+    print(t"== stage3 e2e {name} {M} x {N} x {K}")
 
     var af = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var bf = ctx.enqueue_create_host_buffer[.float32](N * K)
@@ -297,7 +297,7 @@ def _run_end_to_end(
                 expected
             ):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", expected)
+                    print(t"FAIL: {i} {j} got {got} exp {expected}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")

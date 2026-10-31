@@ -100,6 +100,16 @@ ParseResult parseMatmulAttrs(OpAsmParser &p, BoolAttr &transposeB,
 void printMatmulAttrs(OpAsmPrinter &p, Operation *, BoolAttr transposeB,
                       BoolAttr packedB);
 
+ParseResult parseAllGatherAttrs(OpAsmParser &p, IntegerAttr &groupSize,
+                                BoolAttr &sliceRows);
+void printAllGatherAttrs(OpAsmPrinter &p, Operation *, IntegerAttr groupSize,
+                         BoolAttr sliceRows);
+
+ParseResult parseAllGatherConcatAttrs(OpAsmParser &p, IntegerAttr &axis,
+                                      IntegerAttr &groupSize);
+void printAllGatherConcatAttrs(OpAsmPrinter &p, Operation *, IntegerAttr axis,
+                               IntegerAttr groupSize);
+
 ParseResult parseReduceScatterSumAttrs(OpAsmParser &p, IntegerAttr &axis,
                                        IntegerAttr &groupSize);
 

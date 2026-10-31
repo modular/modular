@@ -30,6 +30,7 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
+from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.pipelines.context import AudioContext, PixelContext, TextContext
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
@@ -59,13 +60,11 @@ from .arch_lookup import (
     ARCH_LOOKUP,
     ArchLookup,
     SupportedArchitecture,
-    select_speculator,
 )
 
 # The public arch_lookup names reach `max.pipelines.lib` through here rather
 # than directly
 from .arch_lookup import PipelineModelType as PipelineModelType
-from .arch_lookup import Speculator as Speculator
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import PipelineModel
 from .pipeline_variants.overlap_text_generation import (
@@ -77,6 +76,7 @@ from .pipeline_variants.spec_decode_pipeline_model import (
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .reasoning import get_parser_cls
 from .tokenizer import TextTokenizer
+from .weight_transform import WeightTransform
 
 logger = logging.getLogger("max.pipelines")
 
@@ -104,6 +104,25 @@ class RetrievedPipeline:
     memory_plan: MemoryPlan
     """Memory plan (batch size, sequence length, and cache budgets) the
     pipeline was sized against."""
+
+
+def _weight_adapters(
+    arch: SupportedArchitecture, huggingface_config: PretrainedConfig
+) -> dict[WeightsFormat, WeightsAdapter]:
+    """Returns the adapters a pipeline loads ``arch``'s checkpoint through.
+
+    Raises:
+        ValueError: If ``arch`` sets ``use_weight_rules`` without
+            ``weight_rules``.
+    """
+    if not arch.use_weight_rules:
+        return arch.weight_adapters
+    if arch.weight_rules is None:
+        raise ValueError(
+            f"{arch.name} sets use_weight_rules but has no weight_rules"
+        )
+    transform = WeightTransform(arch.weight_rules(huggingface_config))
+    return {arch.default_weights_format: transform}
 
 
 def get_pipeline_for_task(
@@ -400,7 +419,7 @@ class PipelineRegistry:
 
     def register(
         self,
-        architecture: SupportedArchitecture | Speculator,
+        architecture: SupportedArchitecture,
         *,
         allow_override: bool = False,
     ) -> None:
@@ -408,7 +427,6 @@ class PipelineRegistry:
 
         If multiple architectures share the same name but have different tasks,
         they are registered in a secondary lookup table keyed by (name, task).
-        A :class:`Speculator` registers the architecture it derives.
         """
         self._arch_lookup.register(architecture, allow_override=allow_override)
 
@@ -419,7 +437,6 @@ class PipelineRegistry:
         symbol: str,
         *,
         package: str | None = None,
-        speculates_on: str | None = None,
     ) -> None:
         """Records *how* to import an architecture without importing it yet.
 
@@ -435,19 +452,10 @@ class PipelineRegistry:
             module: Dotted module path to import the architecture from. May be
                 ``.``-relative, resolved against ``package``.
             symbol: The attribute on ``module`` holding the
-                :class:`SupportedArchitecture`, or the :class:`Speculator`
-                that derives it.
+                :class:`SupportedArchitecture`.
             package: Anchor package used to resolve a relative ``module`` path.
-            speculates_on: For a :class:`Speculator`, the name of the target
-                architecture it speculates on.
         """
-        self._arch_lookup.register_lazy(
-            name,
-            module,
-            symbol,
-            package=package,
-            speculates_on=speculates_on,
-        )
+        self._arch_lookup.register_lazy(name, module, symbol, package=package)
 
     def _materialize_lazy(self, name: str) -> None:
         """Imports and registers any architectures deferred under ``name``.
@@ -513,24 +521,15 @@ class PipelineRegistry:
             if draft is not None
             else None
         )
-        method = pipeline_config.speculative.speculative_method
-        draft_arch = draft_archs[0] if draft_archs else None
-        prefer_v3 = pipeline_config.runtime.prefer_module_v3
-        # A target's speculators keep only the methods they declare; the
-        # prefer flag keeps the speculator in lockstep with the
-        # architecture variant the same flag selects.
-        if any(
-            speculator.method == method
-            for speculator in ARCH_LOOKUP.speculators_for(
-                name, prefer_module_v3=prefer_v3
+        return (
+            spec_decode_architecture(
+                name,
+                pipeline_config.speculative.speculative_method,
+                draft_archs[0] if draft_archs else None,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
             )
-        ):
-            speculator = select_speculator(
-                name, method, draft_arch, prefer_module_v3=prefer_v3
-            )
-            assert speculator is not None
-            return speculator.derive()
-        return spec_decode_architecture(name, method, draft_arch) or arch
+            or arch
+        )
 
     def get_active_huggingface_config(
         self,
@@ -984,7 +983,7 @@ class PipelineRegistry:
         factory_kwargs: dict[str, Any] = {
             "pipeline_config": pipeline_config,
             "pipeline_model": arch.pipeline_model,
-            "weight_adapters": arch.weight_adapters,
+            "weight_adapters": _weight_adapters(arch, huggingface_config),
             "tokenizer": typed_tokenizer,
             "memory_plan": memory_plan,
         }

@@ -2987,7 +2987,9 @@ static bool verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
   }
   if (rmsNormOp.getInput() != residualOp.getResult())
     return false;
-  if (!rmsNormOp.getMultiplyBeforeCast())
+  // The FP8 epilogue applies gamma in float32 before it quantizes, so only the
+  // no-quantize chain can carry a cast-first norm.
+  if (quantizeOp && !rmsNormOp.getMultiplyBeforeCast())
     return false;
   return true;
 }
@@ -3024,11 +3026,14 @@ public:
     quantizes = !quantizeOps.empty();
     if (quantizes && quantizeOps.size() != devicesCount)
       return;
-    // The composite carries one epsilon and weight_offset for every device.
+    // The composite carries one epsilon, weight_offset and cast order for
+    // every device.
     MO::ReduceRMSNormOp firstNorm = rmsNormOps.begin()->second;
     for (auto &[device, rmsNormOp] : rmsNormOps)
       if (rmsNormOp.getEpsilonAttr() != firstNorm.getEpsilonAttr() ||
-          rmsNormOp.getWeightOffsetAttr() != firstNorm.getWeightOffsetAttr())
+          rmsNormOp.getWeightOffsetAttr() != firstNorm.getWeightOffsetAttr() ||
+          rmsNormOp.getMultiplyBeforeCast() !=
+              firstNorm.getMultiplyBeforeCast())
         return;
 
     builder.setInsertionPointAfter(allReduceOp);
@@ -3068,7 +3073,8 @@ public:
             /*scaleUb=*/scaleUbOperands,
             /*inChain=*/allReduceOp.getInChain(),
             /*epsilon=*/firstNorm.getEpsilonAttr(),
-            /*weight_offset=*/firstNorm.getWeightOffsetAttr());
+            /*weight_offset=*/firstNorm.getWeightOffsetAttr(),
+            /*multiply_before_cast=*/firstNorm.getMultiplyBeforeCastAttr());
 
     allReduceOp.getOutChain().replaceAllUsesWith(
         allReduceFusedOp.getOutChain());
@@ -4319,6 +4325,76 @@ struct RopeRaggedSplitConcatPattern
 //
 //===----------------------------------------------------------------------===//
 
+static MO::MatmulOp matchMatmulOp(Value val, MO::Static::ReshapeOp &reshapeOp) {
+  auto reshape = val.getDefiningOp<MO::Static::ReshapeOp>();
+  if (!reshape)
+    return val.getDefiningOp<MO::MatmulOp>();
+
+  if (!reshape.getResult().hasOneUse())
+    return nullptr;
+  auto matmulOp = reshape.getInput().getDefiningOp<MO::MatmulOp>();
+  if (!matmulOp)
+    return nullptr;
+
+  reshapeOp = reshape;
+  return matmulOp;
+}
+
+// What a matched bias add contributes: the addend to fold into the residual,
+// plus the ops the fold consumes, which the caller registers with `addOps`.
+struct BiasFold {
+  Value addend;
+  Operation *add = nullptr;
+  Operation *reshape = nullptr;
+};
+
+// Matches `add(matmul, inner)` feeding this add, so that
+// `add(add(matmul, bias), residual)` -- a `Linear(bias=True)` followed by a
+// residual -- can still fuse. The composite op carries one addend, so the
+// caller folds the bias into the residual with a single elementwise add,
+// which is far cheaper than leaving the matmul on the generic closure
+// epilogue.
+static MO::MatmulOp matchMatmulThroughAdd(Value val,
+                                          MO::Static::ReshapeOp &reshapeOp,
+                                          BiasFold &fold) {
+  // Built locally and published only on a match, so a failed attempt on one
+  // operand leaves nothing behind for the attempt on the other.
+  BiasFold candidate;
+
+  // The rank-2 bias add is reshaped back to the matmul's logical rank before
+  // the residual add, so peel that reshape before looking for the add.
+  MO::Static::ReshapeOp outerReshape;
+  if (auto reshape = val.getDefiningOp<MO::Static::ReshapeOp>()) {
+    if (!reshape.getResult().hasOneUse())
+      return nullptr;
+    outerReshape = reshape;
+    candidate.reshape = reshape;
+    val = reshape.getInput();
+  }
+
+  auto innerAdd = val.getDefiningOp<MO::AddOp>();
+  if (!innerAdd || !innerAdd.getResult().hasOneUse())
+    return nullptr;
+
+  MO::Static::ReshapeOp innerReshape;
+  MO::MatmulOp matmulOp;
+  if ((matmulOp = matchMatmulOp(innerAdd.getInputX(), innerReshape))) {
+    candidate.addend = innerAdd.getInputY();
+  } else if ((matmulOp = matchMatmulOp(innerAdd.getInputY(), innerReshape))) {
+    candidate.addend = innerAdd.getInputX();
+  } else {
+    return nullptr;
+  }
+
+  // One reshape is rewritten around the fused op; two would need a pair.
+  if (outerReshape && innerReshape)
+    return nullptr;
+
+  reshapeOp = outerReshape ? outerReshape : innerReshape;
+  candidate.add = innerAdd;
+  fold = candidate;
+  return matmulOp;
+}
 struct MatmulAddPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern, MO::AddOp> {
   MatmulAddPattern(MLIRContext *ctx, MO::DeviceInfoMapping deviceInfoMapping)
@@ -4327,78 +4403,6 @@ struct MatmulAddPattern
 
 private:
   MO::DeviceInfoMapping _deviceInfoMapping;
-
-  static MO::MatmulOp matchMatmulOp(Value val,
-                                    MO::Static::ReshapeOp &reshapeOp) {
-    auto reshape = val.getDefiningOp<MO::Static::ReshapeOp>();
-    if (!reshape)
-      return val.getDefiningOp<MO::MatmulOp>();
-
-    if (!reshape.getResult().hasOneUse())
-      return nullptr;
-    auto matmulOp = reshape.getInput().getDefiningOp<MO::MatmulOp>();
-    if (!matmulOp)
-      return nullptr;
-
-    reshapeOp = reshape;
-    return matmulOp;
-  }
-
-  // What a matched bias add contributes: the addend to fold into the residual,
-  // plus the ops the fold consumes, which the caller registers with `addOps`.
-  struct BiasFold {
-    Value addend;
-    Operation *add = nullptr;
-    Operation *reshape = nullptr;
-  };
-
-  // Matches `add(matmul, inner)` feeding this add, so that
-  // `add(add(matmul, bias), residual)` -- a `Linear(bias=True)` followed by a
-  // residual -- can still fuse. The composite op carries one addend, so the
-  // caller folds the bias into the residual with a single elementwise add,
-  // which is far cheaper than leaving the matmul on the generic closure
-  // epilogue.
-  static MO::MatmulOp matchMatmulThroughAdd(Value val,
-                                            MO::Static::ReshapeOp &reshapeOp,
-                                            BiasFold &fold) {
-    // Built locally and published only on a match, so a failed attempt on one
-    // operand leaves nothing behind for the attempt on the other.
-    BiasFold candidate;
-
-    // The rank-2 bias add is reshaped back to the matmul's logical rank before
-    // the residual add, so peel that reshape before looking for the add.
-    MO::Static::ReshapeOp outerReshape;
-    if (auto reshape = val.getDefiningOp<MO::Static::ReshapeOp>()) {
-      if (!reshape.getResult().hasOneUse())
-        return nullptr;
-      outerReshape = reshape;
-      candidate.reshape = reshape;
-      val = reshape.getInput();
-    }
-
-    auto innerAdd = val.getDefiningOp<MO::AddOp>();
-    if (!innerAdd || !innerAdd.getResult().hasOneUse())
-      return nullptr;
-
-    MO::Static::ReshapeOp innerReshape;
-    MO::MatmulOp matmulOp;
-    if ((matmulOp = matchMatmulOp(innerAdd.getInputX(), innerReshape))) {
-      candidate.addend = innerAdd.getInputY();
-    } else if ((matmulOp = matchMatmulOp(innerAdd.getInputY(), innerReshape))) {
-      candidate.addend = innerAdd.getInputX();
-    } else {
-      return nullptr;
-    }
-
-    // One reshape is rewritten around the fused op; two would need a pair.
-    if (outerReshape && innerReshape)
-      return nullptr;
-
-    reshapeOp = outerReshape ? outerReshape : innerReshape;
-    candidate.add = innerAdd;
-    fold = candidate;
-    return matmulOp;
-  }
 
   static bool wouldBlockPrologueFusion(Value value) {
     Operation *op = value.getDefiningOp();
@@ -4562,6 +4566,234 @@ private:
     }
 
     rewriter.replaceOp(addOp, newOutput);
+    return mlir::success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// Matmul + SwiGLU Fusion Pattern
+//===----------------------------------------------------------------------===//
+//
+// Fuses the gated-MLP epilogue a dense MLP stages:
+//
+//   %mm    = mo.matmul(%x, %w) [transpose_b = true]   ; %w: [2H, K]
+//   %g, %u = mo.split(%mm, %sizes) [axis = 1]
+//   %s     = mo.silu(%g)
+//   %out   = mo.mul(%s, %u)                           ; [M, H]
+//
+// into `mo.composite.matmul_swiglu`, or `mo.composite.matmul_swiglu_bias`
+// when a `[2H]` bias is added to the matmul result before the split. The SM100
+// epilogue pairs output columns (2i, 2i + 1) as (silu operand, multiplier), so
+// the pattern permutes the weight's half-rows into adjacent rows; those ops
+// depend only on the weight, so the constant pipeline folds them or lifts them
+// to the init phase rather than running them per invocation.
+//
+// Only fires on sm_100a GPUs on BF16, and only for a constant-built weight:
+// permuting a runtime weight would cost a kernel per invocation. A block that
+// keeps its activations at rank N (the [batch, tokens, hidden] layout) wraps
+// the matmul in a reshape; the pattern peels it and re-applies it to the fused
+// [M, H] result.
+struct MatmulSwiGLUPattern
+    : public MO::DeviceAwareRewritePattern<OpRewritePattern, MO::MulOp> {
+  MatmulSwiGLUPattern(MLIRContext *ctx, MO::DeviceInfoMapping deviceInfoMapping)
+      : DeviceAwareRewritePattern(ctx, 2),
+        _deviceInfoMapping(std::move(deviceInfoMapping)) {}
+
+private:
+  MO::DeviceInfoMapping _deviceInfoMapping;
+
+  /// The fused kernel reads B as `[N, K]` rows, which `transpose_b` says
+  /// directly or the `NK` layout the canonicalizer rederives implies. Packed
+  /// weights carry their own packing.
+  static bool hasReadableWeight(MO::MatmulOp matmul) {
+    if (matmul.getPackedB())
+      return false;
+    auto layout = matmul.getInputB().getType().getLayoutAttr();
+    return matmul.getTransposeB() || (layout && layout.getFormat() == "NK");
+  }
+
+  /// Permutes `value` so row `i` of its first half lands at row `2i` and row
+  /// `i` of its second half at row `2i + 1`, by splitting its leading dimension
+  /// into
+  /// `[2, half]`, transposing those two, and flattening back. A rank-1 bias and
+  /// a rank-2 weight go through the same three ops, and the result keeps
+  /// `value`'s type.
+  static TensorValue sigmaPermuteRows(Value value,
+                                      DeviceAwareRewriter &rewriter) {
+    auto type = cast<MO::TensorType>(value.getType());
+    int64_t rank = type.getRank();
+    int64_t rows = type.getIntDim(0);
+    ASSERT_STREAM(rank >= 1, << "expected a bias or a weight");
+    ASSERT_STREAM(rows % 2 == 0, << "gate/up rows must be even");
+
+    // [2, half, <rest>] -> [half, 2, <rest>] -> [rows, <rest>].
+    SmallVector<TypedAttr> halvesDims{rewriter.getDimAttr(2),
+                                      rewriter.getDimAttr(rows / 2)};
+    SmallVector<TypedAttr> pairsDims{rewriter.getDimAttr(rows / 2),
+                                     rewriter.getDimAttr(2)};
+    SmallVector<int64_t> perm{1, 0};
+    for (int64_t dim = 1; dim < rank; ++dim) {
+      halvesDims.push_back(type.getDim(dim));
+      pairsDims.push_back(type.getDim(dim));
+      perm.push_back(dim + 1);
+    }
+
+    Location loc = value.getLoc();
+    TensorValue halves = rewriter.create<MO::Static::ReshapeOp>(
+        loc, type.cloneWith(halvesDims).cloneWithoutLayout(), value);
+    TensorValue pairs = rewriter.create<MO::TransposeOp>(
+        loc, type.cloneWith(pairsDims).cloneWithoutLayout(), halves,
+        rewriter.createHostConstant(loc, perm));
+    return rewriter.create<MO::Static::ReshapeOp>(loc, type, pairs);
+  }
+
+  LogicalResult
+  deviceAwareMatchAndRewrite(MO::MulOp mulOp,
+                             MO::DeviceAwareRewriter &rewriter) const override {
+    // `mul(silu(gate), up)`, with both operands halves of one split.
+    MO::SiluOp siluOp = mulOp.getInputX().getDefiningOp<MO::SiluOp>();
+    Value multiplier = mulOp.getInputY();
+    if (!siluOp) {
+      siluOp = mulOp.getInputY().getDefiningOp<MO::SiluOp>();
+      multiplier = mulOp.getInputX();
+    }
+    if (!siluOp)
+      return rewriter.notifyMatchFailure(mulOp, "neither input is mo.silu");
+
+    auto splitOp = siluOp.getInput().getDefiningOp<MO::SplitOp>();
+    if (!splitOp || splitOp->getNumResults() != 2 ||
+        splitOp->getResult(0) != siluOp.getInput() ||
+        splitOp->getResult(1) != multiplier)
+      return rewriter.notifyMatchFailure(
+          mulOp, "operands are not the halves of one mo.split");
+
+    // The fused op absorbs the [M, 2H] intermediate and both elementwise
+    // consumers, so nothing else may read them.
+    if (!siluOp.getInput().hasOneUse() || !siluOp.getResult().hasOneUse() ||
+        !multiplier.hasOneUse())
+      return rewriter.notifyMatchFailure(mulOp,
+                                         "split halves have other consumers");
+
+    auto resultType = cast<MO::TensorType>(mulOp.getResult().getType());
+    DeviceRefAttr device = resultType.getDeviceRef();
+    if (!device || device.getLabel() != M::kGPULabel ||
+        _deviceInfoMapping.get(device).getArch() != "sm_100a")
+      return rewriter.notifyMatchFailure(
+          mulOp, "swiglu fusion only applies to NVIDIA sm_100a GPUs");
+    if (!resultType.getElementType().isBF16())
+      return rewriter.notifyMatchFailure(mulOp, "swiglu requires bfloat16");
+
+    auto halvesType = dyn_cast<MO::TensorType>(multiplier.getType());
+    if (!halvesType || halvesType != resultType || halvesType.getRank() < 2)
+      return rewriter.notifyMatchFailure(mulOp,
+                                         "unsupported split halves shape");
+    int64_t rank = halvesType.getRank();
+    if (normalizeAxis(splitOp.getAxisAttr().getInt(), rank) != rank - 1)
+      return rewriter.notifyMatchFailure(mulOp,
+                                         "split must be on the last axis");
+    // Only the fused dimension has to be static; the leading ones are the
+    // block's (batch, tokens), which stay dynamic.
+    int64_t halfDim = halvesType.getIntDim(rank - 1);
+    if (halfDim == mlir::ShapedType::kDynamic)
+      return rewriter.notifyMatchFailure(mulOp,
+                                         "split halves' width must be static");
+
+    // A block keeps its activations at rank N, so the matmul's [M, 2H] result
+    // is reshaped up to them. Peel that reshape and re-apply it to the fused
+    // result: the fused op works on the rank-2 form.
+    Value splitInput = splitOp.getInput();
+    MO::Static::ReshapeOp activationReshape;
+    if (auto reshape = splitInput.getDefiningOp<MO::Static::ReshapeOp>();
+        reshape && reshape.getResult().hasOneUse()) {
+      auto inputType = cast<MO::TensorType>(reshape.getInput().getType());
+      auto outputType = cast<MO::TensorType>(reshape.getResult().getType());
+      if (inputType.getRank() != 2 || inputType.getIntDim(1) != 2 * halfDim ||
+          outputType.getIntDim(rank - 1) != 2 * halfDim)
+        return rewriter.notifyMatchFailure(
+            mulOp, "reshape must preserve the fused dimension");
+      activationReshape = reshape;
+      splitInput = reshape.getInput();
+    }
+
+    MO::Static::ReshapeOp biasReshape;
+    BiasFold biasFold;
+    MO::MatmulOp matmulOp =
+        matchMatmulThroughAdd(splitInput, biasReshape, biasFold);
+    if (biasReshape)
+      return rewriter.notifyMatchFailure(
+          mulOp, "matmul feeding the bias must not be reshaped");
+    if (!matmulOp)
+      matmulOp = splitInput.getDefiningOp<MO::MatmulOp>();
+    Value bias = biasFold.addend;
+    if (bias)
+      if (auto broadcast = bias.getDefiningOp<MO::Static::BroadcastToOp>())
+        bias = broadcast.getInput();
+    if (!matmulOp || !matmulOp.getResult().hasOneUse())
+      return rewriter.notifyMatchFailure(
+          mulOp, "split input is not a single-use matmul result");
+    if (!hasReadableWeight(matmulOp))
+      return rewriter.notifyMatchFailure(
+          mulOp, "matmul B operand is packed or not NK");
+
+    auto aType = dyn_cast<MO::TensorType>(matmulOp.getInputA().getType());
+    auto bType = dyn_cast<MO::TensorType>(matmulOp.getInputB().getType());
+    if (!aType || !bType || aType.getRank() != 2 || bType.getRank() != 2)
+      return rewriter.notifyMatchFailure(mulOp, "matmul inputs must be rank 2");
+    if (!aType.getElementType().isBF16() || !bType.getElementType().isBF16())
+      return rewriter.notifyMatchFailure(mulOp, "matmul inputs must be bf16");
+    if (bType.getIntDim(0) == mlir::ShapedType::kDynamic ||
+        bType.getIntDim(1) == mlir::ShapedType::kDynamic ||
+        bType.getIntDim(0) != 2 * halfDim)
+      return rewriter.notifyMatchFailure(
+          mulOp, "weight's N must be twice the split halves' width");
+    // TMA descriptors require 16-byte-aligned BF16 row strides.
+    int64_t k = bType.getIntDim(1);
+    if (halfDim <= 0 || k <= 0 || halfDim % 8 != 0 || k % 8 != 0)
+      return rewriter.notifyMatchFailure(
+          mulOp, "fused swiglu requires positive K and H multiples of 8");
+    if (!dependsOnNoAliasConstantLikesOnly(
+            matmulOp.getInputB().getDefiningOp()))
+      return rewriter.notifyMatchFailure(mulOp,
+                                         "weight is not built from constants");
+
+    if (biasFold.add) {
+      auto biasType = dyn_cast<MO::TensorType>(bias.getType());
+      if (!biasType || biasType.getRank() != 1 ||
+          biasType.getIntDim(0) != bType.getIntDim(0) ||
+          !dependsOnNoAliasConstantLikesOnly(bias.getDefiningOp()))
+        return rewriter.notifyMatchFailure(
+            mulOp, "bias must be a rank-1 [2H] constant");
+    }
+
+    if (!rewriter.addOps({matmulOp, splitOp, biasFold.add}))
+      return rewriter.notifyMatchFailure(
+          mulOp, "matched ops have inconsistent devices");
+
+    // The fused op writes [M, H], where H is the halves' fused dimension.
+    auto matmulType = cast<MO::TensorType>(matmulOp.getResult().getType());
+    auto fusedType = matmulType.cloneWith(SmallVector<TypedAttr>{
+        matmulType.getDim(0), rewriter.getDimAttr(halfDim)});
+    auto weight = sigmaPermuteRows(matmulOp.getInputB(), rewriter);
+    Value fused;
+    if (biasFold.add) {
+      fused = rewriter.create<MO::Composite::MatmulSwiGLUBiasOp>(
+          mulOp.getLoc(), fusedType, matmulOp.getInputA(), weight,
+          sigmaPermuteRows(bias, rewriter));
+    } else {
+      fused = rewriter.create<MO::Composite::MatmulSwiGLUOp>(
+          mulOp.getLoc(), fusedType, matmulOp.getInputA(), weight);
+    }
+    if (activationReshape)
+      fused = rewriter.create<MO::Static::ReshapeOp>(mulOp.getLoc(), resultType,
+                                                     fused);
+
+    // Replace the root before erasing its producers in dependency order.
+    rewriter.replaceOp(mulOp, fused);
+    for (Operation *dead : {siluOp.getOperation(), splitOp.getOperation(),
+                            activationReshape.getOperation(), biasFold.add,
+                            matmulOp.getOperation()})
+      if (dead)
+        rewriter.eraseOp(dead);
     return mlir::success();
   }
 };
@@ -5047,11 +5279,13 @@ void applyFuseParallelBundledAllReduceAddRMSNormQuantFP8(
 void populateFusionPatterns(mlir::RewritePatternSet &patterns,
                             PackParamCache &cache,
                             M::DeviceRefAttr targetDeviceRef,
-                            const MHAOptions &mhaOpts) {
+                            const MHAOptions &mhaOpts,
+                            const DeviceInfoMapping &deviceInfoMapping) {
   mlir::MLIRContext *ctx = patterns.getContext();
 
   patterns.add<MatmulConstBPattern>(ctx, cache, targetDeviceRef);
   patterns.add<ConvConstFilterPattern>(ctx, targetDeviceRef);
+  patterns.add<MatmulSwiGLUPattern>(ctx, deviceInfoMapping);
 
   patterns.add<GatherSumPattern, DecomposeSmallReduceAddPattern,
                MatmulTranspBPattern, ConcatZeroAxisPattern,

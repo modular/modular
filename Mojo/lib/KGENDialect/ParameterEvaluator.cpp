@@ -296,7 +296,7 @@ SymTabEvaluationContext::inlineApply(ParamOperatorAttr apply) {
       apply.getOpcode() != POC::ApplyResultSlot)
     return failure();
 
-  auto cst = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+  auto cst = FuncSymbolGenerator::dynCast(apply.getOperand(0));
   if (!cst)
     return failure();
 
@@ -352,13 +352,13 @@ ParameterEvaluator::ParameterEvaluator(ArrayRef<TypedAttr> declBindings) {
     appendIndexBinding(param);
 }
 
-std::pair<IntegerAttr, bool>
-ParameterEvaluator::narrowCondOp(Attribute attr, size_t rootDepth) {
+std::pair<IntegerAttr, bool> ParameterEvaluator::narrowCondOp(Attribute attr,
+                                                              size_t depth) {
   if (auto op = dyn_cast<ParamOperatorAttr>(attr);
       op && op.getOpcode() == POC::Cond) {
     TypedAttr typedCond = op.getOperands().front();
     assert(isScalarOf<KGENDType::kBool>(typedCond.getType()));
-    Attribute cond = replaceImpl(typedCond, rootDepth);
+    Attribute cond = replaceImpl(typedCond, depth);
     if (!cond)
       return {nullptr, true};
     return {
@@ -368,18 +368,18 @@ ParameterEvaluator::narrowCondOp(Attribute attr, size_t rootDepth) {
   return {nullptr, false};
 }
 
-Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
+Attribute ParameterEvaluator::doReplace(Attribute attr, size_t depth) {
   if (isa<ParameterScopeAttrInterface>(attr))
-    ++rootDepth;
+    ++depth;
 
   // If a parameter got rebound to an index reference, we need to increase its
   // depth based on the current signature, per STCHDDDOS.
   // FIXME: Is there a better way around this? This previously manifested as
   // unintentional name shadowing problems, but walking here is inefficient.
   auto upbindValue = [&](TypedAttr value) -> TypedAttr {
-    if (rootDepth + inputDepth == 0)
+    if (depth == 0)
       return value;
-    IndexDepthAdjuster adjuster(/*adjustDepth=*/rootDepth + inputDepth);
+    IndexDepthAdjuster adjuster(/*adjustDepth=*/depth);
     return adjuster.replace(value);
   };
 
@@ -387,7 +387,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   Attribute result = attr;
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     // If the referenced parameter is not bound, forward the reference.
-    auto declRefType = doReplace(declRef.getType(), rootDepth);
+    auto declRefType = doReplace(declRef.getType(), depth);
     // Forward nullptr from elaborator to signal a skipped node to avoid race
     // condition.
     if (!declRefType)
@@ -407,10 +407,10 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
       result = ParamDeclRefAttr::get(declRef.getName(), declRefType);
     }
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
-             indexRef && indexRef.getDepth() == rootDepth) {
+             indexRef && indexRef.getDepth() == depth) {
     assert(indexRef.getIndex() < indexBindings.size() &&
            "parameter index out of range");
-    auto indexRefType = doReplace(indexRef.getType(), rootDepth);
+    auto indexRefType = doReplace(indexRef.getType(), depth);
     // Forward nullptr from elaborator to signal a skipped node to avoid race
     // condition.
     if (!indexRefType)
@@ -435,16 +435,16 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
-  } else if (auto [condVal, skip] = narrowCondOp(attr, rootDepth);
+  } else if (auto [condVal, skip] = narrowCondOp(attr, depth);
              condVal || skip) {
     if (skip)
       return nullptr;
     // If condition is a constant rebind only one of the clauses.
     auto op = cast<ParamOperatorAttr>(attr);
     if (condVal.getValue().isZero())
-      result = replaceImpl(op.getOperands()[2], rootDepth);
+      result = replaceImpl(op.getOperands()[2], depth);
     else
-      result = replaceImpl(op.getOperands()[1], rootDepth);
+      result = replaceImpl(op.getOperands()[1], depth);
     if (!result)
       return nullptr;
   } else if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
@@ -452,19 +452,19 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
     // BindParamsAttr must always be re-created using an Evaluation Context.
     SmallVector<TypedAttr> newParamValues;
     for (TypedAttr param : bindParams.getParamValues()) {
-      auto newParam = replaceImpl(param, rootDepth);
+      auto newParam = replaceImpl(param, depth);
       if (!newParam)
         return nullptr;
       changed |= newParam != param;
       newParamValues.push_back(cast<TypedAttr>(newParam));
     }
 
-    Attribute newGenerator = replaceImpl(bindParams.getGenerator(), rootDepth);
+    Attribute newGenerator = replaceImpl(bindParams.getGenerator(), depth);
     if (!newGenerator)
       return nullptr;
     changed |= newGenerator != bindParams.getGenerator();
 
-    Type newType = replaceImpl(bindParams.getType(), rootDepth);
+    Type newType = replaceImpl(bindParams.getType(), depth);
     if (!newType)
       return nullptr;
     changed |= newType != bindParams.getType();
@@ -490,7 +490,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
         [&](Attribute attr) {
           if (failed)
             return;
-          Attribute newAttr = replaceImpl(attr, rootDepth);
+          Attribute newAttr = replaceImpl(attr, depth);
           if (!newAttr)
             failed = true;
           changed |= newAttr != attr;
@@ -499,7 +499,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
         [&](Type type) {
           if (failed)
             return;
-          Type newType = replaceImpl(type, rootDepth);
+          Type newType = replaceImpl(type, depth);
           if (!newType)
             failed = true;
           changed |= newType != type;
@@ -523,11 +523,11 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   return result;
 }
 
-Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
+Type ParameterEvaluator::doReplace(Type type, size_t depth) {
   Type result = type;
 
   if (isa<ParameterScopeTypeInterface>(type))
-    ++rootDepth;
+    ++depth;
 
   // Rebind types in aggregates that implement SubElementTypeInterface.
   SmallVector<Attribute, 16> newAttrs;
@@ -539,7 +539,7 @@ Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
       [&](Attribute attr) {
         if (failed)
           return;
-        Attribute newAttr = replaceImpl(attr, rootDepth);
+        Attribute newAttr = replaceImpl(attr, depth);
         if (!newAttr)
           failed = true;
         changed |= newAttr != attr;
@@ -548,7 +548,7 @@ Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
       [&](Type type) {
         if (failed)
           return;
-        Type newType = replaceImpl(type, rootDepth);
+        Type newType = replaceImpl(type, depth);
         if (!newType)
           failed = true;
         changed |= newType != type;
@@ -616,8 +616,9 @@ PartiallySpecializedInputParams::from(
   boundParams.resize(paramTypes.size());
 
   evaluator.setEvaluationContext(evaluationContext);
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  // Every binding is written inside the specialized generator, the scope the
+  // parameter types and the body live in.
+  IndexDepthAdjuster addOneAdjuster(/*adjustDepth=*/1);
 
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);
@@ -635,36 +636,35 @@ PartiallySpecializedInputParams::from(
     // Even if we're skipping a binding site, we still need to remap the decl.
     // TODO: Disallow UnboundAttr for skipping bindings.
     if (::isa<UnboundAttr>(value)) {
-      // Set the binding to a declref of the thing itself - that will keep it
-      // from becoming #kgen.unbound.  This #param.index.ref will have a level
-      // of -1, and we adjust the level of its type by -1 so it balances out
-      // correctly when referenced.
-      auto adjustedParamType = minusOneAdjuster.replace(remappedDeclType);
+      // An unbound parameter stays a parameter of the specialized generator:
+      // bind it to that generator's own variable at its new index.
       auto value = ParamIndexRefAttr::get(
-          /*depth=*/-1, unboundParamTypes.size(), adjustedParamType);
+          /*depth=*/0, unboundParamTypes.size(), remappedDeclType);
       unboundParamTypes.push_back(remappedDeclType);
       evaluator.appendIndexBinding(value);
     } else {
-      // We must remap the value type being provided as well, because it may
-      // be referring to outer-context indexed parameters, whose depth will be
-      // increased when substituted into this signature, per STCHDDDOS.
-      auto valueType = value.getType();
-      remappedDeclType = minusOneAdjuster.replace(remappedDeclType);
-      if (valueType != remappedDeclType &&
-          !isEqualCanon(valueType, remappedDeclType)) {
+      // The value comes from the caller, one scope out, and may refer to
+      // outer-context indexed parameters. Increase depth by one when pushing
+      // into the current scope.
+      auto inScope = addOneAdjuster.replace(value);
+      auto inScopeType = inScope.getType();
+      if (inScopeType != remappedDeclType &&
+          !isEqualCanon(inScopeType, remappedDeclType)) {
         if (!emitErrorFn)
           return {};
+        // Report both types as the caller writes them.
+        IndexDepthAdjuster toCallerScope(/*adjustDepth=*/-1);
         emitErrorFn() << "caller input parameter #" << paramNo << " has type "
-                      << valueType << " but callee expected type "
-                      << remappedDeclType;
+                      << value.getType() << " but callee expected type "
+                      << toCallerScope.replace(remappedDeclType);
         return {};
       }
 
       // Realign sugar if necessary.
-      if (valueType != remappedDeclType)
-        value = ParamOperatorAttr::getRebind(value, remappedDeclType);
+      if (inScopeType != remappedDeclType)
+        inScope = ParamOperatorAttr::getRebind(inScope, remappedDeclType);
 
-      evaluator.appendIndexBinding(value);
+      evaluator.appendIndexBinding(inScope);
       boundParams.set(paramNo);
     }
   }

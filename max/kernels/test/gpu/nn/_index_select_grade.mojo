@@ -51,31 +51,8 @@ struct SelectionStats(Copyable, Movable):
         sit against the peak, the less any disagreement means.
         """
         print(
-            "SELGATE ",
-            label,
-            " rows=",
-            self.rows,
-            " slots=",
-            self.slots,
-            " below=",
-            self.below,
-            " rows_below=",
-            self.rows_below,
-            " count_mismatch=",
-            self.count_mismatch,
-            " deficit_mean=",
-            self.deficit_sum / Float64(max(self.rows, 1)),
-            " deficit_max=",
-            self.deficit_max,
-            " gap_max=",
-            self.gap_max,
-            " spread_min=",
-            self.spread_min,
-            " fp=",
-            self.fp_a,
-            ":",
-            self.fp_b,
-            sep="",
+            t"SELGATE"
+            t" {label} rows={self.rows} slots={self.slots} below={self.below} rows_below={self.rows_below} count_mismatch={self.count_mismatch} deficit_mean={self.deficit_sum / Float64(max(self.rows, 1))} deficit_max={self.deficit_max} gap_max={self.gap_max} spread_min={self.spread_min} fp={self.fp_a}:{self.fp_b}"
         )
 
     def passed(self, max_deficit: Float32 = 0.01) -> Bool:

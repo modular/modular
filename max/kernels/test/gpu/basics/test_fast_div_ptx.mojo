@@ -53,7 +53,8 @@ def contains_power_of_2_sequence(asm: String, width: Int = 32) raises -> Bool:
 def fast_div_kernel[
     dtype: DType,
     divisor: Int,
-](input: TileTensor[dtype, RowMajorLayout[ComptimeInt[1]], MutAnyOrigin],):
+    input_origin: MutOrigin,
+](input: TileTensor[dtype, RowMajorLayout[ComptimeInt[1]], input_origin],):
     comptime fast_div = FastDiv[dtype](divisor)
     var x = input[0]
     var result = rebind[Scalar[fast_div.uint_type]](x) / fast_div
@@ -62,8 +63,8 @@ def fast_div_kernel[
 
 def main() raises:
     # Test uint32 FastDiv.
-    comptime kernel_u32_pow2 = fast_div_kernel[.uint32, 4]
-    comptime kernel_u32_div = fast_div_kernel[.uint32, 3]
+    comptime kernel_u32_pow2 = fast_div_kernel[.uint32, 4, MutUntrackedOrigin]
+    comptime kernel_u32_div = fast_div_kernel[.uint32, 3, MutUntrackedOrigin]
 
     var asm = _compile_code[
         kernel_u32_pow2,
@@ -78,8 +79,8 @@ def main() raises:
     assert_true(contains_fastdiv_div_sequence(asm))
 
     # Test uint64 FastDiv.
-    comptime kernel_u64_pow2 = fast_div_kernel[.uint64, 4]
-    comptime kernel_u64_div = fast_div_kernel[.uint64, 3]
+    comptime kernel_u64_pow2 = fast_div_kernel[.uint64, 4, MutUntrackedOrigin]
+    comptime kernel_u64_div = fast_div_kernel[.uint64, 3, MutUntrackedOrigin]
 
     asm = _compile_code[
         kernel_u64_pow2,

@@ -95,9 +95,9 @@ from _rocblas.rocblas import (
     rocblas_destroy_handle,
 )
 from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
-from max.gpu.host._legacy._kernel_load_gate import KernelLoadScope
-from max.gpu.host._legacy._amdgpu_hip import HIP
-from max.gpu.host._legacy._nvidia_cuda import CUDA
+from max.gpu.host import KernelLoadScope
+from max.gpu.host import HIP
+from max.gpu.host import CUDA
 from layout import Idx, TileTensor, row_major
 from layout.tile_tensor import (
     NullableTileTensor,
@@ -339,8 +339,8 @@ def _ffi_void_ptr[
 @inline(.always)
 def _ffi_void_ptr[
     T: AnyType, origin: Origin, addr: AddressSpace
-](ptr: Optional[Pointer[T, origin, address_space=addr]]) -> OptionalPointer[
-    NoneType, MutAnyOrigin
+](ptr: Optional[Pointer[T, origin, address_space=addr]]) -> Optional[
+    Pointer[NoneType, MutAnyOrigin]
 ]:
     """Cast an optional non-null pointer to a nullable void pointer for vendor
     FFI calls.
@@ -365,7 +365,7 @@ def _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
                         1,
                         1,
                         0,
-                        OptionalPointer[Int8, MutAnyOrigin](),
+                        Optional[Pointer[Int8, MutAnyOrigin]](),
                     )
                 )
             else:
@@ -381,7 +381,7 @@ def _get_global_handle[
     dtype: DType,
     backend: Backend = _resolve_backend[Backend.AUTOMATIC, dtype=dtype](),
 ](ctx: DeviceContext) raises -> Handle[backend]:
-    var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.id()}")
+    var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.device().id}")
     var global_ptr = _get_global_or_null(HANDLE_NAME)
     if case .Some(global_ptr) = global_ptr:
         var ptr = global_ptr.unsafe_bitcast[Handle[backend]]()

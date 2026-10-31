@@ -151,6 +151,7 @@ class ConfigFileModel(MAXBaseModel):
         Args:
             data: Dictionary of data to validate, may contain 'config_file' key.
                   This dict already contains CLI args and env vars merged by cyclopts.
+
         Returns:
             Dictionary with config file values merged in if config_file was provided.
         """

@@ -32,7 +32,6 @@ from std.random import Random
 
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 
 from nn.normalization import _rms_norm_gpu_block_subkernel, _sum_to_mean
@@ -71,7 +70,7 @@ def _rms_norm_fused_residual_cpu_2d[
     gamma: TileTensor[dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
-    out_shape: IndexList[2],
+    out_shape: Coord[Int, Int],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ):
@@ -317,7 +316,7 @@ def rms_norm_fused_residual_cpu[
         gamma,
         epsilon,
         weight_offset,
-        out_shape=IndexList[2](prod_all_but_last_dim, last_dim),
+        out_shape=(prod_all_but_last_dim, last_dim),
         dropout_p=dropout_p,
         seed=seed,
     )
@@ -367,11 +366,10 @@ def _rms_norm_fused_residual_cpu_entry[
     # Note: we only support reduction along the last dimension
     if Int(gamma.dim[0]()) != Int(shape[rank - 1]):
         raise Error(
-            "Gamma size "
-            + String(gamma.dim[0]())
-            + " does not match dimension of reduction "
-            + String(shape[rank - 1].value())
-            + "."
+            String(
+                t"Gamma size {gamma.dim[0]()} does not match dimension of "
+                t"reduction {shape[rank - 1].value()}."
+            )
         )
 
     if Int(shape.product()) == 0:
@@ -844,11 +842,10 @@ def _rms_norm_fused_residual_impl[
     # Note: we only support reduction along the last dimension
     if Int(gamma.dim[0]()) != Int(shape[rank - 1]):
         raise Error(
-            "Gamma size "
-            + String(gamma.dim[0]())
-            + " does not match dimension of reduction "
-            + String(shape[rank - 1].value())
-            + "."
+            String(
+                t"Gamma size {gamma.dim[0]()} does not match dimension of "
+                t"reduction {shape[rank - 1].value()}."
+            )
         )
 
     if Int(shape.product()) == 0:
@@ -954,7 +951,7 @@ def rms_norm_fused_residual[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_residual",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         _rms_norm_fused_residual_impl[
             target=target,

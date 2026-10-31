@@ -110,7 +110,7 @@ library, making tests faster and more isolated.
 | `-mlir-print-debuginfo`           | Include debug info in IR output                        |
 | `--kgen-print-inline-type-values` | Pretty-print type values                               |
 | `-o /dev/null`                    | Discard output (for error-only tests)                  |
-| `--mojo-disable-builtins`         | Don't use stdlib stubs                                 |
+| `--disable-builtins`              | Don't use stdlib stubs                                 |
 | `-allow-unregistered-dialect`     | Accept unregistered MLIR dialects                      |
 
 ## FileCheck Conventions

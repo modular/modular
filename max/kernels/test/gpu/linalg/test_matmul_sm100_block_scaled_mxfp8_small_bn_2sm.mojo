@@ -37,7 +37,6 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul_small_bn import (
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     SF_MN_GROUP_SIZE,
@@ -48,6 +47,7 @@ from linalg.fp4_utils import (
 )
 from std.random import random_ui64
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.utils.coord import Coord
 
 
 def simple_init() -> Bool:
@@ -66,9 +66,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -85,8 +85,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t"  problem shape=({Int(m)}, {Int(n)},"
         t" {Int(k)})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
-        t" cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
-        t" {cluster_shape[1]}, {cluster_shape[2]})"
+        t" cta_group={cta_group} cluster_shape=(Int({cluster_shape[0]}), Int("
+        t" {cluster_shape[1]}), Int({cluster_shape[2]}))"
         t" swapAB={swapAB} k_group_size={k_group_size}"
         t" SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
@@ -221,8 +221,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -299,10 +301,10 @@ def main() raises:
         # 2SM tests: sweep MMA_N in [16, 32, 48, 64, 96].
         # MMA_N=24 is excluded: BN=12 breaks TMA tile layout constraints.
         comptime for mma_n in [16, 32, 48, 64, 96]:
-            comptime block_tile = Index(128, mma_n // 2, BK)
-            comptime umma = Index(256, mma_n, MMA_K)
+            comptime block_tile = (128, mma_n // 2, BK)
+            comptime umma = (256, mma_n, MMA_K)
 
-            # Basic cluster_shape=(2,1,1)
+            # Basic cluster_shape=(Int(2), Int(1), Int(1))
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
                 dtype,
@@ -310,7 +312,7 @@ def main() raises:
                 scale_dtype,
                 block_tile,
                 umma,
-                cluster_shape=StaticTuple[Int32, 3](Int32(2), 1, 1),
+                cluster_shape=(2, 1, 1),
                 cta_group=2,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -326,7 +328,7 @@ def main() raises:
                 scale_dtype,
                 block_tile,
                 umma,
-                cluster_shape=StaticTuple[Int32, 3](Int32(2), 1, 1),
+                cluster_shape=(2, 1, 1),
                 cta_group=2,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -342,7 +344,7 @@ def main() raises:
                 scale_dtype,
                 block_tile,
                 umma,
-                cluster_shape=StaticTuple[Int32, 3](Int32(2), 1, 1),
+                cluster_shape=(2, 1, 1),
                 cta_group=2,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -358,7 +360,7 @@ def main() raises:
                 scale_dtype,
                 block_tile,
                 umma,
-                cluster_shape=StaticTuple[Int32, 3](Int32(2), 1, 1),
+                cluster_shape=(2, 1, 1),
                 cta_group=2,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -375,7 +377,7 @@ def main() raises:
                 scale_dtype,
                 block_tile,
                 umma,
-                cluster_shape=StaticTuple[Int32, 3](Int32(4), 1, 1),
+                cluster_shape=(4, 1, 1),
                 cta_group=2,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -391,7 +393,7 @@ def main() raises:
                 scale_dtype,
                 block_tile,
                 umma,
-                cluster_shape=StaticTuple[Int32, 3](Int32(2), Int32(2), 1),
+                cluster_shape=(2, 2, 1),
                 cta_group=2,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -401,8 +403,8 @@ def main() raises:
             ](ctx, Idx[1], Idx[6656], Idx[16384])
 
         # Kimi-K2.5 shape that triggered a race condition in fp4 2SM
-        comptime kimi_block_tile = Index(128, 8, BK)
-        comptime kimi_umma = Index(256, 16, MMA_K)
+        comptime kimi_block_tile = (128, 8, BK)
+        comptime kimi_umma = (256, 16, MMA_K)
         test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             dtype,
             dtype,
@@ -410,7 +412,7 @@ def main() raises:
             scale_dtype,
             kimi_block_tile,
             kimi_umma,
-            cluster_shape=StaticTuple[Int32, 3](Int32(2), 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,

@@ -48,7 +48,8 @@ class CpuDevice : public Device {
 public:
   static constexpr API api = Device::cpuAPI;
 
-  CpuDevice(Device::MemInfo memInfo = Device::MemInfo());
+  CpuDevice(Device::MemInfo memInfo = Device::MemInfo(),
+            bool useMemoryManager = true);
   ~CpuDevice() override;
 
   ErrorOr<int> getApiVersion() const override;

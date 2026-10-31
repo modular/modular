@@ -32,4 +32,5 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
     @property
     def has_vision_inputs(self) -> bool:
+        """Whether this batch carries images the vision tower should encode."""
         return self.pixel_values is not None

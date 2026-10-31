@@ -23,6 +23,13 @@ mo.graph @resize_nearest_ok<N, C, H, W -> O0, O1, O2, O3>(%arg0: !mo.tensor<[N, 
 // -----
 
 mo.graph @resize_bicubic_ok<N, C, H, W -> O0, O1, O2, O3>(%arg0: !mo.tensor<[N, C, H, W], f32>, %size: !mo.tensor<[4], si64>) -> !mo.tensor<[O0, O1, O2, O3], f32> {
-  %0 = rmo.mo.resize.bicubic<() -> P0, P1, P2, P3>(%arg0, %size) : (!mo.tensor<[N, C, H, W], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[P0, P1, P2, P3], f32>
+  %0 = rmo.mo.resize.bicubic<() -> P0, P1, P2, P3>(%arg0, %size) [antialias = false] : (!mo.tensor<[N, C, H, W], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[P0, P1, P2, P3], f32>
+  mo.output<P0, P1, P2, P3> %0 : !mo.tensor<[P0, P1, P2, P3], f32>
+}
+
+// -----
+
+mo.graph @resize_bicubic_antialias_ok<N, C, H, W -> O0, O1, O2, O3>(%arg0: !mo.tensor<[N, C, H, W], f32>, %size: !mo.tensor<[4], si64>) -> !mo.tensor<[O0, O1, O2, O3], f32> {
+  %0 = rmo.mo.resize.bicubic<() -> P0, P1, P2, P3>(%arg0, %size) [antialias = true] : (!mo.tensor<[N, C, H, W], f32>, !mo.tensor<[4], si64>) -> !mo.tensor<[P0, P1, P2, P3], f32>
   mo.output<P0, P1, P2, P3> %0 : !mo.tensor<[P0, P1, P2, P3], f32>
 }

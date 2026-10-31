@@ -113,7 +113,9 @@ def bench_shape[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                1, BLOCK_SCALE_N, BLOCK_SCALE_K
+            ),
         ](
             c_ref_dev,
             a_dev,
@@ -147,23 +149,11 @@ def bench_shape[
     var tflops_naive = flops / (med_naive * 1.0e9)
 
     print(
-        "MxNxK=",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        " | tiled: ",
-        med_mine,
-        " ms (",
-        tflops_mine,
-        " TFLOP/s) | naive: ",
-        med_naive,
-        " ms (",
-        tflops_naive,
-        " TFLOP/s) | speedup: ",
-        med_naive / med_mine,
-        "x",
+        (
+            t"MxNxK={M}x{N}x{K} | tiled: {med_mine} ms ({tflops_mine} TFLOP/s)"
+            t" | naive: {med_naive} ms ({tflops_naive} TFLOP/s) | speedup:"
+            t" {med_naive / med_mine}x"
+        ),
         sep="",
     )
 

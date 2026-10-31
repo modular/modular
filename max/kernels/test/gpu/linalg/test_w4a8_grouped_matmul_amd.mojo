@@ -263,25 +263,10 @@ def _check[
         assert_true(ch[i] == sentinel, "guard rows changed")
     __ownership_keepalive(a, b, sa, sb, offsets, expert_ids, c, reference, mag)
     print(
-        "W4A8 N=",
-        N,
-        " K=",
-        K,
-        " rows=",
-        rows,
-        " active=",
-        num_active,
-        " forced_bk=",
-        forced_bk,
-        " dense_mma_32=",
-        dense_mma_32,
-        " max_abs_error=",
-        max_error,
-        " max_abs_reference=",
-        max_reference,
-        " nonzero_reference=",
-        nonzero_reference,
-        " PASS",
+        t"W4A8 N= {N}  K= {K}  rows= {rows}  active= {num_active}  forced_bk="
+        t" {forced_bk}  dense_mma_32= {dense_mma_32}  max_abs_error="
+        t" {max_error}  max_abs_reference= {max_reference}  nonzero_reference="
+        t" {nonzero_reference}  PASS"
     )
 
 

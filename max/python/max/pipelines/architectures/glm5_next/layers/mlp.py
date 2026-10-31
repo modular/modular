@@ -25,11 +25,11 @@ The MoE below gets this order from the fused ``"silu"`` activation with a
 ``limit``. The dense MLP calls :func:`clamped_swiglu` directly, because the
 other clamped-SwiGLU paths in MAX compute something else:
 
-* ``max/python/max/nn/activation.py`` -- ``swigluoai`` adds GPT-OSS's
+* ``max/python/max/nn/legacy/activation.py`` -- ``swigluoai`` adds GPT-OSS's
   ``+1`` bias on ``up`` and an ``alpha`` inside the sigmoid.
-* ``max/python/max/nn/moe/moe.py`` -- ``make_concatenated_gated_activation_fn``
+* ``max/python/max/nn/legacy/moe/moe.py`` -- ``make_concatenated_gated_activation_fn``
   with a ``limit`` applies the activation and *then* clamps.
-* ``max/python/max/nn/linear.py`` -- the ``swiglu_limit`` branch does the same.
+* ``max/python/max/nn/legacy/linear.py`` -- the ``swiglu_limit`` branch does the same.
 """
 
 from __future__ import annotations
@@ -46,11 +46,11 @@ from max.graph import (
     TensorValueLike,
     Value,
 )
-from max.nn import MLP
-from max.nn.activation import GatedActivation
-from max.nn.comm.ep import EPBatchManager
-from max.nn.layer import Module
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy import MLP
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.layer import Module
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
 from max.pipelines.architectures.deepseekV3_2.layers.moe import DeepseekV3_2MoE
 
 from ..model_config import Glm5NextConfig, token_shard_degree
@@ -194,6 +194,14 @@ class Glm5NextMlpSublayer(Module):
     both.
     """
 
+    token_shard_name: str = "moe_token_shard"
+    """Prefix of the token-shard dim this sublayer names.
+
+    Every decoder layer splits the same row count, so they share one name. An
+    MTP draft step splits a different count, and reusing the name would bind
+    two runtime sizes to one symbol.
+    """
+
     def __init__(
         self,
         mlp: Glm5NextMLP | Glm5NextMoE,
@@ -258,7 +266,7 @@ class Glm5NextMlpSublayer(Module):
         # which is where `slice_tensor` wants its bounds.
         total = inputs.host_input_row_offsets[-1].cast(DType.int64)
         shards = [
-            token_shard(x, i, self.token_shards, total)
+            token_shard(x, i, self.token_shards, total, self.token_shard_name)
             for i, x in enumerate(xs)
         ]
         outs = forward_moe_sharded_layers(list(self.shards), shards)

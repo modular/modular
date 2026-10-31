@@ -12,10 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for resize operations."""
 
+from collections.abc import Iterable
 from enum import Enum, IntEnum
 
 from max._core.dialects import builtin, kgen, mo, rmo
+from max.dtype import DType
 
+from ..dim import DimLike
 from ..graph import Graph
 from ..type import Shape, ShapeLike, TensorType
 from ..value import TensorValue, TensorValueLike
@@ -234,13 +237,23 @@ def resize_nearest(
 
 def resize_bicubic(
     input: TensorValueLike,
-    size: ShapeLike,
+    size: ShapeLike | TensorValue,
+    *,
+    antialias: bool = False,
+    out_dims: Iterable[DimLike] | None = None,
 ) -> TensorValue:
     """Resizes a tensor using bicubic interpolation.
 
     Produces an output tensor whose dimensions are given by ``size`` using a
-    4x4-pixel Keys/PyTorch (``a = -0.75``) cubic convolution filter with
-    half-pixel coordinate mapping.
+    cubic convolution filter with half-pixel coordinate mapping. By default
+    the filter is the 4x4-pixel Keys/PyTorch cubic, ``a = -0.75``. With
+    ``antialias``, it is the ``a = -0.5`` cubic stretched by the downscale
+    factor with its weights normalized, the filter of PyTorch's
+    ``interpolate(mode="bicubic", antialias=True)`` and Pillow's ``BICUBIC``.
+    The antialiased resize runs on the CPU, in float32, and matches PyTorch
+    to float32 rounding. A uint8 ``input`` resizes to a uint8 output: the
+    float32 result rounded half to even and clamped to ``[0, 255]``, the same
+    bits as casting to float32, resizing, and then rounding and clamping.
 
     .. code-block:: python
 
@@ -265,36 +278,89 @@ def resize_bicubic(
             channels-first (NCHW) layout,
             ``(batch_size, channels, height, width)``.
         size: The desired output shape, of length 4,
-            ``(batch_size, channels, height, width)``.
+            ``(batch_size, channels, height, width)``: a shape, or a rank-1
+            int64 :class:`~max.graph.TensorValue` on the CPU giving it at
+            runtime.
+        antialias: Whether to use the antialiased ``a = -0.5`` filter, which
+            reads more input pixels when downscaling. ``input`` must then be
+            float32 or uint8 on the CPU.
+        out_dims: The output's dimensions. Required when ``size`` is a
+            :class:`~max.graph.TensorValue`, to declare the symbolic output
+            type, and refused otherwise. Its batch and channel dims must be
+            the input's, and the runtime ``size`` must agree with them.
 
     Returns:
         A ``TensorValue`` representing the resized tensor, with shape ``size``
         and the same dtype as ``input``.
 
     Raises:
-        ValueError: If ``input`` doesn't have rank 4, or if ``size`` has a
-            different length.
+        ValueError: If ``input`` doesn't have rank 4, if ``size`` has a
+            different length or other batch or channel dims, if ``size`` is a
+            tensor and ``out_dims`` is not given or the other way round, if a
+            tensor ``size`` is not a CPU int64 tensor of shape ``[4]``, or if
+            ``antialias`` is set for an input that is not float32 or uint8 on
+            the CPU.
     """
     input = TensorValue(input)
-    size = Shape(size)
 
     if input.rank != 4:
         raise ValueError(
             f"resize_bicubic requires rank-4 (NCHW) input, got rank"
             f" {input.rank}"
         )
-    if len(size) != 4:
+    if antialias and (
+        input.dtype not in (DType.float32, DType.uint8)
+        or not input.device.is_cpu()
+    ):
         raise ValueError(
-            f"size must have 4 elements for NCHW format, got {len(size)}"
+            "an antialiased resize_bicubic takes a float32 or uint8 input on"
+            f" the CPU, got {input.dtype} on {input.device}"
+        )
+    if isinstance(size, TensorValue):
+        if out_dims is None:
+            raise ValueError(
+                f"must pass out_dims with a tensor-valued size {size}"
+            )
+        if (
+            size.dtype != DType.int64
+            or size.shape != [4]
+            or not size.device.is_cpu()
+        ):
+            raise ValueError(
+                "a tensor-valued size must be a CPU int64 tensor of shape"
+                f" [4], got {size.type}"
+            )
+        shape = Shape(out_dims)
+        size_operand = size
+    elif out_dims is not None:
+        raise ValueError(
+            "out_dims declares a tensor-valued size's dims; a static size"
+            " is its own"
+        )
+    else:
+        shape = Shape(size)
+        size_operand = shape_to_tensor(shape)
+    if len(shape) != 4:
+        raise ValueError(
+            f"size must have 4 elements for NCHW format, got {len(shape)}"
+        )
+    if shape[:2] != input.shape[:2]:
+        raise ValueError(
+            "resize_bicubic resizes height and width only: size must keep"
+            f" the input's batch and channel dims {input.shape[:2]}, got"
+            f" {shape[:2]}"
         )
 
-    result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
+    result_type = TensorType(
+        dtype=input.dtype, shape=shape, device=input.device
+    )
 
     return Graph.current._add_op_generated(
         rmo.MoResizeBicubicOp,
         result_type.to_mlir(),
         input,
-        shape_to_tensor(size),
+        size_operand,
+        builtin.BoolAttr(antialias),
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 

@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Muse Glimmer with the pipeline registry."""
+
+from pathlib import Path
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
@@ -51,5 +54,6 @@ muse_glimmer_arch = SupportedArchitecture(
     supports_device_graph_capture=True,
     tool_parser="muse_glimmer",
     reasoning_parser="muse_glimmer",
+    format_spec=Path(__file__).parent / "formatspec.json",
     default_structured_output_backend="xgrammar",
 )

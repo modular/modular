@@ -78,17 +78,8 @@ def test_v2_main_loop[
     )
 
     print(
-        "--- MhaPrefillV2 8-warp (BM=",
-        BM,
-        " Q/warp=",
-        Q_BLOCK_SIZE,
-        " KV=",
-        KV_BLOCK,
-        " D=",
-        depth,
-        " tiles=",
-        NUM_TILES,
-        ") ---",
+        t"--- MhaPrefillV2 8-warp (BM= {BM}  Q/warp= {Q_BLOCK_SIZE}  KV="
+        t" {KV_BLOCK}  D= {depth}  tiles= {NUM_TILES} ) ---"
     )
 
     var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
@@ -165,14 +156,8 @@ def test_v2_main_loop[
                     mismatches += 1
                     if mismatches <= 5:
                         print(
-                            "MISMATCH q=",
-                            q,
-                            " d=",
-                            d,
-                            " got=",
-                            got,
-                            " expected=",
-                            expected,
+                            t"MISMATCH q= {q}  d= {d}  got= {got}  expected="
+                            t" {expected}"
                         )
 
     print("  mismatches=", mismatches, " max_diff=", max_diff)

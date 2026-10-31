@@ -16,7 +16,7 @@ A pipeline describes each graph it runs as a :class:`GraphSpec` under a role
 key, such as ``"decoder"`` or ``"sampler"``. The keys are whatever the
 pipeline's task defines; :class:`GraphRole` holds MAX's built-in ones.
 :func:`compile_and_init_graphs` compiles and initializes the graphs,
-returning one :class:`~max.experimental.compilation.CompiledCallable` per
+returning one :class:`~max.tensor.compilation.CompiledCallable` per
 role.
 """
 
@@ -35,15 +35,15 @@ from max import tree
 from max._artifact.value_types import ArtifactError, treedef_to_json
 from max.driver import DLPackArray
 from max.engine import CompiledModel, InferenceSession, Model
-from max.experimental.compilation import CompiledCallable, StagedGraph
-from max.experimental.nn import Module as ModuleV3
-from max.experimental.sharding import TensorLayout
-from max.experimental.sharding.types import as_layout
-from max.experimental.tensor import Tensor
 from max.graph import Graph, Type
 from max.graph import Module as GraphModule
-from max.nn import Module
-from max.nn.graph_groups import HiddenStates, Logits
+from max.nn import Module as ModuleV3
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import HiddenStates, Logits
+from max.tensor import Tensor
+from max.tensor.compilation import CompiledCallable, StagedGraph
+from max.tensor.sharding import TensorLayout
+from max.tensor.sharding.types import as_layout
 
 
 class GraphRole(str, Enum):
@@ -60,6 +60,18 @@ class GraphRole(str, Enum):
 
     VISION = "vision"
     """The vision encoder: image patches to soft-token embeddings."""
+
+    VISION_PREPROCESS = "vision_preprocess"
+    """One image's preprocessing, on the CPU: decoded pixels and the size to
+    resize them to, to the vision encoder's inputs for that image. Only
+    ``max export`` builds it, for a serving engine; MAX serve preprocesses in
+    its tokenizers."""
+
+    VISION_PREPROCESS_VIDEO = "vision_preprocess_video"
+    """One encoder attention segment of a video clip's preprocessing, on the
+    CPU: the segment's decoded frames and the sizes to resize them to, to the
+    vision encoder's inputs for that segment. Only ``max export`` builds it,
+    for a model whose segment is not a one-frame image."""
 
     ENCODER = "encoder"
     """The single forward pass of a model without a KV cache, such as an
@@ -78,8 +90,8 @@ class GraphRole(str, Enum):
 class GraphSpec:
     """A graph a pipeline compiles, as the module that traces it.
 
-    A :class:`~max.experimental.nn.Module` (ModuleV3) graph traces its
-    ``forward`` through :meth:`~max.experimental.nn.Module.stage` and
+    A :class:`~max.nn.Module` (ModuleV3) graph traces its
+    ``forward`` through :meth:`~max.nn.Module.stage` and
     compiles on its own.
 
     Args:
@@ -91,7 +103,7 @@ class GraphSpec:
             order. A ModuleV3 graph takes a sequence, one type per argument
             of its ``forward``.
         weights: The weight values, keyed by name. Defaults to the module's
-            :meth:`~max.nn.Module.state_dict` once traced, or a ModuleV3
+            :meth:`~max.nn.legacy.Module.state_dict` once traced, or a ModuleV3
             module's own parameters.
         group: Roles with the same group compile into one model, which
             holds each role's graph as a named submodel. ``None`` compiles
@@ -279,7 +291,7 @@ def compile_and_init_graphs(
                     staged, compiled, model, registry
                 )
             else:
-                callables[role] = _callable(
+                callables[role] = graph_callable(
                     compiled, model, spec.input_types, output_trees[role]
                 )
                 _check_inputs(role, callables[role].in_tree)
@@ -288,19 +300,17 @@ def compile_and_init_graphs(
 
 
 def _check_inputs(role: str, in_tree: tree.TreeDef) -> None:
-    """Fails a load whose decoder names inputs a serving engine can't place.
+    """Fails a load whose graph names inputs a serving engine can't place.
 
-    A decoder that names its inputs, rather than passing them positionally,
+    A graph that names its inputs, rather than passing them positionally,
     has a serving engine find each one by its group's kind, so every input
     must sit inside a kinded group.
 
     Raises:
-        ValueError: If a named decoder input is outside every kinded group.
+        ValueError: If a named input is outside every kinded group.
     """
     args = in_tree.children[0]
-    if role != GraphRole.DECODER or all(
-        arg.kind == "leaf" for arg in args.children
-    ):
+    if all(arg.kind == "leaf" for arg in args.children):
         return
     unkinded = [
         path
@@ -311,10 +321,10 @@ def _check_inputs(role: str, in_tree: tree.TreeDef) -> None:
     ]
     if unkinded:
         raise ValueError(
-            "the decoder graph's inputs "
+            f"the {role} graph's inputs "
             + ", ".join(unkinded)
             + " are in no kinded group: build them with a"
-            " max.nn.graph_groups group or a kinded KV cache input"
+            " max.nn.legacy.graph_groups group or a kinded KV cache input"
         )
 
 
@@ -350,7 +360,7 @@ def _check_outputs(role: str, out_tree: tree.TreeDef) -> None:
     ):
         raise ValueError(
             "the decoder graph's outputs have no logits group: return"
-            " max.nn.transformer.logits_outputs(...) or a DecoderOutputs"
+            " max.nn.legacy.transformer.logits_outputs(...) or a DecoderOutputs"
             " with a Logits group"
         )
 
@@ -386,12 +396,29 @@ def _input_signature(
     return tree.flatten((tree.map(as_layout, args), {}), leaf=TensorLayout)
 
 
-def _callable(
+def graph_callable(
     compiled: CompiledModel,
     model: Model,
     input_types: Sequence[Type[Any]] | Mapping[str, object],
     output_types: tree.Tree[Type[Any]],
 ) -> CompiledCallable[..., Any]:
+    """Wraps a graph compiled and initialized elsewhere as a callable.
+
+    A sequence of input types is called positionally, and a named input tree
+    is the callable's one argument. The callable returns the outputs in the
+    tree ``output_types`` holds them in.
+
+    Args:
+        compiled: The compiled graph, which the callable exports.
+        model: The model initialized from ``compiled``.
+        input_types: The graph's input types, in order, or its named input
+            tree.
+        output_types: The graph's output types, as its
+            :attr:`~max.graph.Graph.output_tree` nests them.
+
+    Returns:
+        The callable that runs ``model``.
+    """
     in_layouts, in_tree = _input_signature(input_types)
     out_layouts, out_tree = tree.flatten(
         tree.map(as_layout, output_types), leaf=TensorLayout

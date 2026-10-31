@@ -33,12 +33,12 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.attention import TensorParallelAttentionWithRope
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.transformer import (
+from max.nn.legacy.attention import TensorParallelAttentionWithRope
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer import (
     DecoderOutputs,
     DistributedTransformer,
     DistributedTransformerBlock,
@@ -52,6 +52,8 @@ from .model_config import Llama3Config, create_rope_embedding
 
 
 class DistributedLlama3(DistributedTransformer):
+    """The Llama3 decoder distributed across tensor-parallel devices."""
+
     def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) > 1
         self.config = config
@@ -223,6 +225,7 @@ class DistributedLlama3(DistributedTransformer):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in the decoder's order."""
         return tuple(tree.leaves(self.input_tree(kv_params)))
 
     def trace(

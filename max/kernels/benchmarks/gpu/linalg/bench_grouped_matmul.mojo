@@ -51,6 +51,7 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
 )
 from layout import Coord, Idx, TileTensor, row_major
 
+from std.utils.coord import Coord
 from std.utils import Index, IndexList
 
 from linalg.fp4_utils import (
@@ -175,32 +176,14 @@ def bench_grouped_matmul[
     var tok_str = "[" + ", ".join(num_tokens_by_expert) + "]"
     var eid_str = "[" + ", ".join(expert_ids_input) + "]"
     print(
-        "Config: num_active_experts=",
-        num_active_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " num_experts=",
-        num_experts,
-        sep="",
+        t"Config:"
+        t" num_active_experts={num_active_experts} N={N} K={K} num_experts={num_experts}"
     )
     print(
-        "  tokens_by_expert(len=",
-        len(num_tokens_by_expert),
-        " sum=",
-        total_num_tokens,
-        "): ",
-        tok_str,
-        sep="",
+        t"  tokens_by_expert(len={len(num_tokens_by_expert)} sum={total_num_tokens}):"
+        t" {tok_str}"
     )
-    print(
-        "  expert_ids(len=",
-        len(expert_ids_input),
-        "): ",
-        eid_str,
-        sep="",
-    )
+    print(t"  expert_ids(len={len(expert_ids_input)}): {eid_str}")
     if (
         len(num_tokens_by_expert) != num_active_experts
         or len(expert_ids_input) != num_active_experts
@@ -771,13 +754,17 @@ def bench_grouped_matmul[
                     pass
 
                 else:
-                    comptime umma_shape = Index(64, 64, 32)
+                    comptime umma_shape = (64, 64, 32)
                     comptime transpose_b = True
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        cluster_shape=Index(1, 1, 1),
-                        mma_shape=umma_shape,
+                        cluster_shape=(Int(1), Int(1), Int(1)),
+                        mma_shape=(
+                            Int(umma_shape[0]),
+                            Int(umma_shape[1]),
+                            Int(umma_shape[2]),
+                        ),
                         cta_group=1,
                         AB_swapped=AB_swapped,
                         k_group_size=1,
@@ -845,7 +832,10 @@ def bench_grouped_matmul[
                     pass
 
                 else:
-                    grouped_matmul[has_epilogue_fn=has_epilogue](
+                    grouped_matmul[
+                        has_epilogue_fn=has_epilogue,
+                        pdl_level=PDLLevel(pdl_level),
+                    ](
                         c_dev,
                         a_dev,
                         b_dev,
@@ -993,7 +983,7 @@ def main() raises:
     comptime row_scales = get_defined_bool["row_scales", False]()
 
     var b = Bench()
-    comptime expert_shape = IndexList[2](N, K)
+    comptime expert_shape = (N, K)
 
     with DeviceContext() as ctx:
         create_grouped_matmul_bench[

@@ -82,19 +82,7 @@ def _report(
         lo = min(lo, u)
         hi = max(hi, u)
     print(
-        "arm=",
-        name,
-        " tokens=",
-        batch_size,
-        " valid=",
-        valid_len,
-        " median_us=",
-        _median(us^),
-        " min_us=",
-        lo,
-        " max_us=",
-        hi,
-        sep="",
+        t"arm={name} tokens={batch_size} valid={valid_len} median_us={_median(us^)} min_us={lo} max_us={hi}"
     )
 
 
@@ -422,13 +410,7 @@ def _bench(
             valid_len,
             us_in^,
         )
-        print(
-            "  vs gather: max_abs_diff=",
-            max_abs,
-            " max_abs_ref=",
-            max_ref,
-            sep="",
-        )
+        print(t"  vs gather: max_abs_diff={max_abs} max_abs_ref={max_ref}")
 
     _ = blocks_device
     _ = lut_device

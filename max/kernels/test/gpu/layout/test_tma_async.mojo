@@ -43,11 +43,12 @@ def test_tma_load_kernel[
     layout: Layout,
     tile_shape: Coord,
     thread_layout: TileLayout,
+    dst_origin: MutOrigin,
 ](
     dst: TileTensor[
         dtype,
         type_of(row_major[layout.shape[0].value(), layout.shape[1].value()]()),
-        MutAnyOrigin,
+        dst_origin,
     ],
     tma_tile: TMATensorTile[dtype, tile_shape],
 ):
@@ -94,11 +95,12 @@ def test_tma_multiple_loads_kernel[
     layout: Layout,
     tile_shape: Coord,
     thread_layout: TileLayout,
+    dst_origin: MutOrigin,
 ](
     dst: TileTensor[
         dtype,
         type_of(row_major[layout.shape[0].value(), layout.shape[1].value()]()),
-        MutAnyOrigin,
+        dst_origin,
     ],
     tma_tile: TMATensorTile[dtype, tile_shape],
 ):
@@ -190,10 +192,11 @@ def test_tma_load_row_major[
             type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
             type_of(tma_tensor).tile_shape,  # tile shape
-            __thread_layout,  # thread layout
+            __thread_layout,  # thread layout,
+            dst_origin=origin_of(dst),
         ]
         ctx.enqueue_function[kernel](
-            dst.device_tensor().as_unsafe_any_origin(),
+            dst.device_tensor(),
             tma_tensor,
             grid_dim=(1, M_roundup // tileM),
             block_dim=(tileM * tileN),
@@ -203,10 +206,11 @@ def test_tma_load_row_major[
             type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
             type_of(tma_tensor).tile_shape,  # tile shape
-            __thread_layout,  # thread layout
+            __thread_layout,  # thread layout,
+            dst_origin=origin_of(dst),
         ]
         ctx.enqueue_function[kernel](
-            dst.device_tensor().as_unsafe_any_origin(),
+            dst.device_tensor(),
             tma_tensor,
             grid_dim=(N_roundup // tileN, M_roundup // tileM),
             block_dim=(tileM * tileN),
@@ -239,12 +243,13 @@ def test_tma_async_store_kernel[
     desc_shape_param: Coord,
     thread_layout: TileLayout,
     layout: Layout,
+    src_origin: MutOrigin,
 ](
     tma_tile: TMATensorTile[dtype, tile_shape_param, desc_shape_param],
     src: TileTensor[
         dtype,
         type_of(row_major[layout.shape[0].value(), layout.shape[1].value()]()),
-        MutAnyOrigin,
+        src_origin,
     ],
 ):
     comptime tileM = Int(tile_shape_param[0])
@@ -277,12 +282,13 @@ def test_tma_async_multiple_store_kernel[
     tile_shape_param: Coord,
     thread_layout: TileLayout,
     layout: Layout,
+    src_origin: MutOrigin,
 ](
     tma_tile: TMATensorTile[dtype, tile_shape_param],
     src: TileTensor[
         dtype,
         type_of(row_major[layout.shape[0].value(), layout.shape[1].value()]()),
-        MutAnyOrigin,
+        src_origin,
     ],
 ):
     comptime tileM = Int(tile_shape_param[0])
@@ -359,10 +365,11 @@ def test_tma_async_store[
             type_of(tma_tensor).tile_shape,
             __thread_layout,
             src_layout,
+            src_origin=origin_of(src),
         ]
         ctx.enqueue_function[kernel](
             tma_tensor,
-            src.device_tensor().as_unsafe_any_origin(),
+            src.device_tensor(),
             grid_dim=(1, src_M // tileM),
             block_dim=(tileM * tileN),
         )
@@ -373,10 +380,11 @@ def test_tma_async_store[
             type_of(tma_tensor).desc_shape,
             __thread_layout,
             src_layout,
+            src_origin=origin_of(src),
         ]
         ctx.enqueue_function[kernel](
             tma_tensor,
-            src.device_tensor().as_unsafe_any_origin(),
+            src.device_tensor(),
             grid_dim=(src_N // tileN, src_M // tileM),
             block_dim=(tileM * tileN),
         )
@@ -410,20 +418,22 @@ def test_tma_loads_two_buffers_kernel[
     b_tile_shape: Coord,
     a_thread_layout: TileLayout,
     b_thread_layout: TileLayout,
+    a_dst_origin: MutOrigin,
+    b_dst_origin: MutOrigin,
 ](
     a_dst: TileTensor[
         dtype,
         type_of(
             row_major[a_layout.shape[0].value(), a_layout.shape[1].value()]()
         ),
-        MutAnyOrigin,
+        a_dst_origin,
     ],
     b_dst: TileTensor[
         dtype,
         type_of(
             row_major[b_layout.shape[0].value(), b_layout.shape[1].value()]()
         ),
-        MutAnyOrigin,
+        b_dst_origin,
     ],
     a_tma_tile: TMATensorTile[dtype, a_tile_shape],
     b_tma_tile: TMATensorTile[dtype, b_tile_shape],
@@ -548,11 +558,13 @@ def test_tma_load_two_buffers_row_major[
         type_of(a_tma_tensor).tile_shape,
         type_of(b_tma_tensor).tile_shape,
         row_major[__a_tileM, __a_tileN](),  # thread layout
-        row_major[__b_tileM, __b_tileN](),  # thread layout
+        row_major[__b_tileM, __b_tileN](),  # thread layout,
+        a_dst_origin=origin_of(a_dst),
+        b_dst_origin=origin_of(b_dst),
     ]
     ctx.enqueue_function[kernel](
-        a_dst.device_tensor().as_unsafe_any_origin(),
-        b_dst.device_tensor().as_unsafe_any_origin(),
+        a_dst.device_tensor(),
+        b_dst.device_tensor(),
         a_tma_tensor,
         b_tma_tensor,
         grid_dim=(1, M_roundup // tileM),

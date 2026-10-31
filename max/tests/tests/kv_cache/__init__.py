@@ -11,4 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for the max.nn.kv_cache and max.pipelines.kv_cache packages."""
+"""Tests for the max.nn.legacy.kv_cache and max.pipelines.kv_cache packages."""

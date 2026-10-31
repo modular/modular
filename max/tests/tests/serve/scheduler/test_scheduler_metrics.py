@@ -16,12 +16,13 @@ import json
 import logging
 import queue
 import re
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache import JengaKVCacheManager
 from max.pipelines.kv_cache.kv_connector import BlockCount, ByteCount
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
@@ -37,6 +38,8 @@ from max.pipelines.modeling.types import (
     CompletedBatchStats,
     TextGenerationInputs,
 )
+from max.serve.scheduler.decode_scheduler import DecodeScheduler
+from max.serve.scheduler.prefill_scheduler import PrefillScheduler
 from max.serve.scheduler.utils import (
     BatchMetrics,
     SchedulerLogger,
@@ -45,6 +48,7 @@ from max.serve.scheduler.utils import (
 from pythonjsonlogger import jsonlogger
 from tests.serve.scheduler.common import (
     FakeOverlapPipeline,
+    create_jenga_kv_cache,
     create_paged_scheduler,
     enqueue_request,
 )
@@ -489,6 +493,7 @@ def test_dkv_peer_counters_report_zero_while_a_tier_is_attached() -> None:
     mock_metrics.dkv_peer_loads.assert_called_once_with(0)
     mock_metrics.dkv_peer_load_failures.assert_called_once_with(0)
     mock_metrics.dkv_hints_rejected.assert_called_once_with(0)
+    mock_metrics.dkv_hints_unused.assert_called_once_with(0)
     mock_metrics.dkv_peer_transfer_failures.assert_called_once_with(0)
     mock_metrics.dkv_peer_metadata_refreshes.assert_called_once_with(0)
     mock_metrics.dkv_peer_metadata_refresh_failures.assert_called_once_with(0)
@@ -500,6 +505,7 @@ def test_dkv_peer_counters_report_zero_while_a_tier_is_attached() -> None:
     assert extra["dkv_peer_transfer_failures"] == 0
     assert extra["dkv_peer_metadata_refresh_failures"] == 0
     assert extra["dkv_hints_rejected"] == 0
+    assert extra["dkv_hints_unused"] == 0
 
     # the console line stays quiet, since there is nothing to say about peers
     assert "dKV peers" not in metrics.pretty_format()
@@ -515,6 +521,7 @@ def test_dkv_peer_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_peer_attaches.assert_not_called()
     mock_metrics.dkv_peer_loads.assert_not_called()
     mock_metrics.dkv_hints_rejected.assert_not_called()
+    mock_metrics.dkv_hints_unused.assert_not_called()
     mock_metrics.dkv_touches_deduplicated.assert_not_called()
     mock_metrics.dkv_settle_queue_depth.assert_not_called()
     mock_metrics.dkv_settle_jobs_finished.assert_not_called()
@@ -525,6 +532,7 @@ def test_dkv_peer_counters_are_silent_without_a_tier() -> None:
     assert "dkv_touches_deduplicated" not in extra
     assert "dkv_settle_queue_depth" not in extra
     assert "dkv_hints_rejected" not in extra
+    assert "dkv_hints_unused" not in extra
 
 
 def test_dkv_settle_metrics_reach_the_log_and_the_published_metrics() -> None:
@@ -572,11 +580,13 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
         dkv_peer_loads=3,
         dkv_peer_load_failures=4,
         dkv_hints_rejected=5,
+        dkv_hints_unused=12,
         dkv_peer_transfer_failures=7,
         dkv_peer_metadata_refreshes=8,
         dkv_peer_metadata_refresh_failures=9,
         dkv_touches_deduplicated=11,
         dkv_hints_rejected_by_reason={"chain_mismatch": 5, "unparseable": 0},
+        dkv_hints_unused_by_reason={"past_end": 12, "gapped": 0},
         dkv_rpc_calls={"read_blocks": 3, "heartbeat": 0},
         dkv_rpc_time_ms={"read_blocks": 2.5, "heartbeat": 0.0},
         dkv_rpc_socket_wait_ms={"read_blocks": 0.5},
@@ -599,6 +609,7 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     assert extra["dkv_peer_loads"] == 3
     assert extra["dkv_peer_load_failures"] == 4
     assert extra["dkv_hints_rejected"] == 5
+    assert extra["dkv_hints_unused"] == 12
     assert extra["dkv_peer_transfer_failures"] == 7
     assert extra["dkv_peer_metadata_refreshes"] == 8
     assert extra["dkv_peer_metadata_refresh_failures"] == 9
@@ -618,6 +629,8 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     }
     assert extra["dkv_hints_rejected_chain_mismatch"] == 5
     assert "dkv_hints_rejected_unparseable" not in extra
+    assert extra["dkv_hints_unused_past_end"] == 12
+    assert "dkv_hints_unused_gapped" not in extra
 
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         metrics.publish_metrics()
@@ -628,12 +641,16 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     mock_metrics.dkv_peer_loads.assert_called_once_with(3)
     mock_metrics.dkv_peer_load_failures.assert_called_once_with(4)
     mock_metrics.dkv_hints_rejected.assert_called_once_with(5)
+    mock_metrics.dkv_hints_unused.assert_called_once_with(12)
     mock_metrics.dkv_peer_transfer_failures.assert_called_once_with(7)
     mock_metrics.dkv_peer_metadata_refreshes.assert_called_once_with(8)
     mock_metrics.dkv_peer_metadata_refresh_failures.assert_called_once_with(9)
     mock_metrics.dkv_touches_deduplicated.assert_called_once_with(11)
     mock_metrics.dkv_hints_rejected_by_reason.assert_called_once_with(
         5, reason="chain_mismatch"
+    )
+    mock_metrics.dkv_hints_unused_by_reason.assert_called_once_with(
+        12, reason="past_end"
     )
     mock_metrics.dkv_rpc_calls.assert_called_once_with(3, op="read_blocks")
     mock_metrics.dkv_rpc_time_ms.assert_called_once_with(2.5, op="read_blocks")
@@ -673,6 +690,7 @@ def test_dkv_per_call_counters_publish_one_series_per_label() -> None:
         dkv_blocked_calls={"poll_transfers": 6, "offload": 0},
         dkv_blocked_ms={"poll_transfers": 2.5, "offload": 0.0},
         dkv_hints_rejected_by_reason={"chain_mismatch": 7, "unparseable": 0},
+        dkv_hints_unused_by_reason={"window_ahead": 3, "past_end": 0},
     )
 
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
@@ -704,6 +722,9 @@ def test_dkv_per_call_counters_publish_one_series_per_label() -> None:
     )
     mock_metrics.dkv_hints_rejected_by_reason.assert_called_once_with(
         7, reason="chain_mismatch"
+    )
+    mock_metrics.dkv_hints_unused_by_reason.assert_called_once_with(
+        3, reason="window_ahead"
     )
 
 
@@ -1578,27 +1599,31 @@ def test_publish_completed_batch_metrics_tg_spec_decode() -> None:
     )
 
 
-def test_publish_completed_batch_metrics_ce_ignores_output_tokens() -> None:
-    """CE batches use the standard batch_size formula even when stale spec
-    metrics report output tokens, mirroring BatchMetrics.create."""
+def test_publish_completed_batch_metrics_ce_uses_returned_output_tokens() -> (
+    None
+):
+    """Prefill and mixed batches count all returned output tokens."""
     stats = _make_completed_stats(num_output_tokens=12)
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         publish_completed_batch_metrics(stats, 3)
     mock_metrics.batch_generation_throughput.assert_called_once_with(
-        2 / 0.25, batch_type="CE"
+        12 / 0.25, batch_type="CE"
     )
 
 
 def test_publish_completed_batch_metrics_zero_duration_skipped() -> None:
-    """A zero-duration record cannot produce meaningful throughput; nothing
-    is published."""
+    """Zero-duration completions count, but cannot produce a rate."""
     stats = _make_completed_stats(execution_time_s=0.0)
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         publish_completed_batch_metrics(stats, 3)
-    mock_metrics.batch_execution_time.assert_not_called()
+    mock_metrics.batch_execution_time.assert_called_once_with(
+        0.0, batch_type="CE"
+    )
     mock_metrics.batch_prompt_throughput.assert_not_called()
     mock_metrics.batch_generation_throughput.assert_not_called()
-    mock_metrics.batch_terminated_reqs.assert_not_called()
+    mock_metrics.batch_terminated_reqs.assert_called_once_with(
+        3, batch_type="CE"
+    )
 
 
 def test_publish_completed_batch_metrics_emits_early_sync_time() -> None:
@@ -1690,7 +1715,7 @@ def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> 
 
     Regression test: previously a CE batch's execution time was published
     under the next iteration's batch type (usually TG), corrupting the CE/TG
-    split of maxserve.batch_execution_time and both throughput histograms.
+    split of max.batch.execution_time and both throughput histograms.
     """
     recorder = _ExecMetricsRecorder()
     with patch("max.serve.scheduler.utils.METRICS", recorder):
@@ -1985,7 +2010,7 @@ def test_dp_context_occupancy_in_log_line_and_extra() -> None:
 
 
 def test_cache_hit_tiers_sum_to_the_untagged_total() -> None:
-    """CLIN-1785: ``maxserve.cache.hits`` carries a ``tier`` attribute.
+    """CLIN-1785: ``max.cache.hits`` carries a ``tier`` attribute.
 
     The whole design rests on one invariant: the per-tier points SUM to the
     counter's untagged total. That is what lets the dashboard replace a
@@ -2044,7 +2069,7 @@ def test_cold_cache_still_stamps_the_device_tier() -> None:
 
     Before the tier label this recorded ``cache_hits(0)``, which creates and
     keeps the series alive. Skipping every empty tier would leave
-    ``maxserve_cache_hits_tokens_total`` absent on a cold server, and
+    ``max_cache_hits_tokens_total`` absent on a cold server, and
     ``rate()``/``sum()`` over an absent series returns no data rather than
     zero, which reads as a broken panel instead of a cold cache.
     """
@@ -2278,7 +2303,160 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_prepare_load_degraded.assert_not_called()
     mock_metrics.dkv_load_with_plan_degraded.assert_not_called()
     mock_metrics.dkv_load_with_plan_expired.assert_not_called()
+    mock_metrics.dkv_peer_rounds_while_degraded.assert_not_called()
+    mock_metrics.dkv_own_runs_short_of_hint.assert_not_called()
+    mock_metrics.dkv_split_loads.assert_not_called()
+    mock_metrics.dkv_overlapped_peer_lookups.assert_not_called()
+    mock_metrics.dkv_hinted_lookups.assert_not_called()
+    mock_metrics.dkv_hinted_lookup_latency.assert_not_called()
     assert "dkv_prepare_load_degraded" not in metrics.to_log_extra()
+
+
+def test_dkv_peer_rounds_while_degraded_reach_the_log_and_the_counters() -> (
+    None
+):
+    """Rounds hinted peers served while dKV was down publish beside the
+    fail-opens, so a dKV restart shows how much of it the peers covered."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_peer_rounds_while_degraded=7,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    assert metrics.dkv_peer_rounds_while_degraded == 7
+    mock_metrics.dkv_peer_rounds_while_degraded.assert_called_once_with(7)
+    assert metrics.to_log_extra()["dkv_peer_rounds_while_degraded"] == 7
+
+
+def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
+    None
+):
+    """The overlapped hinted lookup's counts publish beside the peer
+    counters, and its rounds' summed time and count become one mean."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_own_runs_short_of_hint=2,
+        dkv_split_loads=3,
+        dkv_overlapped_peer_lookups=4,
+        dkv_hinted_lookups=5,
+        dkv_hinted_lookup_ms_total=12.5,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_own_runs_short_of_hint.assert_called_once_with(2)
+    mock_metrics.dkv_split_loads.assert_called_once_with(3)
+    mock_metrics.dkv_overlapped_peer_lookups.assert_called_once_with(4)
+    mock_metrics.dkv_hinted_lookups.assert_called_once_with(5)
+    mock_metrics.dkv_hinted_lookup_latency.assert_called_once_with(2.5)
+    extra = metrics.to_log_extra()
+    assert extra["dkv_own_runs_short_of_hint"] == 2
+    assert extra["dkv_split_loads"] == 3
+    assert extra["dkv_overlapped_peer_lookups"] == 4
+    assert extra["dkv_hinted_lookups"] == 5
+    assert extra["dkv_hinted_lookup_avg_ms"] == 2.5
+
+
+_DKV_ORPHAN_FIELDS = {
+    "dkv_orphan_cleanups_reissued": 1,
+    "dkv_orphan_cleanups_abandoned": 2,
+    "dkv_orphan_cleanups_dropped": 3,
+    "dkv_orphan_cleanups_refused": 4,
+    "dkv_orphan_cleanups_expired": 5,
+    "dkv_orphan_queue_depth": 6,
+}
+
+
+def test_create_carries_dkv_orphan_metrics_through() -> None:
+    """The orphan queue's outcome counts and depth reach the batch."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_orphan_cleanups_reissued=1,
+        dkv_orphan_cleanups_abandoned=2,
+        dkv_orphan_cleanups_dropped=3,
+        dkv_orphan_cleanups_refused=4,
+        dkv_orphan_cleanups_expired=5,
+        dkv_orphan_queue_depth=6,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    for name, value in _DKV_ORPHAN_FIELDS.items():
+        assert getattr(metrics, name) == value, name
+
+
+def test_dkv_orphan_metrics_reach_the_log_and_the_meters() -> None:
+    """Published while a tier is attached, as the fail-open counters are."""
+    metrics = _make_metrics(
+        dkv_connected_clients=0, dkv_total_clients=1, **_DKV_ORPHAN_FIELDS
+    )
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    extra = metrics.to_log_extra()
+    for name, value in _DKV_ORPHAN_FIELDS.items():
+        getattr(mock_metrics, name).assert_called_once_with(value)
+        assert extra[name] == value, name
+
+
+def test_dkv_orphan_metrics_are_silent_without_a_tier() -> None:
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    extra = metrics.to_log_extra()
+    for name in _DKV_ORPHAN_FIELDS:
+        getattr(mock_metrics, name).assert_not_called()
+        assert name not in extra, name
 
 
 def test_connector_loads_refused_publish_for_a_dkv_tier() -> None:
@@ -2406,3 +2584,152 @@ def test_jenga_occupancy_samples_busy_and_idle_on_one_dump_clock(
         assert call(9, replica="0", leaf="mla", state="used") in huge
         assert call(0, replica="0", leaf="none", state="empty") in huge
         assert call(4, replica="1", leaf="none", state="empty") in huge
+
+
+@pytest.mark.parametrize("output_tokens", [0, 1, 7])
+def test_batch_rates_use_returned_output_count(output_tokens: int) -> None:
+    """Chunked prefill, ordinary prefill, and accepted speculative output."""
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=2, batch_type=BatchType.CE),
+        kv_cache=None,
+        batch_creation_time_s=0.1,
+        batch_execution_time_s=0.25,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+        num_output_tokens=output_tokens,
+    )
+    assert metrics.generation_throughput == output_tokens / 0.25
+
+
+def test_sync_executor_interval_excludes_advancement_and_response_publication() -> (
+    None
+):
+    scheduler, requests = create_paged_scheduler(
+        max_seq_len=128, num_blocks=64, max_batch_size=4, page_size=8
+    )
+    enqueue_request(requests, prompt_len=16, max_seq_len=128)
+    clock = [0.0]
+    execute = scheduler.pipeline.execute
+    advance = scheduler.batch_constructor.advance_requests
+    send = scheduler.response_queue.put_nowait
+
+    def timed_execute(inputs: Any) -> Any:
+        outputs = execute(inputs)
+        clock[0] += 0.25
+        return outputs
+
+    def delayed_advance(inputs: Any) -> None:
+        advance(inputs)
+        clock[0] += 1.0
+
+    def delayed_send(outputs: Any) -> None:
+        send(outputs)
+        clock[0] += 2.0
+
+    with (
+        patch(
+            "max.serve.scheduler.text_generation_scheduler.time",
+            SimpleNamespace(monotonic=lambda: clock[0]),
+        ),
+        patch.object(scheduler.pipeline, "execute", side_effect=timed_execute),
+        patch.object(
+            scheduler.batch_constructor,
+            "advance_requests",
+            side_effect=delayed_advance,
+        ),
+        patch.object(
+            scheduler.response_queue, "put_nowait", side_effect=delayed_send
+        ),
+        patch(
+            "max.serve.scheduler.text_generation_scheduler.METRICS"
+        ) as step_metrics,
+        patch("max.serve.scheduler.utils.METRICS") as execution_metrics,
+    ):
+        scheduler.run_iteration()
+    execution_metrics.batch_execution_time.assert_called_once_with(
+        250.0, batch_type="CE"
+    )
+    execution_metrics.batch_prompt_throughput.assert_called_once_with(
+        64.0, batch_type="CE"
+    )
+    execution_metrics.batch_generation_throughput.assert_called_once_with(
+        4.0, batch_type="CE"
+    )
+    step_metrics.scheduler_batch_step_time.assert_called_once_with(
+        3250.0, batch_type="CE"
+    )
+
+
+@pytest.mark.parametrize("role", ["prefill", "decode"])
+def test_disaggregated_executor_interval_excludes_advancement(
+    role: str,
+) -> None:
+    scheduler, requests = create_paged_scheduler(
+        max_seq_len=17,
+        num_blocks=64,
+        max_batch_size=4,
+        page_size=8,
+        kv_cache=create_jenga_kv_cache(
+            num_blocks=64, max_seq_len=17, max_batch_size=4, page_size=8
+        ),
+    )
+    actor: PrefillScheduler | DecodeScheduler
+    # The transfer engine is a GPU/NIXL boundary; scheduler state is real.
+    with patch(
+        f"max.serve.scheduler.{role}_scheduler.KVTransferEngine.from_paged_kv_cache"
+    ):
+        if role == "prefill":
+            actor = PrefillScheduler(
+                pipeline=scheduler.pipeline,
+                scheduler_config=scheduler.scheduler_config,
+                kv_cache=scheduler.batch_constructor.kv_cache,
+                dispatcher=MagicMock(),
+            )
+        else:
+            actor = DecodeScheduler(
+                pipeline=scheduler.pipeline,
+                scheduler_config=scheduler.scheduler_config,
+                kv_cache=scheduler.batch_constructor.kv_cache,
+                request_queue=scheduler.request_queue,
+                response_queue=scheduler.response_queue,
+                cancel_queue=scheduler.cancel_queue,
+                dispatcher=MagicMock(),
+            )
+    actor.batch_constructor = scheduler.batch_constructor
+    enqueue_request(requests, prompt_len=16, max_seq_len=17)
+    scheduler._retrieve_pending_requests()
+    inputs = actor.batch_constructor.construct_batch()
+    clock = [0.0]
+    execute = actor.pipeline.execute
+    advance = actor.batch_constructor.advance_requests
+
+    def timed_execute(batch: Any) -> Any:
+        outputs = execute(batch)
+        clock[0] += 0.25
+        return outputs
+
+    def delayed_advance(batch: Any) -> None:
+        advance(batch)
+        clock[0] += 10.0
+
+    with (
+        patch.object(actor, "initiate_transfer_and_send_reply")
+        if isinstance(actor, PrefillScheduler)
+        else nullcontext(),
+        patch(
+            f"max.serve.scheduler.{role}_scheduler.time",
+            SimpleNamespace(monotonic=lambda: clock[0]),
+        ),
+        patch.object(scheduler.pipeline, "execute", side_effect=timed_execute),
+        patch.object(
+            scheduler.batch_constructor,
+            "advance_requests",
+            side_effect=delayed_advance,
+        ),
+    ):
+        result = actor.schedule(inputs)
+    assert result.execution_time_s == 0.25
+    assert result.output_tokens == 1
+    assert clock[0] == 10.25

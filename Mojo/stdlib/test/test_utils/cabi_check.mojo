@@ -23,12 +23,16 @@ A suite is a manifest package defining `CABI_INCLUDES`,
 3. Runs a test that calls `assert_cabi_checks_for` on the manifest,
    comparing the mirrors against the generated `mojo_check_cabi_*`
    reporters. A failure means the mirror no longer matches the C ABI.
+
+A struct mirror can carry a `std.testing._ffi.CStruct` annotation that
+names a different C struct or skips the per-field checks.
 """
 
 from std.ffi import external_call
 from std.reflection.type_info import _unqualified_type_name
 from std.sys import align_of, size_of
 from std.testing import assert_equal
+from std.testing._ffi import CStruct
 
 
 comptime _MACROS: StaticString = """\
@@ -183,9 +187,23 @@ def _c_field_decl[T: AnyType]() raises -> Optional[String]:
             case .None:
                 raise Error(t"unsupported array type: {TName}")
 
-    # Falls back to a mirrored struct, named verbatim after its C
-    # counterpart (the same convention `struct_checks` uses).
-    return String(t"struct {_unqualified_type_name[T]()} *ptr")
+    # Falls back to a mirrored struct, named after its C counterpart (the
+    # same convention `struct_checks` uses).
+    return String(t"struct {_c_struct_name[T]()} *ptr")
+
+
+def _cstruct_of[T: AnyType]() -> CStruct:
+    """Returns `T`'s `CStruct` annotation, or the defaults if it has none."""
+    comptime types = type_of(reflect[T].annotations()).Ts
+    comptime for i in range(types.length):
+        comptime if types[i] == CStruct:
+            return rebind[CStruct](reflect[T].annotations()[i])
+    return CStruct()
+
+
+def _c_struct_name[T: AnyType]() -> String:
+    """Returns the name of the C struct that `T` mirrors."""
+    return _cstruct_of[T]().rename.or_else(_unqualified_type_name[T]())
 
 
 def struct_checks[T: AnyType]() raises -> String:
@@ -202,10 +220,13 @@ def struct_checks[T: AnyType]() raises -> String:
         expected type, so an incompatible field type fails to compile rather
         than failing an assertion. A 64-bit integer field gets a
         `MOJO_CHECK_CABI_FIELD_INT64` or `MOJO_CHECK_CABI_FIELD_UINT64` line
-        instead, which accepts both C spellings of that width.
+        instead, which accepts both C spellings of that width. A `CStruct`
+        annotation on `T` can rename the C struct, or skip the field lines.
     """
-    comptime name = _unqualified_type_name[T]()
+    comptime name = _c_struct_name[T]()
     var out = String(t"MOJO_CHECK_CABI_LAYOUT({name}, struct {name})")
+    comptime if _cstruct_of[T]().skip_fields:
+        return out^
     comptime names = reflect[T].field_names()
     comptime types = reflect[T].field_types()
     comptime for i in range(names.length):
@@ -365,7 +386,7 @@ def assert_cabi_constant[entry: AbiConstant]() raises:
     )
 
 
-def assert_cabi_layout[name: StaticString, T: AnyType]() raises:
+def assert_cabi_layout[name: String, T: AnyType]() raises:
     """Compares a mirror type's size and alignment against C.
 
     Parameters:
@@ -420,14 +441,19 @@ def assert_cabi_struct[T: AnyType]() raises:
     mojo_check_cabi_fieldsizeof_Foo_fieldB(...)
     ```
 
+    A `CStruct` annotation on `T` can rename the C struct, or skip the
+    per-field checks.
+
     Parameters:
         T: The Mojo mirror struct.
 
     Raises:
         When the size, alignment, or any field's offset or size differs.
     """
-    comptime name = _unqualified_type_name[T]()
+    comptime name = _c_struct_name[T]()
     assert_cabi_layout[name, T]()
+    comptime if _cstruct_of[T]().skip_fields:
+        return
     comptime r = reflect[T]
     comptime names = r.field_names()
     comptime types = r.field_types()

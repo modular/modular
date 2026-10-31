@@ -149,9 +149,12 @@ paths:
                             ignored by others.
                         num_images:
                           type: integer
-                          description: Number of images to generate per request.
+                          description: |
+                            Number of images to generate per request, from 1
+                            to 4.
                           default: 1
                           minimum: 1
+                          maximum: 4
                         strength:
                           type: number
                           description: |

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Telemetry settings shared by the API and worker processes."""
+
 from __future__ import annotations
 
 import json
@@ -162,8 +164,11 @@ HISTOGRAM_COUNT_BUCKETS: tuple[float, ...] = log_spaced_buckets(
 
 # Batch size (number of requests in a batch), from a single request up to the
 # largest batch the scheduler forms.
-HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = log_spaced_buckets(
-    1.0, 512.0, 1.5
+HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = (
+    0.0,
+    *(float(size) for size in range(1, 21)),  # Tracks exactly for 1-20
+    # [2:] drops the ladder's leading 0.0 and its 20.0, already present.
+    *log_spaced_buckets(20.0, 512.0, 1.05)[2:],  # 5% steps from 21 - 512
 )
 
 # Mean speculative-decode acceptance length per batch. Because it is an average
@@ -210,85 +215,92 @@ HISTOGRAM_PIXELS_BUCKETS: tuple[float, ...] = log_spaced_buckets(
 # (test_all_histograms_have_explicit_buckets) enforces that.
 HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     # Latency / time (ms)
-    "maxserve.request_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.input_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.output_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.time_to_first_token": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.response_queue_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.model_load_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.itl": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.batch_execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.batch_creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.api_pre_tokenize": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.api_submit": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.mw_queue_wait": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.decode_admission_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.decode_send_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.dispatch_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.prefill_span": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.reply_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.prefill_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.ce_pool_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.decode_postprocess_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.early_sync_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.handoff_to_first_token_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.structured_output.grammar_build_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.video.encoding_time_milliseconds": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.vision.image_admission_decode_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.media.resolve_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.nixl_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.nixl_read_latency_max": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.nixl_write_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.rpc_acquire_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.rpc_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.request_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.input_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.output_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.time_to_first_token": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.time_to_first_token_by_prompt_length": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.cache.connector_cordon_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.response_queue_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.model_load_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.itl": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.batch.execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.scheduler.batch_step_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.batch.creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.api_pre_tokenize": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.api_submit": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.mw_queue_wait": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.decode_admission_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.decode_send_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.dispatch_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.prefill_span": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.reply_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.prefill_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.ce_pool_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.decode_postprocess_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.early_sync_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.handoff_to_first_token_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.structured_output.grammar_build_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.video.encoding_time_milliseconds": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.vision.image_admission_decode_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.media.resolve_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.nixl_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.nixl_read_latency_max": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.nixl_write_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.rpc_acquire_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.rpc_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.hinted_lookup_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     # Percentages
-    "maxserve.dp_active_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.dp_context_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.cache.request_prefix_coverage": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.prefix_coverage_per_request": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.cache.used_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.cache.used_host_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.cache.used_disk_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.spec_decode.acceptance_rate_per_position": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.vision.cache_hit_rate": HISTOGRAM_PERCENT_BUCKETS,
+    "max.dp_active_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
+    "max.dp_context_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
+    "max.cache.request_prefix_coverage": HISTOGRAM_PERCENT_BUCKETS,
+    "max.prefix_coverage_per_request": HISTOGRAM_PERCENT_BUCKETS,
+    "max.cache.used_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
+    "max.cache.used_host_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
+    "max.cache.used_disk_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
+    "max.spec_decode.acceptance_rate_per_position": HISTOGRAM_PERCENT_BUCKETS,
+    "max.vision.cache_hit_rate": HISTOGRAM_PERCENT_BUCKETS,
     # Generic counts (tokens / occupancy)
-    "maxserve.input_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.output_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.batch_input_tokens": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.batch_context_tokens": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.batch_terminated_reqs": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.batch_pending_reqs": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.requests_awaiting_admission": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.responses_buffered": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.di.ce_preempted_tg_pending_count": HISTOGRAM_COUNT_BUCKETS,
+    "max.input_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
+    "max.output_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
+    "max.batch.input_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "max.batch.context_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "max.batch.terminated_reqs": HISTOGRAM_COUNT_BUCKETS,
+    "max.batch.pending_reqs": HISTOGRAM_COUNT_BUCKETS,
+    "max.requests_awaiting_admission": HISTOGRAM_COUNT_BUCKETS,
+    "max.responses_buffered": HISTOGRAM_COUNT_BUCKETS,
+    "max.di.ce_preempted_tg_pending_count": HISTOGRAM_COUNT_BUCKETS,
     # Batch size
-    "maxserve.batch_size": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.batch.size": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Real tool inventories sit in the low tens; 512 clears all of them.
-    "maxserve.tool_call.tools_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.tool_call.tools_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # MiniMax-M3's video processor samples up to 512 frames per clip
     # (see max_private/minimax_m3/vision_processor.py); this bucket set's
     # upper bound (512) matches exactly.
-    "maxserve.video.frames_per_clip": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.video.frames_per_clip": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Media items of one kind on a single request; the same ladder as batch
     # size, since both count per-request work items.
-    "maxserve.media.items_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.media.items_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # Exact through 20 passes, where a cordon that costs a pass or two lives.
+    "max.cache.connector_cordon_passes": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Throughput (tokens/s)
-    "maxserve.batch_prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
-    "maxserve.batch_generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
+    "max.batch.prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
+    "max.batch.generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
     # Encoded media payload bytes
-    "maxserve.media.item_size": HISTOGRAM_BYTES_BUCKETS,
+    "max.media.item_size": HISTOGRAM_BYTES_BUCKETS,
     # Image pixel counts
-    "maxserve.media.image_size": HISTOGRAM_PIXELS_BUCKETS,
+    "max.media.image_size": HISTOGRAM_PIXELS_BUCKETS,
     # Transfer throughput (GiB/s)
-    "maxserve.dkv.nixl_read_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
-    "maxserve.dkv.nixl_write_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
+    "max.dkv.nixl_read_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
+    "max.dkv.nixl_write_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
     # Acceptance length (tokens)
-    "maxserve.spec_decode.avg_acceptance_length": HISTOGRAM_ACCEPTANCE_LENGTH_BUCKETS,
+    "max.spec_decode.avg_acceptance_length": HISTOGRAM_ACCEPTANCE_LENGTH_BUCKETS,
 }
 
 
 def get_log_level(settings: Settings) -> int | str | None:
+    """Returns the log level exported over OTLP."""
     otlp_level: int | str | None = (
         logging.getLevelName(settings.logs_otlp_level)
         if settings.logs_otlp_level
@@ -317,6 +329,7 @@ class PrefixFormatter(logging.Formatter):
         self.base_formatter = base_formatter
 
     def format(self, record: logging.LogRecord) -> str:
+        """Formats the record with the prefix in front of it."""
         # Format the message using the base formatter
         formatted_message = self.base_formatter.format(record)
         # Add the prefix to the message
@@ -373,6 +386,7 @@ def configure_logging(
     *,
     sets_request_ids: bool = True,
 ) -> None:
+    """Configures logging for the API and worker processes."""
     # Structured logs carry request_id; only traced requests capture the
     # trace context, so without tracing there is no dd.trace_id field.
     correlate = _log_context.tracing_enabled()
@@ -624,6 +638,7 @@ def _metric_exporter() -> OTLPMetricExporter:
 
 
 def configure_metrics(settings: Settings) -> None:
+    """Configures the metric exporters from the settings."""
     egress_enabled = not _telemetry_disabled(settings)
     configure_histogram_shadow_emission(bool(settings.otlp_metrics_endpoint))
 
@@ -671,6 +686,7 @@ def _string_attrs(pairs: Mapping[str, object]) -> list[dict[str, object]]:
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK
 # (see MAXSERV-904)
 def send_telemetry_log(model_name: str) -> None:
+    """Sends a startup telemetry log for a model."""
     attrs = logs_resource.attributes
     body = {
         "resourceLogs": [

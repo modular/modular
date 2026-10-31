@@ -323,11 +323,8 @@ CompiledFrameworkLabel MEFFile::sniffFileContents() const {
   return result;
 }
 
-/// Open and read a MEF file, setting up our internal state and returning a
-/// pointer to our initialized object on success.  On failure, an error
-/// message is emitted to the errorHandler and a null RCRef is returned.
-///
-ErrorOr<RCRef<MEFFile>> MEFFile::open(StringRef file) {
+ErrorOr<RCRef<MEFFile>> MEFFile::open(BufferRef buffer) {
+  StringRef file = buffer->getBuffer();
   if (auto maxAttrAlign = maxAttributeAlignment();
       !isAddrAligned(maxAttrAlign, file.data()))
     return Error(Twine("MEF file (0x") +
@@ -340,6 +337,7 @@ ErrorOr<RCRef<MEFFile>> MEFFile::open(StringRef file) {
   file = file.drop_front(2); // Drop the magic number.
 
   auto mefFilePtr = RCRef<MEFFileImpl>::create();
+  mefFilePtr->buffer = std::move(buffer);
 
   ArrayRef<uint8_t> fileData((const uint8_t *)file.data(), file.size());
   MEFFileReader reader(fileData, *mefFilePtr);
@@ -371,25 +369,12 @@ ErrorOrSuccess MEFFile::installPrimitives(const PrimitiveRegistry &registry) {
       });
 }
 
-/// Open and read a MEF file, setting up our internal state and returning a
-/// pointer to our initialized object on success.  On an initial parse
-/// failure, an error message is returned in the `ErrorOr`.  MEF file format
-/// errors discovered lazily when running invokables, so they are returned
-/// through the invokable's result AsyncValue's.
-///
-/// Note that this doesn't set up the primitive table, it requires an explicit
-/// call to `installPrimitives` to do so.
-///
-/// TODO: This should (optionally) manage ownership of the underlying data
-/// passed in.  For example, we could take a closure to run when the lifetime
-/// of the MEFFile is done, or have a reference counted abstraction for
-/// holding memory buffers.
-ErrorOr<RCRef<MEFFile>> MEFFile::open(StringRef file,
+ErrorOr<RCRef<MEFFile>> MEFFile::open(BufferRef buffer,
                                       const PrimitiveRegistry &registry) {
-  auto resultOr = open(file);
+  auto resultOr = open(std::move(buffer));
   if (resultOr.isError())
     return resultOr.takeError();
-  auto result = std::move(*resultOr);
+  auto result = resultOr.takeValue();
   if (auto err = result->installPrimitives(registry))
     return err.takeError();
   return result;

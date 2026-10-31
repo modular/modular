@@ -56,9 +56,11 @@ def _pattern_fp8(r: Int, c: Int) -> Float8_e4m3fn:
 def kernel_load_q_fp8[
     cfg: MhaConfigV2,
     depth: Int,
+    q_origin: MutOrigin,
+    dump_origin: MutOrigin,
 ](
-    q_ptr: MutPointer[Scalar[cfg.dtype], MutAnyOrigin],
-    dump_ptr: MutPointer[Scalar[cfg.dtype], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[cfg.dtype], q_origin],
+    dump_ptr: MutPointer[Scalar[cfg.dtype], dump_origin],
 ):
     """Calls `MhaPrefillV2._load_q_and_scale` and dumps each lane's
     per-base-tile fragment to gmem.
@@ -126,7 +128,9 @@ def test_q_loader_contiguous_lane_layout(ctx: DeviceContext) raises:
             for c in range(DEPTH):
                 host_q[r * DEPTH + c] = _pattern_fp8(r, c)
 
-    ctx.enqueue_function[kernel_load_q_fp8[CFG, DEPTH]](
+    ctx.enqueue_function[
+        kernel_load_q_fp8[CFG, DEPTH, origin_of(dev_q), origin_of(dev_dump)]
+    ](
         dev_q.unsafe_ptr(),
         dev_dump.unsafe_ptr(),
         grid_dim=1,

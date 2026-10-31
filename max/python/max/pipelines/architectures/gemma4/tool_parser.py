@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Parses Gemma 4's tool calls out of generated text."""
+
 import json
 import re
 from typing import Any, ClassVar
@@ -39,11 +41,11 @@ TOOL_CALL_PATTERN = re.compile(
 
 
 def _json_loads_gemma4_string(body: str) -> str:
-    """Decode a ``<|"|>``-delimited Gemma4 string body as a JSON string body.
+    r"""Decode a ``<|"|>``-delimited Gemma4 string body as a JSON string body.
 
-    The grammar emits the body JSON-escaped (such as ``\\t`` for a tab) except a
+    The grammar emits the body JSON-escaped (such as ``\t`` for a tab) except a
     literal ``"``, which is emitted raw. Backslashes are always doubled, so no
-    ``"`` is ever already-escaped: escape every ``"`` to ``\\"`` and decode
+    ``"`` is ever already-escaped: escape every ``"`` to ``\"`` and decode
     with :func:`json.loads`. Falls open (returns ``body`` unchanged) on
     malformed input.
     """

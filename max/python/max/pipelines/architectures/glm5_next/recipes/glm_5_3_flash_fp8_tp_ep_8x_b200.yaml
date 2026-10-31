@@ -10,7 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-# 8x B200 recipe for GLM-5.3-Flash, text-only.
+# 8x B200 recipe for GLM-5.3-Flash: text, image and video input. A video's
+# decoded frames are charged to the server's per-request media budget
+# (MAX_SERVE_MAX_MEDIA_BYTES, 100 MiB by default), and a clip whose frames do
+# not fit is sampled more sparsely: keeping the checkpoint's 2 fps on a
+# ten-minute 1080p clip takes about 7.5 GB.
 #
 # quantization_encoding is left unset so it resolves from the checkpoint's own
 # blockwise-FP8 quantization_config, and max_length unset so the checkpoint's

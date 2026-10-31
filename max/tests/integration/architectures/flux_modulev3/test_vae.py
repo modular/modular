@@ -33,6 +33,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import (
     Accelerator,
     Buffer,
@@ -41,13 +42,12 @@ from max.driver import (
     accelerator_count,
 )
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module, module_dataclass
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData
+from max.nn import Module, module_dataclass
 from max.pipelines.architectures.flux_modulev3 import Vae
 from max.pipelines.lib.weight_loader import dict_loader
+from max.tensor import Tensor
 
 # The compile test below needs an NVIDIA GPU: Conv2d's FCRS filter
 # layout has no CPU implementation, and the FCRS path /

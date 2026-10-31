@@ -122,10 +122,13 @@ def _Q_fp32(n_q: Int, d: Int) -> Float32:
 def kernel_qk_chain[
     cfg: MhaConfigV2,
     T: DType,
+    src_k_swz_origin: MutOrigin,
+    src_q_origin: MutOrigin,
+    dump_origin: MutOrigin,
 ](
-    src_k_swz_ptr: MutPointer[Scalar[T], MutAnyOrigin],
-    src_q_ptr: MutPointer[Scalar[T], MutAnyOrigin],
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
+    src_k_swz_ptr: MutPointer[Scalar[T], src_k_swz_origin],
+    src_q_ptr: MutPointer[Scalar[T], src_q_origin],
+    dump_ptr: MutPointer[Float32, dump_origin],
 ):
     """Loads K from pre-swizzled SMEM, fills Q per-lane from gmem, calls
     `mma_QK`, dumps per-lane FP32 accumulator to `dump_ptr`.
@@ -297,7 +300,11 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
                 host_q[n_q * DEPTH + d] = _quantize_to_K[T](_Q_fp32(n_q, d))
 
     # ---- Launch the kernel ------------------------------------------------
-    ctx.enqueue_function[kernel_qk_chain[CFG, T]](
+    ctx.enqueue_function[
+        kernel_qk_chain[
+            CFG, T, origin_of(dev_k_swz), origin_of(dev_q), origin_of(dev_dump)
+        ]
+    ](
         dev_k_swz.unsafe_ptr(),
         dev_q.unsafe_ptr(),
         dev_dump.unsafe_ptr(),
@@ -391,24 +398,10 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
                         if diff > _tol:
                             if mismatches < 8:
                                 print(
-                                    "  MISMATCH lid=",
-                                    lid,
-                                    " n_out=",
-                                    n_out,
-                                    " m_out=",
-                                    m_out,
-                                    " k_local=",
-                                    k_local,
-                                    " m_kv=",
-                                    m_kv,
-                                    " n_q=",
-                                    n_q,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
-                                    " diff=",
-                                    diff,
+                                    t"  MISMATCH lid= {lid}  n_out= {n_out} "
+                                    t" m_out= {m_out}  k_local= {k_local} "
+                                    t" m_kv= {m_kv}  n_q= {n_q}  got= {got} "
+                                    t" expected= {expected}  diff= {diff}"
                                 )
                             mismatches += 1
 
@@ -418,17 +411,8 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         cos_sim = dot_got_ref / denom
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " cos_sim=",
-        cos_sim,
-        " worst@(m=",
-        worst_m,
-        " n=",
-        worst_n,
-        ")",
+        t"  mismatches= {mismatches}  max_diff= {max_diff}  cos_sim= {cos_sim} "
+        t" worst@(m= {worst_m}  n= {worst_n} )"
     )
 
     _ = dev_k_swz^
@@ -442,7 +426,7 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         print("  PASSED")
         return True
     else:
-        print("  FAILED (", mismatches, " elements exceeded tol=", _tol, ")")
+        print(t"  FAILED ( {mismatches}  elements exceeded tol= {_tol} )")
         return False
 
 
@@ -462,8 +446,8 @@ def main() raises:
 
         print("=" * 60)
         print("Summary:")
-        print("  BF16 = ", "PASS" if ok_bf16 else "FAIL")
-        print("  FP8  = ", "PASS" if ok_fp8 else "FAIL")
+        print(t"  BF16 =  {"PASS" if ok_bf16 else "FAIL"}")
+        print(t"  FP8  =  {"PASS" if ok_fp8 else "FAIL"}")
         print("=" * 60)
 
         assert_true(ok_bf16, "BF16 QK chain test failed")

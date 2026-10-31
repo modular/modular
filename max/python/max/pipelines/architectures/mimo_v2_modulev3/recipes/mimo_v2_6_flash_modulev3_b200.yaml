@@ -1,0 +1,20 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+model:
+  model_path: XiaomiMiMo/MiMo-V2.6-Flash-RL
+  # The checkpoint's 1M context plans a KV pool far past 2x B200's
+  # budget; the smoke eval needs a fraction of it.
+  max_length: 16384
+
+runtime:
+  prefer_module_v3: true

@@ -57,10 +57,12 @@
       "className": "sidebar-heading",
       "collapsed": false,
       "items": [
+        "docs/manual/lifecycle/index",
         "docs/manual/lifecycle/life",
-        "docs/manual/lifecycle/initialization",
         "docs/manual/lifecycle/death",
-        "docs/manual/lifecycle/explicit-destroy"
+        "docs/manual/lifecycle/explicit-destroy",
+        "docs/manual/lifecycle/initialization",
+        "docs/manual/lifecycle/trivial"
       ]
     },
     {

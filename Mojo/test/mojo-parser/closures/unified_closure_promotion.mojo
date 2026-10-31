@@ -58,7 +58,7 @@ def trigger_dtype():
 
 # COM: Verify async closures instantiate the closure trait with async
 # COM: metadata and use an async call op.
-# S2-DAG: lit.struct.decl @"closure$async_unified_closure()::inc::__storage"{{.*}}#kgen.fn_metadata<{{.*}}"async|capturing"
+# S2-DAG: lit.struct.decl @"closure$async_unified_closure()::inc::__storage"{{.*}}#kgen.fn_metadata<{{.*}}"async"
 # S2-LABEL: lit.fn @"async_unified_closure()"
 # S2-DAG: lit.async.call[!lit.generator<
 
@@ -96,7 +96,7 @@ def trigger_dtype_implicit_origin[n: Int]():
 # COM: Verify promoted stateless closures can bind captured params
 # COM: before satisfying thin function generic constraints.
 # S4-LABEL: lit.fn @"trigger_promoted_params{{.*}}"<n: !Int>() -> !kgen.none
-# S4-DAG: lit.call tail @{{.*}}::@"takesThin{{.*}}"<:!lit.generator<<"U": !AnyType, +>[1]("impl": !lit.ref<:!AnyType *(0,0), imm *[0,0]> imm_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType ?>
+# S4-DAG: lit.call tail @{{.*}}::@"takesThin{{.*}}"<:!lit.generator<<"U": !AnyType, +>[1]("impl": !lit.ref<:!AnyType *(0,0), imm *[0,0]> imm_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType *(0,0)>
 # S4-DAG: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
 
 #
@@ -181,7 +181,7 @@ def s6_trigger[xx: Int, func: def(Int) thin -> Int]() -> Int:
 # S7-DAG: {{.*}} = lit.call tail[!lit.generator<() -> !lit.struct<#SIMD {{.*}}: bind_params{{.*}}*"#__CALL__#", :!Int *"Closure_Syn#0")]()
 # S7-LABEL: lit.fn @"s7_trigger[::SIMD[DType.int, 1],::DType]()"
 # S7: %[[S7_WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct
-# S7-SAME: @{{.*}}::@"compute_init2[::SIMD[DType.int, 1]](){{.*}}"<:!DType dtype, :!Int ?>
+# S7-SAME: @{{.*}}::@"compute_init2[::SIMD[DType.int, 1]](){{.*}}"<:!DType dtype, :!Int *(0,0)>
 # S7: %[[S7_INIT:.*]] = lit.call @"inflated$def[::SIMD[DType.int, 1]]() thin -> ::SIMD[dtype, $0._mlir_value]|{{[0-9a-f]+}}"::@"__init__()"{{.*}}(%[[S7_WRAP]])
 # S7: %[[S7_IMM:.*]] = lit.ref.immut %[[S7_WRAP]]
 # S7: lit.call @{{.*}}::@"local_higher_order

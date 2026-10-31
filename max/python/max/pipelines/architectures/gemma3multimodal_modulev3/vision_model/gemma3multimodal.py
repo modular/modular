@@ -15,17 +15,17 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.norm.layer_norm import LayerNorm
-from max.experimental.tensor import Tensor
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.norm.layer_norm import LayerNorm
 from max.pipelines.architectures.gemma3_modulev3.gemma3 import Gemma3TextModel
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
+from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .embedding import Gemma3VisionEmbeddings
@@ -58,6 +58,7 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the language model over the tokens and image embeddings."""
         tokens = tokens.to(self.language_model.mesh)
         return_n_logits = return_n_logits.to(self.language_model.mesh)
         input_row_offsets = input_row_offsets.to(self.language_model.mesh)
@@ -171,6 +172,7 @@ class Gemma3VisionModel(Module[[Tensor], tuple[Tensor, ...]]):
         self.projector = Gemma3MultiModalProjector(config)
 
     def forward(self, pixel_values: Tensor) -> tuple[Tensor, ...]:
+        """Runs the vision tower and projects the patches into the text width."""
         hidden_states = self.embeddings(pixel_values)
         hidden_states = self.encoder(hidden_states)
         hidden_states = self.post_layernorm(hidden_states)

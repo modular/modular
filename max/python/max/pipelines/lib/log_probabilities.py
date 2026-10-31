@@ -22,9 +22,9 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import CompilationStopped, InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import LogProbabilities
 
 if TYPE_CHECKING:
@@ -267,7 +267,7 @@ class LogProbabilitiesMixin(_MixinBase):
     """
 
     _logprobs_device: Device
-    _logprobs_model: Model
+    _logprobs_model: Model | None
 
     def __init__(
         self,
@@ -282,7 +282,12 @@ class LogProbabilitiesMixin(_MixinBase):
             DeviceRef.from_device(self._logprobs_device),
             levels=_LOGPROBS_HEAP_LEVELS,
         )
-        self._logprobs_model = session.load(graph)
+        try:
+            self._logprobs_model = session.load(graph)
+        except CompilationStopped:
+            # `pre-jit` stops the first compile, and this graph is built
+            # before the host's own: propagating would leave that uncompiled.
+            self._logprobs_model = None
 
     def compute_log_probabilities(
         self,
@@ -294,6 +299,7 @@ class LogProbabilitiesMixin(_MixinBase):
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
         """Computes log probabilities for the generated tokens."""
+        assert self._logprobs_model is not None
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits
 

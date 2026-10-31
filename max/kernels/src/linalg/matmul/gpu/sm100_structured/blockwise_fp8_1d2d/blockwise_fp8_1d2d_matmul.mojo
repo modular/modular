@@ -37,7 +37,6 @@ from max.gpu.host.info import B200
 from layout import TileTensor, coord, flatten_leading
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
@@ -153,11 +152,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
         config=config,
         static_N=expert_n,
         static_K=K,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         b_scales_engine=type_of(b_scales_2d).Engine,
         c_device_engine=type_of(c_device).Engine,
         offsets_engine=type_of(a_offsets).Engine,
@@ -265,9 +260,9 @@ def grouped_matmul_dynamic_scaled_fp8_1d2d[
         num_active_experts: Number of active experts.
         ctx: Device context for kernel launch.
     """
-    comptime umma_shape: IndexList[3] = (64, 64, 32)
+    comptime umma_shape = (64, 64, 32)
     # A-scales: 1 x BM floats per pipeline stage
-    comptime BM = umma_shape[0]  # cta_group=1
+    comptime BM = Int(umma_shape[0])  # cta_group=1
     comptime a_scales_smem_per_stage = BM * size_of[DType.float32]()
 
     comptime a_type = DType.float8_e4m3fn
@@ -275,7 +270,7 @@ def grouped_matmul_dynamic_scaled_fp8_1d2d[
     comptime c_type = type_of(c).dtype
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=(1, 1, 1),
-        mma_shape=umma_shape,
+        mma_shape=(umma_shape[0], umma_shape[1], umma_shape[2]),
         cta_group=1,
         AB_swapped=False,
         k_group_size=1,

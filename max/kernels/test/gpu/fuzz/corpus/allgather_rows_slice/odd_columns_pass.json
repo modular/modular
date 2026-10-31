@@ -1,0 +1,14 @@
+{
+  "target": "allgather_rows_slice",
+  "spec": {
+    "rows_per_rank": 8,
+    "col_units": 16,
+    "repeats": 2,
+    "order": 1,
+    "data_seed": 65535
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "Odd-width rows form aligned row blocks; reverse launch order and raw special-value bits.",
+  "findings": []
+}

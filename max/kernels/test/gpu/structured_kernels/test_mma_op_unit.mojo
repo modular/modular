@@ -160,7 +160,8 @@ def _pattern_P_fp8(k: Int, n: Int) -> Float8_e4m3fn:
 def kernel_mma_QK[
     cfg: MhaConfigV2,
     T: DType,
-](dump_ptr: MutPointer[Float32, MutAnyOrigin],):
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     comptime _Op = MhaMmaOp[T, cfg]
     comptime _MMA_M = _Op.MMA_M
     comptime _MMA_N = _Op.MMA_N
@@ -261,7 +262,7 @@ def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
 
     var dev_dump = ctx.enqueue_create_buffer[.float32](_DUMP_SIZE)
 
-    ctx.enqueue_function[kernel_mma_QK[CFG, T]](
+    ctx.enqueue_function[kernel_mma_QK[CFG, T, origin_of(dev_dump)]](
         dev_dump.unsafe_ptr(),
         grid_dim=1,
         block_dim=64,
@@ -324,36 +325,16 @@ def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
                                 neg_count += 1
                             if mismatches < 5:
                                 print(
-                                    "  MISMATCH lid=",
-                                    lid,
-                                    " n=",
-                                    n_out,
-                                    " m=",
-                                    m_out,
-                                    " k_local=",
-                                    k_local,
-                                    " gr_K=",
-                                    gr_K,
-                                    " gr_Q=",
-                                    gr_Q,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
-                                    " diff=",
-                                    diff,
+                                    t"  MISMATCH lid= {lid}  n= {n_out}  m="
+                                    t" {m_out}  k_local= {k_local}  gr_K="
+                                    t" {gr_K}  gr_Q= {gr_Q}  got= {got} "
+                                    t" expected= {expected}  diff= {diff}"
                                 )
                             mismatches += 1
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " pos=",
-        pos_count,
-        " neg=",
-        neg_count,
+        t"  mismatches= {mismatches}  max_diff= {max_diff}  pos= {pos_count} "
+        t" neg= {neg_count}"
     )
     _ = dev_dump^
     if mismatches == 0:
@@ -391,7 +372,8 @@ def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
 def kernel_mma_PV[
     cfg: MhaConfigV2,
     T: DType,
-](dump_ptr: MutPointer[Float32, MutAnyOrigin],):
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     comptime _Op = MhaMmaOp[T, cfg]
     comptime _MMA_M = _Op.MMA_M
     comptime _MMA_N = _Op.MMA_N
@@ -498,7 +480,7 @@ def test_mma_PV[T: DType](ctx: DeviceContext) raises -> Bool:
 
     var dev_dump = ctx.enqueue_create_buffer[.float32](_DUMP_SIZE)
 
-    ctx.enqueue_function[kernel_mma_PV[CFG, T]](
+    ctx.enqueue_function[kernel_mma_PV[CFG, T, origin_of(dev_dump)]](
         dev_dump.unsafe_ptr(),
         grid_dim=1,
         block_dim=64,
@@ -554,36 +536,17 @@ def test_mma_PV[T: DType](ctx: DeviceContext) raises -> Bool:
                                 neg_count += 1
                             if mismatches < 5:
                                 print(
-                                    "  MISMATCH lid=",
-                                    lid,
-                                    " n_depth=",
-                                    n_depth,
-                                    " m_q=",
-                                    m_q,
-                                    " k_local=",
-                                    k_local,
-                                    " depth=",
-                                    depth_idx,
-                                    " q=",
-                                    q_idx,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
-                                    " diff=",
-                                    diff,
+                                    t"  MISMATCH lid= {lid}  n_depth="
+                                    t" {n_depth}  m_q= {m_q}  k_local="
+                                    t" {k_local}  depth= {depth_idx}  q="
+                                    t" {q_idx}  got= {got}  expected="
+                                    t" {expected}  diff= {diff}"
                                 )
                             mismatches += 1
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " pos=",
-        pos_count,
-        " neg=",
-        neg_count,
+        t"  mismatches= {mismatches}  max_diff= {max_diff}  pos= {pos_count} "
+        t" neg= {neg_count}"
     )
     _ = dev_dump^
     if mismatches == 0:
@@ -607,22 +570,10 @@ def main() raises:
 
         print("=" * 60)
         print("Summary:")
-        print(
-            "  mma_QK[BF16] =",
-            "PASS" if ok_qk_bf16 else "FAIL",
-        )
-        print(
-            "  mma_QK[FP8 ] =",
-            "PASS" if ok_qk_fp8 else "FAIL",
-        )
-        print(
-            "  mma_PV[BF16] =",
-            "PASS" if ok_pv_bf16 else "FAIL",
-        )
-        print(
-            "  mma_PV[FP8 ] =",
-            "PASS" if ok_pv_fp8 else "FAIL",
-        )
+        print(t"  mma_QK[BF16] = {"PASS" if ok_qk_bf16 else "FAIL"}")
+        print(t"  mma_QK[FP8 ] = {"PASS" if ok_qk_fp8 else "FAIL"}")
+        print(t"  mma_PV[BF16] = {"PASS" if ok_pv_bf16 else "FAIL"}")
+        print(t"  mma_PV[FP8 ] = {"PASS" if ok_pv_fp8 else "FAIL"}")
         print("=" * 60)
 
         assert_true(

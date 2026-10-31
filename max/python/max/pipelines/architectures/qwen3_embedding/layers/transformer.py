@@ -16,10 +16,10 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, TensorValueLike, ops
-from max.nn.embedding import Embedding
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 from .pooling import last_token_pool, normalize_embeddings
 

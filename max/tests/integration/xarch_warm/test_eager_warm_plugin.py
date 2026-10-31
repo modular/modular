@@ -15,7 +15,7 @@
 default."""
 
 import pytest
-from max.experimental import executor
+from max.tensor import executor
 
 
 def test_unmarked_test_is_interpreter_only() -> None:

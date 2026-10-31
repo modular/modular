@@ -60,16 +60,10 @@ def test_blockwise_fp8_matmul_amd[
     var K = Int(k)
 
     print(
-        "== test_blockwise_fp8_matmul_amd c_type=",
-        c_type,
-        " MxNxK=",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        " via_dispatch=",
-        via_dispatch,
+        (
+            t"== test_blockwise_fp8_matmul_amd"
+            t" c_type={c_type} MxNxK={M}x{N}x{K} via_dispatch={via_dispatch}"
+        ),
         sep="",
     )
 
@@ -146,8 +140,10 @@ def test_blockwise_fp8_matmul_amd[
                 a_scales_type=.float32,
                 b_scales_type=.float32,
                 transpose_b=transpose_b,
-                scales_granularity_mnk=Index(
-                    BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
+                scales_granularity_mnk=(
+                    BLOCK_SCALE_M,
+                    BLOCK_SCALE_N,
+                    BLOCK_SCALE_K,
                 ),
                 device_info=ctx.default_device_info,
                 a_static_k=type_of(a_dev).static_shape[1],
@@ -178,7 +174,7 @@ def test_blockwise_fp8_matmul_amd[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(
+        scales_granularity_mnk=Coord[Int, Int, Int](
             BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
         ),
     ](

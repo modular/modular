@@ -20,7 +20,7 @@ from unittest.mock import Mock, call, patch
 
 import numpy as np
 import pytest
-from max.nn.kv_cache import KVCacheGroupId, PagedKVLeafRegion
+from max.nn.legacy.kv_cache import KVCacheGroupId, PagedKVLeafRegion
 from max.pipelines.context import (
     GenerationStatus,
     TextContext,
@@ -28,12 +28,17 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.checkpoint import (
+    CheckpointEvent,
+    CheckpointEventKind,
+)
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     CompletedTransfer,
     KVLoadFailed,
     KVLookup,
+    KVProbe,
     KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache import (
@@ -58,6 +63,7 @@ from max.pipelines.modeling.types import (
 )
 from max.serve.scheduler.batch_constructor import text_batch_constructor
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
+    LOOKUP_WAIT_ENV_VAR,
     MAX_PENDING_LOOKUPS_ENV_VAR,
     PreemptionReason,
     TextBatchConstructor,
@@ -131,6 +137,10 @@ def create_mock_kv_cache() -> Mock:
     cache.starts_lookup = Mock(return_value=False)
     cache.awaits_lookup = Mock(return_value=False)
     cache.hand_back_lookup = Mock()
+    cache.active_length_after_alloc = Mock(
+        side_effect=lambda ctx: ctx.tokens.active_length
+    )
+    cache.awaits_presence = Mock(return_value=False)
     set_mock_kv_usage(cache, 0.0)
 
     return cache
@@ -1262,6 +1272,59 @@ def test_text_batch_constructor__advance_requests_requeues_every_chunked_request
         mid_prefill_b.request_id,
     ]
     assert list(replica.tg_reqs) == [finished.request_id]
+
+
+def test_text_batch_constructor__advance_requests_records_each_finished_prompt(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A prefill that produced a token reports where its prompt ended.
+
+    A request still mid-prefill has not finished its prompt, and a decode
+    request finished it on an earlier step, so neither reports one.
+    """
+    kv_cache = create_mock_kv_cache()
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=5,
+            max_batch_total_tokens=None,
+            enable_in_flight_batching=False,
+            enable_chunked_prefill=True,
+            target_tokens_per_batch_ce=30,
+        ),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    checkpointer = Mock()
+    batch_constructor.with_checkpointer(checkpointer)
+    kv_cache.with_checkpointer.assert_called_once_with(checkpointer)
+
+    mid_prefill, finished, decoding = (
+        TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
+            max_length=100,
+        )
+        for _ in range(3)
+    )
+    for context in (mid_prefill, finished, decoding):
+        batch_constructor.enqueue_new_request(context, replica_idx=0)
+
+    replica = batch_constructor.replicas[0]
+    # Stands in for _add_ce_requests draining the queue into the batch.
+    replica.ce_reqs.clear()
+    decoding.update(ARBITRARY_TOKEN_ID)
+    replica.tg_reqs[decoding.request_id] = decoding
+    finished.update(ARBITRARY_TOKEN_ID)
+
+    batch_constructor.advance_requests(
+        TextGenerationInputs(batches=[[mid_prefill, finished, decoding]])
+    )
+
+    checkpointer.record.assert_called_once_with(
+        CheckpointEvent(
+            finished.request_id, CheckpointEventKind.END_OF_PROMPT, 9
+        )
+    )
 
 
 def _prefill_cap_constructor(
@@ -2446,6 +2509,9 @@ def create_dp_balance_constructor(
     hit_counts: list[PrefixCacheHits] | None = None,
     max_batch_total_tokens: int | None = None,
     prefill_schedule_interval: int = 1,
+    enable_in_flight_batching: bool = False,
+    spec_decode_mixed_verify_width: int = 0,
+    chunked_prefill_min_chunk_size: int = 0,
 ) -> TextBatchConstructor:
     """A DP constructor with the CE balancer on and a stubbed cache probe."""
     pipeline = Mock(spec=["release"])
@@ -2466,6 +2532,9 @@ def create_dp_balance_constructor(
         dp_ce_balance_enable_dynamic_chunk_size=enable_dynamic_chunk_size,
         max_batch_total_tokens=max_batch_total_tokens,
         prefill_schedule_interval=prefill_schedule_interval,
+        enable_in_flight_batching=enable_in_flight_batching,
+        spec_decode_mixed_verify_width=spec_decode_mixed_verify_width,
+        chunked_prefill_min_chunk_size=chunked_prefill_min_chunk_size,
     )
     return TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -2711,11 +2780,12 @@ def test_dp_ce_balance__reduces_chunk_size_to_balance_level() -> None:
 
     # Occupancy (96+60)/(2*96) = 0.81 misses the 0.9 threshold, but both
     # replicas have CE work and the balance level (60) is at least half the
-    # 100-token chunk target, so the step runs with a 60-token chunk size
-    # per replica: the heavy request is chunked at the quota and only its
-    # excess defers.
+    # 100-token chunk target, so the step runs at a 60-token chunk size:
+    # the heavy request is chunked at its quota and only its excess defers.
+    # The light replica already sits at the level, so it is not cut and
+    # keeps no quota (0 = uncapped).
     inputs = batch_constructor.construct_batch()
-    assert batch_constructor._ce_step_quota == [60, 60]
+    assert batch_constructor._ce_step_quota == [60, 0]
     assert batch_constructor._ce_deferred_replicas == set()
     assert has_request(inputs.batches[0], heavy_ce.request_id)
     assert heavy_ce.tokens.active_length == 60
@@ -2751,21 +2821,129 @@ def test_dp_ce_balance__no_chunk_size_reduction_below_half_target() -> None:
 
 
 def test_dp_ce_balance__quota_never_below_floor() -> None:
-    batch_constructor = create_dp_balance_constructor(threshold=0.9)
+    batch_constructor = create_dp_balance_constructor(dp=3, threshold=0.9)
     # Replica 0's CE deadline is blown: it is floor work that runs to the
     # full chunk budget, and the balance level cannot drop below it.
     tg_ctx = create_lora_context(is_tg=True)
     batch_constructor.enqueue_new_request(tg_ctx, replica_idx=0)
-    expired_ce = create_lora_context(seq_len=96)
+    expired_ce = create_lora_context(seq_len=70)
     batch_constructor.enqueue_new_request(expired_ce, replica_idx=0)
     batch_constructor._ce_arrival[expired_ce.request_id] = (
         time.monotonic() - 60.0
     )
-    _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=60)
+    heavy_ce = _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=96)
+    _add_deferrable_ce(batch_constructor, replica_idx=2, seq_len=55)
+
+    # Occupancy (70+96+55)/(3*96) = 0.77 misses the threshold. The lightest
+    # replica sits at 55, but the cut stops at the 70-token floor, and only
+    # the replica above it is cut.
+    inputs = batch_constructor.construct_batch()
+    assert batch_constructor._ce_step_quota == [0, 70, 0]
+    assert batch_constructor._ce_deferred_replicas == set()
+    assert has_request(inputs.batches[1], heavy_ce.request_id)
+    assert heavy_ce.tokens.active_length == 70
+
+
+@pytest.mark.parametrize(
+    ("heavy_len", "light_len", "heavy_chunk"), [(96, 40, 40), (80, 60, 80)]
+)
+def test_dp_ce_balance__min_chunk_size_bounds_the_cut(
+    heavy_len: int, light_len: int, heavy_chunk: int
+) -> None:
+    """The min chunk size bounds both the balance level and the remainder.
+
+    A 40-token level is under half the 100-token target but not under the
+    30-token min chunk, so the heavy replica is cut to it. Cutting 80 tokens
+    to 60 would leave 20, which the budget's min-chunk floor would refuse or
+    move, so that step runs uncut.
+    """
+    batch_constructor = create_dp_balance_constructor(
+        threshold=0.9, chunked_prefill_min_chunk_size=30
+    )
+    heavy_ce = _add_deferrable_ce(batch_constructor, 0, heavy_len)
+    _add_deferrable_ce(batch_constructor, 1, light_len)
 
     batch_constructor.construct_batch()
-    assert batch_constructor._ce_step_quota == [96, 60]
-    assert batch_constructor._ce_deferred_replicas == set()
+
+    cut = heavy_chunk if heavy_chunk < heavy_len else 0
+    assert batch_constructor._ce_step_quota == [cut, 0]
+    assert heavy_ce.tokens.active_length == heavy_chunk
+
+
+def test_dp_ce_balance__pooled_request_binds_at_its_cut_size() -> None:
+    """A pooled request heavier than the step binds, cut to the balance level.
+
+    Priced at its full 96 tokens it would lower the step's occupancy and wait
+    until it expired to run alone. Priced at the 25-token cut it balances the
+    step, which still needs the quota that makes the cut.
+    """
+    batch_constructor = create_dp_balance_constructor(
+        dp=4, chunked_prefill_min_chunk_size=25
+    )
+    for replica_idx in range(3):
+        _add_deferrable_ce(batch_constructor, replica_idx, 25)
+    pooled_ctx = create_lora_context(seq_len=96)
+    batch_constructor.enqueue_new_request(pooled_ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[3], pooled_ctx.request_id)
+    assert pooled_ctx.tokens.active_length == 25
+    assert batch_constructor._ce_step_quota == [0, 0, 0, 25]
+
+
+def test_dp_ce_balance__quota_caps_prefill_under_in_flight_batching() -> None:
+    """The CE quota holds on a mixed step without truncating its decode rows."""
+    batch_constructor = create_dp_balance_constructor(
+        threshold=0.9,
+        enable_in_flight_batching=True,
+        spec_decode_mixed_verify_width=2,
+    )
+    heavy_ce = _add_deferrable_ce(batch_constructor, replica_idx=0, seq_len=96)
+    light_ce = _add_deferrable_ce(batch_constructor, replica_idx=1, seq_len=60)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert batch_constructor._ce_step_quota == [60, 0]
+    # Each replica runs its decode row and its prompt.
+    assert [len(batch) for batch in inputs.batches] == [2, 2]
+    assert heavy_ce.tokens.active_length == 60
+    assert light_ce.tokens.active_length == 60
+
+
+@pytest.mark.parametrize("timeout_ms", [0.0, 10_000.0])
+def test_dp_ce_balance__bind_tie_goes_to_the_fewest_queued_requests(
+    timeout_ms: float,
+) -> None:
+    """A bind tied on CE tokens goes to the replica with the fewest requests.
+
+    With the new request, replicas 0-2 tie at 70 tokens. Counting decode and
+    prompt requests (2, 3, 1) picks replica 2; counting either alone picks
+    replica 0 or 1. Timeout 0 binds it as expired, a deadline from the pool.
+    """
+    batch_constructor = create_dp_balance_constructor(
+        dp=4, timeout_ms=timeout_ms
+    )
+    for replica_idx, num_tg, seq_lens in (
+        (0, 0, (25, 25)),
+        (1, 2, (50,)),
+        (2, 0, (50,)),
+        (3, 0, (100,)),
+    ):
+        for _ in range(num_tg):
+            batch_constructor.enqueue_new_request(
+                create_lora_context(is_tg=True), replica_idx=replica_idx
+            )
+        for seq_len in seq_lens:
+            batch_constructor.enqueue_new_request(
+                create_lora_context(seq_len=seq_len), replica_idx=replica_idx
+            )
+    ctx = create_lora_context(seq_len=20)
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[2], ctx.request_id)
 
 
 def _long_ce_context(seq_len: int) -> TextContext:
@@ -2920,6 +3098,176 @@ def test_dp_ce_balance__binding_does_not_reprobe_the_prefix_cache() -> None:
     assert probe.call_count == 1
 
 
+def _stub_presence_answering_later(
+    batch_constructor: TextBatchConstructor,
+    answered: list[PrefixCacheHits],
+) -> Callable[[], None]:
+    """A cache whose shared tiers answer only when the returned callable runs.
+
+    Until then every request prices as uncached everywhere and reads as
+    awaiting presence, the way the Jenga manager prices a request whose
+    connector probe is still out.
+    """
+    kv_cache = _mock_kv_cache_of(batch_constructor)
+    uncached = [PrefixCacheHits()] * batch_constructor.num_replicas
+    state = {"answered": False}
+    kv_cache.get_prefix_cache_hit_counts = Mock(
+        side_effect=lambda ctx: answered if state["answered"] else uncached
+    )
+    kv_cache.awaits_presence = Mock(
+        side_effect=lambda ctx: not state["answered"]
+    )
+
+    def answer() -> None:
+        state["answered"] = True
+
+    return answer
+
+
+def test_dp_ce_balance__pooled_request_is_priced_by_its_device_tier_until_presence_answers() -> (
+    None
+):
+    """A pooled request whose shared-tier answer is out is priced without it.
+
+    Its weights count the device tier alone, which here is nothing, and the
+    planner prices it again on each pass, which costs one read of the
+    cache per pass and no wait, until the answer lands. From then on the
+    weight is kept, as a request priced in place keeps its own.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    for replica_idx in range(2):
+        _saturate_decode(batch_constructor, replica_idx=replica_idx)
+    answer = _stub_presence_answering_later(
+        batch_constructor,
+        [PrefixCacheHits(), PrefixCacheHits(external_blocks=4)],
+    )
+    probe = _mock_kv_cache_of(batch_constructor).get_prefix_cache_hit_counts
+    ctx = create_lora_context(seq_len=96)
+    batch_constructor.enqueue_new_request(ctx)
+
+    pending = batch_constructor._ce_pending[ctx.request_id]
+    assert pending.weights == [96, 96]
+    assert pending.awaits_presence
+
+    batch_constructor.construct_batch()
+    assert pending.weights == [96, 96]
+    assert pending.awaits_presence
+    assert probe.call_count == 1, "an answer still out is not read again"
+
+    answer()
+    batch_constructor.construct_batch()
+    assert pending.weights == [96, 32]
+    assert not pending.awaits_presence
+    assert probe.call_count == 2
+
+    batch_constructor.construct_batch()
+    assert probe.call_count == 2, "an answer that landed is priced once"
+
+
+def test_dp_ce_balance__a_late_presence_answer_decides_where_a_request_binds() -> (
+    None
+):
+    """The planner binds on the weights the answer gave, not the estimate.
+
+    Priced on the device tier alone the request is a tie that falls to
+    replica 0, and the answer that lands before the first plan moves it
+    to the replica whose shared tiers hold its prefix.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    answer = _stub_presence_answering_later(
+        batch_constructor,
+        [PrefixCacheHits(), PrefixCacheHits(external_blocks=4)],
+    )
+    ctx = create_lora_context(seq_len=96)
+    batch_constructor.enqueue_new_request(ctx)
+    assert batch_constructor._ce_pending[ctx.request_id].weights == [96, 96]
+
+    answer()
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[1], ctx.request_id)
+    assert batch_constructor._bound_requests[ctx.request_id].ce_weight == 32
+
+
+def test_dp_ce_balance__bound_request_is_priced_again_until_it_is_claimed() -> (
+    None
+):
+    """A request bound before its answer landed is priced again too.
+
+    Its weight prices its replica's queue for every pooled bind, so it is
+    read again once the answer lands, and left alone once the request is
+    claimed, since the cache then reads the probe for the allocation.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    _saturate_decode(batch_constructor, replica_idx=0)
+    answer = _stub_presence_answering_later(
+        batch_constructor,
+        [PrefixCacheHits(external_blocks=4), PrefixCacheHits()],
+    )
+    kv_cache = _mock_kv_cache_of(batch_constructor)
+    probe = kv_cache.get_prefix_cache_hit_counts
+    waiting = create_lora_context(seq_len=96)
+    claimed = create_lora_context(seq_len=96)
+    for ctx in (waiting, claimed):
+        batch_constructor.enqueue_new_request(ctx, replica_idx=0)
+        bound = batch_constructor._bound_requests[ctx.request_id]
+        assert bound.ce_weight == 96
+        assert bound.awaits_presence
+    assert probe.call_count == 2
+
+    kv_cache.contains = Mock(side_effect=lambda ctx: ctx is claimed)
+    batch_constructor.construct_batch()
+    assert batch_constructor._bound_requests[waiting.request_id].awaits_presence
+    assert not batch_constructor._bound_requests[
+        claimed.request_id
+    ].awaits_presence
+    assert probe.call_count == 2, "an answer still out is not read again"
+
+    answer()
+    batch_constructor.construct_batch()
+    bound = batch_constructor._bound_requests[waiting.request_id]
+    assert bound.ce_weight == 32
+    assert not bound.awaits_presence
+    assert batch_constructor._bound_requests[claimed.request_id].ce_weight == 96
+    assert probe.call_count == 3, "only the request still waiting is priced"
+
+
+def test_dp_ce_balance__releasing_an_unclaimed_request_abandons_its_presence() -> (
+    None
+):
+    """A request released before it is claimed hands its probe back.
+
+    Whether it was still pooled or bound and waiting its turn, the cache
+    never claimed it, so its release is the probe's only way back. One the
+    cache claimed is released as before, which hands the probe back itself.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    kv_cache = _mock_kv_cache_of(batch_constructor)
+    kv_cache.abandon_presence = Mock()
+
+    pooled = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(pooled)
+    batch_constructor.release_request(pooled.request_id)
+    assert kv_cache.abandon_presence.call_args_list == [call(pooled)]
+    kv_cache.release.assert_not_called()
+
+    bound = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(bound, replica_idx=0)
+    batch_constructor.release_request(bound.request_id)
+    assert kv_cache.abandon_presence.call_args_list == [
+        call(pooled),
+        call(bound),
+    ]
+    kv_cache.release.assert_not_called()
+
+    claimed = create_lora_context(seq_len=48)
+    batch_constructor.enqueue_new_request(claimed, replica_idx=0)
+    kv_cache.contains = Mock(return_value=True)
+    batch_constructor.release_request(claimed.request_id)
+    assert kv_cache.abandon_presence.call_count == 2
+    kv_cache.release.assert_called_once_with(claimed)
+
+
 def test_dp_ce_balance__off_cadence_step_plans_nothing() -> None:
     """A step that cannot admit prefill anywhere must not plan any.
 
@@ -2999,6 +3347,56 @@ def test_dp_ce_balance__pool_wait_restarts_when_a_preempted_request_returns() ->
     mock_metrics.ce_pool_wait_time.assert_called_once()
     (wait_ms,) = mock_metrics.ce_pool_wait_time.call_args.args
     assert 0 <= wait_ms < 1000
+
+
+def test_dp_ce_balance__a_cordon_wait_survives_the_return_to_the_pool() -> None:
+    """A request preempted back to the pool keeps the wait it started.
+
+    Without DP balancing it is rebound and keeps it, so with balancing the
+    same preemption must not drop the wait or restart it at a later cordon.
+    """
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ctx, replica_idx=0)
+    batch_constructor._ce_arrival[ctx.request_id] = time.monotonic()
+    batch_constructor._cordon_waits[ctx.request_id] = (
+        text_batch_constructor._CordonWait(
+            since=time.monotonic() - 0.5, pass_idx=0
+        )
+    )
+
+    batch_constructor._preempt_request(
+        ctx, 0, reason=PreemptionReason.KV_CACHE_MEMORY
+    )
+    assert ctx.request_id in batch_constructor._ce_pending
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0] + inputs.batches[1], ctx.request_id)
+    mock_metrics.connector_cordon_wait_time.assert_called_once()
+    (wait_ms,) = mock_metrics.connector_cordon_wait_time.call_args.args
+    assert 500 <= wait_ms < 1000
+
+
+def test_dp_ce_balance__releasing_a_pooled_request_drops_its_cordon_wait() -> (
+    None
+):
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ctx, replica_idx=0)
+    batch_constructor._ce_arrival[ctx.request_id] = time.monotonic()
+    batch_constructor._cordon_waits[ctx.request_id] = (
+        text_batch_constructor._CordonWait(since=time.monotonic(), pass_idx=0)
+    )
+    batch_constructor._preempt_request(
+        ctx, 0, reason=PreemptionReason.KV_CACHE_MEMORY
+    )
+
+    batch_constructor.release_request(ctx.request_id)
+
+    assert not batch_constructor._cordon_waits
 
 
 def test_dp_ce_balance__preempted_request_returns_to_the_pool() -> None:
@@ -3195,6 +3593,10 @@ def _make_cordon_kv_cache(alloc: Mock) -> Mock:
     kv_cache.starts_lookup = Mock(return_value=False)
     kv_cache.awaits_lookup = Mock(return_value=False)
     kv_cache.hand_back_lookup = Mock()
+    kv_cache.active_length_after_alloc = Mock(
+        side_effect=lambda ctx: ctx.tokens.active_length
+    )
+    kv_cache.awaits_presence = Mock(return_value=False)
     set_mock_kv_usage(kv_cache, 0.0)
     return kv_cache
 
@@ -3399,6 +3801,7 @@ class _DeferringConnector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         lookup = _DeferredLookup(
             len(block_hashes), self.answers_on, hit=self.hits
@@ -3411,6 +3814,67 @@ class _DeferringConnector(NullConnector):
 
     def abandon_lookup(self, lookup: KVLookup) -> None:
         self.abandoned.append(lookup)
+
+
+class _DeferredProbe:
+    """A started connector probe that answers a miss when told to."""
+
+    def __init__(self, num_blocks: int, replica_idxs: Sequence[int]) -> None:
+        self._num_blocks = num_blocks
+        self._replica_idxs = list(replica_idxs)
+        self.answered = False
+
+    def is_complete(self) -> bool:
+        return self.answered
+
+    def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        if not self.answered:
+            raise RuntimeError("the probe has not answered")
+        return [
+            {"full": [False] * self._num_blocks} for _ in self._replica_idxs
+        ]
+
+    def answer(self) -> None:
+        self.answered = True
+
+
+class _ProbingConnector(_DeferringConnector):
+    """Starts its pricing probe and refuses to answer anything in place.
+
+    ``probe`` and ``lookup`` both raise, since either runs on the scheduler
+    thread, and each lookup it starts answers a miss on its first poll.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(answers_on=1)
+        self.started_probes: list[_DeferredProbe] = []
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        raise AssertionError("the blocking probe ran on the scheduler thread")
+
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+        chain_start: int | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        raise AssertionError("a blocking lookup ran on the scheduler thread")
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        probe = _DeferredProbe(len(block_hashes), replica_idxs)
+        self.started_probes.append(probe)
+        return probe
 
 
 class _AnsweredLookup:
@@ -3442,6 +3906,7 @@ class _OnloadingConnector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         return {"full": [True] * len(block_hashes)}
 
@@ -3450,6 +3915,7 @@ class _OnloadingConnector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         return _AnsweredLookup(len(block_hashes))
 
@@ -3503,6 +3969,9 @@ def _batch_constructor_over_jenga(
     kv_cache.start_lookup = Mock(side_effect=manager.start_lookup)
     kv_cache.awaits_lookup = Mock(side_effect=manager.awaits_lookup)
     kv_cache.hand_back_lookup = Mock(side_effect=manager.hand_back_lookup)
+    kv_cache.active_length_after_alloc = Mock(
+        side_effect=manager.active_length_after_alloc
+    )
     kv_cache.num_req_blocks = Mock(side_effect=manager.num_req_blocks)
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config or _cordon_config(),
@@ -3510,6 +3979,129 @@ def _batch_constructor_over_jenga(
         kv_cache=kv_cache,
     )
     return batch_constructor, manager
+
+
+def _dp_batch_constructor_over_jenga(
+    connector: NullConnector,
+) -> tuple[TextBatchConstructor, JengaBlockManager]:
+    """A DP-balanced constructor whose cache calls reach a two-replica manager."""
+    pipeline = Mock(spec=["release"])
+    pipeline.release = Mock()
+    leaf_infos = {"full": KVLeafInfo(1, KVCacheGroupId.full())}
+    pools = create_pools(leaf_infos, 64, num_replicas=2)
+    manager = JengaBlockManager(
+        pools=pools,
+        groups=create_groups(leaf_infos, pools, 1, enable_prefix_caching=True),
+        leaves={
+            "full": PagedKVLeafRegion(
+                leaf_id="full",
+                group_id=KVCacheGroupId.full(),
+                bytes_per_page=1,
+                page_size=1,
+            )
+        },
+        block_size=1,
+        enable_prefix_caching=True,
+        max_num_input_tokens=None,
+        num_draft_tokens=0,
+        num_draft_tokens_per_step=0,
+        connector=connector,
+    )
+    kv_cache = _make_cordon_kv_cache(Mock(side_effect=manager.alloc))
+    kv_cache.params.page_size = 1
+    for name in (
+        "claim",
+        "contains",
+        "release",
+        "starts_lookup",
+        "start_lookup",
+        "awaits_lookup",
+        "hand_back_lookup",
+        "num_req_blocks",
+        "get_prefix_cache_hit_counts",
+        "awaits_presence",
+        "abandon_presence",
+    ):
+        setattr(kv_cache, name, Mock(side_effect=getattr(manager, name)))
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=5,
+        max_batch_total_tokens=None,
+        enable_in_flight_batching=False,
+        enable_chunked_prefill=False,
+        target_tokens_per_batch_ce=100,
+        data_parallel_degree=2,
+        dp_ce_balance_timeout_ms=10_000.0,
+    )
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    return batch_constructor, manager
+
+
+def test_dp_ce_balance__prices_and_admits_without_a_blocking_connector_call() -> (
+    None
+):
+    """Over a real manager, nothing on the scheduler thread waits on the store.
+
+    The connector raises on its blocking probe and lookup. The first request
+    is priced and planned while its probe is out, so it binds on the device
+    tier alone and its first alloc, finding no answer, takes the leased path
+    as before. The second request's probe answers a miss before it is
+    planned, so its alloc leases nothing and it runs in the same step.
+    """
+    connector = _ProbingConnector()
+    batch_constructor, _ = _dp_batch_constructor_over_jenga(connector)
+    first = create_lora_context(seq_len=8)
+    batch_constructor.enqueue_new_request(first)
+    (first_probe,) = connector.started_probes
+    assert not first_probe.answered
+    assert batch_constructor._ce_pending[first.request_id].awaits_presence
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0] + inputs.batches[1], first.request_id)
+    assert len(connector.started) == 1, "no answer leaves the lease to decide"
+
+    second = create_lora_context(seq_len=8)
+    batch_constructor.enqueue_new_request(second)
+    (_, second_probe) = connector.started_probes
+    second_probe.answer()
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0] + inputs.batches[1], second.request_id)
+    assert second.request_id not in batch_constructor._onloading_reqs
+    assert len(connector.started) == 1, "a probed miss leases nothing"
+    assert not batch_constructor._bound_requests[
+        second.request_id
+    ].awaits_presence
+
+
+def test_dp_ce_balance__a_preempted_request_is_priced_again_from_a_new_probe() -> (
+    None
+):
+    """A request preempted back to the pool starts a probe and waits on it.
+
+    Its release dropped the old probe, so the pool prices it from the device
+    tier and marks it as awaiting presence, or it would keep that weight for
+    its whole second stay.
+    """
+    connector = _ProbingConnector()
+    batch_constructor, _ = _dp_batch_constructor_over_jenga(connector)
+    ctx = create_lora_context(seq_len=8)
+    batch_constructor.enqueue_new_request(ctx)
+    connector.started_probes[0].answer()
+    batch_constructor.construct_batch()
+    replica_idx = batch_constructor._bound_requests[ctx.request_id].replica_idx
+
+    batch_constructor._preempt_request(
+        ctx, replica_idx, PreemptionReason.KV_CACHE_MEMORY
+    )
+
+    assert len(connector.started_probes) == 2
+    assert not connector.started_probes[1].answered
+    assert batch_constructor._ce_pending[ctx.request_id].awaits_presence
 
 
 def test_text_batch_constructor__release_hands_back_a_cordoned_lookup(
@@ -3705,6 +4297,730 @@ def test_text_batch_constructor__rejects_a_negative_lookup_bound(
 
     with pytest.raises(ValueError, match=MAX_PENDING_LOOKUPS_ENV_VAR):
         _batch_constructor_over_jenga(pipeline, _DeferringConnector())
+
+
+class _Clock:
+    """A ``time`` whose ``sleep`` advances ``monotonic``.
+
+    A bounded wait on it takes no wall time, and reads exactly how long it
+    waited. A wait that never ends fails rather than hangs the test.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self._reads = 0
+
+    def monotonic(self) -> float:
+        self._reads += 1
+        assert self._reads < 1_000_000, "a wait on the clock never ended"
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class _ClockedLookup:
+    """A connector lookup that answers once the clock reaches a time."""
+
+    def __init__(
+        self,
+        clock: _Clock,
+        num_blocks: int,
+        answers_at: float | None,
+        hits: bool = False,
+    ) -> None:
+        self._clock = clock
+        self._num_blocks = num_blocks
+        self._answers_at = answers_at
+        self._hits = hits
+
+    def is_complete(self) -> bool:
+        return (
+            self._answers_at is not None and self._clock.now >= self._answers_at
+        )
+
+    def masks(self) -> Mapping[str, Sequence[bool]]:
+        if not self.is_complete():
+            raise RuntimeError("the lookup has not answered")
+        return {"full": [self._hits] * self._num_blocks}
+
+
+class _ClockedConnector(NullConnector):
+    """Defers every lookup, each answering on the clock.
+
+    The n-th lookup started answers ``answers_after[n]`` seconds after it
+    starts, never if that is None. With ``hits`` every answer is a hit,
+    onloaded without landing.
+    """
+
+    def __init__(
+        self,
+        clock: _Clock,
+        answers_after: Sequence[float | None],
+        hits: bool = False,
+    ):
+        self._clock = clock
+        self._answers_after = list(answers_after)
+        self._hits = hits
+        self.started: list[_ClockedLookup] = []
+        self.onloads: list[_IncompleteOnload] = []
+
+    @property
+    def name(self) -> str:
+        return "ClockedConnector"
+
+    def start_lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+        chain_start: int | None = None,
+    ) -> KVLookup:
+        answer_after = self._answers_after[len(self.started)]
+        lookup = _ClockedLookup(
+            self._clock,
+            len(block_hashes),
+            None if answer_after is None else self._clock.now + answer_after,
+            hits=self._hits,
+        )
+        self.started.append(lookup)
+        return lookup
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        onload = _IncompleteOnload()
+        self.onloads.append(onload)
+        return onload
+
+    def defers_lookup(self, replica_idx: int = 0) -> bool:
+        return True
+
+    def abandon_lookup(self, lookup: KVLookup) -> None:
+        return
+
+
+def _waiting_batch_constructor(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+    answers_after: Sequence[float | None],
+    scheduler_config: TokenGenerationSchedulerConfig | None = None,
+    hits: bool = False,
+    wait_ms: str = "10",
+) -> tuple[TextBatchConstructor, JengaBlockManager, _ClockedConnector, _Clock]:
+    """A constructor that waits ``wait_ms`` on the lookups a pass starts.
+
+    Both it and the manager read the clock the wait advances.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(text_batch_constructor, "time", clock)
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    monkeypatch.setenv(LOOKUP_WAIT_ENV_VAR, wait_ms)
+    connector = _ClockedConnector(clock, answers_after, hits=hits)
+    batch_constructor, manager = _batch_constructor_over_jenga(
+        pipeline, connector, scheduler_config=scheduler_config, num_blocks=64
+    )
+    return batch_constructor, manager, connector, clock
+
+
+def test_text_batch_constructor__admits_a_lookup_answered_within_the_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lookup that answers within the pass's wait runs in that pass.
+
+    The pass starts the lookup, waits for it, and takes the request back
+    through an alloc that reads the answer, rather than cordoning it for a
+    whole pass. The wait ends with the answer, not at its bound.
+    """
+    batch_constructor, manager, connector, clock = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[0.003]
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], ctx.request_id)
+    assert manager.num_req_blocks(ctx) > 0
+    assert not batch_constructor._onloading_reqs
+    assert len(connector.started) == 1
+    assert 0.003 <= clock.now < 0.010
+
+
+def test_text_batch_constructor__the_admission_after_the_wait_counts_no_stop(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stop the first admission counted is not counted again by the rerun.
+
+    The rerun starts no lookups, so the prompt left at the head of the
+    queue stops it for the same reason the first admission recorded.
+    """
+    monkeypatch.setenv(MAX_PENDING_LOOKUPS_ENV_VAR, "2")
+    batch_constructor, _, _, _ = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[0.002, 0.002, 0.002]
+    )
+    for _ in range(3):
+        batch_constructor.enqueue_new_request(_ce_ctx())
+
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        batch_constructor.construct_batch()
+
+    assert mock_metrics.connector_lookup_admission_stop.call_args_list == [
+        call("max_pending")
+    ]
+
+
+def test_text_batch_constructor__starts_the_load_of_a_hit_answered_within_the_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hit answered within the wait starts its load in the same pass.
+
+    The request then waits cordoned on that load rather than on the
+    lookup, and runs on the pass after it lands, one pass sooner than if
+    the answer were only read on the next pass.
+    """
+    batch_constructor, _, connector, clock = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[0.003], hits=True
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 0
+    assert len(connector.onloads) == 1
+    assert not batch_constructor._onloading_reqs[ctx.request_id].awaiting_lookup
+    assert 0.003 <= clock.now < 0.010
+
+    connector.onloads[0].synchronize()
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], ctx.request_id)
+    assert len(connector.started) == 1
+
+
+def test_text_batch_constructor__cordons_a_lookup_answered_after_the_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lookup still out at the wait's bound cordons its request as before.
+
+    The pass waits no longer than the bound, and the request runs on the
+    pass after its answer lands, from that answer.
+    """
+    batch_constructor, manager, connector, clock = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[0.015]
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 0
+    assert batch_constructor._onloading_reqs[ctx.request_id].awaiting_lookup
+    assert manager.num_req_blocks(ctx) == 0
+    assert clock.now == pytest.approx(0.010, abs=0.001)
+
+    clock.now = 0.015
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], ctx.request_id)
+    assert len(connector.started) == 1
+
+
+def test_text_batch_constructor__starts_the_load_of_a_long_hit_answered_within_the_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hit on a prompt longer than the budget starts its load in the pass.
+
+    Before its ``alloc`` the request reads as its whole 40 tokens, which the
+    30-token budget does not take, but the answer leaves it 1 token to run,
+    and the load draws nothing from the budget while it is in flight.
+    """
+    batch_constructor, _, connector, _ = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[0.003], hits=True
+    )
+    ctx = _ce_ctx_of(40)
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 0
+    assert len(connector.onloads) == 1
+    assert not batch_constructor._onloading_reqs[ctx.request_id].awaiting_lookup
+    assert ctx.tokens.active_length == 1
+
+
+def test_text_batch_constructor__a_long_miss_answered_within_the_wait_waits_a_pass(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A miss on a prompt longer than the budget waits a pass with its answer.
+
+    Its ``alloc`` would leave it the whole 40 tokens, more than the 30-token
+    budget takes whole, so the rerun does not pop it. It waits at the head of
+    its queue with the answer unread, and runs on the next pass from that
+    answer without asking again.
+    """
+    batch_constructor, manager, connector, _ = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[0.003]
+    )
+    ctx = _ce_ctx_of(40)
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 0
+    assert next(iter(batch_constructor.replicas[0].ce_reqs)) == ctx.request_id
+    assert manager.awaits_lookup(ctx)
+    assert manager.num_req_blocks(ctx) == 0
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], ctx.request_id)
+    assert len(connector.started) == 1
+
+
+def test_text_batch_constructor__the_wait_sleeps_no_further_than_its_bound(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A bound shorter than the poll interval holds the thread no longer.
+
+    The last sleep is cut to what is left of the bound, so a 0.1 ms wait
+    takes 0.1 ms rather than a whole 0.5 ms poll.
+    """
+    batch_constructor, _, _, clock = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[None], wait_ms="0.1"
+    )
+    batch_constructor.enqueue_new_request(_ce_ctx())
+
+    batch_constructor.construct_batch()
+
+    assert clock.now == pytest.approx(0.0001)
+
+
+def test_text_batch_constructor__waits_once_per_pass_for_every_lookup(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pass waits once for all the lookups it started, not once each.
+
+    They run concurrently on the connector, so two that never answer cost
+    the pass one bound, and a pass that starts none waits for nothing.
+    """
+    batch_constructor, _, connector, clock = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[None, None]
+    )
+    ctxs = [_ce_ctx() for _ in range(2)]
+    for ctx in ctxs:
+        batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert len(inputs.batches[0]) == 0
+    assert len(connector.started) == 2
+    assert batch_constructor._pending_lookup_count(0) == 2
+    assert clock.now == pytest.approx(0.010, abs=0.001)
+
+    batch_constructor.construct_batch()
+
+    assert clock.now == pytest.approx(0.010, abs=0.001)
+
+
+def test_text_batch_constructor__admits_every_lookup_the_wait_covers(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every lookup answered by the time the wait ends runs in the pass.
+
+    The wait lasts until the last of them answers, and the requests run in
+    bind order whatever order their answers came in.
+    """
+    batch_constructor, _, _, clock = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[0.006, 0.002]
+    )
+    ctxs = [_ce_ctx() for _ in range(2)]
+    for ctx in ctxs:
+        batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert [ctx.request_id for ctx in inputs.batches[0]] == [
+        ctx.request_id for ctx in ctxs
+    ]
+    assert not batch_constructor._onloading_reqs
+    assert 0.006 <= clock.now < 0.010
+
+
+def test_text_batch_constructor__the_admission_after_the_wait_starts_no_lookup(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The admission after the wait starts no lookup of its own.
+
+    A pass starts no more lookups than it could run, and its first
+    admission spent that. A prompt that waited at the head of the queue
+    behind the bound keeps waiting there, with nothing asked, and asks on
+    the next pass as before.
+    """
+    monkeypatch.setenv(MAX_PENDING_LOOKUPS_ENV_VAR, "2")
+    batch_constructor, manager, connector, _ = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[0.002, 0.002, 0.002]
+    )
+    ctxs = [_ce_ctx() for _ in range(3)]
+    for ctx in ctxs:
+        batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert [ctx.request_id for ctx in inputs.batches[0]] == [
+        ctxs[0].request_id,
+        ctxs[1].request_id,
+    ]
+    assert len(connector.started) == 2
+    assert list(batch_constructor.replicas[0].ce_reqs) == [ctxs[2].request_id]
+    assert manager._state_of(ctxs[2]).pending_lookup is None
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], ctxs[2].request_id)
+    assert len(connector.started) == 3
+
+
+@pytest.mark.parametrize("answers_after", [None, 0.003])
+def test_text_batch_constructor__a_prefill_step_falls_back_to_decode_after_the_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+    answers_after: float | None,
+) -> None:
+    """A prefill step gives way to decode only once its lookups stayed out.
+
+    With decode queued, a step whose only prompt was cordoned ran decode
+    before the lookup could answer. The fallback now follows the wait, so
+    the step is the prompt's when its answer lands in time.
+    """
+    batch_constructor, manager, _, _ = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[answers_after]
+    )
+    decode = create_lora_context(is_tg=True)
+    manager.claim(decode, replica_idx=0)
+    batch_constructor.enqueue_new_request(decode)
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    expected = decode if answers_after is None else ctx
+    assert [c.request_id for c in inputs.batches[0]] == [expected.request_id]
+
+
+def test_text_batch_constructor__a_backfill_admits_a_lookup_answered_in_the_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In-flight batching backfills a lookup answered in the wait.
+
+    The backfill cordoned the prompt behind the decode row, and the
+    admission after the wait seats it alongside that row.
+    """
+    batch_constructor, manager, _, _ = _waiting_batch_constructor(
+        pipeline,
+        monkeypatch,
+        answers_after=[0.003],
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=2,
+            max_batch_total_tokens=None,
+            enable_in_flight_batching=True,
+            enable_chunked_prefill=False,
+            target_tokens_per_batch_ce=30,
+        ),
+    )
+    decode = create_lora_context(is_tg=True)
+    manager.claim(decode, replica_idx=0)
+    batch_constructor.enqueue_new_request(decode)
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert [c.request_id for c in inputs.batches[0]] == [
+        decode.request_id,
+        ctx.request_id,
+    ]
+
+
+def test_text_batch_constructor__the_admission_after_the_wait_reads_decode_rows_as_the_first(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The admission after the wait counts the batch's decode rows as the first did.
+
+    Under KV pressure a prefill step with decode rows admits only prompts
+    that already hold KV. A prefill step holds none, and the prompt its
+    first admission seated must not read as one on the second, or a
+    prompt whose lookup answered in the wait would be passed over.
+    """
+    batch_constructor, manager, _, _ = _waiting_batch_constructor(
+        pipeline, monkeypatch, answers_after=[0.003]
+    )
+    kv_cache = cast(Mock, batch_constructor.kv_cache)
+    set_mock_kv_usage(kv_cache, 0.95)
+    looked_up = _ce_ctx()
+    kv_cache.starts_lookup = Mock(
+        side_effect=lambda ctx: ctx is looked_up and manager.starts_lookup(ctx)
+    )
+    kv_cache.alloc = Mock(
+        side_effect=lambda ctx, defer_lookup=False: manager.alloc(
+            ctx, defer_lookup=defer_lookup and ctx is looked_up
+        )
+    )
+    seated = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.full(9, 2, dtype=np.int64)),
+        max_length=100,
+    )
+    batch_constructor.enqueue_new_request(seated)
+    batch_constructor.enqueue_new_request(looked_up)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert [c.request_id for c in inputs.batches[0]] == [
+        seated.request_id,
+        looked_up.request_id,
+    ]
+
+
+def test_text_batch_constructor__waits_on_no_lookup_by_default(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(LOOKUP_WAIT_ENV_VAR, raising=False)
+
+    batch_constructor, _ = _batch_constructor_over_jenga(
+        pipeline, _DeferringConnector()
+    )
+
+    assert batch_constructor.lookup_wait_s == 0
+
+
+def test_text_batch_constructor__rejects_a_lookup_wait_with_cross_replica_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wait refuses to start under DP with cross-replica prefix copy on.
+
+    A pass that waits falls back to decode after every replica's admission,
+    which could reuse a page a later replica's copy is still reading.
+    """
+    monkeypatch.setenv(LOOKUP_WAIT_ENV_VAR, "10")
+    kv_cache = create_mock_kv_cache()
+    kv_cache.params.enable_dp_cross_replica_prefix_copy = True
+    config = TokenGenerationSchedulerConfig(
+        max_batch_size=4, target_tokens_per_batch_ce=100, data_parallel_degree=2
+    )
+
+    with pytest.raises(ValueError, match="cross-replica"):
+        TextBatchConstructor(
+            scheduler_config=config,
+            pipeline=Mock(spec=["release"]),
+            kv_cache=kv_cache,
+        )
+
+    kv_cache.params.enable_dp_cross_replica_prefix_copy = False
+    TextBatchConstructor(
+        scheduler_config=config,
+        pipeline=Mock(spec=["release"]),
+        kv_cache=kv_cache,
+    )
+
+
+@pytest.mark.parametrize("value", ["-1", "nan", "inf"])
+def test_text_batch_constructor__rejects_a_lookup_wait_that_is_no_bound(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+) -> None:
+    monkeypatch.setenv(LOOKUP_WAIT_ENV_VAR, value)
+
+    with pytest.raises(ValueError, match=LOOKUP_WAIT_ENV_VAR):
+        _batch_constructor_over_jenga(pipeline, _DeferringConnector())
+
+
+@pytest.mark.parametrize(
+    ("reason", "num_tokens", "only_first_looks_up"),
+    [
+        ("budget", 20, False),
+        ("max_pending", 9, False),
+        ("held", 9, True),
+    ],
+)
+def test_text_batch_constructor__counts_each_lookup_admission_stop(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+    num_tokens: int,
+    only_first_looks_up: bool,
+) -> None:
+    """A pass that stops admission on a deferred lookup says what stopped it.
+
+    ``budget`` is the pass's share of lookup tokens spent, ``max_pending``
+    the replica's bound on unanswered lookups reached, and ``held`` a prompt
+    that arrived behind one still out on its lookup.
+    """
+    monkeypatch.setenv(MAX_PENDING_LOOKUPS_ENV_VAR, "2")
+    connector = _DeferringConnector()
+    batch_constructor, manager = _batch_constructor_over_jenga(
+        pipeline, connector
+    )
+    ctxs = [_ce_ctx_of(num_tokens) for _ in range(4)]
+    if only_first_looks_up:
+        kv_cache = cast(Mock, batch_constructor.kv_cache)
+        kv_cache.starts_lookup = Mock(
+            side_effect=lambda ctx: (
+                ctx is ctxs[0] and manager.starts_lookup(ctx)
+            )
+        )
+    for ctx in ctxs:
+        batch_constructor.enqueue_new_request(ctx)
+
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        batch_constructor.construct_batch()
+
+    assert mock_metrics.connector_lookup_admission_stop.call_args_list == [
+        call(reason)
+    ]
+
+
+def test_text_batch_constructor__records_the_cordon_wait_once_at_admission(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cordoned prompt's wait is recorded when it is admitted, and only then.
+
+    It runs from the cordon to the admission, and a cordon that clears on
+    the next pass still reads as the one pass it cost.
+    """
+    clock = [10.0]
+    monkeypatch.setattr(
+        text_batch_constructor,
+        "time",
+        SimpleNamespace(monotonic=lambda: clock[0]),
+    )
+    onload = _IncompleteOnload()
+    kv_cache = _make_cordon_kv_cache(
+        Mock(side_effect=[onload, CompletedTransfer()])
+    )
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        batch_constructor.construct_batch()
+        mock_metrics.connector_cordon_wait_time.assert_not_called()
+
+        clock[0] += 0.25
+        onload.synchronize()
+        inputs = batch_constructor.construct_batch()
+        assert has_request(inputs.batches[0], ctx.request_id)
+        batch_constructor.construct_batch()
+
+    mock_metrics.connector_cordon_wait_time.assert_called_once_with(
+        pytest.approx(250.0)
+    )
+    mock_metrics.connector_cordon_passes.assert_called_once_with(1)
+
+
+def test_text_batch_constructor__an_uncordoned_admission_records_no_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=create_mock_kv_cache(),
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], ctx.request_id)
+    mock_metrics.connector_cordon_wait_time.assert_not_called()
+    mock_metrics.connector_cordon_passes.assert_not_called()
+
+
+def test_text_batch_constructor__the_cordon_wait_spans_lookup_and_onload(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A prompt cordoned on its lookup and then on the onload the answer
+    starts reports one wait, from the lookup's cordon to its admission.
+    """
+    clock = [0.0]
+    monkeypatch.setattr(
+        text_batch_constructor,
+        "time",
+        SimpleNamespace(monotonic=lambda: clock[0]),
+    )
+    connector = _DeferringOnloadingConnector()
+    batch_constructor, _ = _batch_constructor_over_jenga(pipeline, connector)
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    admitted_on = None
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        for pass_idx in range(6):
+            clock[0] = pass_idx * 0.1
+            inputs = batch_constructor.construct_batch()
+            if has_request(inputs.batches[0], ctx.request_id):
+                admitted_on = pass_idx
+                break
+
+    assert admitted_on is not None and admitted_on >= 2, (
+        "admitted before both the lookup and the onload cordoned it"
+    )
+    assert len(connector.started) == 1
+    mock_metrics.connector_cordon_wait_time.assert_called_once_with(
+        pytest.approx(admitted_on * 100.0)
+    )
+    mock_metrics.connector_cordon_passes.assert_called_once_with(admitted_on)
+
+
+def test_text_batch_constructor__release_drops_a_cordon_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    connector = _DeferringConnector()
+    batch_constructor, _ = _batch_constructor_over_jenga(pipeline, connector)
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+    batch_constructor.construct_batch()
+    assert ctx.request_id in batch_constructor._cordon_waits
+
+    batch_constructor.release_request(ctx.request_id)
+
+    assert not batch_constructor._cordon_waits
 
 
 def _claim_tracking_kv_cache(
@@ -4601,6 +5917,7 @@ class _ScheduledConnector(_DeferringConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         lookup = _DeferredLookup(
             len(block_hashes),
@@ -4875,6 +6192,72 @@ def _only_starts_a_lookup(
             lookup if ctx is holder else CompletedTransfer()
         )
     )
+
+
+@pytest.mark.parametrize("bound", [4, 1])
+def test_dp_ce_balance__charges_a_lookup_its_post_cache_weight(
+    monkeypatch: pytest.MonkeyPatch, bound: int
+) -> None:
+    """A pass charges each lookup its prompt's post-cache weight.
+
+    Both prompts are three times the step's budget, but the connector holds
+    all but 44 tokens of each, so one pass could run both. Charged their
+    whole prompts, the first lookup would spend the pass, and the second
+    would wait at the head of the queue and end the pass there, keeping the
+    prefill under way behind them out of the batch. The bound on unanswered
+    lookups still stops the second when it allows only one.
+    """
+    monkeypatch.setenv(MAX_PENDING_LOOKUPS_ENV_VAR, str(bound))
+    batch_constructor = create_dp_balance_constructor()
+    first = _long_ce_context(300)
+    second = _long_ce_context(300)
+    under_way = create_lora_context(seq_len=10)
+    lookup_ids = {first.request_id, second.request_id}
+    _stub_per_request_hits(
+        batch_constructor,
+        {
+            request_id: [PrefixCacheHits(external_blocks=16), PrefixCacheHits()]
+            for request_id in lookup_ids
+        },
+    )
+    kv_cache = _mock_kv_cache_of(batch_constructor)
+    kv_cache.num_req_blocks = Mock(return_value=0)
+    kv_cache.starts_lookup = Mock(
+        side_effect=lambda ctx: ctx.request_id in lookup_ids
+    )
+    kv_cache.awaits_lookup = Mock(
+        side_effect=lambda ctx: ctx.request_id in lookup_ids
+    )
+    kv_cache.alloc = Mock(
+        side_effect=lambda ctx, defer_lookup=False: (
+            _IncompleteOnload()
+            if ctx.request_id in lookup_ids
+            else CompletedTransfer()
+        )
+    )
+    # The second prompt is held behind the first's lookup, so it asks here.
+    kv_cache.start_lookup = Mock(side_effect=lambda ctx: _IncompleteOnload())
+    for ctx in (first, second, under_way):
+        batch_constructor.enqueue_new_request(ctx, replica_idx=0)
+    under_way.tokens.skip_processing(2)
+
+    inputs = batch_constructor.construct_batch()
+
+    if bound == 1:
+        assert list(batch_constructor._onloading_reqs) == [first.request_id]
+        assert not inputs.batches[0]
+        assert list(batch_constructor.replicas[0].ce_reqs) == [
+            second.request_id,
+            under_way.request_id,
+        ]
+    else:
+        assert list(batch_constructor._onloading_reqs) == [
+            first.request_id,
+            second.request_id,
+        ]
+        assert [ctx.request_id for ctx in inputs.batches[0]] == [
+            under_way.request_id
+        ]
 
 
 @pytest.mark.parametrize("later_under_way", [False, True])
@@ -5754,3 +7137,819 @@ def test_prefill_schedule_interval__holds_mid_prefill_continuations() -> None:
 
     # One chunk per open step; the continuation waits out the closed step.
     assert admitted == [True, False, True]
+
+
+class _ClockedEvent:
+    """An onload or lookup that settles once the clock passes a time."""
+
+    def __init__(self, clock: _Clock, settles_at: float | None) -> None:
+        self._clock = clock
+        self.settles_at = settles_at
+
+    @property
+    def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
+        return {}
+
+    def is_complete(self) -> bool:
+        return (
+            self.settles_at is not None and self._clock.now >= self.settles_at
+        )
+
+    def synchronize(self) -> None:
+        self.settles_at = self._clock.now
+
+
+def test_text_batch_constructor__second_admission_keeps_a_landed_onload_behind_a_full_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The admission after the wait leaves a full replica's queue alone.
+
+    Replica 1 fills its CE budget in the first admission with a chunked
+    prompt, while replica 0 starts a lookup that answers in the wait. An
+    onload replica 1 cordoned on the previous pass lands during the same
+    wait, so admission runs again on replica 1 too. With no budget left it
+    must leave the landed request at the head of the queue, pages and all,
+    rather than reset it.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(text_batch_constructor, "time", clock)
+    monkeypatch.setenv(LOOKUP_WAIT_ENV_VAR, "10")
+
+    claimed: set[RequestID] = set()
+    blocks: dict[RequestID, int] = {}
+    lookups_out: set[RequestID] = set()
+    events: dict[RequestID, _ClockedEvent] = {}
+
+    onloaded = _ce_ctx()
+    looked_up = _ce_ctx()
+    filler = _long_ce_context(300)
+
+    kv_cache = create_mock_kv_cache()
+    kv_cache.params.enable_dp_cross_replica_prefix_copy = False
+    kv_cache.claim = Mock(
+        side_effect=lambda ctx, replica_idx=0: claimed.add(ctx.request_id)
+    )
+    kv_cache.contains = Mock(side_effect=lambda ctx: ctx.request_id in claimed)
+
+    def release(ctx: TextContext) -> None:
+        claimed.discard(ctx.request_id)
+        blocks.pop(ctx.request_id, None)
+
+    kv_cache.release = Mock(side_effect=release)
+    kv_cache.num_req_blocks = Mock(
+        side_effect=lambda ctx: blocks.get(ctx.request_id, 0)
+    )
+    kv_cache.starts_lookup = Mock(
+        side_effect=lambda ctx: (
+            ctx is looked_up and ctx.request_id not in events
+        )
+    )
+    kv_cache.awaits_lookup = Mock(
+        side_effect=lambda ctx: ctx.request_id in lookups_out
+    )
+
+    def alloc(ctx: TextContext, defer_lookup: bool = False) -> KVTransfer:
+        if ctx is onloaded:
+            blocks[ctx.request_id] = 4
+            event = _ClockedEvent(clock, settles_at=0.002)
+            events[ctx.request_id] = event
+            return event
+        if ctx is looked_up:
+            if ctx.request_id not in events:
+                event = _ClockedEvent(clock, settles_at=0.003)
+                events[ctx.request_id] = event
+                lookups_out.add(ctx.request_id)
+                return event
+            lookups_out.discard(ctx.request_id)
+            blocks[ctx.request_id] = 1
+            return CompletedTransfer()
+        blocks[ctx.request_id] = 7
+        return CompletedTransfer()
+
+    kv_cache.alloc = Mock(side_effect=alloc)
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            target_tokens_per_batch_ce=100,
+            data_parallel_degree=2,
+            enable_chunked_prefill=True,
+        ),
+        pipeline=Mock(spec=["release"]),
+        kv_cache=kv_cache,
+    )
+
+    # Pass 1: replica 1 cordons the onload; no lookup starts, so no wait.
+    batch_constructor.enqueue_new_request(onloaded, replica_idx=1)
+    batch_constructor.construct_batch()
+    assert onloaded.request_id in batch_constructor._onloading_reqs
+    assert clock.now == 0.0
+
+    # Pass 2.
+    batch_constructor.enqueue_new_request(looked_up, replica_idx=0)
+    batch_constructor.enqueue_new_request(filler, replica_idx=1)
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[1], filler.request_id)
+    assert has_request(inputs.batches[0], looked_up.request_id)
+    released = [c.args[0].request_id for c in kv_cache.release.call_args_list]
+    assert onloaded.request_id not in released
+    assert blocks.get(onloaded.request_id) == 4
+
+
+def _rerun_after_a_landed_onload(
+    monkeypatch: pytest.MonkeyPatch,
+    onloaded: TextContext,
+    looked_up: TextContext,
+    filler: TextContext,
+    scheduler_config: TokenGenerationSchedulerConfig,
+    wait_ms: str | None = "10",
+) -> tuple[TextBatchConstructor, Mock, dict[RequestID, int], _Clock]:
+    """A DP=2 constructor where an onload lands during the lookup wait.
+
+    Replica 1 holds a cordoned onload that lands in the wait replica 0's
+    lookup causes, while ``filler`` has already drawn on replica 1's budget.
+    With ``wait_ms`` None the wait is left at its default.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(text_batch_constructor, "time", clock)
+    if wait_ms is None:
+        monkeypatch.delenv(LOOKUP_WAIT_ENV_VAR, raising=False)
+    else:
+        monkeypatch.setenv(LOOKUP_WAIT_ENV_VAR, wait_ms)
+
+    claimed: set[RequestID] = set()
+    blocks: dict[RequestID, int] = {}
+    lookups_out: set[RequestID] = set()
+    events: dict[RequestID, _ClockedEvent] = {}
+
+    kv_cache = create_mock_kv_cache()
+    kv_cache.params = Mock()
+    kv_cache.params.page_size = 1
+    kv_cache.params.enable_dp_cross_replica_prefix_copy = False
+    kv_cache.claim = Mock(
+        side_effect=lambda ctx, replica_idx=0: claimed.add(ctx.request_id)
+    )
+    kv_cache.contains = Mock(side_effect=lambda ctx: ctx.request_id in claimed)
+
+    def release(ctx: TextContext) -> None:
+        claimed.discard(ctx.request_id)
+        blocks.pop(ctx.request_id, None)
+
+    kv_cache.release = Mock(side_effect=release)
+    kv_cache.num_req_blocks = Mock(
+        side_effect=lambda ctx: blocks.get(ctx.request_id, 0)
+    )
+    kv_cache.starts_lookup = Mock(
+        side_effect=lambda ctx: (
+            ctx is looked_up and ctx.request_id not in events
+        )
+    )
+    kv_cache.awaits_lookup = Mock(
+        side_effect=lambda ctx: ctx.request_id in lookups_out
+    )
+
+    def alloc(ctx: TextContext, defer_lookup: bool = False) -> KVTransfer:
+        if ctx is onloaded:
+            blocks[ctx.request_id] = 4
+            event = _ClockedEvent(clock, settles_at=0.002)
+            events[ctx.request_id] = event
+            return event
+        if ctx is looked_up:
+            if ctx.request_id not in events:
+                event = _ClockedEvent(clock, settles_at=0.003)
+                events[ctx.request_id] = event
+                lookups_out.add(ctx.request_id)
+                return event
+            lookups_out.discard(ctx.request_id)
+            blocks[ctx.request_id] = 1
+            return CompletedTransfer()
+        blocks[ctx.request_id] = 7
+        return CompletedTransfer()
+
+    kv_cache.alloc = Mock(side_effect=alloc)
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=Mock(spec=["release"]),
+        kv_cache=kv_cache,
+    )
+    batch_constructor.enqueue_new_request(onloaded, replica_idx=1)
+    batch_constructor.construct_batch()
+    assert onloaded.request_id in batch_constructor._onloading_reqs
+    assert clock.now == 0.0
+    batch_constructor.enqueue_new_request(looked_up, replica_idx=0)
+    batch_constructor.enqueue_new_request(filler, replica_idx=1)
+    return batch_constructor, kv_cache, blocks, clock
+
+
+def test_text_batch_constructor__rerun_keeps_a_landed_onload_under_the_min_chunk_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rerun keeps a landed onload the min chunk floor refuses.
+
+    ``filler`` (150) is cut to 86 so its remainder keeps the 64 floor,
+    leaving 14 tokens, under the floor for the landed onload's chunk.
+    """
+    onloaded = _long_ce_context(200)
+    looked_up = _ce_ctx()
+    filler = _long_ce_context(150)
+    batch_constructor, kv_cache, blocks, _clock = _rerun_after_a_landed_onload(
+        monkeypatch,
+        onloaded,
+        looked_up,
+        filler,
+        TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            target_tokens_per_batch_ce=100,
+            data_parallel_degree=2,
+            enable_chunked_prefill=True,
+            chunked_prefill_min_chunk_size=64,
+        ),
+    )
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[1], filler.request_id)
+    assert has_request(inputs.batches[0], looked_up.request_id)
+    assert filler.tokens.active_length == 86
+    released = [c.args[0].request_id for c in kv_cache.release.call_args_list]
+    assert onloaded.request_id not in released, "rerun reset a landed onload"
+    assert blocks.get(onloaded.request_id) == 4
+
+
+def test_text_batch_constructor__rerun_keeps_a_landed_onload_under_the_draft_reserve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rerun keeps a landed onload the draft reserve refuses.
+
+    ``filler`` (97) plus its 2-token draft reserve leaves 1 token, too few
+    for the landed onload's row and its drafts.
+    """
+    onloaded = _ce_ctx()
+    looked_up = _ce_ctx()
+    filler = _long_ce_context(97)
+    batch_constructor, kv_cache, blocks, _clock = _rerun_after_a_landed_onload(
+        monkeypatch,
+        onloaded,
+        looked_up,
+        filler,
+        TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            target_tokens_per_batch_ce=100,
+            data_parallel_degree=2,
+            enable_chunked_prefill=True,
+            spec_decode_mixed_verify_width=2,
+        ),
+    )
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[1], filler.request_id)
+    released = [c.args[0].request_id for c in kv_cache.release.call_args_list]
+    assert onloaded.request_id not in released, "rerun reset a landed onload"
+    assert blocks.get(onloaded.request_id) == 4
+
+
+def test_text_batch_constructor__rerun_keeps_a_landed_onload_under_the_total_context_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rerun keeps a landed onload the total-context budget refuses.
+
+    ``filler`` (90) leaves 10 active and 210 total-context tokens. The
+    landed onload has 5 active tokens of a 400-token prompt, so the active
+    budget takes it and the total-context budget does not.
+    """
+    onloaded = _long_ce_context(400)
+    onloaded.tokens.skip_processing(395)
+    looked_up = _ce_ctx()
+    filler = _long_ce_context(90)
+    batch_constructor, kv_cache, blocks, _clock = _rerun_after_a_landed_onload(
+        monkeypatch,
+        onloaded,
+        looked_up,
+        filler,
+        TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            target_tokens_per_batch_ce=100,
+            max_batch_total_tokens=300,
+            data_parallel_degree=2,
+            enable_chunked_prefill=True,
+        ),
+    )
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[1], filler.request_id)
+    released = [c.args[0].request_id for c in kv_cache.release.call_args_list]
+    assert onloaded.request_id not in released, "rerun reset a landed onload"
+    assert blocks.get(onloaded.request_id) == 4
+
+
+def test_text_batch_constructor__default_wait_runs_no_rerun_and_no_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """At its default the pass neither waits nor reruns admission.
+
+    A cordoned onload that settles right after admission waits for the
+    next pass, as it did before the wait existed.
+    """
+    onloaded = _long_ce_context(200)
+    looked_up = _ce_ctx()
+    filler = _long_ce_context(150)
+    batch_constructor, kv_cache, _blocks, clock = _rerun_after_a_landed_onload(
+        monkeypatch,
+        onloaded,
+        looked_up,
+        filler,
+        TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            target_tokens_per_batch_ce=100,
+            data_parallel_degree=2,
+            enable_chunked_prefill=True,
+            chunked_prefill_min_chunk_size=64,
+        ),
+        wait_ms=None,
+    )
+    inputs = batch_constructor.construct_batch()
+
+    assert batch_constructor.lookup_wait_s == 0
+    assert clock.now == 0.0
+    assert has_request(inputs.batches[1], filler.request_id)
+    assert not has_request(inputs.batches[0], looked_up.request_id)
+    assert onloaded.request_id in batch_constructor._onloading_reqs
+    released = [c.args[0].request_id for c in kv_cache.release.call_args_list]
+    assert onloaded.request_id not in released
+
+
+def _min_chunk_config() -> TokenGenerationSchedulerConfig:
+    return TokenGenerationSchedulerConfig(
+        max_batch_size=10,
+        target_tokens_per_batch_ce=20,
+        enable_chunked_prefill=True,
+        chunked_prefill_min_chunk_size=8,
+    )
+
+
+def test_text_batch_constructor__rerun_pops_nothing_under_the_min_chunk_floor(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rerun leaves a request the min chunk floor would refuse alone.
+
+    ``filler`` (14) leaves 6 tokens, under the 8-token floor. ``looked_up``
+    answers a miss in the wait, and popping it would grow it to its whole
+    prompt in ``alloc`` before the floor refused it, so the next pass would
+    ask the connector again. It instead waits at the head holding no pages
+    and runs on the next pass off its one answer.
+    """
+    batch_constructor, manager, connector, _clock = _waiting_batch_constructor(
+        pipeline,
+        monkeypatch,
+        answers_after=[0.0, 0.003, 0.003],
+        scheduler_config=_min_chunk_config(),
+    )
+    filler = _long_ce_context(14)
+    looked_up = _long_ce_context(20)
+    batch_constructor.enqueue_new_request(filler)
+    batch_constructor.enqueue_new_request(looked_up)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], filler.request_id)
+    assert not has_request(inputs.batches[0], looked_up.request_id)
+    assert manager.num_req_blocks(looked_up) == 0
+    assert len(connector.started) == 2
+
+    batch_constructor.release_request(filler.request_id)
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], looked_up.request_id)
+    assert len(connector.started) == 2
+
+
+class _LandingClock(_Clock):
+    """A clock that lands an onload once it passes a time."""
+
+    def __init__(self, lands_at: float) -> None:
+        super().__init__()
+        self.lands_at = lands_at
+        self.onload: _IncompleteOnload | None = None
+
+    def sleep(self, seconds: float) -> None:
+        super().sleep(seconds)
+        if self.onload is not None and self.now >= self.lands_at:
+            self.onload.complete = True
+
+
+def test_text_batch_constructor__rerun_admits_an_onload_that_lands_in_the_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An onload that lands in the wait runs that pass with its prefix.
+
+    The rerun pops it before the pass's own sweep would have drained its
+    transfer, so ``alloc`` drains it first and commits the onloaded pages.
+    A hit answered in the same wait starts its load and waits on it.
+    """
+    clock = _LandingClock(lands_at=0.002)
+    monkeypatch.setattr(text_batch_constructor, "time", clock)
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    monkeypatch.setenv(LOOKUP_WAIT_ENV_VAR, "10")
+    connector = _ClockedConnector(clock, [0.0, 0.003], hits=True)
+    batch_constructor, manager = _batch_constructor_over_jenga(
+        pipeline, connector, scheduler_config=_min_chunk_config(), num_blocks=64
+    )
+    onloaded = _long_ce_context(8)
+    batch_constructor.enqueue_new_request(onloaded)
+    batch_constructor.construct_batch()
+    assert onloaded.request_id in batch_constructor._onloading_reqs
+    clock.onload = connector.onloads[0]
+    # Distinct tokens, so it takes no device hit off the onloaded pages.
+    looked_up = TextContext(
+        request_id=RequestID(),
+        max_length=70,
+        tokens=TokenBuffer(np.full(6, 2, dtype=np.int64)),
+    )
+    batch_constructor.enqueue_new_request(looked_up)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], onloaded.request_id)
+    assert onloaded.cached_prefix_length == 7
+    assert manager.num_req_blocks(onloaded) == 8
+    assert not batch_constructor._onloading_reqs[
+        looked_up.request_id
+    ].awaiting_lookup
+    assert len(connector.onloads) == 2
+
+
+def test_text_batch_constructor__rerun_leaves_a_landed_onload_too_long_for_a_mixed_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rerun leaves a landed onload whose drafts would overrun a mixed step.
+
+    Without chunking, a prompt longer than a mixed step's room goes in whole
+    and its drafts overrun the step. The rerun does not pop it, so the next
+    pass finds it at the head with its pages, as it would without the wait.
+    """
+    onloaded = _ce_ctx()
+    looked_up = _ce_ctx()
+    filler = _long_ce_context(88)
+    batch_constructor, kv_cache, blocks, _ = _rerun_after_a_landed_onload(
+        monkeypatch,
+        onloaded,
+        looked_up,
+        filler,
+        TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            target_tokens_per_batch_ce=100,
+            data_parallel_degree=2,
+            enable_chunked_prefill=False,
+            enable_in_flight_batching=True,
+            spec_decode_mixed_verify_width=2,
+        ),
+    )
+    batch_constructor.enqueue_new_request(
+        create_lora_context(is_tg=True), replica_idx=1
+    )
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[1], filler.request_id)
+    assert not has_request(inputs.batches[1], onloaded.request_id)
+    released = [c.args[0].request_id for c in kv_cache.release.call_args_list]
+    assert onloaded.request_id not in released
+    assert blocks.get(onloaded.request_id) == 4
+    assert (
+        next(iter(batch_constructor.replicas[1].ce_reqs)) == onloaded.request_id
+    )
+
+
+def test_text_batch_constructor__rerun_pops_no_miss_the_min_chunk_floor_cannot_cut(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rerun leaves a miss whose length leaves the floor no legal cut.
+
+    ``filler`` (10) leaves 10 tokens, above the 8-token floor, but
+    ``looked_up`` (14) can be cut neither at 10 nor at 6 without leaving a
+    piece under the floor. Popped, it would have read its answer and grown
+    to its whole prompt before the refusal. It waits at the head instead and
+    runs on the next pass off its one lookup.
+    """
+    batch_constructor, manager, connector, _ = _waiting_batch_constructor(
+        pipeline,
+        monkeypatch,
+        answers_after=[0.0, 0.003, None],
+        scheduler_config=_min_chunk_config(),
+    )
+    filler = _long_ce_context(10)
+    looked_up = _long_ce_context(14)
+    batch_constructor.enqueue_new_request(filler)
+    batch_constructor.enqueue_new_request(looked_up)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], filler.request_id)
+    assert not has_request(inputs.batches[0], looked_up.request_id)
+    assert manager.num_req_blocks(looked_up) == 0
+    assert len(connector.started) == 2
+
+    batch_constructor.release_request(filler.request_id)
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], looked_up.request_id)
+    assert len(connector.started) == 2
+
+
+def test_text_batch_constructor__rerun_pops_no_miss_too_long_for_a_mixed_step(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rerun leaves a miss whose drafts would overrun a mixed step.
+
+    Without chunking, ``looked_up`` (12) is longer than the room ``filler``
+    (10) and the decode row leave once the drafts are reserved. It waits at
+    the head holding no pages and runs on the next pass off its one lookup.
+    """
+    batch_constructor, manager, connector, _ = _waiting_batch_constructor(
+        pipeline,
+        monkeypatch,
+        answers_after=[0.0, 0.003, None],
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=10,
+            target_tokens_per_batch_ce=20,
+            enable_chunked_prefill=False,
+            enable_in_flight_batching=True,
+            spec_decode_mixed_verify_width=2,
+        ),
+    )
+    decode = create_lora_context(is_tg=True)
+    manager.claim(decode)
+    batch_constructor.enqueue_new_request(decode)
+    filler = _long_ce_context(10)
+    looked_up = _long_ce_context(12)
+    batch_constructor.enqueue_new_request(filler)
+    batch_constructor.enqueue_new_request(looked_up)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], filler.request_id)
+    assert not has_request(inputs.batches[0], looked_up.request_id)
+    assert manager.num_req_blocks(looked_up) == 0
+    assert len(connector.started) == 2
+
+    batch_constructor.release_request(filler.request_id)
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], looked_up.request_id)
+    assert len(connector.started) == 2
+
+
+class _FailingClock(_Clock):
+    """A clock that fails an onload once it passes a time."""
+
+    def __init__(self, fails_at: float) -> None:
+        super().__init__()
+        self.fails_at = fails_at
+        self.onload: _IncompleteOnload | None = None
+
+    def sleep(self, seconds: float) -> None:
+        super().sleep(seconds)
+        if self.onload is not None and self.now >= self.fails_at:
+            self.onload.fails = True
+
+
+def test_text_batch_constructor__rerun_leaves_an_onload_that_failed_in_the_wait(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A copy that fails during the wait waits for the next pass's sweep.
+
+    Readmitted by the rerun, its ``alloc`` would roll it back to its whole
+    prompt (8 tokens) after the budget check read its 1-token remainder,
+    and the 6 tokens ``filler`` leaves would refuse and reset it, dropping
+    the record that its load failed, so it would ask the connector again.
+    Left cordoned, it runs whole on the next pass with no new lookup.
+    """
+    clock = _FailingClock(fails_at=0.002)
+    monkeypatch.setattr(text_batch_constructor, "time", clock)
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    monkeypatch.setenv(LOOKUP_WAIT_ENV_VAR, "10")
+    connector = _ClockedConnector(clock, [0.0, 0.0, 0.003, 0.0, 0.0], hits=True)
+    batch_constructor, _ = _batch_constructor_over_jenga(
+        pipeline, connector, scheduler_config=_min_chunk_config(), num_blocks=64
+    )
+    onloaded = _long_ce_context(8)
+    batch_constructor.enqueue_new_request(onloaded)
+    batch_constructor.construct_batch()
+    assert onloaded.tokens.active_length == 1
+    clock.onload = connector.onloads[0]
+    connector._hits = False
+    filler = TextContext(
+        request_id=RequestID(),
+        max_length=80,
+        tokens=TokenBuffer(np.full(14, 3, dtype=np.int64)),
+    )
+    looked_up = TextContext(
+        request_id=RequestID(),
+        max_length=70,
+        tokens=TokenBuffer(np.full(6, 2, dtype=np.int64)),
+    )
+    batch_constructor.enqueue_new_request(filler)
+    batch_constructor.enqueue_new_request(looked_up)
+    kv_cache = cast(Mock, batch_constructor.kv_cache)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], filler.request_id)
+    assert onloaded.request_id in batch_constructor._onloading_reqs
+    released = [c.args[0].request_id for c in kv_cache.release.call_args_list]
+    assert onloaded.request_id not in released
+
+    batch_constructor.release_request(filler.request_id)
+    lookups_before = len(connector.started)
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], onloaded.request_id)
+    assert onloaded.tokens.active_length == 8
+    assert len(connector.started) == lookups_before
+
+
+def test_text_batch_constructor__rerun_skips_a_replica_short_of_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rerun runs no alloc on a replica whose admission ran out of blocks.
+
+    The first admission cordons ``looked_up`` on its lookup, and then
+    ``partial``'s alloc finds the pool short. The lookup answers in the
+    wait, but nothing has freed a block since, so an alloc in the rerun
+    would fail too and reset ``looked_up`` with its answer spent. It keeps
+    its answer for the next pass instead, which runs after the step frees
+    blocks.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(text_batch_constructor, "time", clock)
+    monkeypatch.setenv(LOOKUP_WAIT_ENV_VAR, "10")
+
+    in_flight = _ce_ctx()
+    looked_up = _ce_ctx()
+    partial = _ce_ctx()
+    blocks: dict[RequestID, int] = {partial.request_id: 3}
+    lookups_out: set[RequestID] = set()
+    asked: set[RequestID] = set()
+    allocs: list[RequestID] = []
+    short = False
+
+    claimed: set[RequestID] = set()
+    kv_cache = create_mock_kv_cache()
+    kv_cache.claim = Mock(
+        side_effect=lambda ctx, replica_idx=0: claimed.add(ctx.request_id)
+    )
+    kv_cache.contains = Mock(side_effect=lambda ctx: ctx.request_id in claimed)
+    kv_cache.release = Mock(
+        side_effect=lambda ctx: claimed.discard(ctx.request_id)
+    )
+    kv_cache.hand_back_lookup = Mock(return_value=False)
+    kv_cache.num_req_blocks = Mock(
+        side_effect=lambda ctx: blocks.get(ctx.request_id, 0)
+    )
+    kv_cache.starts_lookup = Mock(
+        side_effect=lambda ctx: ctx is looked_up and ctx.request_id not in asked
+    )
+    kv_cache.awaits_lookup = Mock(
+        side_effect=lambda ctx: ctx.request_id in lookups_out
+    )
+
+    def alloc(ctx: TextContext, defer_lookup: bool = False) -> KVTransfer:
+        nonlocal short
+        allocs.append(ctx.request_id)
+        if ctx is in_flight:
+            return _IncompleteOnload()
+        if ctx is looked_up and ctx.request_id not in asked:
+            asked.add(ctx.request_id)
+            lookups_out.add(ctx.request_id)
+            return _ClockedEvent(clock, settles_at=0.003)
+        if ctx is partial or short:
+            short = True
+            lookups_out.discard(ctx.request_id)
+            raise InsufficientBlocksError("the pool is short")
+        return CompletedTransfer()
+
+    kv_cache.alloc = Mock(side_effect=alloc)
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=Mock(spec=["release"]),
+        kv_cache=kv_cache,
+    )
+    batch_constructor.enqueue_new_request(in_flight)
+    batch_constructor.construct_batch()
+    assert in_flight.request_id in batch_constructor._onloading_reqs
+    batch_constructor.enqueue_new_request(looked_up)
+    batch_constructor.enqueue_new_request(partial)
+
+    batch_constructor.construct_batch()
+
+    assert clock.now >= 0.003, "the lookup answered in the wait"
+    assert allocs.count(looked_up.request_id) == 1
+    assert looked_up.request_id in lookups_out
+    assert looked_up.request_id in batch_constructor.replicas[0].ce_reqs
+    released = [c.args[0].request_id for c in kv_cache.release.call_args_list]
+    assert looked_up.request_id not in released
+
+
+def test_text_batch_constructor__rerun_reads_a_failed_copy_at_its_whole_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rerun leaves a failed copy its whole prompt would not fit.
+
+    ``failed`` was readmitted at the start of the pass with only 2 of its 9
+    tokens left to run, and the first admission stopped before it at
+    ``stopped``. The rerun seats it ahead of ``looked_up``, the lookup that
+    answered in the wait, because it has processed tokens. Its ``alloc``
+    would roll it back to 9 tokens, more than the 8 ``filler`` leaves, so
+    the rerun reads it at that size and does not pop it.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(text_batch_constructor, "time", clock)
+    monkeypatch.setenv(LOOKUP_WAIT_ENV_VAR, "10")
+    monkeypatch.setenv(MAX_PENDING_LOOKUPS_ENV_VAR, "1")
+
+    filler = _ce_ctx_of(22)
+    looked_up = _ce_ctx()
+    stopped = _ce_ctx()
+    failed = _ce_ctx()
+    blocks: dict[RequestID, int] = {}
+    lookups_out: set[RequestID] = set()
+    asked: set[RequestID] = set()
+    allocs: list[RequestID] = []
+
+    claimed: set[RequestID] = set()
+    kv_cache = create_mock_kv_cache()
+    kv_cache.claim = Mock(
+        side_effect=lambda ctx, replica_idx=0: claimed.add(ctx.request_id)
+    )
+    kv_cache.contains = Mock(side_effect=lambda ctx: ctx.request_id in claimed)
+    kv_cache.release = Mock(
+        side_effect=lambda ctx: claimed.discard(ctx.request_id)
+    )
+    kv_cache.hand_back_lookup = Mock(return_value=False)
+    kv_cache.num_req_blocks = Mock(
+        side_effect=lambda ctx: blocks.get(ctx.request_id, 0)
+    )
+    kv_cache.starts_lookup = Mock(
+        side_effect=lambda ctx: (
+            ctx is stopped or (ctx is looked_up and ctx.request_id not in asked)
+        )
+    )
+    kv_cache.awaits_lookup = Mock(
+        side_effect=lambda ctx: ctx.request_id in lookups_out
+    )
+    kv_cache.active_length_after_alloc = Mock(
+        side_effect=lambda ctx: (
+            ctx.tokens.processed_length + ctx.tokens.active_length
+            if ctx is failed
+            else ctx.tokens.active_length
+        )
+    )
+
+    def alloc(ctx: TextContext, defer_lookup: bool = False) -> KVTransfer:
+        allocs.append(ctx.request_id)
+        if ctx is looked_up and ctx.request_id not in asked:
+            asked.add(ctx.request_id)
+            lookups_out.add(ctx.request_id)
+            return _ClockedEvent(clock, settles_at=0.003)
+        if ctx is failed:
+            ctx.tokens.rewind_processing(ctx.tokens.processed_length)
+        lookups_out.discard(ctx.request_id)
+        blocks[ctx.request_id] = len(ctx.tokens)
+        return CompletedTransfer()
+
+    kv_cache.alloc = Mock(side_effect=alloc)
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=Mock(spec=["release"]),
+        kv_cache=kv_cache,
+    )
+    for ctx in (filler, looked_up, stopped, failed):
+        batch_constructor.enqueue_new_request(ctx)
+    # ``failed`` loaded 7 tokens over a copy that then failed.
+    del batch_constructor.replicas[0].ce_reqs[failed.request_id]
+    failed.tokens.skip_processing(7)
+    blocks[failed.request_id] = 9
+    failed_copy = _IncompleteOnload()
+    failed_copy.fails = True
+    batch_constructor._onloading_reqs[failed.request_id] = (
+        text_batch_constructor._OnloadingRequest(
+            ctx=failed,
+            replica_idx=0,
+            event=failed_copy,
+            awaiting_lookup=False,
+        )
+    )
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], filler.request_id)
+    assert clock.now >= 0.003, "the lookup answered in the wait"
+    assert failed.request_id not in allocs
+    assert not has_request(inputs.batches[0], failed.request_id)
+    assert next(iter(batch_constructor.replicas[0].ce_reqs)) == (
+        failed.request_id
+    )

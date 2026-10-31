@@ -14,6 +14,15 @@ load("//max/kernels/benchmarks/misc/blackwell_bench:wheels.bzl", "blackwell_benc
 
 package(default_visibility = ["//max:consumers"])
 
+# The default lock resolves flashinfer-python to wheels (nvidia-cutlass-dsl,
+# cuda-bindings) that have no macOS build, so a platform-incompatible target
+# must be skipped before Bazel analyzes its pip deps.
+_CUTLASS_DSL_COMPATIBLE = [
+    "//:nvidia_gpu",
+    "@platforms//cpu:x86_64",
+    "@platforms//os:linux",
+]
+
 # aiter (AMD AI Tensor Engine for ROCm) — cp313 binary wheel with prebuilt
 # gfx950 kernels; the excluded mha ops JIT-compile at first use via hipcc.
 pycross_wheel_library(
@@ -43,10 +52,10 @@ modular_py_library(
     # cutlass reaches sys.path through the :cutlass-imports dep below, whose
     # `imports` propagates transitively via PyInfo.
     tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer
+    target_compatible_with = _CUTLASS_DSL_COMPATIBLE,
     deps = [
-        blackwell_bench_wheel("flash-attn"),
-        blackwell_bench_wheel("flashinfer"),
         blackwell_bench_wheel("deep-gemm"),
+        requirement("flashinfer-python"),
         requirement("packaging"),
         requirement("torch"),
         ":bench_decode_lib",
@@ -59,8 +68,13 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-    ],
+        "//max/python/max/nn/legacy",
+    ] + select({
+        # flash-attn-4 b31 resolves only in the bench lock group; the bench
+        # scripts import it optionally.
+        "//:use_bench_setting": [requirement("flash-attn-4")],
+        "//conditions:default": [],
+    }),
 )
 
 # Softmax benchmark: MAX vs PyTorch
@@ -96,10 +110,14 @@ modular_py_library(
     name = "bench_decode_lib",
     srcs = ["bench_blackwell_decode.py"],
     imports = ["."],
-    tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer
+    tags = ["no-pydeps"],  # :cutlass-imports is itself off the pydeps enforcer
+    target_compatible_with = _CUTLASS_DSL_COMPATIBLE,
     deps = [
         "//max/kernels/benchmarks/misc/utils:bench_utils",
-        blackwell_bench_wheel("flashinfer"),
+        # flashinfer's cute-dsl paths import the `cutlass` module, which only
+        # reaches sys.path through :cutlass-imports under Bazel.
+        "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
+        requirement("flashinfer-python"),
         requirement("torch"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
         "//max/python/max/driver",
@@ -107,7 +125,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -193,7 +211,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -227,7 +245,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -259,47 +277,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-    ],
-)
-
-modular_py_binary(
-    name = "bench_mla_prefill_sparse",
-    srcs = ["bench_blackwell_mla_prefill_sparse.py"],
-    main = "bench_blackwell_mla_prefill_sparse.py",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:b200_gpu"],
-    deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("torch"),
-    ],
-)
-
-modular_py_binary(
-    name = "bench_mla_prefill_sparse_fp8",
-    srcs = ["bench_blackwell_mla_prefill_sparse_fp8.py"],
-    main = "bench_blackwell_mla_prefill_sparse_fp8.py",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:b200_gpu"],
-    deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("torch"),
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -343,7 +321,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -383,7 +361,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/modeling",
@@ -411,7 +389,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
 )
@@ -434,7 +412,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
 )
@@ -464,7 +442,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
     ] + select({
         "//:use_vllm_setting": [

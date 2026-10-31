@@ -28,24 +28,28 @@ comptime layout_2d = row_major[10, 20]()
 def test_store_codegen_equivalence() raises:
     """Check coordinate and subscript stores for redundant stride loads."""
 
-    def subscript_kernel(
-        output: TileTensor[.int32, type_of(layout_2d), MutAnyOrigin],
-    ):
+    def subscript_kernel[
+        output_origin: MutOrigin
+    ](output: TileTensor[.int32, type_of(layout_2d), output_origin],):
         output[2, 3] = 1234
 
-    def coordinate_kernel(
-        output: TileTensor[.int32, type_of(layout_2d), MutAnyOrigin],
-    ):
+    def coordinate_kernel[
+        output_origin: MutOrigin
+    ](output: TileTensor[.int32, type_of(layout_2d), output_origin],):
         output.store((2, 3), 1234)
 
     var subscript_asm = String(
         compile_info[
-            subscript_kernel, emission_kind="asm", target=get_gpu_target()
+            subscript_kernel[output_origin=MutUntrackedOrigin],
+            emission_kind="asm",
+            target=get_gpu_target(),
         ]()
     )
     var coordinate_asm = String(
         compile_info[
-            coordinate_kernel, emission_kind="asm", target=get_gpu_target()
+            coordinate_kernel[output_origin=MutUntrackedOrigin],
+            emission_kind="asm",
+            target=get_gpu_target(),
         ]()
     )
 
@@ -70,28 +74,42 @@ def test_store_codegen_equivalence() raises:
 def test_load_codegen_equivalence() raises:
     """Check coordinate and subscript loads for redundant stride loads."""
 
-    def subscript_kernel(
-        input: TileTensor[.int32, type_of(layout_2d), ImmutAnyOrigin],
-        output: TileTensor[.int32, type_of(layout_2d), MutAnyOrigin],
+    def subscript_kernel[
+        input_origin: ImmOrigin, output_origin: MutOrigin
+    ](
+        input: TileTensor[.int32, type_of(layout_2d), input_origin],
+        output: TileTensor[.int32, type_of(layout_2d), output_origin],
     ):
         var val = input[2, 3]
         output[0, 0] = val
 
-    def coordinate_kernel(
-        input: TileTensor[.int32, type_of(layout_2d), ImmutAnyOrigin],
-        output: TileTensor[.int32, type_of(layout_2d), MutAnyOrigin],
+    def coordinate_kernel[
+        input_origin: ImmOrigin, output_origin: MutOrigin
+    ](
+        input: TileTensor[.int32, type_of(layout_2d), input_origin],
+        output: TileTensor[.int32, type_of(layout_2d), output_origin],
     ):
         var val = input.load((2, 3))
         output[0, 0] = val
 
     var subscript_asm = String(
         compile_info[
-            subscript_kernel, emission_kind="asm", target=get_gpu_target()
+            subscript_kernel[
+                input_origin=ImmUntrackedOrigin,
+                output_origin=MutUntrackedOrigin,
+            ],
+            emission_kind="asm",
+            target=get_gpu_target(),
         ]()
     )
     var coordinate_asm = String(
         compile_info[
-            coordinate_kernel, emission_kind="asm", target=get_gpu_target()
+            coordinate_kernel[
+                input_origin=ImmUntrackedOrigin,
+                output_origin=MutUntrackedOrigin,
+            ],
+            emission_kind="asm",
+            target=get_gpu_target(),
         ]()
     )
 
@@ -114,28 +132,42 @@ def test_load_codegen_equivalence() raises:
 def test_aligned_load_codegen_equivalence() raises:
     """Check explicit alignment with tuple and coordinate loads."""
 
-    def subscript_kernel(
-        input: TileTensor[.int32, type_of(layout_2d), ImmutAnyOrigin],
-        output: TileTensor[.int32, type_of(layout_2d), MutAnyOrigin],
+    def subscript_kernel[
+        input_origin: ImmOrigin, output_origin: MutOrigin
+    ](
+        input: TileTensor[.int32, type_of(layout_2d), input_origin],
+        output: TileTensor[.int32, type_of(layout_2d), output_origin],
     ):
         var val = input.load[alignment=4]((2, 3))
         output[0, 0] = val
 
-    def coordinate_kernel(
-        input: TileTensor[.int32, type_of(layout_2d), ImmutAnyOrigin],
-        output: TileTensor[.int32, type_of(layout_2d), MutAnyOrigin],
+    def coordinate_kernel[
+        input_origin: ImmOrigin, output_origin: MutOrigin
+    ](
+        input: TileTensor[.int32, type_of(layout_2d), input_origin],
+        output: TileTensor[.int32, type_of(layout_2d), output_origin],
     ):
         var val = input.load[alignment=4]((2, 3))
         output[0, 0] = val
 
     var subscript_asm = String(
         compile_info[
-            subscript_kernel, emission_kind="asm", target=get_gpu_target()
+            subscript_kernel[
+                input_origin=ImmUntrackedOrigin,
+                output_origin=MutUntrackedOrigin,
+            ],
+            emission_kind="asm",
+            target=get_gpu_target(),
         ]()
     )
     var coordinate_asm = String(
         compile_info[
-            coordinate_kernel, emission_kind="asm", target=get_gpu_target()
+            coordinate_kernel[
+                input_origin=ImmUntrackedOrigin,
+                output_origin=MutUntrackedOrigin,
+            ],
+            emission_kind="asm",
+            target=get_gpu_target(),
         ]()
     )
 

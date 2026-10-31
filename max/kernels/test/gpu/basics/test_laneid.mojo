@@ -16,10 +16,9 @@ from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 
-def kernel(
-    output: MutPointer[Float32, MutAnyOrigin],
-    size_dev: Int32,
-):
+def kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin], size_dev: Int32,):
     var size = Int(size_dev)
     var global_tid = global_idx.x
     if global_tid >= size:
@@ -38,7 +37,7 @@ def test_grid_dim(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(output_buffer, output_host)
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel[origin_of(output_buffer)]](
         output_buffer,
         Int32(buffer_size),
         grid_dim=1,

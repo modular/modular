@@ -182,7 +182,7 @@ def execute_rel_logits_flash_attention_test[
                     actual[t, h, d], expected[t, h, d], atol=0.06
                 )
 
-    print("PASSED [", label, "]", sep="")
+    print(t"PASSED [{label}]")
 
 
 def main() raises:

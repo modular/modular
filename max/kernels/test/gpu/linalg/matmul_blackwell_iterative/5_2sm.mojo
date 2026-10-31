@@ -54,6 +54,7 @@ from layout.tma_async import (
 )
 from linalg.arch.sm100 import MmaOpSM100_SS
 
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -66,7 +67,13 @@ def is_benchmark() -> Bool:
     return False
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -80,10 +87,10 @@ def kernel_5[
     a_desc_shape: Coord,
     b_desc_shape: Coord,
     c_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -188,7 +195,7 @@ def kernel_5[
     if elect_one_warp and elect_one_thread:
         tma_mbar[0].init()
         mma_mbar[0].init(
-            cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+            Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
         )
 
     cluster_sync()
@@ -231,8 +238,10 @@ def kernel_5[
         mma_shape,
         accum_type=accum_type,
         cta_group=cta_group,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
@@ -432,9 +441,9 @@ def blackwell_kernel_5[
     b_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -519,10 +528,10 @@ def test_blackwell_kernel_5[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -550,13 +559,13 @@ def test_blackwell_kernel_5[
         + String(N)
         + "x"
         + String(K)
-        + " cluster_shape=("
+        + " cluster_shape=(Int("
         + String(cluster_shape[0])
-        + ", "
+        + "), Int("
         + String(cluster_shape[1])
-        + ", "
+        + "), Int("
         + String(cluster_shape[2])
-        + ")"
+        + "))"
     )
 
     var a = HostDeviceTileTensor[a_type](row_major[M, K](), ctx)
@@ -695,27 +704,19 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
 
     print("Shapes: [M, N, K]")
 
-    comptime block_tile_shape = Index(128, 128, 64)
-    comptime umma_shape = Index(256, 256, 16)
+    comptime block_tile_shape = (128, 128, 64)
+    comptime umma_shape = (256, 256, 16)
 
     comptime for i in range(len(dic_of_shapes)):
         comptime shape = get_dic_of_shapes(i, dic_of_shapes)
-        print(
-            "Benchmarking shape: [",
-            shape[0],
-            ",",
-            shape[1],
-            ",",
-            shape[2],
-            "]",
-        )
+        print(t"Benchmarking shape: [ {shape[0]} , {shape[1]} , {shape[2]} ]")
         test_blackwell_kernel_5[
             .bfloat16,
             .bfloat16,
             .bfloat16,
             block_tile_shape,
             umma_shape,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             c_swizzle=TensorMapSwizzle.SWIZZLE_128B,
@@ -734,8 +735,8 @@ def main() raises:
             benchmark_blackwell_matmul(ctx)
             return
 
-        comptime block_tile_shape = Index(128, 128, 64)
-        comptime umma_shape = Index(256, 256, 16)
+        comptime block_tile_shape = (128, 128, 64)
+        comptime umma_shape = (256, 256, 16)
 
         test_blackwell_kernel_5[
             .bfloat16,
@@ -743,7 +744,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape,
             umma_shape,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             c_swizzle=TensorMapSwizzle.SWIZZLE_128B,

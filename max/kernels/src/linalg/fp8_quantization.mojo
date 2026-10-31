@@ -15,6 +15,7 @@
 
 from std.collections.string.string_span import get_static_string
 from std.math import ceildiv
+from max.gpu.host.info import B200
 from std.math.uutils import ufloordiv
 from std.atomic import Atomic
 from std.sys import simd_width_of
@@ -48,7 +49,7 @@ from std.memory import bitcast
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from max.algorithm import elementwise
 from std.utils.coord import Coord, Idx
-from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.index import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
 from .matmul import matmul
@@ -219,7 +220,7 @@ def quantize_tensor_dynamic_scaled_fp8[
     //,
     group_size_or_per_token: Int,
     num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel.ON,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     input_fn: InputFnType,
     scaled_output: TileTensor[mut=True, out_dtype, ...],
@@ -245,7 +246,7 @@ def quantize_tensor_dynamic_scaled_fp8[
         num_cols: Number of columns in the input; the hidden
             dimension size.
         pdl_level: Programmatic dependent launch level for the
-            kernels (defaults to `PDLLevel.ON`).
+            kernels (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
 
     Args:
         input_fn: Callable that loads input tiles for a given
@@ -296,7 +297,7 @@ def quantize_tensor_dynamic_scaled_fp8[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "quantize_tensor_dynamic_scaled_fp8",
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         if num_rows == 0:
             return
@@ -314,6 +315,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
+                pdl_level=pdl_level,
             ](
                 wrap,
                 scales.address_space_cast[.GENERIC](),
@@ -331,6 +333,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 out_type=out_dtype,
                 num_threads=num_threads,
                 num_groups=num_cols // group_size,
+                pdl_level=pdl_level,
             ](
                 scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
@@ -348,6 +351,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
+                pdl_level=pdl_level,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
@@ -365,6 +369,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
+                pdl_level=pdl_level,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
@@ -397,7 +402,7 @@ def quantize_dynamic_scaled_fp8[
     //,
     group_size_or_per_token: Int,
     num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel.ON,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
     row_bounded: Bool = False,
 ](
     input_fn: InputFnType,
@@ -407,7 +412,7 @@ def quantize_dynamic_scaled_fp8[
     ctx: DeviceContext,
     num_rows: Int,
     amax_floor: Float32 = 0.0,
-    row_limit: OptionalPointer[UInt32, ImmUntrackedOrigin] = None,
+    row_limit: Optional[Pointer[UInt32, ImmUntrackedOrigin]] = None,
 ) raises:
     """TileTensor primary implementation of dynamic scaled FP8 quantization.
 
@@ -421,6 +426,16 @@ def quantize_dynamic_scaled_fp8[
     rows and the kernel grid-strides over `[0, row_limit)` instead of covering
     all `num_rows`. Rows at or past that count keep whatever the output and
     scales buffers already held.
+
+    `pdl_level` picks when the kernel releases its dependents. The kernel
+    always waits for the predecessor grid before it reads anything a
+    predecessor wrote, including `row_limit`. At the default
+    `PDLLevel.OVERLAP_AT_BEGINNING` it releases dependents right after that
+    wait, so a PDL-aware consumer can run its predecessor-independent setup
+    while the quantizer runs; `PDLLevel.ON` releases them when the kernel
+    exits, and `PDLLevel.OFF` launches without PDL. A dependent's own wait
+    still blocks until this grid has completed, so every level is safe for a
+    consumer that waits before reading the outputs.
     """
     comptime assert scaled_output.rank == 2, "expected rank-2 output"
     comptime assert scales.rank == 2, "expected rank-2 scales"
@@ -464,7 +479,7 @@ def quantize_dynamic_scaled_fp8[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "quantize_dynamic_scaled_fp8",
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         if num_rows == 0:
             return
@@ -496,6 +511,7 @@ def quantize_dynamic_scaled_fp8[
                 group_size=group_size,
                 simd_width=simd_width,
                 row_bounded=row_bounded,
+                pdl_level=pdl_level,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
@@ -570,6 +586,7 @@ struct _QuantizeFp8Kernel[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
+    pdl_level: PDLLevel,
     row_bounded: Bool = False,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
@@ -595,7 +612,7 @@ struct _QuantizeFp8Kernel[
     # It cannot be a launch parameter: on the EP path the dispatch that fills
     # the activation buffer publishes this count from the GPU, so the host has
     # no safe value for it at enqueue time.
-    var row_limit: OptionalPointer[UInt32, ImmUntrackedOrigin]
+    var row_limit: Optional[Pointer[UInt32, ImmUntrackedOrigin]]
     var num_rows: Int
 
     @staticmethod
@@ -660,13 +677,16 @@ struct _QuantizeFp8Kernel[
         var row_in_block = warp_id() * groups_per_warp + lane // lanes_per_group
         var col = group_idx * Self.group_size + lane_in_group * Self.simd_width
 
-        var row_end = self.num_rows
-        comptime if Self.row_bounded:
-            # Clamp the device-side count rather than trust it, as in the
-            # block-per-group path.
-            row_end = min(Int(self.row_limit.value()[]), Int(output.dim[0]()))
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
+            var row_end = self.num_rows
+            comptime if Self.row_bounded:
+                # Clamp the device-side count rather than trust it, as in the
+                # block-per-group path. An earlier grid writes it, so it is
+                # read only once the PDL wait has returned.
+                row_end = min(
+                    Int(self.row_limit.value()[]), Int(output.dim[0]())
+                )
 
-        with PDL():
             for tile in range(
                 block_idx.x * rows_per_block,
                 row_end,
@@ -735,19 +755,23 @@ struct _QuantizeFp8Kernel[
         # count and the `block.max` barrier below stays convergent. Unbounded
         # launches keep one row per block, exactly as before.
         var row_start = block_idx.x
-        var row_end: Int
-        var row_step: Int
-        comptime if Self.row_bounded:
-            # The count comes from device memory, so clamp it rather than
-            # trust it: a malformed prefix sum would otherwise write past the
-            # end of both output buffers.
-            row_end = min(Int(self.row_limit.value()[]), Int(output.dim[0]()))
-            row_step = grid_dim.x
-        else:
-            row_end = row_start + 1
-            row_step = 1
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
+            var row_end: Int
+            var row_step: Int
+            comptime if Self.row_bounded:
+                # The count comes from device memory, so clamp it rather than
+                # trust it: a malformed prefix sum would otherwise write past
+                # the end of both output buffers. An earlier grid writes it, so
+                # it is read only once the PDL wait has returned.
+                row_end = min(
+                    Int(self.row_limit.value()[]), Int(output.dim[0]())
+                )
+                row_step = grid_dim.x
+            else:
+                row_end = row_start + 1
+                row_step = 1
+
             for row in range(row_start, row_end, row_step):
                 var input_vec = SIMD[accum_type, Self.simd_width](0)
                 var thread_max = Scalar[accum_type](0)
@@ -812,6 +836,7 @@ struct _ComputeScalesFp8Kernel[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
+    pdl_level: PDLLevel,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var scales: TileTensor[
@@ -863,7 +888,7 @@ struct _ComputeScalesFp8Kernel[
         var row = block_idx.x
         var group_idx = block_idx.y
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             for i in range(
                 Int(tid), Self.group_size // Self.simd_width, Self.num_threads
             ):
@@ -895,6 +920,7 @@ struct _ReducePerTensorScaleFp8Kernel[
     out_type: DType,
     num_threads: Int,
     num_groups: Int,
+    pdl_level: PDLLevel,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var scales: TileTensor[
         mut=True,
@@ -927,7 +953,7 @@ struct _ReducePerTensorScaleFp8Kernel[
         var num_rows = Int(self.num_rows_dev)
         var tid = thread_idx.x
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             var thread_max = Scalar[Self.scales_type](0)
             comptime for g in range(Self.num_groups):
                 for r in range(tid, num_rows, Self.num_threads):
@@ -970,6 +996,7 @@ struct _QuantizeFp8KernelPerTensor[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
+    pdl_level: PDLLevel,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var output: TileTensor[
@@ -1012,7 +1039,7 @@ struct _QuantizeFp8KernelPerTensor[
         var row = block_idx.x
         var group_idx = block_idx.y
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             # The same guarded reciprocal compute_dynamic_fp8_scale uses, so a
             # near-zero tensor quantizes to fp8 zero instead of 0 * Inf.
             var scale_factor_recip = guarded_inv_scale(
@@ -1044,7 +1071,7 @@ def batched_quantize_dynamic_scaled_fp8[
     //,
     group_size_or_per_token: Int,
     num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel.ON,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     input_fn: InputFnType,
     scaled_output: TileTensor[mut=True, out_dtype, ...],
@@ -1055,7 +1082,13 @@ def batched_quantize_dynamic_scaled_fp8[
     batch_size: Int,
 ) raises:
     """TileTensor primary implementation of batched dynamic scaled FP8
-    quantization."""
+    quantization.
+
+    `pdl_level` picks when the kernel releases its dependents, as in
+    `quantize_dynamic_scaled_fp8`: right after the wait for the predecessor
+    grid at the default `PDLLevel.OVERLAP_AT_BEGINNING`, at kernel exit for
+    `PDLLevel.ON`.
+    """
     comptime assert scaled_output.rank == 3, "expected rank-3 output"
     comptime assert scales.rank == 3, "expected rank-3 scales"
 
@@ -1098,6 +1131,7 @@ def batched_quantize_dynamic_scaled_fp8[
         num_threads=num_threads,
         group_size=group_size,
         simd_width=simd_width,
+        pdl_level=pdl_level,
     ](
         wrap,
         scaled_output.address_space_cast[.GENERIC](),
@@ -1131,6 +1165,7 @@ struct _BatchedQuantizeFp8Kernel[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
+    pdl_level: PDLLevel,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var output: TileTensor[
@@ -1175,7 +1210,7 @@ struct _BatchedQuantizeFp8Kernel[
         var group_idx = block_idx.y
         var batch_idx = block_idx.z
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             for i in range(
                 tid, Self.group_size // Self.simd_width, Self.num_threads
             ):
@@ -1236,6 +1271,7 @@ def matmul_dynamic_scaled_fp8[
     k_scale_granularity: Int,
     transpose_b: Bool = False,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -1283,6 +1319,7 @@ def matmul_dynamic_scaled_fp8[
         k_scale_granularity,
         transpose_b,
         target,
+        pdl_level,
     ](
         c,
         a,
@@ -1307,6 +1344,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     k_scale_granularity: Int,
     transpose_b: Bool = False,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -1364,7 +1402,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     comptime _trace_string = get_static_string[
         trace_arg(
             "A_scales",
-            IndexList[2](
+            (
                 a_scales.static_shape[0] if a_scales.static_shape[0]
                 > -1 else 0,
                 a_scales.static_shape[1] if a_scales.static_shape[1]
@@ -1375,7 +1413,7 @@ def _matmul_dynamic_scaled_fp8_impl[
         ";",
         trace_arg(
             "B_scales",
-            IndexList[2](
+            (
                 b_scales.static_shape[0] if b_scales.static_shape[0]
                 > -1 else 0,
                 b_scales.static_shape[1] if b_scales.static_shape[1]
@@ -1609,6 +1647,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 n_scale_granularity,
                 k_scale_granularity,
             ),
+            pdl_level=pdl_level,
         ](c, a, b, a_scales, b_scales, ctx)
 
     else:
@@ -1632,7 +1671,7 @@ def naive_blockwise_scaled_fp8_matmul[
     BLOCK_DIM: Int = 16,
     transpose_b: Bool = False,
     accum_type: DType = get_accum_type[c_type](),
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
     has_epilogue_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
@@ -1761,7 +1800,7 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
     b_scale_layout: TensorLayout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
     *,
     EpilogueFnType: ElementwiseEpilogueFn,
     has_epilogue_fn: Bool,
@@ -1930,7 +1969,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul[
     BLOCK_DIM_N: Int = 32,
     BLOCK_DIM_M: Int = 16,
     transpose_b: Bool = True,
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
 ](
     c: TileTensor[mut=True, c_type, c_layout, ...],
     a: TileTensor[mut=False, a_type, a_layout, ...],
@@ -2045,7 +2084,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     expert_ids_type: DType,
     accum_type: DType,
     transpose_b: Bool = True,
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
@@ -2225,7 +2264,7 @@ def _amd_blockwise_tiled_ok[
     a_scales_type: DType,
     b_scales_type: DType,
     transpose_b: Bool,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     device_info: GPUInfo,
     a_static_k: Int,
     c_static_n: Int,
@@ -2258,6 +2297,46 @@ def _amd_blockwise_tiled_ok[
     )
 
 
+def _one_wave_mma_n(static_n: Int, max_mma_n: Int) -> Int:
+    """Picks `MMA_N` for the one-CTA-per-tile `M <= 64` config.
+
+    Returns the narrowest of 64, 128, 192 and 256 (at most `max_mma_n`) for
+    which one CTA per `MMA_N` columns fits in one wave of B200 SMs, since a
+    second, mostly empty wave costs a full wave of latency. When none fits it
+    returns the widest candidate, `min(256, max_mma_n)`.
+
+    Args:
+        static_n: Compile-time N of the output.
+        max_mma_n: Widest allowed `MMA_N`; the caller passes twice the B-scale
+            block width, so 128 for 64-wide scales and 256 for 128-wide ones.
+
+    Returns:
+        The `MMA_N` to use.
+    """
+    var mma_n = 64
+    while (
+        mma_n < min(256, max_mma_n) and ceildiv(static_n, mma_n) > B200.sm_count
+    ):
+        mma_n += 64
+    return min(mma_n, max_mma_n)
+
+
+def _pair_fits_wave(static_n: Int) -> Bool:
+    """Whether the 128-wide 2-CTA pair config of `64 < M <= 128` fits one wave.
+
+    The pair launches `2 * ceildiv(static_n, 128)` CTAs, so it fits while that
+    is at most the SM count. An unknown N (`static_n <= 0`) keeps the pair.
+
+    Args:
+        static_n: Compile-time N of the output, or a non-positive value if it
+            is dynamic.
+
+    Returns:
+        True to use the 2-CTA pair, False for one CTA per tile.
+    """
+    return static_n <= 0 or ceildiv(static_n, 128) <= B200.sm_count // 2
+
+
 def blockwise_scaled_fp8_with_epilogue[
     c_type: DType,
     a_type: DType,
@@ -2267,9 +2346,10 @@ def blockwise_scaled_fp8_with_epilogue[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
     has_epilogue_fn: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2285,6 +2365,9 @@ def blockwise_scaled_fp8_with_epilogue[
     operations. For non B200 GPUs, we use the naive blockwise scaled fp8 matmul which support normal epilogue natively.
     Callers must allocate `c`; with `has_epilogue_fn` the matmul result is
     written into `c` and then read back by `epilogue_fn`.
+
+    `pdl_level` applies to the SM100 matmul launch only (defaults to
+    `PDLLevel()`, which is off).
     """
 
     # 1D/2D blockwise scaling with (m, n, k) granularity in
@@ -2299,23 +2382,95 @@ def blockwise_scaled_fp8_with_epilogue[
     ):
         comptime N_G = scales_granularity_mnk[1]
         comptime MMA_K = 32
-        comptime block_tile_shape = Index(64, 96, 128)
-        # MMA_N must be <= 2 * n_scale_granularity because the accumulator
-        # only loads 2 b_scales per MMA tile.
-        comptime umma_shape = Index(128, 192, MMA_K) if N_G == 128 else Index(
-            128, 128, MMA_K
-        )
-        comptime cluster_shape = Index(2, 1, 1)
-        comptime matmul_config = MatmulConfig[
+        # The M <= 64 MMA_N below is capped at 2 * N_G, the range this tuning
+        # covered. That cap is not a correctness bound: the accumulator loads
+        # every B-scale block a tile spans (`num_b_scales` in
+        # `blockwise_fp8_accumulator.mojo`).
+        #
+        # B200 tuning (mm-sm100 campaign, CUDA-graph replays): MMA_N=128
+        # beats the previous 192-wide tile at every measured shape —
+        # (N=2304, K=16384, M=300): 35.6 vs 47.8 us, also 4% past cuBLASLt;
+        # (N=16384, K=2048, M=4096): 182.6 vs 234.3 us with cta_group=1.
+        # cta_group=1 wins where the N/BN tile grid already covers the
+        # 148-SM device (wide N; M=512, N=16384: 31.3 vs 36.7 us): the
+        # 2-CTA MMA pair would only halve the CTA count. Narrow N keeps
+        # the 2-CTA pair (N=2304: 35.5 us at cta_group=2 vs 49.4 at 1)
+        # because one CTA per tile strand fewer SMs; the crossover is
+        # ceildiv(N, 128) >= num_SMs/4 (36 N-tiles at N=4608, B200).
+        # Four M-regimes. The M > 128 rows are from the fp8vllm campaign's
+        # full bench_matmul.yaml sweep (78 cells, CUDA-graph replays, every
+        # cell bit-identical to the previous config on the campaign's
+        # exact inputs — the tile choice changes no output bit):
+        #
+        #   M <= 64    one CTA per MMA_N columns with a 64-row MMA tile
+        #              (cta_group=1, no cluster). MMA_N is the narrowest of
+        #              64/128/192/256 whose N grid fits in one wave of
+        #              SMs, so N <= 9472 uses 64 and N <= 18944 uses 128.
+        #              (M=64, N=7168, K=16384) 30.8 us vs 54.3 for the
+        #              256-wide 2-CTA pair this replaced, (N=5120,
+        #              K=12288) 23.4 vs 45.9, (N=2048, K=6144) 13.7 vs 16.2.
+        #   M <= 128   a 128-row tile: the 2-CTA pair at MMA_N=128 while
+        #              its 2 * ceildiv(N, 128) CTAs fit in one wave
+        #              (N <= 9472), else one CTA per tile (cta_group=1, no
+        #              cluster). (M=128, N=7168, K=16384) 38.5 us vs 55.0,
+        #              (N=36864, K=7168) 58.7 vs 66.3.
+        #   M <= 512   the previous N-width rule is optimal: cta_group=1
+        #              for wide N (ceildiv(N,128) >= sm_count/4),
+        #              cta_group=2 for narrow N (N=2304: 35 us vs 49).
+        #   M > 512    one CTA per tile wins even at narrow N once the
+        #              grid is tall: (M=2048, N=2304, K=16384) 98 us vs
+        #              130 at cta_group=2, (M=8192) 385 vs 516; tiny-N
+        #              shapes (ceildiv(N,128) < 8) keep the pair.
+        #
+        # The M <= 128 rows were re-swept on B200 for 128-wide scales (FP8
+        # quantize -> GEMM chains in a CUDA graph, B L2-cold, M = 1..128,
+        # ~40 DeepSeek-V3, Qwen3 and GLM linear shapes), again with
+        # bit-identical outputs. Without a static N the grid size is unknown
+        # and both M <= 128 branches keep the 128-wide pair.
+        comptime static_N = c.static_shape[1]
+        comptime n_tiles = ceildiv(static_N, 128) if static_N > 0 else 0
+        comptime wide_N = n_tiles >= B200.sm_count // 4
+        comptime cluster_shape = (2, 1, 1)
+        comptime pair_fits_wave = _pair_fits_wave(static_N)
+        # 64 < M <= 128 (runtime branch below).
+        comptime small_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            cluster_shape=Index(
-                cluster_shape[0], cluster_shape[1], cluster_shape[2]
-            ),
-            mma_shape=umma_shape,
-            cta_group=2,
+            cluster_shape=(2 if pair_fits_wave else 1, 1, 1),
+            mma_shape=(128, 128, MMA_K),
+            cta_group=2 if pair_fits_wave else 1,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )
+        # M <= 64 (runtime branch below).
+        comptime tiny_m_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            cluster_shape=(1, 1, 1),
+            mma_shape=(64, _one_wave_mma_n(static_N, 2 * N_G), MMA_K),
+            cta_group=1,
+            gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
+        ) if static_N > 0 else small_m_config
+        # 128 < M <= 512: the previous N-width rule.
+        comptime mid_m_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            cluster_shape=cluster_shape,
+            mma_shape=(128, 128, MMA_K),
+            cta_group=1 if wide_N else 2,
+            gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
+        )
+        # M > 512: one CTA per tile for every N grid with >= 8 tiles.
+        comptime big_m_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            cluster_shape=cluster_shape,
+            mma_shape=(128, 128, MMA_K),
+            cta_group=1 if n_tiles >= 8 else 2,
+            gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
+        )
+        comptime tiny_m_max = 64
+        comptime small_m_max = 128
+        comptime mid_m_max = 512
 
         comptime if has_epilogue_fn:
             comptime simd_size = 32 // size_of[c_type]()
@@ -2328,26 +2483,85 @@ def blockwise_scaled_fp8_with_epilogue[
                 var c_val = c.load[simd_width](idx)
                 epilogue_fn[c_type, simd_width, alignment=alignment](idx, c_val)
 
-            blockwise_fp8_matmul[
-                transpose_b=transpose_b,
-                a_scales_type=a_scales_type,
-                b_scales_type=b_scales_type,
-                config=matmul_config,
-                n_scale_granularity=scales_granularity_mnk[1],
-            ](c, a, b, a_scales, b_scales, ctx)
+            if m <= tiny_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=tiny_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m <= small_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=small_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m <= mid_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=mid_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
+            else:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=big_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
             elementwise[
                 simd_size,
                 target="gpu",
                 _trace_description="elementwise_blockwise_scaled_fp8_epilogue",
             ](value_epilogue_wrapper, Coord(m, n), ctx)
         else:
-            blockwise_fp8_matmul[
-                transpose_b=transpose_b,
-                a_scales_type=a_scales_type,
-                b_scales_type=b_scales_type,
-                config=matmul_config,
-                n_scale_granularity=scales_granularity_mnk[1],
-            ](c, a, b, a_scales, b_scales, ctx)
+            var m_runtime = Int(c.dim[0]())
+            if m_runtime <= tiny_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=tiny_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m_runtime <= small_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=small_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m_runtime <= mid_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=mid_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
+            else:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=big_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
 
     else:
         # AMD gfx950: tiled MFMA blockwise-FP8 dense matmul for the GLM E4M3 +

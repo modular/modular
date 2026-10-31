@@ -184,17 +184,8 @@ def test_fold_garbage_row_canary[
     comptime kv_num_heads = num_heads // group
     var num_keys = prefix + seq_len
     print(
-        "  [MLA fold garbage-row canary] q_type=",
-        String(q_type),
-        " num_heads=",
-        num_heads,
-        " seq_len=",
-        seq_len,
-        " prefix=",
-        prefix,
-        " seed=",
-        rng_seed,
-        sep="",
+        t"  [MLA fold garbage-row canary]"
+        t" q_type={String(q_type)} num_heads={num_heads} seq_len={seq_len} prefix={prefix} seed={rng_seed}"
     )
 
     var q_clean = ctx.enqueue_create_host_buffer[q_type](seq_len * row_w)
@@ -238,13 +229,8 @@ def test_fold_garbage_row_canary[
         if o_poison[i] != o_poison[i]:  # NaN != NaN
             any_nan = True
     print(
-        "     token0 mismatches=",
-        mismatches,
-        "/",
-        v_row_w,
-        "  token0_has_nan(poisoned run)=",
-        any_nan,
-        sep="",
+        t"     token0 mismatches={mismatches}/{v_row_w} "
+        t" token0_has_nan(poisoned run)={any_nan}"
     )
     assert_equal(
         mismatches,

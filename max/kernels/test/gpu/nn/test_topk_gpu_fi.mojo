@@ -35,6 +35,7 @@ from std.random import random_float64, seed
 from std.testing import assert_almost_equal
 from std.utils import IndexList
 from std.utils.numerics import min_or_neg_inf
+from std.utils.index import Index
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -301,17 +302,11 @@ def test_topk_topp_sampling[
     the intersection of the top-K set and the top-P nucleus.
     """
     print(
-        "==== Running Top-K+Top-P, N=",
-        N,
-        ", K=",
-        K,
-        ", p=",
-        p,
-        ", batch_size=",
-        batch_size,
+        t"==== Running Top-K+Top-P, N= {N} , K= {K} , p= {p} , batch_size="
+        t" {batch_size}"
     )
 
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_runtime_layout = row_major(Coord(input_shape))
     var output_shape = IndexList[1](batch_size)
     var output_runtime_layout = row_major(batch_size)
@@ -426,17 +421,11 @@ def test_topk_topp_rng_offset_batch_invariant[
     """
     comptime batch_size = 8
     print(
-        "==== Running RNG-offset batch-invariance, N=",
-        N,
-        ", K=",
-        K,
-        ", p=",
-        p,
-        ", batch_size=",
-        batch_size,
+        t"==== Running RNG-offset batch-invariance, N= {N} , K= {K} , p= {p} ,"
+        t" batch_size= {batch_size}"
     )
 
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_runtime_layout = row_major(Coord(input_shape))
     var output_runtime_layout = row_major(batch_size)
 
@@ -529,7 +518,7 @@ def test_topk_sampling[
     comptime assert sampling, "This test requires sampling=True"
 
     # Create layouts for input tensor [batch_size, N].
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_runtime_layout = row_major(Coord(input_shape))
 
     # Create layouts for output tensor [batch_size].
@@ -647,11 +636,8 @@ def test_topk_sampling[
 
     comptime if PRINT_OUTPUT:
         print(
-            "  [Validation] ✓ All",
-            num_passed,
-            "/",
-            NUM_VALIDATION_TRIALS,
-            "trials passed!",
+            t"  [Validation] ✓ All {num_passed} /"
+            t" {NUM_VALIDATION_TRIALS} trials passed!"
         )
 
     # STEP 3: Benchmark the kernel (separate from validation).
@@ -777,11 +763,11 @@ def test_case_batched[
     ), "topk_mask_logits only supports sampling=False"
 
     # Create layouts for input/masked_logits tensors [batch_size, N].
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_runtime_layout = row_major(Coord(input_shape))
 
     # Create layouts for topk output tensors [batch_size, K].
-    var topk_shape = IndexList[2](batch_size, K)
+    var topk_shape = Index(batch_size, K)
     var topk_runtime_layout = row_major(Coord(topk_shape))
 
     # Create device buffers.
@@ -1033,18 +1019,10 @@ def print_test_case(test_case: TestCase):
     if case .Some(num_blocks_per_input) = test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(num_blocks_per_input)
     print(
-        "==== Running Top-K sampling=",
-        test_case.sampling,
-        ", N=",
-        test_case.N,
-        ", K=",
-        test_case.K,
-        ", block_size=",
-        test_case.block_size,
-        ", batch_size=",
-        test_case.batch_size,
-        ", num_blocks_per_input=",
-        num_blocks_per_in_msg,
+        t"==== Running Top-K sampling= {test_case.sampling} , N="
+        t" {test_case.N} , K= {test_case.K} , block_size="
+        t" {test_case.block_size} , batch_size= {test_case.batch_size} ,"
+        t" num_blocks_per_input= {num_blocks_per_in_msg}"
     )
 
 
@@ -1097,21 +1075,11 @@ def test_topk_topp_sampling_fi[
     validate_topk_topp_sampling_results from the existing test infrastructure.
     """
     print(
-        "==== Testing _topk_topp_sampling_fi: dtype=",
-        dtype,
-        " batch=",
-        batch_size,
-        " N=",
-        N,
-        " K=",
-        K,
-        " p=",
-        p,
-        " T=",
-        T,
+        t"==== Testing _topk_topp_sampling_fi: dtype= {dtype}  batch="
+        t" {batch_size}  N= {N}  K= {K}  p= {p}  T= {T}"
     )
 
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_layout = row_major(Coord(input_shape))
     var output_layout = row_major(batch_size)
     var mask_layout = row_major(Coord(input_shape))

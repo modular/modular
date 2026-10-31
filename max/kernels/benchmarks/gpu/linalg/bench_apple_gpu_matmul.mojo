@@ -109,20 +109,10 @@ def _verify[
         print("    verify: OK   max_abs_err =", max_abs_err)
     else:
         print(
-            "    verify: FAIL",
-            mismatch_count,
-            "mismatches /",
-            sample_m * sample_n,
-            "samples; max_abs_err =",
-            max_abs_err,
-            "; first [",
-            first_i,
-            ",",
-            first_j,
-            "] expected =",
-            first_expected,
-            "got =",
-            first_got,
+            t"    verify: FAIL {mismatch_count} mismatches /"
+            t" {sample_m * sample_n} samples; max_abs_err = {max_abs_err} ;"
+            t" first [ {first_i} , {first_j} ] expected = {first_expected} got"
+            t" = {first_got}"
         )
 
 
@@ -198,22 +188,12 @@ def _bench_shape[
     var route = String("auto")
     if case .Some(force_split_k) = force_split_k:
         route = String("split") if force_split_k else String("single")
+    var transpose_label = " N" + tb_str
+    var route_label = "[" + route + "]:"
     print(
-        " ",
-        in_type,
-        " ",
-        m,
-        "x",
-        n,
-        "x",
-        k,
-        " N" + tb_str,
-        "[" + route + "]:",
-        " avg",
-        avg_sec * 1000.0,
-        "ms,",
-        tflops,
-        "TFLOPS",
+        t"  {in_type}   {m} x {n} x"
+        t" {k} {transpose_label} {route_label}  avg"
+        t" {avg_sec * 1000.0} ms, {tflops} TFLOPS"
     )
 
     # Keep buffers alive until timing is done.
@@ -241,7 +221,7 @@ def _bench_split_compare[
     var split = _bench_shape[in_type, transpose_b](
         m, n, k, ctx, verify=False, force_split_k=True
     )
-    print("    -> speedup (single / split):", single / split, "x")
+    print(t"    -> speedup (single / split): {single / split} x")
 
 
 def main() raises:
@@ -255,11 +235,7 @@ def main() raises:
 
     # Verification on by default; `BENCH_VERIFY=0` to skip.
     var verify = getenv("BENCH_VERIFY", "1") != "0"
-    print(
-        "== bench_apple_gpu_matmul (warmup=30, hot=20, verify=",
-        verify,
-        ")",
-    )
+    print(t"== bench_apple_gpu_matmul (warmup=30, hot=20, verify= {verify} )")
 
     # Peak-perf anchor: 8192^3 fp16 NT (research-port reference).
     _ = _bench_shape[.float16, True](8192, 8192, 8192, ctx, verify=verify)

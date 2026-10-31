@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.experimental.nn.Conv2d."""
+"""Tests for max.nn.Conv2d."""
 
 from __future__ import annotations
 
 import pytest
 from max.driver import Accelerator, accelerator_count
-from max.experimental.nn import Conv2d
-from max.experimental.tensor import Tensor
+from max.nn import Conv2d
+from max.tensor import Tensor
 
 
 @pytest.mark.skip(

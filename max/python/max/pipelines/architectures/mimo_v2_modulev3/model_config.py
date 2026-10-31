@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Config for MiMo-V2.6-Flash on ModuleV3 (``MiMoV2ForCausalLM_ModuleV3``).
 
-The model runs FP8 W8A8 dense linears and W4A8 MXFP4 experts, with Q/K (192)
-and V (128) zero-padded to a 256-wide KV cache for the fast attention kernels.
+The model runs FP8 W8A8 dense linears and W4A8 MXFP4 experts. Both KV cache
+groups hold K (192) and V (128) unpadded, packed into one row per head.
 """
 
 from __future__ import annotations
@@ -23,9 +23,14 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import (
+    CacheLeafParamInterface,
+    KVCacheParamInterface,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+)
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
@@ -46,7 +51,6 @@ from ..mimo_v2.model_config import (
     FULL,
     SLIDING,
     _validate,
-    attention_head_dim,
     layer_types,
     qkv_chunk_layout,
     validate_devices,
@@ -55,9 +59,55 @@ from .layers.attention import QkvChunkLayout
 from .quant import MiMoV2QuantScheme, moe_layers, parse_quant_scheme
 
 # The config helpers and constants above are the graph-API architecture's;
-# the checkpoint's schema does not differ between the ports. Only the config
-# class below differs: it has no graph-API experimental fields and validates
-# the dense-MLP scale-granule split the ModuleV3 build needs at plan time.
+# the checkpoint's schema does not differ between the ports. The KV cache and
+# the config class below differ: this port caches attention unpadded, and its
+# config has no ``use_subgraphs`` switch and validates the dense-MLP
+# scale-granule split the ModuleV3 build needs at plan time.
+
+
+SPLIT_KV_MAX_QUERY_ROWS = 128
+"""Query rows (a request's query tokens times the Q heads per KV head) up to
+which attention over a split cache honors the metadata's partition count:
+``SPLIT_KV_1Q_MAX_Q_ROWS`` in the SM100 dispatch. Past it a step runs the
+unsplit prefill tile, which is far slower on a long cache."""
+
+
+def check_split_verify_rows(
+    num_attention_heads: int, kv_params: CacheLeafParamInterface
+) -> None:
+    """Refuses a speculative width that overflows a group's verify step.
+
+    A block draft (DFlash) verifies its block per request, and an
+    autoregressive draft its drafts and the bonus token. ``num_draft_tokens``
+    is the drafter's block only on the tree a speculative pairing stamps
+    with it; the base tree carries ``num_speculative_tokens`` there, so the
+    target's build checks the stamped tree too.
+
+    Raises:
+        ValueError: If a split group's verify step has more than
+            :data:`SPLIT_KV_MAX_QUERY_ROWS` query rows.
+    """
+    if isinstance(kv_params, MultiKVCacheParams):
+        for child in kv_params.children.values():
+            check_split_verify_rows(num_attention_heads, child)
+        return
+    if (
+        not isinstance(kv_params, MHAKVCacheParams)
+        or not kv_params.has_split_head_dims
+        or kv_params.speculative_method is None
+    ):
+        return
+    tokens = kv_params.num_draft_tokens
+    if kv_params.speculative_method not in ("dflash", "dflash2", "dspark"):
+        tokens += 1
+    rows = tokens * (num_attention_heads // kv_params.n_kv_heads)
+    if rows > SPLIT_KV_MAX_QUERY_ROWS:
+        raise ValueError(
+            f"MiMo-V2: a {kv_params.speculative_method} verify step attends "
+            f"{tokens} tokens per request, {rows} query rows, over the "
+            f"split KV cache; at most {SPLIT_KV_MAX_QUERY_ROWS} keep its "
+            "split-K decode route."
+        )
 
 
 @dataclass(kw_only=True)
@@ -120,6 +170,15 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     ``runtime.ep_size > 1``. ``None`` leaves the routed experts channel-
     sharded (tensor parallel)."""
 
+    fused_sliding_qkv: bool = False
+    """Whether sliding-window layers prepare Q, K and V with the fused
+    chunked QKV op instead of separate cache stores and RoPE. Off by
+    default; unsupported with data-parallel attention."""
+    fused_full_qkv: bool = False
+    """Whether full-attention layers use fused chunked QKV preparation.
+    Off by default, independently of sliding fusion; unsupported with
+    data-parallel attention."""
+
     data_parallel_degree: int = 1
     """Attention data-parallel replicas. Reserved for the DP coupling; a
     degree above 1 is refused until the DP-attn mode is built."""
@@ -141,7 +200,13 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         *,
         allow_kv_head_replication: bool = False,
     ) -> MultiKVCacheParams:
-        """Builds the ``{sliding_attention, full_attention}`` KV tree."""
+        """Builds the ``{sliding_attention, full_attention}`` KV tree.
+
+        Both groups cache each head's 192-wide key and 128-wide value
+        unpadded, packed into one row
+        (:attr:`~max.nn.legacy.kv_cache.KVCacheParams.v_head_dim`). The sliding
+        group's window also bounds its split-K partition count.
+        """
         return hybrid_swa_full_kv_params(
             layer_types=layer_types(huggingface_config),
             sliding_window=huggingface_config.sliding_window,
@@ -150,10 +215,12 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=attention_head_dim(huggingface_config),
+            head_dim=huggingface_config.head_dim,
             allow_kv_head_replication=allow_kv_head_replication,
             sliding_n_kv_heads=huggingface_config.swa_num_key_value_heads,
             full_n_kv_heads=huggingface_config.num_key_value_heads,
+            sliding_v_head_dim=huggingface_config.v_head_dim,
+            full_v_head_dim=huggingface_config.v_head_dim,
         )
 
     @override
@@ -210,6 +277,7 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             devices=devices,
             kv_params=kv_params,
             max_seq_len=max_seq_len,
+            data_parallel_degree=model_config.data_parallel_degree,
         )
         return config
 
@@ -221,6 +289,7 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_params: KVCacheParamInterface,
         max_seq_len: int,
+        data_parallel_degree: int = 1,
     ) -> Self:
         """Builds the config from the checkpoint's HuggingFace config.
 
@@ -229,6 +298,11 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             devices: The devices to build for.
             kv_params: The KV cache tree, from :meth:`construct_kv_params`.
             max_seq_len: The maximum sequence length to build for.
+            data_parallel_degree: Attention replicas over ``devices``. The
+                divisibility checks below are the tensor-parallel sharding
+                constraints, so they hold over one replica's devices --
+                where the weights shard -- not over the whole mesh, where
+                every one-device replica holds them unsharded.
 
         Returns:
             The config.
@@ -239,7 +313,7 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         """
         hf = huggingface_config
         _validate(hf)
-        num_devices = len(devices)
+        num_devices = max(len(devices) // max(data_parallel_degree, 1), 1)
         layouts = {
             SLIDING: qkv_chunk_layout(hf, sliding=True),
             FULL: qkv_chunk_layout(hf, sliding=False),
@@ -264,6 +338,7 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 f"into whole 128-row scale granules over {num_devices} "
                 "devices."
             )
+        check_split_verify_rows(hf.num_attention_heads, kv_params)
         rotary_dim = int(hf.head_dim * hf.partial_rotary_factor)
         if rotary_dim % 2:
             raise ValueError(f"MiMo-V2: rotary dim {rotary_dim} is odd.")

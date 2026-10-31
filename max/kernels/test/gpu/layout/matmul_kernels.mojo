@@ -47,8 +47,6 @@ from layout import (
 from layout.tile_tensor import stack_allocation
 from layout.tile_io import copy_dram_to_sram_async as copy_tiles_async
 
-from std.utils.index import Index
-
 comptime NWARMUP = 1
 comptime NRUN = 1
 
@@ -139,10 +137,13 @@ def gemm_kernel_1[
     c_layout: TensorLayout,
     BM: Int,
     BN: Int,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    c_origin: MutOrigin,
 ](
-    a: TileTensor[dtype, a_layout, ImmutAnyOrigin],
-    b: TileTensor[dtype, b_layout, ImmutAnyOrigin],
-    c: TileTensor[dtype, c_layout, MutAnyOrigin],
+    a: TileTensor[dtype, a_layout, a_origin],
+    b: TileTensor[dtype, b_layout, b_origin],
+    c: TileTensor[dtype, c_layout, c_origin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B.
@@ -209,7 +210,7 @@ def run_gemm_kernel_1[
     ctx: DeviceContext,
     a: TileTensor,
     b: TileTensor,
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
 ) raises:
     comptime assert a.rank == b.rank == c.rank == 2
     comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
@@ -218,15 +219,23 @@ def run_gemm_kernel_1[
     var K = Int(a.dim[1]())
 
     comptime func = gemm_kernel_1[
-        dtype, type_of(a.layout), type_of(b.layout), type_of(c.layout), BM, BN
+        dtype,
+        type_of(a.layout),
+        type_of(b.layout),
+        type_of(c.layout),
+        BM,
+        BN,
+        a_origin=a.origin,
+        b_origin=b.origin,
+        c_origin=c.origin,
     ]
 
     @inline(.always)
     def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[func](
-            a.as_imm().as_unsafe_any_origin(),
-            b.as_imm().as_unsafe_any_origin(),
-            c.as_unsafe_any_origin(),
+            a.as_imm(),
+            b.as_imm(),
+            c,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(BN, BM),
         )
@@ -236,9 +245,9 @@ def run_gemm_kernel_1[
     # Do one iteration for verification
     ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[func](
-        a.as_imm().as_unsafe_any_origin(),
-        b.as_imm().as_unsafe_any_origin(),
-        c.as_unsafe_any_origin(),
+        a.as_imm(),
+        b.as_imm(),
+        c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BN, BM),
     )
@@ -251,10 +260,13 @@ def gemm_kernel_2[
     c_layout: TensorLayout,
     BM: Int,
     BN: Int,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    c_origin: MutOrigin,
 ](
-    a: TileTensor[dtype, a_layout, ImmutAnyOrigin],
-    b: TileTensor[dtype, b_layout, ImmutAnyOrigin],
-    c: TileTensor[dtype, c_layout, MutAnyOrigin],
+    a: TileTensor[dtype, a_layout, a_origin],
+    b: TileTensor[dtype, b_layout, b_origin],
+    c: TileTensor[dtype, c_layout, c_origin],
 ):
     """
     GEMM kernel that performs matrix multiplication C = A * B with
@@ -321,7 +333,7 @@ def run_gemm_kernel_2[
     ctx: DeviceContext,
     a: TileTensor,
     b: TileTensor,
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
 ) raises:
     comptime assert a.rank == b.rank == c.rank == 2
     comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
@@ -330,15 +342,23 @@ def run_gemm_kernel_2[
     var K = Int(a.dim[1]())
 
     comptime kernel = gemm_kernel_2[
-        dtype, type_of(a.layout), type_of(b.layout), type_of(c.layout), BM, BN
+        dtype,
+        type_of(a.layout),
+        type_of(b.layout),
+        type_of(c.layout),
+        BM,
+        BN,
+        a_origin=a.origin,
+        b_origin=b.origin,
+        c_origin=c.origin,
     ]
 
     @inline(.always)
     def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
-            a.as_imm().as_unsafe_any_origin(),
-            b.as_imm().as_unsafe_any_origin(),
-            c.as_unsafe_any_origin(),
+            a.as_imm(),
+            b.as_imm(),
+            c,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(BN, BM),
         )
@@ -348,9 +368,9 @@ def run_gemm_kernel_2[
     # Do one iteration for verification
     ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
-        a.as_imm().as_unsafe_any_origin(),
-        b.as_imm().as_unsafe_any_origin(),
-        c.as_unsafe_any_origin(),
+        a.as_imm(),
+        b.as_imm(),
+        c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BN, BM),
     )
@@ -365,10 +385,13 @@ def gemm_kernel_3[
     BN: Int,
     BK: Int,
     NUM_THREADS: Int,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    c_origin: MutOrigin,
 ](
-    a: TileTensor[dtype, a_layout, ImmutAnyOrigin],
-    b: TileTensor[dtype, b_layout, ImmutAnyOrigin],
-    c: TileTensor[dtype, c_layout, MutAnyOrigin],
+    a: TileTensor[dtype, a_layout, a_origin],
+    b: TileTensor[dtype, b_layout, b_origin],
+    c: TileTensor[dtype, c_layout, c_origin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -461,7 +484,7 @@ def run_gemm_kernel_3[
     ctx: DeviceContext,
     a: TileTensor,
     b: TileTensor,
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
 ) raises:
     comptime assert a.rank == b.rank == c.rank == 2
     comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
@@ -478,14 +501,17 @@ def run_gemm_kernel_3[
         BN,
         BK,
         BM * BN,
+        a_origin=a.origin,
+        b_origin=b.origin,
+        c_origin=c.origin,
     ]
 
     @inline(.always)
     def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
-            a.as_imm().as_unsafe_any_origin(),
-            b.as_imm().as_unsafe_any_origin(),
-            c.as_unsafe_any_origin(),
+            a.as_imm(),
+            b.as_imm(),
+            c,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(BM * BN),
         )
@@ -495,9 +521,9 @@ def run_gemm_kernel_3[
     # Do one iteration for verification
     ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
-        a.as_imm().as_unsafe_any_origin(),
-        b.as_imm().as_unsafe_any_origin(),
-        c.as_unsafe_any_origin(),
+        a.as_imm(),
+        b.as_imm(),
+        c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(BM * BN),
     )
@@ -513,10 +539,13 @@ def gemm_kernel_4[
     BK: Int,
     TM: Int,
     NUM_THREADS: Int,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    c_origin: MutOrigin,
 ](
-    a: TileTensor[dtype, a_layout, ImmutAnyOrigin],
-    b: TileTensor[dtype, b_layout, ImmutAnyOrigin],
-    c: TileTensor[dtype, c_layout, MutAnyOrigin],
+    a: TileTensor[dtype, a_layout, a_origin],
+    b: TileTensor[dtype, b_layout, b_origin],
+    c: TileTensor[dtype, c_layout, c_origin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -624,7 +653,7 @@ def run_gemm_kernel_4[
     ctx: DeviceContext,
     a: TileTensor,
     b: TileTensor,
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
 ) raises:
     comptime assert a.rank == b.rank == c.rank == 2
     comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
@@ -643,14 +672,17 @@ def run_gemm_kernel_4[
         BK,
         TM,
         NUM_THREADS,
+        a_origin=a.origin,
+        b_origin=b.origin,
+        c_origin=c.origin,
     ]
 
     @inline(.always)
     def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
-            a.as_imm().as_unsafe_any_origin(),
-            b.as_imm().as_unsafe_any_origin(),
-            c.as_unsafe_any_origin(),
+            a.as_imm(),
+            b.as_imm(),
+            c,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(NUM_THREADS),
         )
@@ -660,9 +692,9 @@ def run_gemm_kernel_4[
     # Do one iteration for verification
     ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
-        a.as_imm().as_unsafe_any_origin(),
-        b.as_imm().as_unsafe_any_origin(),
-        c.as_unsafe_any_origin(),
+        a.as_imm(),
+        b.as_imm(),
+        c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -679,10 +711,13 @@ def gemm_kernel_5[
     TM: Int,
     TN: Int,
     NUM_THREADS: Int,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    c_origin: MutOrigin,
 ](
-    a: TileTensor[dtype, a_layout, ImmutAnyOrigin],
-    b: TileTensor[dtype, b_layout, ImmutAnyOrigin],
-    c: TileTensor[dtype, c_layout, MutAnyOrigin],
+    a: TileTensor[dtype, a_layout, a_origin],
+    b: TileTensor[dtype, b_layout, b_origin],
+    c: TileTensor[dtype, c_layout, c_origin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B.
@@ -794,7 +829,7 @@ def run_gemm_kernel_5[
     ctx: DeviceContext,
     a: TileTensor,
     b: TileTensor,
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
 ) raises:
     comptime assert a.rank == b.rank == c.rank == 2
     comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
@@ -815,14 +850,17 @@ def run_gemm_kernel_5[
         TM,
         TN,
         NUM_THREADS,
+        a_origin=a.origin,
+        b_origin=b.origin,
+        c_origin=c.origin,
     ]
 
     @inline(.always)
     def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
-            a.as_imm().as_unsafe_any_origin(),
-            b.as_imm().as_unsafe_any_origin(),
-            c.as_unsafe_any_origin(),
+            a.as_imm(),
+            b.as_imm(),
+            c,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(NUM_THREADS),
         )
@@ -831,9 +869,9 @@ def run_gemm_kernel_5[
     # Do one iteration for verification
     ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
-        a.as_imm().as_unsafe_any_origin(),
-        b.as_imm().as_unsafe_any_origin(),
-        c.as_unsafe_any_origin(),
+        a.as_imm(),
+        b.as_imm(),
+        c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -850,10 +888,13 @@ def gemm_kernel_6[
     TM: Int,
     TN: Int,
     NUM_THREADS: Int,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    c_origin: MutOrigin,
 ](
-    a: TileTensor[dtype, a_layout, ImmutAnyOrigin],
-    b: TileTensor[dtype, b_layout, ImmutAnyOrigin],
-    c: TileTensor[dtype, c_layout, MutAnyOrigin],
+    a: TileTensor[dtype, a_layout, a_origin],
+    b: TileTensor[dtype, b_layout, b_origin],
+    c: TileTensor[dtype, c_layout, c_origin],
 ):
     """
     Accumulates `C += A * B` with vectorized memory access.
@@ -979,7 +1020,7 @@ def run_gemm_kernel_6[
     ctx: DeviceContext,
     a: TileTensor,
     b: TileTensor,
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
 ) raises:
     comptime assert a.rank == b.rank == c.rank == 2
     comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
@@ -999,14 +1040,17 @@ def run_gemm_kernel_6[
         TM,
         TN,
         NUM_THREADS,
+        a_origin=a.origin,
+        b_origin=b.origin,
+        c_origin=c.origin,
     ]
 
     @inline(.always)
     def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
-            a.as_imm().as_unsafe_any_origin(),
-            b.as_imm().as_unsafe_any_origin(),
-            c.as_unsafe_any_origin(),
+            a.as_imm(),
+            b.as_imm(),
+            c,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(NUM_THREADS),
         )
@@ -1015,9 +1059,9 @@ def run_gemm_kernel_6[
     # Do one iteration for verification
     ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
-        a.as_imm().as_unsafe_any_origin(),
-        b.as_imm().as_unsafe_any_origin(),
-        c.as_unsafe_any_origin(),
+        a.as_imm(),
+        b.as_imm(),
+        c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -1036,10 +1080,13 @@ def matmul_kernel_tc[
     MMA_M: Int,
     MMA_N: Int,
     MMA_K: Int,
+    A_origin: ImmOrigin,
+    B_origin: ImmOrigin,
+    C_origin: MutOrigin,
 ](
-    A: TileTensor[dtype, layout_a, ImmutAnyOrigin],
-    B: TileTensor[dtype, layout_b, ImmutAnyOrigin],
-    C: TileTensor[dtype, layout_c, MutAnyOrigin],
+    A: TileTensor[dtype, layout_a, A_origin],
+    B: TileTensor[dtype, layout_b, B_origin],
+    C: TileTensor[dtype, layout_c, C_origin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -1093,7 +1140,7 @@ def matmul_kernel_tc[
     ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object
-    var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[A.dtype, C.dtype, (MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
     var A_sram_tile = stack_allocation[
@@ -1192,7 +1239,7 @@ def run_gemm_kernel_tc[
     ctx: DeviceContext,
     a: TileTensor,
     b: TileTensor,
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
 ) raises:
     comptime assert a.rank == b.rank == c.rank == 2
     comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
@@ -1214,14 +1261,17 @@ def run_gemm_kernel_tc[
         MMA_M,
         MMA_N,
         MMA_K,
+        A_origin=a.origin,
+        B_origin=b.origin,
+        C_origin=c.origin,
     ]
 
     @inline(.always)
     def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
-            a.as_imm().as_unsafe_any_origin(),
-            b.as_imm().as_unsafe_any_origin(),
-            c.as_unsafe_any_origin(),
+            a.as_imm(),
+            b.as_imm(),
+            c,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(NUM_WARPS * ctx.default_device_info.warp_size),
         )
@@ -1230,9 +1280,9 @@ def run_gemm_kernel_tc[
     # Do one iteration for verification
     ctx.enqueue_memset(c.to_device_buffer(ctx), 0)
     ctx.enqueue_function[kernel](
-        a.as_imm().as_unsafe_any_origin(),
-        b.as_imm().as_unsafe_any_origin(),
-        c.as_unsafe_any_origin(),
+        a.as_imm(),
+        b.as_imm(),
+        c,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_WARPS * ctx.default_device_info.warp_size),
     )

@@ -18,10 +18,11 @@ visible in the IR without compiling the GPU kernels.
 
 from __future__ import annotations
 
+import pytest
 import torch
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.moe import GatedActivation, MoE
+from max.nn.legacy.moe import GatedActivation, MoE
 
 _HIDDEN_DIM = 64
 _MOE_DIM = 32
@@ -91,4 +92,39 @@ def test_swigluoai_fuses_with_its_constants() -> None:
     assert 'activation = "swigluoai"' in ir, ir
     assert "swiglu_alpha = #M.dense_array<1.702000e+00> : tensor<f32>" in ir, ir
     assert "swiglu_limit = #M.dense_array<7.000000e+00> : tensor<f32>" in ir, ir
+    assert "mo.sigmoid" not in ir, ir
+
+
+def test_situ_requires_a_nonzero_alpha() -> None:
+    with pytest.raises(ValueError, match="non-zero alpha"):
+        GatedActivation("situ")
+    with pytest.raises(ValueError, match="non-zero alpha"):
+        GatedActivation("situ", alpha=0.0, limit=25.0)
+
+
+def test_situ_allows_a_zero_limit() -> None:
+    activation = GatedActivation("situ", alpha=4.0)
+    assert activation.kernel_parameters() == {
+        "activation": "situ",
+        "swiglu_alpha": 4.0,
+        "swiglu_limit": 0.0,
+    }
+    ir = _build_moe_graph(activation)
+    assert ir.count(_FUSED_SILU) == 1, ir
+    assert 'activation = "situ"' in ir, ir
+    assert "swiglu_limit = #M.dense_array<0.000000e+00> : tensor<f32>" in ir, ir
+
+
+def test_situ_fuses_with_its_constants() -> None:
+    activation = GatedActivation("situ", alpha=4.0, limit=25.0)
+    assert activation.kernel_parameters() == {
+        "activation": "situ",
+        "swiglu_alpha": 4.0,
+        "swiglu_limit": 25.0,
+    }
+    ir = _build_moe_graph(activation)
+    assert ir.count(_FUSED_SILU) == 1, ir
+    assert 'activation = "situ"' in ir, ir
+    assert "swiglu_alpha = #M.dense_array<4.000000e+00> : tensor<f32>" in ir, ir
+    assert "swiglu_limit = #M.dense_array<2.500000e+01> : tensor<f32>" in ir, ir
     assert "mo.sigmoid" not in ir, ir

@@ -43,18 +43,8 @@ def test[
     group: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mha_sink_weights: qkv_type=",
-        qkv_type,
-        "depth=",
-        depth,
-        "num_heads=",
-        num_heads,
-        "group=",
-        group,
-        "seq_len=",
-        seq_len,
-        "num_keys=",
-        num_keys,
+        t"test_mha_sink_weights: qkv_type= {qkv_type} depth= {depth} num_heads="
+        t" {num_heads} group= {group} seq_len= {seq_len} num_keys= {num_keys}"
     )
 
     comptime batch_size = 1

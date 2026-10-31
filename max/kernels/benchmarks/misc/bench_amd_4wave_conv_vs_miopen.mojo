@@ -229,39 +229,10 @@ def _bench_one[
     var ratio = tflops_cv / tflops_mio
 
     print(
-        "| ",
-        label,
-        " | NHWC=",
-        N_batch,
-        "x",
-        H,
-        "x",
-        W,
-        "x",
-        C_in,
-        " | RxS=",
-        R,
-        "x",
-        S,
-        " stride=",
-        stride_h,
-        " pad=",
-        pad_h,
-        " | Cout=",
-        C_out,
-        " | M=",
-        M_total,
-        " K=",
-        K_real,
-        " | ",
-        path,
-        " | conv ",
-        tflops_cv,
-        " | miopen ",
-        tflops_mio,
-        " | ",
-        ratio,
-        " |",
+        t"|  {label}  | NHWC= {N_batch} x {H} x {W} x {C_in}  | RxS= {R} x {S} "
+        t" stride= {stride_h}  pad= {pad_h}  | Cout= {C_out}  | M= {M_total} "
+        t" K= {K_real}  |  {path}  | conv  {tflops_cv}  | miopen  {tflops_mio} "
+        t" |  {ratio}  |"
     )
 
     keep(output_4wave_dev.unsafe_ptr())

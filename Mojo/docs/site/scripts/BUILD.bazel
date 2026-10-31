@@ -1,0 +1,35 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_py_binary(
+    name = "report-code-coverage",
+    srcs = ["report-code-coverage.py"],
+    visibility = [
+        "//:__pkg__",
+        "//bazel/lint:__pkg__",
+    ],
+)
+
+modular_py_test(
+    name = "tests",
+    srcs = ["test_report_code_coverage.py"],
+    ignore_extra_deps = [":report-code-coverage"],
+    # Runfiles for importlib; not a static import (pydeps would flag unused).
+    deps = [":report-code-coverage"],
+)
+
+modular_py_binary(
+    name = "post-process-mojodocs",
+    srcs = ["post-process-mojodocs.py"],
+    tags = ["manual"],
+    visibility = ["//Mojo/docs/site:__pkg__"],
+)
+
+modular_py_binary(
+    name = "write-nightly-release",
+    srcs = ["write-nightly-release.py"],
+    data = ["//Mojo/docs/site:nightly-changelog"],
+    tags = ["manual"],
+    visibility = ["//Mojo/docs/site:__pkg__"],
+)

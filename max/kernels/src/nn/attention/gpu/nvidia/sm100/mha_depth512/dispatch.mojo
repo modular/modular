@@ -21,6 +21,10 @@ from block_idx.x >> 1.
 from std.collections import OptionalReg
 from std.math import ceildiv
 from max.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import Coord, TensorEngine
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -370,6 +374,7 @@ def mha_sm100_depth512_dispatch[
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                             UInt32(smem_use)
                         ),
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
 
                 # --- ragged dispatch ---
@@ -498,6 +503,7 @@ def mha_sm100_depth512_dispatch[
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                             UInt32(smem_use)
                         ),
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
 
                 # --- ragged dispatch ---

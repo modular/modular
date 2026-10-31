@@ -126,7 +126,7 @@ private:
   GeneratorOp getGenerator(SymbolRefAttr symbol) override;
 
   ErrorOr<CrossDeviceFunction>
-  compileAsm(MLIRContext *ctx, GeneratorOp, SymbolConstantAttr, StringAttr,
+  compileAsm(MLIRContext *ctx, GeneratorOp, FuncSymbolAttr, StringAttr,
              TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) override;
 
   void addDeferredFunction(OwningOpRef<FuncOp> func) override;

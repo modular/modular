@@ -34,7 +34,7 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.state_space import (
+from max.nn.legacy.state_space import (
     GatedDeltaReplayInputs,
     gated_delta_conv1d_fwd,
     gated_delta_recurrence_fwd,

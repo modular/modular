@@ -41,7 +41,7 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.comm import Signals
+from max.nn.legacy.comm import Signals
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
 )
@@ -320,3 +320,26 @@ def test_clip_position_rows_are_replicated_across_slices(
     slices = embeddings.reshape(grid_t, rows_per_slice, OUT_HIDDEN_SIZE)
     for t in range(1, grid_t):
         np.testing.assert_allclose(slices[t], slices[0], rtol=1e-5, atol=1e-5)
+
+
+def test_a_clip_encodes_as_its_temporal_patches(compiled) -> None:  # noqa: ANN001
+    """A clip's ``(t, h, w)`` grid and ``t`` grids of ``(1, h, w)`` over the
+    same rows give the same embeddings, bit for bit.
+
+    A serving engine that preprocesses a clip one temporal patch at a time
+    packs the patches as ``t`` one-patch items, where MAX's tokenizer lays the
+    clip out as one. Attention, rotary positions and ``mo.spatial_merge``'s
+    position replication all work per temporal patch, so the tower computes
+    the same thing from both.
+    """
+    grid_t, grid_h, grid_w = 3, 4, 6
+    pixels = _pixels(grid_t * grid_h * grid_w, seed=6)
+    clip = _encode(
+        compiled, np.array([(grid_t, grid_h, grid_w)], dtype=np.int64), pixels
+    )
+    patches = _encode(
+        compiled,
+        np.array([(1, grid_h, grid_w)] * grid_t, dtype=np.int64),
+        pixels,
+    )
+    np.testing.assert_array_equal(patches, clip)

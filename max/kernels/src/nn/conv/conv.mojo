@@ -24,7 +24,7 @@ from std.math.uutils import udivmod
 from std.memory import ThinAllocation, dealloc
 
 
-from std.os import abort, getenv
+from std.os import abort
 from std.ffi import _get_global_or_null, external_call
 from std.sys.info import align_of, simd_width_of, size_of
 
@@ -107,10 +107,15 @@ from linalg.utils import (
     partial_simd_store,
 )
 from max.gpu import block_dim, block_idx, thread_idx
-from max.gpu.host import DeviceBuffer, DeviceContext
-from max.gpu.host._legacy._amdgpu_hip import HIP
-from max.gpu.host._legacy._nvidia_cuda import CUDA
+from max.gpu.host import DeviceContext
+from max.gpu.host import HIP
+from max.gpu.host import CUDA
 from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     IntTuple,
@@ -396,14 +401,14 @@ def _reduce_output[
     scratch: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
     N: Int,
-    output_space_dims: IndexList,
+    output_space_dims: Coord,
     F: Int,
     num_partitions: Int,
     num_threads: Int,
     epilogue_fn: EpilogueFnType,
     ctx: Optional[DeviceContext.CPU] = None,
 ):
-    var num_rows = N * output_space_dims.flattened_length()
+    var num_rows = N * output_space_dims.product()
     var buf_size = num_rows * F
 
     # Reduce from the output scratch buffer to the actual output.
@@ -436,7 +441,7 @@ def _reduce_output[
         comptime if has_epilogue:
             for m in range(reduce_range[0], reduce_range[0] + reduce_range[1]):
                 var nhowo = _m_to_n_ho_wo_nhwc(
-                    m, output_space_dims[0], output_space_dims[1]
+                    m, Int(output_space_dims[0]), Int(output_space_dims[1])
                 )
                 epilogue_fn((nhowo[0], nhowo[1], nhowo[2], 0), F)
 
@@ -626,7 +631,7 @@ struct ConvDirectNHWC[
         var num_partitions = get_conv_num_partitions[
             micro_kernel_height, micro_kernel_f_size
         ](num_threads, conv_shape)
-        var num_tasks = num_partitions.flattened_length()
+        var num_tasks = num_partitions.product()
 
         # Safety: the scratch pointer below will alias the output_ptr, so cast to MutAnyOrigin
         # here to turn off the check.
@@ -3570,7 +3575,7 @@ def conv_nhwc_direct[
                 trace_arg(
                     "output", coord_to_index_list(output.layout.shape_coord())
                 ),
-                "group=" + String(num_groups),
+                String(t"group={num_groups}"),
                 "stride=" + "x".join([stride]),
                 "padding_h=" + "x".join([pad_h]),
                 "padding_w=" + "x".join([pad_w]),
@@ -3585,11 +3590,11 @@ def conv_nhwc_direct[
             output,
             input,
             filter,
-            stride,
-            dilation,
-            pad_d,
-            pad_h,
-            pad_w,
+            Coord(stride),
+            Coord(dilation),
+            Coord(pad_d),
+            Coord(pad_h),
+            Coord(pad_w),
             num_groups,
         )
 
@@ -3699,16 +3704,17 @@ def conv2d_gpu_naive_nhwc_rscf[
         num_groups: Number of convolution groups for grouped
             convolution.
     """
-    _conv2d_gpu_naive_nhwc_rscf_impl[has_epilogue_fn=False](
-        input,
-        filter,
-        output,
-        stride,
-        dilation,
-        padding,
-        num_groups,
-        no_conv_simd_epilogue_fn,
-    )
+    with PDL():
+        _conv2d_gpu_naive_nhwc_rscf_impl[has_epilogue_fn=False](
+            input,
+            filter,
+            output,
+            stride,
+            dilation,
+            padding,
+            num_groups,
+            no_conv_simd_epilogue_fn,
+        )
 
 
 @__name(
@@ -3776,16 +3782,17 @@ def conv2d_gpu_naive_nhwc_rscf_epilogue_fn[
         epilogue_fn: SIMD elementwise epilogue that stores each output
             value in place of the kernel.
     """
-    _conv2d_gpu_naive_nhwc_rscf_impl[has_epilogue_fn=True](
-        input,
-        filter,
-        output,
-        stride,
-        dilation,
-        padding,
-        num_groups,
-        epilogue_fn,
-    )
+    with PDL():
+        _conv2d_gpu_naive_nhwc_rscf_impl[has_epilogue_fn=True](
+            input,
+            filter,
+            output,
+            stride,
+            dilation,
+            padding,
+            num_groups,
+            epilogue_fn,
+        )
 
 
 @inline(.always)
@@ -3969,7 +3976,7 @@ def _get_cudnn_meta(
         The cuDNN metadata.
     """
     # Key the cuDNN metadata cache on the device ID.
-    var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.id())
+    var cache_key = String(t"CUDA_CUDNN_META_CACHE{ctx.device().id}")
 
     # Get or create the per-device cache dictionary.
     var ptr_meta = _get_global_or_null(cache_key)
@@ -4098,7 +4105,9 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
 def _get_cached_cudnn_meta_nhwc_full(
     ctx: DeviceContext,
 ) raises -> MutPointer[CachedCuDNNMetaNHWCFull, AnyOrigin[mut=True]]:
-    var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
+    var cache_key = String(
+        t"CUDA_CUDNN_CACHED_META_NHWC_FULL_{ctx.device().id}"
+    )
 
     var ptr_meta = _get_global_or_null(cache_key)
     if case .Some(ptr_meta) = ptr_meta:
@@ -4471,7 +4480,7 @@ def _get_cached_miopen_meta[
     CachedMIOpenMeta[conv_rank], MutAnyOrigin
 ]:
     var cache_key = String(
-        "MIOPEN_CACHED_META_", String(conv_rank), "D_", String(ctx.id())
+        "MIOPEN_CACHED_META_", String(conv_rank), "D_", String(ctx.device().id)
     )
 
     var ptr_meta = _get_global_or_null(cache_key)
@@ -5106,10 +5115,8 @@ def conv_gpu[
             paddings_tensor[2 * axis] = SIMDInt(padding[2 * i])  # before
             paddings_tensor[2 * axis + 1] = SIMDInt(padding[2 * i + 1])  # after
 
-        var input_shape = rebind[IndexList[full_rank]](
-            coord_to_index_list(input.layout.shape_coord())
-        )
-        var padded_shape = IndexList[full_rank]()
+        var input_shape = input.layout.shape_coord()
+        var padded_shape = DynamicCoord[.int, full_rank]()
 
         comptime for axis in range(full_rank):
             var before = 0
@@ -5118,14 +5125,16 @@ def conv_gpu[
                 var spatial_idx = axis - 1
                 before = padding[2 * spatial_idx]
                 after = padding[2 * spatial_idx + 1]
-            padded_shape[axis] = input_shape[axis] + before + after
+            padded_shape.replace_dynamic[axis](
+                Int(input_shape[axis]) + before + after
+            )
 
-        var padded_elements = padded_shape.flattened_length()
+        var padded_elements = padded_shape.product()
         var tmp_buffer = ctx.enqueue_create_buffer[input_type](padded_elements)
         var padded_device_buffer = tmp_buffer.unsafe_ptr()
         var zero_scalar = Scalar[input_type](0)
 
-        pad_constant_gpu[full_rank, input_type, DType.int](
+        pad_constant_gpu[input_type, DType.int](
             padded_device_buffer,
             padded_shape,
             input,
@@ -5136,7 +5145,7 @@ def conv_gpu[
 
         var padded_input_tt = TileTensor(
             tmp_buffer, row_major(padded_elements)
-        ).reshape(Coord(padded_shape))
+        ).reshape(padded_shape)
 
         var zero_padding = IndexList[2 * conv_rank](0)
 
@@ -5307,7 +5316,7 @@ def conv_gpu[
                         input,
                         filter,
                         output,
-                        rebind[IndexList[2]](symmetric_padding),
+                        (symmetric_padding[0], symmetric_padding[1]),
                         ctx,
                         source_ptr,
                         beta,
@@ -5345,7 +5354,7 @@ def conv_gpu[
                         input,
                         filter,
                         output,
-                        rebind[IndexList[2]](symmetric_padding),
+                        (symmetric_padding[0], symmetric_padding[1]),
                         ctx,
                         compute_fn=sm100_compute,
                     )
@@ -5357,7 +5366,7 @@ def conv_gpu[
                         input,
                         filter,
                         output,
-                        rebind[IndexList[2]](symmetric_padding),
+                        (symmetric_padding[0], symmetric_padding[1]),
                         ctx,
                         source_ptr,
                         beta,
@@ -5468,9 +5477,9 @@ def conv_gpu[
                 input,
                 filter,
                 output,
-                rebind[IndexList[2]](stride),
-                rebind[IndexList[2]](dilation),
-                rebind[IndexList[2]](symmetric_padding),
+                (stride[0], stride[1]),
+                (dilation[0], dilation[1]),
+                (symmetric_padding[0], symmetric_padding[1]),
                 num_groups,
                 ctx,
                 source_ptr.value() if has_residual else MutPointer[
@@ -5514,9 +5523,9 @@ def conv_gpu[
                     input,
                     filter,
                     output,
-                    rebind[IndexList[2]](stride),
-                    rebind[IndexList[2]](dilation),
-                    rebind[IndexList[2]](symmetric_padding),
+                    (stride[0], stride[1]),
+                    (dilation[0], dilation[1]),
+                    (symmetric_padding[0], symmetric_padding[1]),
                     num_groups,
                     ctx,
                     source_ptr=source_ptr,
@@ -5524,165 +5533,6 @@ def conv_gpu[
                     epilogue_fn=gemm_epilogue_fn,
                     compute_fn=gemm_compute_fn,
                 )
-
-            # MIOpen-oracle audit. Gated on `MODULAR_CONV_AUDIT_MIOPEN=1`;
-            # re-runs the same conv via MIOpen and emits a single line
-            # with `max_abs / L1_rel / mean_abs` vs the just-produced
-            # `output`.
-            #
-            # Subtlety: the user-supplied `epilogue_fn` is a
-            # closure capturing `output` that writes its
-            # result into the *real* `output` tensor (see e.g.
-            # `Conv2dResidualAdd.output_fn` in kernels) — its
-            # write destination is captured, not derived from the
-            # `output` arg of `_conv_miopen`. So we bracket the MIOpen
-            # call with snapshot/restore D2D copies: snapshot 4-wave
-            # output → run MIOpen (overwrites `output` via the user's
-            # epilogue) → diff snapshot vs `output` → restore `output`
-            # from snapshot so downstream layers still see the 4-wave
-            # result.
-            #
-            # Residual convs (`has_residual=True`) extend the host-side
-            # diff with `+ beta * source[i]`, since MIOpen has no
-            # residual path and the 4-wave kernel does the residual add
-            # in-kernel. We pull `source_ptr`'s contents to host along
-            # with the other two buffers and combine them in the loop.
-            @inline(.always)
-            def _audit_amd_4wave_vs_miopen() raises {imm}:
-                if getenv("MODULAR_CONV_AUDIT_MIOPEN", "0") != "1":
-                    return
-
-                var n_elements = output.num_elements()
-
-                # Snapshot our 4-wave result before MIOpen overwrites
-                # `output` via the user epilogue.
-                var our_buf = ctx.enqueue_create_buffer[output_type](n_elements)
-                var output_view = output.to_device_buffer(ctx)
-                ctx.enqueue_copy(our_buf, output_view)
-
-                # Run MIOpen + user's epilogue. The epilogue writes to
-                # its captured `output`, so `output` now contains
-                # MIOpen+bias.
-                _conv_miopen[
-                    has_epilogue_fn=has_epilogue_fn,
-                    filter_is_fcrs=filter_is_fcrs,
-                ](
-                    input,
-                    filter,
-                    output,
-                    stride,
-                    dilation,
-                    symmetric_padding,
-                    num_groups,
-                    ctx,
-                    epilogue_fn,
-                )
-
-                # Pull both to host for elementwise diff.
-                var host_our = ctx.enqueue_create_host_buffer[output_type](
-                    n_elements
-                )
-                var host_mio = ctx.enqueue_create_host_buffer[output_type](
-                    n_elements
-                )
-                var host_src = ctx.enqueue_create_host_buffer[output_type](
-                    n_elements if (
-                        has_residual and source_ptr.__bool__()
-                    ) else 1
-                )
-                ctx.enqueue_copy(host_our, our_buf)
-                ctx.enqueue_copy(host_mio, output_view)
-
-                comptime if has_residual:
-                    if case .Some(source_ptr) = source_ptr:
-                        var source_view = DeviceBuffer[output_type](
-                            ctx, source_ptr, n_elements, owning=False
-                        )
-                        ctx.enqueue_copy(host_src, source_view)
-                ctx.synchronize()
-
-                var max_abs: Float32 = 0
-                var sum_abs_diff: Float32 = 0
-                var sum_abs_ref: Float32 = 0
-                # The 4-wave residual path does
-                # `result = (conv + beta*source) + bias` in kernel +
-                # epilogue. Our oracle here mirrors that as
-                # `mio + beta*source` (MIOpen already includes +bias
-                # from the user epilogue). Order of `+bias` and
-                # `+beta*source` differs but they commute modulo BF16
-                # rounding; the noise floor is unaffected.
-                var beta_f32: Float32 = beta
-                for i in range(n_elements):
-                    var a = Float32(host_our[i])
-                    var b = Float32(host_mio[i])
-
-                    comptime if has_residual:
-                        if source_ptr:
-                            b += beta_f32 * Float32(host_src[i])
-
-                    var d = abs(a - b)
-                    if d > max_abs:
-                        max_abs = d
-                    sum_abs_diff += d
-                    sum_abs_ref += abs(b)
-                var l1_rel = (
-                    sum_abs_diff / sum_abs_ref if sum_abs_ref
-                    > 0 else Float32(0)
-                )
-                var mean_abs = sum_abs_diff / Float32(n_elements)
-
-                var in_n = Int(input.dim[0]())
-                var in_h = Int(input.dim[1]())
-                var in_w = Int(input.dim[2]())
-                var in_c = Int(input.dim[3]())
-                var out_c = Int(output.dim[3]())
-                var r_dim: Int
-                var s_dim: Int
-
-                comptime if filter_is_fcrs:
-                    r_dim = Int(filter.dim[2]())
-                    s_dim = Int(filter.dim[3]())
-                else:
-                    r_dim = Int(filter.dim[0]())
-                    s_dim = Int(filter.dim[1]())
-
-                var resid_flag = 1 if has_residual else 0
-                print(
-                    "[CONV_AUDIT]",
-                    " N=",
-                    in_n,
-                    " H=",
-                    in_h,
-                    " W=",
-                    in_w,
-                    " C_in=",
-                    in_c,
-                    " C_out=",
-                    out_c,
-                    " R=",
-                    r_dim,
-                    " S=",
-                    s_dim,
-                    " stride=",
-                    stride[0],
-                    " has_resid=",
-                    resid_flag,
-                    " max_abs=",
-                    max_abs,
-                    " L1_rel=",
-                    l1_rel,
-                    " mean_abs=",
-                    mean_abs,
-                )
-
-                # Restore our 4-wave output so downstream layers don't
-                # see MIOpen results.
-                ctx.enqueue_copy(output_view, our_buf)
-
-                _ = our_buf^
-                _ = host_our^
-                _ = host_mio^
-                _ = host_src^
 
             comptime if has_epilogue_fn:
                 # Wrap the 4D NHWC epilogue into a 2D GEMM-space
@@ -5722,7 +5572,6 @@ def conv_gpu[
                 if _amd_4wave_dispatch[has_gemm_epilogue_fn=True](
                     _amd_4wave_void_epilogue
                 ):
-                    _audit_amd_4wave_vs_miopen()
                     return
             elif has_compute_fn and not has_residual:
                 var _amd_4wave_out_h = Int(output.dim[1]())
@@ -5752,8 +5601,6 @@ def conv_gpu[
                         )
                     )
 
-                # The MIOpen audit compares against a conv without
-                # `compute_fn`, so it is skipped here.
                 if _amd_4wave_dispatch[
                     has_gemm_epilogue_fn=False, has_gemm_compute_fn=True
                 ](no_epilogue_fn, _amd_4wave_compute):
@@ -5766,8 +5613,6 @@ def conv_gpu[
                     # add, so a post-residual `compute_fn` runs here.
                     comptime if has_compute_fn:
                         _conv_compute_in_place(output, compute_fn, ctx)
-                    else:
-                        _audit_amd_4wave_vs_miopen()
                     return
 
         # AMD GPU path: fall back to MIOpen for conv2d.
@@ -5907,6 +5752,7 @@ def conv_gpu[
                     host_args=(epilogue_fn,),
                     grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                     block_dim=(block_size, block_size),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
             else:
                 ctx.enqueue_function[conv_gpu_n](
@@ -5919,12 +5765,22 @@ def conv_gpu[
                     Int32(num_groups),
                     grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                     block_dim=(block_size, block_size),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 comptime if has_compute_fn:
                     _conv_compute_in_place(output, compute_fn, ctx)
 
     elif input.rank == 5:
         comptime if filter_is_fcrs:
+            # cuDNN writes `output` directly and takes no store epilogue, so
+            # with one this path would drop the fused ops, and the fused
+            # execute overload passes it a null output. No graph reaches it
+            # today: the graph compiler rewrites FCQRS filters only on the
+            # host, and no caller builds a GPU 3D conv with one. Reject the
+            # pairing at compile time instead.
+            comptime assert (
+                not has_epilogue_fn
+            ), "a 3D conv with an FCQRS filter cannot apply a fused epilogue"
             conv3d_cudnn[input_type, filter_type, output_type](
                 input,
                 filter,
@@ -6144,9 +6000,13 @@ def conv_gpu[
                 input,
                 filter,
                 output,
-                rebind[IndexList[3]](stride),
-                rebind[IndexList[3]](dilation),
-                rebind[IndexList[3]](symmetric_padding),
+                (stride[0], stride[1], stride[2]),
+                (dilation[0], dilation[1], dilation[2]),
+                (
+                    symmetric_padding[0],
+                    symmetric_padding[1],
+                    symmetric_padding[2],
+                ),
                 num_groups,
                 ctx,
                 epilogue_fn,
@@ -6246,6 +6106,7 @@ def conv3d_gpu_naive_ndhwc_qrscf[
             width)`.
         num_groups: Number of convolution groups for grouped convolution.
     """
+
     _conv3d_gpu_naive_ndhwc_qrscf_impl[has_epilogue_fn=False](
         input,
         filter,
@@ -6323,6 +6184,7 @@ def conv3d_gpu_naive_ndhwc_qrscf_epilogue_fn[
         epilogue_fn: Elementwise SIMD epilogue that stores each computed
             output value in place of a direct store.
     """
+
     _conv3d_gpu_naive_ndhwc_qrscf_impl[has_epilogue_fn=True](
         input,
         filter,
@@ -6904,7 +6766,7 @@ def _conv3d_cudnn[
     # --- Algorithm selection (cached per shape) ---
     var cache_key = String(
         "CONV3D_ALGO_",
-        ctx.id(),
+        ctx.device().id,
         "_",
         input.dim[0](),
         "_",

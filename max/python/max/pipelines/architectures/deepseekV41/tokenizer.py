@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V4.1 tokenizer rendering prompts with the checkpoint's encoder."""
 
 from __future__ import annotations
@@ -70,9 +69,9 @@ _IMAGE_BLOCK = {"type": "image", "data": "request.images"}
 
 
 def _flatten_message(message: TextGenerationRequestMessage) -> dict[str, Any]:
-    """Flattens a message to a role/content dict for the V4.1 encoder.
+    r"""Flattens a message to a role/content dict for the V4.1 encoder.
 
-    Joins multi-part text with ``\\n\\n``, the separator the V4.1 prompt
+    Joins multi-part text with ``\n\n``, the separator the V4.1 prompt
     format uses between text parts. A message with images keeps its parts as
     content blocks, which the encoder renders as image placeholders joined by
     the same separator.

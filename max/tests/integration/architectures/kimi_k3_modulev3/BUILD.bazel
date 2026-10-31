@@ -1,0 +1,731 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# gfx950 numerics for the chunk routing; every case skips on any other GPU.
+modular_eager_py_test(
+    name = "kda_chunk_prefill_tests_gpu",
+    size = "enormous",
+    srcs = ["test_kda_chunk_prefill.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    # Needs kda_chunk, registered only by the closed-source kernels.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_py_test(
+    name = "kda_prefill_routing_tests_cpu",
+    srcs = ["test_kda_prefill_routing.py"],
+    # Checks prefill routes to kda_chunk, registered only by the closed-source
+    # kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_py_test(
+    name = "kda_prefill_routing_layer_tests_cpu",
+    srcs = ["test_kda_prefill_routing_layer.py"],
+    # Traces a layer whose prefill routes to kda_chunk, registered only by
+    # the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_py_test(
+    name = "memory_planner_tests_cpu",
+    srcs = ["test_memory_planner.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_test(
+    name = "model_config_tests_cpu",
+    srcs = ["test_model_config.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "weight_adapters_tests_cpu",
+    srcs = ["test_weight_adapters.py"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/support",
+    ],
+)
+
+modular_eager_py_test(
+    name = "mlp_tests_gpu",
+    size = "enormous",
+    srcs = ["test_mlp.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/tests/integration/test_common:graph_utils",
+    ],
+)
+
+modular_eager_py_test(
+    name = "moe_router_tests_gpu",
+    size = "enormous",
+    srcs = ["test_moe_router.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "moe_latent_tests_gpu",
+    size = "enormous",
+    srcs = ["test_moe_latent.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "moe_latent_mxfp4_tests_gpu",
+    size = "enormous",
+    srcs = ["test_moe_latent_mxfp4_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "mla_attention_tests_gpu",
+    size = "enormous",
+    srcs = ["test_mla_attention.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "mla_attention_ragged_tests_gpu",
+    size = "enormous",
+    srcs = ["test_mla_attention_ragged.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":paged_cache_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "mla_attention_latent_ragged_tests_gpu",
+    size = "enormous",
+    srcs = ["test_mla_attention_latent_ragged.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":paged_cache_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_py_library(
+    name = "paged_cache_test_utils",
+    testonly = True,
+    srcs = ["_paged_cache_test_utils.py"],
+    imports = ["."],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/support",
+    ],
+)
+
+modular_eager_py_test(
+    name = "decoder_layer_mla_ragged_tests_gpu",
+    size = "enormous",
+    srcs = ["test_decoder_layer_mla_ragged.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":paged_cache_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "model_mla_ragged_tests_gpu",
+    size = "enormous",
+    srcs = ["test_model_mla_ragged.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":paged_cache_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_eager_py_test(
+    name = "kda_attention_tests_gpu",
+    size = "enormous",
+    srcs = ["test_kda_attention.py"],
+    # Not run by this test; it's the venv `verify_full_depth.py`'s own
+    # docstring points at (needs a real checkpoint on disk, so it can't be a
+    # hermetic bazel test). Listed as data so it isn't flagged as unreferenced.
+    data = ["//max/python/max/pipelines/architectures/kimi_k3_modulev3:scripts/verify_full_depth.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "model_kda_shared_pool_tests_gpu",
+    size = "enormous",
+    srcs = ["test_model_kda_shared_pool.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "kda_attention_parity_tests_gpu",
+    size = "enormous",
+    srcs = ["test_kda_attention_parity.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+# Separate target from the above, deliberately -- see that test file's
+# docstring: running both gate arms in one pytest process produced a
+# spurious failure in whichever ran second, traced to the experimental
+# Tensor runtime's compiled-graph caching, not a real divergence.
+modular_eager_py_test(
+    name = "kda_attention_parity_original_gate_tests_gpu",
+    size = "enormous",
+    srcs = ["test_kda_attention_parity_original_gate.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "output_head_tests_gpu",
+    size = "enormous",
+    srcs = ["test_output_head.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "norm_tests_gpu",
+    size = "enormous",
+    srcs = ["test_norm.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "attn_residual_tests_gpu",
+    size = "enormous",
+    srcs = ["test_attn_residual.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    shard_count = 4,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+# The TP parity tests below need two GPUs, e.g. `--config=remote-b200`.
+modular_eager_py_test(
+    name = "tp_attention_tests_2gpu",
+    size = "enormous",
+    srcs = ["test_tp_attention.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "tp_mlp_moe_tests_gpu",
+    size = "enormous",
+    srcs = ["test_tp_mlp_moe.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "tp_output_head_tests_gpu",
+    size = "enormous",
+    srcs = ["test_tp_output_head.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "tp_attn_residual_tests_gpu",
+    size = "enormous",
+    srcs = ["test_tp_attn_residual.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "tp_decoder_layer_tests_gpu",
+    size = "enormous",
+    srcs = ["test_tp_decoder_layer.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_py_library(
+    name = "tp_model_test_utils",
+    testonly = True,
+    srcs = ["_tp_model_test_utils.py"],
+    imports = ["."],
+    deps = [
+        ":paged_cache_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "tp_model_tests_gpu",
+    size = "enormous",
+    srcs = ["test_tp_model.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        ":tp_model_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_eager_py_test(
+    name = "tp_lazy_load_tests_gpu",
+    size = "enormous",
+    srcs = ["test_tp_lazy_load.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        ":tp_model_test_utils",
+        requirement("numpy"),
+        requirement("safetensors"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# EP=2 vs single-device parity for the latent MoE block's expert exchange.
+# Needs two real devices -- a staged/symbolic mesh cannot register real
+# SHMEM buffers -- so run on a 2-GPU executor, e.g. `./bazelw test
+# //max/tests/integration/architectures/kimi_k3_modulev3:ep_mlp_moe_tests_gpu`
+# on a 2-GPU dev box.
+modular_eager_py_test(
+    name = "ep_mlp_moe_tests_gpu",
+    size = "enormous",
+    srcs = ["test_ep_mlp_moe.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+# Single-device vs EP=2 parity for the assembled decoder layer's FFN
+# exchange. Needs two real devices, same as ep_mlp_moe_tests_gpu above.
+modular_eager_py_test(
+    name = "ep_decoder_layer_tests_gpu",
+    size = "enormous",
+    srcs = ["test_ep_decoder_layer.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)

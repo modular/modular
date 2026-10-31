@@ -50,6 +50,16 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
     }], "ErrorOrSuccess", "validateForElaborator", (ins), [{}], [{
       return success();
     }]>,
+
+    InterfaceMethod<[{
+      Print this attribute as a display-only parameter value, forwarding
+      `printer` to nested parameter values. Return failure to fall back to the
+      attribute's assembly format, which cannot carry the dedup state.
+    }], "LogicalResult", "printDisplayValue",
+        (ins "AsmPrinter &":$p, "::M::KGEN::KGENParamPrinter &":$printer),
+        [{}], [{
+      return failure();
+    }]>,
   ];
 
   let extraClassDeclaration = [{

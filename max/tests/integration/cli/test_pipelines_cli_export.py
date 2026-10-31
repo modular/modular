@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for ``max export``."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
 
 from click.testing import CliRunner
 from max._artifact.batch_processor import BatchProcessorDims
+from max._artifact.format_spec import FormatSpec
 from max._artifact.serialization import deserialize
 from max._entrypoints import pipelines
 
@@ -52,12 +54,38 @@ def test_export_writes_the_graphs_by_role(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert f"Exported pipeline artifact to {dest}" in result.output
 
-    section = json.loads((dest / "artifact.json").read_text())["model"]
+    sections = json.loads((dest / "artifact.json").read_text())
+    assert "format_spec" not in sections
+    section = sections["model"]
     assert set(section) == {"decoder", "sampler"}
     assert section["decoder"]["mef"] == {"$file": "decoder/model.mef"}
-    loaded = deserialize(dest).model
-    assert loaded is not None
-    assert set(loaded.roles) == {"decoder", "sampler"}
+    engine_config = sections["engine_config"]
+    assert engine_config["max_batch_size"] == 1
+    assert engine_config["max_length"] == 128
+    # Llama's one attention cache, which is not in a tree, and its pool leaf.
+    caches = sections["kv_cache"]["caches"]
+    assert [(cache["name"], cache["kind"]) for cache in caches] == [("", "mha")]
+    assert [leaf["leaf_id"] for leaf in caches[0]["leaves"]] == ["full_group"]
+    # The decoder's one entry; the sampler loads no checkpoint.
+    assert sections["weight_loader"] == {
+        "decoder": [
+            {
+                "checkpoint": "target",
+                "rules": [
+                    {
+                        "rule": "WeightRenaming",
+                        "pattern": r"^model\.",
+                        "replacement": "",
+                    }
+                ],
+            }
+        ]
+    }
+    loaded = deserialize(dest)
+    assert loaded.model is not None
+    assert set(loaded.model.roles) == {"decoder", "sampler"}
+    assert loaded.weight_loader is not None
+    assert set(loaded.weight_loader.graphs) == {"decoder"}
 
 
 def test_export_names_the_decoder_inputs_and_bounds_each_step(
@@ -83,6 +111,33 @@ def test_export_names_the_decoder_inputs_and_bounds_each_step(
     }
     assert dims["replica_0_batch_size"] == 1
     assert deserialize(dest).batch_processor == BatchProcessorDims(dims)
+
+
+def test_export_stores_the_format_spec_it_is_given(tmp_path: Path) -> None:
+    document = tmp_path / "spec.json"
+    document.write_text('{"format": "formatspec.spec", "spec_version": 1}\n')
+    result = CliRunner().invoke(
+        pipelines.main,
+        [*_export_args(tmp_path / "spec"), "--format-spec", str(document)],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    dest = tmp_path / "spec.m"
+
+    sections = json.loads((dest / "artifact.json").read_text())
+    assert sections["format_spec"] == {
+        "document": {"$file": "format_spec.json"}
+    }
+    stored = (dest / "format_spec.json").read_bytes()
+    assert stored == document.read_bytes()
+    metadata = json.loads((dest / "metadata.json").read_text())
+    assert (
+        metadata["files"]["format_spec.json"]
+        == hashlib.sha256(stored).hexdigest()
+    )
+    assert deserialize(dest).format_spec == FormatSpec(
+        dest / "format_spec.json"
+    )
 
 
 def test_export_refuses_an_existing_output(tmp_path: Path) -> None:

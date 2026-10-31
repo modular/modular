@@ -30,20 +30,20 @@ quant config.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.functional_kernels import (
     mla_decode_graph,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.quant_mla import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_mla import (
     QuantizedLatentAttention,
     tensor_parallel_latent_attention_with_rope,
 )
-from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.quant_config import QuantConfig
+from max.tensor import Tensor
 
 from ..model_config import Glm5NextConfig
 from .indexer import KPoolTail, PooledIndexer
@@ -104,11 +104,13 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
 
     @property
     def w_uk(self) -> tuple[Tensor, Tensor | None]:
+        """The key half of the absorbed KV projection weight."""
         w = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
         return w.transpose(0, 1), None
 
     @property
     def w_uv(self) -> tuple[Tensor, Tensor | None]:
+        """The value half of the absorbed KV projection weight."""
         w = self._kv_b_proj_weight[..., self.qk_nope_head_dim :]
         return w.permute([1, 2, 0]), None
 
@@ -122,6 +124,7 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
         freqs_cis: Tensor,
         tail: KPoolTail,
     ) -> Tensor:
+        """Runs the absorbed attention over ``x``."""
         if kv_collection.kv_scales is not None:
             raise ValueError(
                 "An FP8 latent cache with a BF16 kv_b_proj is not reachable: "

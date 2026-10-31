@@ -416,6 +416,7 @@ modular_cc_library(
         "//AsyncRT:Support",
         "//Support:ADT",
         "//Support:Base",
+        "//Support:Buffer",
         "//Support:ML",
         "//Support:Profiling",
         "//Support:ProfilingRanges",
@@ -485,6 +486,24 @@ modular_cc_library(
     ],
 )
 
+# Pinned host staging region shared by MAX's tiered KV connectors (through the
+# Python `_ChunkedStagingRegion`) and Mach's host tier (through its C shim).
+modular_cc_library(
+    name = "Driver/ChunkedStagingRegion",
+    srcs = ["lib/Driver/DeviceContext/ChunkedStagingRegion.cpp"],
+    hdrs = ["include/MLRT/Driver/DeviceContext/ChunkedStagingRegion.h"],
+    includes = ["include"],
+    visibility = ["//MLRT:consumers"],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        "//AsyncRT:Runtime",
+        "//AsyncRT:Support",
+        "//Support:Base",
+        "//Support:Log",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 # Header-only target for DeviceContext/CompilationDevice interfaces.
 # Broken out so that //Target:DriverPlugin can depend on these headers
 # without creating a circular dependency with Driver/DeviceContextImpl.
@@ -495,6 +514,7 @@ modular_cc_library(
         "include/MLRT/Driver/DeviceContext/DeviceAPINames.h",
         "include/MLRT/Driver/DeviceContext/DeviceContext.h",
         "include/MLRT/Driver/DeviceContext/DeviceGraphBuilder.h",
+        "include/MLRT/Driver/DeviceContext/DriverPluginSpec.h",
         "include/MLRT/Driver/DeviceContext/ErrorMacros.h",
         "include/MLRT/Driver/DeviceContext/HALDeviceContext.h",
         "include/MLRT/Driver/DeviceContext/LaunchTraceEntry.h",
@@ -569,6 +589,7 @@ modular_cc_library(
     }),
     visibility = [
         "//Kernels/tools/max_license/gpu-query:__pkg__",
+        "//MLRT/unittests/Driver:__pkg__",
         "//Mojo:__subpackages__",
     ],
     deps = [
@@ -681,15 +702,12 @@ mojo_shared_library(
         "//:hal_device_context_enabled": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    # Depends on HAL's `max` directly rather than through //max:max_mojo. This target
-    # only builds under --config=hal-device-context, where that alias always
-    # selects this very target, so the two are equivalent here -- but the alias
-    # also names the non-HAL `max`, which now depends on
-    # Driver/DeviceContext, and Driver/DeviceContext selects this library back
-    # under the HAL branch. No single configuration closes that loop, yet it is
-    # a cycle in the unconfigured graph that `bazel query` reports.
+    # Not //max:max_mojo: that alias also names the non-HAL `max`, which
+    # depends on Driver/DeviceContext, and Driver/DeviceContext selects this
+    # library back under the HAL branch. No single configuration closes that
+    # loop, but it is a cycle in the unconfigured graph that bazel-diff rejects.
     deps = [
-        "//max/driver/src/max_license:max",
+        "@mojo//:hal_device_context_max",
         "@mojo//:std",
     ],
 )
@@ -758,6 +776,7 @@ modular_cc_library(
         ":Driver/DeviceContextAPI",
         "//Support:Base",
         "//Support:HashUtils",
+        "//Support:ProfilingRanges",
         "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
     ],
@@ -780,6 +799,7 @@ modular_cc_library(
         ":Driver/HALDeviceContextExports",
         ":Driver/LaunchTraceRegistry",
         "//AsyncRT:Runtime",
+        "//SDK:HAL",
         "//Support:Base",
         "//Support:BinaryID",
         "//Support:Configuration",
@@ -876,6 +896,7 @@ modular_cc_library(
         "//Support:TimeProfiler",
         "//Support:TypeID",
         "//Target:DriverPlugin",
+        "//Target:Support",
         "@dlpack",
         "@llvm-project//llvm:Support",
     ] + select({
@@ -979,4 +1000,54 @@ modular_shared_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+# ---------------------------------------------------------------------------
+# Driver C API, the C interface to the driver for consumers that cannot
+# include the C++ headers.
+# ---------------------------------------------------------------------------
+
+# The interface and its implementation, compiled into whoever links it.
+#
+# Like //max/python/max/_core/max_license:DriverPython, this deliberately
+# depends on Driver/DeviceContextAPI (headers) and NOT on an implementation:
+# the device contexts it hands out must be the process's, and a statically
+# linked implementation would be a second copy of them. Consumers that need
+# the implementation at runtime link //MLRT:Driver/DeviceContext (or libmax,
+# which carries the same implementation) exactly once.
+modular_cc_library(
+    name = "Driver/CAPI",
+    srcs = ["lib/Driver/CAPI/DriverCAPI.cpp"],
+    hdrs = ["include/MLRT/Driver/CAPI/DriverCAPI.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        "//Support:Base",
+        "//Support:SymbolExport",
+    ],
+    # Nothing inside a library that carries this references the entry points,
+    # so without always linking, a shared library such as libmax drops the
+    # archive member and exports none of them.
+    alwayslink = True,
+)
+
+# The driver C API as a shared library, for consumers built outside bazel,
+# which load it together with the driver implementation it carries. In tree
+# only the exports test loads it, the way such a consumer would, and that test
+# data edge does not count for the unused targets lint, so the tag keeps the
+# lint from flagging a library built for consumers outside the tree.
+modular_shared_library(
+    name = "Driver/CAPIShim",
+    srcs = [],
+    output_name = "max_driver_capi",
+    tags = ["top-level"],
+    visibility = ["//visibility:public"],
+    # The C API comes from the library above rather than a second compile of
+    # its source, and that library is always linked, so the shim carries every
+    # entry point although nothing in it references them.
+    deps = [
+        ":Driver/CAPI",
+        ":Driver/DeviceContext",
+    ],
 )

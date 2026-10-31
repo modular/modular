@@ -102,14 +102,7 @@ def _verify_fragments(
             var expected = Float32(r * _N + c)
             var got = out_ptr[base + j]
             if got != expected:
-                print(
-                    "FAIL: tid",
-                    tid,
-                    "lo[" + String(j) + "]",
-                    got,
-                    "!=",
-                    expected,
-                )
+                print(t"FAIL: tid {tid} lo[{j}] {got} != {expected}")
                 pass_ = False
 
         for j in range(4):
@@ -118,14 +111,7 @@ def _verify_fragments(
             var expected = Float32(r * _N + c)
             var got = out_ptr[base + 4 + j]
             if got != expected:
-                print(
-                    "FAIL: tid",
-                    tid,
-                    "hi[" + String(j) + "]",
-                    got,
-                    "!=",
-                    expected,
-                )
+                print(t"FAIL: tid {tid} hi[{j}] {got} != {expected}")
                 pass_ = False
     return pass_
 
@@ -135,9 +121,11 @@ def _verify_fragments(
 # ---------------------------------------------------------------------------
 
 
-def fragment_load_kernel(
-    input_ptr: MutPointer[Float32, MutAnyOrigin],
-    output_ptr: MutPointer[Float32, MutAnyOrigin],
+def fragment_load_kernel[
+    input_origin: MutOrigin, output_origin: MutOrigin
+](
+    input_ptr: MutPointer[Float32, input_origin],
+    output_ptr: MutPointer[Float32, output_origin],
 ):
     """Each thread loads its 8-element fragment and writes to output.
 
@@ -169,10 +157,12 @@ def fragment_load_kernel(
 # ---------------------------------------------------------------------------
 
 
-def mma_1x1_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_1x1_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """1x1 MMA: 16x16 @ 16x16 -> 16x16 (NN, F16 -> F32)."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -188,10 +178,12 @@ def mma_1x1_kernel(
 comptime _K_2x2 = 64
 
 
-def mma_2x2_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_2x2_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """2x2 MMA: A[32,64] @ B[64,32] -> D[32,32], K-loop with 4 iters."""
     var a_mat = TileTensor(a_ptr, row_major[32, _K_2x2]())
@@ -210,10 +202,12 @@ def mma_2x2_kernel(
 
 
 # Transpose kernels: each needs its own comptime transpose_a/transpose_b.
-def mma_tn_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_tn_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """TN: transpose_a=True, transpose_b=False."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -228,10 +222,12 @@ def mma_tn_kernel(
     mma_op.store(accum, d_tile)
 
 
-def mma_nt_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_nt_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """NT: transpose_a=False, transpose_b=True."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -247,10 +243,12 @@ def mma_nt_kernel(
     mma_op.store(accum, d_tile)
 
 
-def mma_tt_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_tt_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """TT: transpose_a=True, transpose_b=True."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -266,10 +264,12 @@ def mma_tt_kernel(
 
 
 # Parent stride kernel: operates on a 16x16 subtile of a 256x256 matrix.
-def mma_parent_stride_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_parent_stride_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """MMA on subtile at (1,2) of a 256x256 parent matrix.
 
@@ -291,11 +291,16 @@ def mma_parent_stride_kernel(
 
 
 # zero_accum kernel: two matmuls with reset between them.
-def zero_accum_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d1_ptr: MutPointer[Float32, MutAnyOrigin],
-    d2_ptr: MutPointer[Float32, MutAnyOrigin],
+def zero_accum_kernel[
+    a_origin: MutOrigin,
+    b_origin: MutOrigin,
+    d1_origin: MutOrigin,
+    d2_origin: MutOrigin,
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d1_ptr: MutPointer[Float32, d1_origin],
+    d2_ptr: MutPointer[Float32, d2_origin],
 ):
     """Two successive matmuls with zero_accum between them.
 
@@ -334,9 +339,12 @@ def test_fragment_load_layout(ctx: DeviceContext) raises:
     var output_dev = ctx.enqueue_create_buffer[.float32](WARP_SIZE * _FRAG_SIZE)
     ctx.enqueue_copy(input_dev, input_host)
 
-    ctx.enqueue_function[fragment_load_kernel](
-        input_dev, output_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        fragment_load_kernel[
+            input_origin=origin_of(input_dev),
+            output_origin=origin_of(output_dev),
+        ]
+    ](input_dev, output_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var output_host = ctx.enqueue_create_host_buffer[.float32](
         WARP_SIZE * _FRAG_SIZE
@@ -383,9 +391,13 @@ def test_mma_2x2(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function[mma_2x2_kernel](
-        a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        mma_2x2_kernel[
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d_origin=origin_of(d_dev),
+        ]
+    ](a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var d_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -437,14 +449,8 @@ def _check_matmul_result[
             var got = d_ptr[i * N + j]
             if abs(got - expected) > tol:
                 print(
-                    "FAIL:",
-                    name,
-                    "index",
-                    i * N + j,
-                    "got",
-                    got,
-                    "expected",
-                    expected,
+                    t"FAIL: {name} index {i * N + j} got {got} expected"
+                    t" {expected}"
                 )
                 pass_ = False
     return pass_
@@ -455,10 +461,12 @@ def _check_matmul_result[
 # ---------------------------------------------------------------------------
 
 
-def mma_k32_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_k32_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """16x16 matmul with K=32: single mma() call handles two K steps."""
     var a_tile = TileTensor(a_ptr, row_major[16, 32]())
@@ -492,9 +500,13 @@ def test_mma_k32(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function[mma_k32_kernel](
-        a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        mma_k32_kernel[
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d_origin=origin_of(d_dev),
+        ]
+    ](a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var d_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -513,10 +525,12 @@ def test_mma_k32(ctx: DeviceContext) raises:
         print("PASS")
 
 
-def mma_shared_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_shared_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """1x1 MMA with operands staged through threadgroup shared memory.
 
@@ -554,10 +568,12 @@ def test_mma_shared_mem(ctx: DeviceContext) raises:
     _run_16x16_mma_test[mma_shared_kernel]("test_mma_shared_mem", ctx)
 
 
-def mma_i8_k32_kernel(
-    a_ptr: MutPointer[Int8, MutAnyOrigin],
-    b_ptr: MutPointer[Int8, MutAnyOrigin],
-    d_ptr: MutPointer[Int32, MutAnyOrigin],
+def mma_i8_k32_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Int8, a_origin],
+    b_ptr: MutPointer[Int8, b_origin],
+    d_ptr: MutPointer[Int32, d_origin],
 ):
     """16x16 matmul with K=32 and i8 inputs, i32 accumulator.
 
@@ -595,9 +611,13 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function[mma_i8_k32_kernel](
-        a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        mma_i8_k32_kernel[
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d_origin=origin_of(d_dev),
+        ]
+    ](a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var d_host = ctx.enqueue_create_host_buffer[.int32](M * N)
     ctx.enqueue_copy(d_host, d_dev)
@@ -614,12 +634,7 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
             var got = d_host[i * N + j]
             if got != acc:
                 print(
-                    "FAIL: i8 K=32 index",
-                    i * N + j,
-                    "got",
-                    got,
-                    "expected",
-                    acc,
+                    t"FAIL: i8 K=32 index {i * N + j} got {got} expected {acc}"
                 )
                 pass_ = False
 
@@ -664,9 +679,13 @@ def test_parent_stride(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function[mma_parent_stride_kernel](
-        a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        mma_parent_stride_kernel[
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d_origin=origin_of(d_dev),
+        ]
+    ](a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
@@ -690,14 +709,7 @@ def test_parent_stride(ctx: DeviceContext) raises:
                 acc += av * bv
             var got = d_ptr[i * _N + j]
             if abs(got - acc) > 0.01:
-                print(
-                    "FAIL: index",
-                    i * _N + j,
-                    "got",
-                    got,
-                    "expected",
-                    acc,
-                )
+                print(t"FAIL: index {i * _N + j} got {got} expected {acc}")
                 pass_ = False
 
     if pass_:
@@ -728,9 +740,14 @@ def test_zero_accum(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function[zero_accum_kernel](
-        a_dev, b_dev, d1_dev, d2_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        zero_accum_kernel[
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d1_origin=origin_of(d1_dev),
+            d2_origin=origin_of(d2_dev),
+        ]
+    ](a_dev, b_dev, d1_dev, d2_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var d1_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     var d2_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
@@ -744,14 +761,7 @@ def test_zero_accum(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(_NUM_ELEMENTS):
         if abs(d1_ptr[i] - d2_ptr[i]) > 0.001:
-            print(
-                "FAIL: index",
-                i,
-                "d1",
-                d1_ptr[i],
-                "d2",
-                d2_ptr[i],
-            )
+            print(t"FAIL: index {i} d1 {d1_ptr[i]} d2 {d2_ptr[i]}")
             pass_ = False
 
     if pass_:
@@ -763,10 +773,12 @@ def test_zero_accum(ctx: DeviceContext) raises:
 # ---------------------------------------------------------------------------
 
 
-def bounded_mma_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def bounded_mma_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
     m_valid_dev: Int32,
     k_valid_dev: Int32,
 ):
@@ -789,10 +801,12 @@ def bounded_mma_kernel(
     mma_op.store(accum, d_tile)
 
 
-def bounded_store_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def bounded_store_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
     m_valid_dev: Int32,
     n_valid_dev: Int32,
 ):
@@ -845,7 +859,13 @@ def test_bounded_mma(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function[bounded_mma_kernel](
+    ctx.enqueue_function[
+        bounded_mma_kernel[
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d_origin=origin_of(d_dev),
+        ]
+    ](
         a_dev,
         b_dev,
         d_dev,
@@ -881,14 +901,7 @@ def test_bounded_mma(ctx: DeviceContext) raises:
                 acc += av * bv
             var got = d_ptr[i * _N + j]
             if abs(got - acc) > 0.01:
-                print(
-                    "FAIL: index",
-                    i * _N + j,
-                    "got",
-                    got,
-                    "expected",
-                    acc,
-                )
+                print(t"FAIL: index {i * _N + j} got {got} expected {acc}")
                 pass_ = False
 
     if pass_:
@@ -931,7 +944,13 @@ def test_store_bounded(ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(d_dev, d_host_init)
 
-    ctx.enqueue_function[bounded_store_kernel](
+    ctx.enqueue_function[
+        bounded_store_kernel[
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d_origin=origin_of(d_dev),
+        ]
+    ](
         a_dev,
         b_dev,
         d_dev,
@@ -968,12 +987,8 @@ def test_store_bounded(ctx: DeviceContext) raises:
                 var got = d_ptr[i * _N + j]
                 if abs(got - acc) > 0.01:
                     print(
-                        "FAIL: in-bounds index",
-                        i * _N + j,
-                        "got",
-                        got,
-                        "expected",
-                        acc,
+                        t"FAIL: in-bounds index {i * _N + j} got {got} expected"
+                        t" {acc}"
                     )
                     pass_ = False
             else:
@@ -981,11 +996,7 @@ def test_store_bounded(ctx: DeviceContext) raises:
                 var got = d_ptr[i * _N + j]
                 if got != Float32(-1.0):
                     print(
-                        "FAIL: OOB index",
-                        i * _N + j,
-                        "got",
-                        got,
-                        "expected -1.0",
+                        t"FAIL: OOB index {i * _N + j} got {got} expected -1.0"
                     )
                     pass_ = False
 
@@ -998,10 +1009,12 @@ def test_store_bounded(ctx: DeviceContext) raises:
 # ---------------------------------------------------------------------------
 
 
-def mma_col_major_a_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_col_major_a_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """A stored col-major, B stored row-major. D = A @ B."""
     var a_tile = TileTensor(a_ptr, col_major[16, 16]())
@@ -1014,10 +1027,12 @@ def mma_col_major_a_kernel(
     mma_op.store(accum, d_tile)
 
 
-def mma_col_major_b_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_col_major_b_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """A stored row-major, B stored col-major. D = A @ B."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -1030,10 +1045,12 @@ def mma_col_major_b_kernel(
     mma_op.store(accum, d_tile)
 
 
-def mma_col_major_ab_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_col_major_ab_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """Both A and B stored col-major. D = A @ B."""
     var a_tile = TileTensor(a_ptr, col_major[16, 16]())
@@ -1046,10 +1063,12 @@ def mma_col_major_ab_kernel(
     mma_op.store(accum, d_tile)
 
 
-def mma_col_major_a_transpose_a_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_col_major_a_transpose_a_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """A col-major + transpose_a=True. XOR cancels: hw_flag=False.
 
@@ -1070,10 +1089,12 @@ def mma_col_major_a_transpose_a_kernel(
     mma_op.store(accum, d_tile)
 
 
-def mma_col_major_b_transpose_b_kernel(
-    a_ptr: MutPointer[Float16, MutAnyOrigin],
-    b_ptr: MutPointer[Float16, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_col_major_b_transpose_b_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float16, a_origin],
+    b_ptr: MutPointer[Float16, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     """B col-major + transpose_b=True. XOR cancels: hw_flag=False.
 
@@ -1093,10 +1114,12 @@ def mma_col_major_b_transpose_b_kernel(
 
 
 def _run_16x16_mma_test[
-    kernel_fn: def(
-        MutPointer[Float16, MutAnyOrigin],
-        MutPointer[Float16, MutAnyOrigin],
-        MutPointer[Float32, MutAnyOrigin],
+    kernel_fn: def[
+        a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+    ](
+        MutPointer[Float16, a_origin],
+        MutPointer[Float16, b_origin],
+        MutPointer[Float32, d_origin],
     ) thin -> None,
     a_col_major: Bool = False,
     b_col_major: Bool = False,
@@ -1146,9 +1169,9 @@ def _run_16x16_mma_test[
     ctx.enqueue_copy(a_dev, a_phys)
     ctx.enqueue_copy(b_dev, b_phys)
 
-    ctx.enqueue_function[kernel_fn](
-        a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        kernel_fn[origin_of(a_dev), origin_of(b_dev), origin_of(d_dev)]
+    ](a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)

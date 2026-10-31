@@ -17,22 +17,22 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.tensor import Tensor
 
 from .rms_norm import Gemma3RMSNorm
 from .rotary_embedding import Llama3RotaryEmbedding
@@ -128,6 +128,7 @@ class Gemma3Attention(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> Tensor:
+        """Runs the attention over ``x``."""
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 
         n_devices = kv_collection.n_devices

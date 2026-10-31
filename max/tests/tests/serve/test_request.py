@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Tests for the request-session middleware, especially that the
-``maxserve.request_count`` metric is labeled with the real HTTP status code."""
+``max.request_count`` metric is labeled with the real HTTP status code."""
 
 import asyncio
 import os

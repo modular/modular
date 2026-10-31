@@ -21,9 +21,6 @@ description: >-
      Identifiable defaults:
        Mojo/stdlib/std/builtin/identifiable.mojo
 
-     Powable trait:
-       Mojo/stdlib/std/math/math.mojo (search "trait Powable")
-
      Dunder existence:
        grep stdlib for "def __<opname>__"
 -->
@@ -154,16 +151,16 @@ For example, if `a` uses a `CustomVector` type:
 Implement the methods directly on your struct to use `instance OP
 instance`, `instance OP= instance`.
 
-| Operator | Forward        | Reversed          | In-place          |
-|----------|----------------|-------------------|-------------------|
-| `+`      | `__add__()`    | `__radd__()`      | `__iadd__()`      |
-| `-`      | `__sub__()`    | `__rsub__()`      | `__isub__()`      |
-| `*`      | `__mul__()`    | `__rmul__()`      | `__imul__()`      |
-| `/`      | `__truediv__`  | `__rtruediv__()`  | `__itruediv__()`  |
-| `//`     | `__floordiv__` | `__rfloordiv__()` | `__ifloordiv__()` |
-| `%`      | `__mod__()`    | `__rmod__()`      | `__imod__()`      |
-| `**`     | `__pow__()`    | `__rpow__()`      | `__ipow__()`      |
-| `@`      | `__matmul__()` | `__rmatmul__()`   | `__imatmul__()`   |
+| Operator | Description           | Forward        | Reversed          | In-place          |
+|----------|-----------------------|----------------|-------------------|-------------------|
+| `+`      | Addition              | `__add__()`    | `__radd__()`      | `__iadd__()`      |
+| `-`      | Subtraction           | `__sub__()`    | `__rsub__()`      | `__isub__()`      |
+| `*`      | Multiplication        | `__mul__()`    | `__rmul__()`      | `__imul__()`      |
+| `/`      | True division         | `__truediv__`  | `__rtruediv__()`  | `__itruediv__()`  |
+| `//`     | Floor division        | `__floordiv__` | `__rfloordiv__()` | `__ifloordiv__()` |
+| `%`      | Modulo                | `__mod__()`    | `__rmod__()`      | `__imod__()`      |
+| `**`     | Exponentiation        | `__pow__()`    | `__rpow__()`      | `__ipow__()`      |
+| `@`      | Matrix multiplication | `__matmul__()` | `__rmatmul__()`   | `__imatmul__()`   |
 
 In-place operators are syntactic sugar for the operator applied to the
 variable with assignment:
@@ -179,23 +176,18 @@ x **= y    # x = x ** y
 x @= y     # x = x @ y
 ```
 
-**Traits:**
-
-[`Powable`](/docs/std/math/math/Powable/) requires `__pow__()`, doesn't
-provide a default.
-
 ### Bitwise
 
 Implement the methods directly on your struct to use `a OP
 b`, `a OP= b`.
 
-| Operator | Forward        | Reversed        | In-place        |
-|----------|----------------|-----------------|-----------------|
-| `&`      | `__and__()`    | `__rand__()`    | `__iand__()`    |
-| `\|`     | `__or__()`     | `__ror__()`     | `__ior__()`     |
-| `^`      | `__xor__()`    | `__rxor__()`    | `__ixor__()`    |
-| `<<`     | `__lshift__()` | `__rlshift__()` | `__ilshift__()` |
-| `>>`     | `__rshift__()` | `__rrshift__()` | `__irshift__()` |
+| Operator | Description  | Forward        | Reversed        | In-place        |
+|----------|--------------|----------------|-----------------|-----------------|
+| `&`      | Bitwise AND  | `__and__()`    | `__rand__()`    | `__iand__()`    |
+| `\|`     | Bitwise OR   | `__or__()`     | `__ror__()`     | `__ior__()`     |
+| `^`      | Bitwise XOR  | `__xor__()`    | `__rxor__()`    | `__ixor__()`    |
+| `<<`     | Left shift   | `__lshift__()` | `__rlshift__()` | `__ilshift__()` |
+| `>>`     | Right shift  | `__rshift__()` | `__rrshift__()` | `__irshift__()` |
 
 Bitwise operators are typically implemented on integer and flag types. Like
 arithmetic operators, in-place bitwise operators are syntactic sugar for
@@ -214,17 +206,17 @@ x >>= y    # x = x >> y
 Implement the methods directly on your struct to support
 prefix operators like `-x`, `+x`, and `~x`.
 
-| Operator | Method         |
-|----------|----------------|
-| `-x`     | `__neg__()`    |
-| `+x`     | `__pos__()`    |
-| `~x`     | `__invert__()` |
+| Operator | Description | Method         |
+|----------|-------------|----------------|
+| `-x`     | Negation    | `__neg__()`    |
+| `+x`     | Unary plus  | `__pos__()`    |
+| `~x`     | Bitwise NOT | `__invert__()` |
 
 Mojo offers one postfix unary operator.
 
-| Operator | Method                       |
-|----------|------------------------------|
-| `x^`     | Compiler implementation only |
+| Operator | Description        | Method                       |
+|----------|--------------------|------------------------------|
+| `x^`     | Ownership transfer | Compiler implementation only |
 
 Use the `^` sigil for ownership transfer. `consume(a^)` transfers
 ownership of `a` to the `consume` function.
@@ -253,14 +245,14 @@ a^      # transfer
 Implement the methods directly on your struct to use
 `a OP b`.
 
-| Operator | Method     | Trait        | Default? |
-|----------|------------|--------------|----------|
-| `==`     | `__eq__()` | `Equatable`  | Yes      |
-| `!=`     | `__ne__()` | `Equatable`  | Yes      |
-| `<`      | `__lt__()` | `Comparable` | No       |
-| `<=`     | `__le__()` | `Comparable` | Yes      |
-| `>`      | `__gt__()` | `Comparable` | Yes      |
-| `>=`     | `__ge__()` | `Comparable` | Yes      |
+| Operator | Description           | Method     | Trait        | Default? |
+|----------|-----------------------|------------|--------------|----------|
+| `==`     | Equality              | `__eq__()` | `Equatable`  | Yes      |
+| `!=`     | Inequality            | `__ne__()` | `Equatable`  | Yes      |
+| `<`      | Less than             | `__lt__()` | `Comparable` | No       |
+| `<=`     | Less than or equal    | `__le__()` | `Comparable` | Yes      |
+| `>`      | Greater than          | `__gt__()` | `Comparable` | Yes      |
+| `>=`     | Greater than or equal | `__ge__()` | `Comparable` | Yes      |
 
 **Traits:**
 
@@ -280,12 +272,12 @@ You implement `__lt__()`.
 
 Implement the methods directly on your struct to use `a OP b`.
 
-| Operator | Method           | Trait          | Default? |
-|----------|------------------|----------------|----------|
-| `is`     | `__is__()`       | `Identifiable` | No       |
-| `is not` | `__isnot__()`    | `Identifiable` | Yes      |
-| `in`     | `__contains__()` | —              | No       |
-| `not in` | `__contains__()` | —              | No       |
+| Operator | Description    | Method           | Trait          | Default? |
+|----------|----------------|------------------|----------------|----------|
+| `is`     | Identity       | `__is__()`       | `Identifiable` | No       |
+| `is not` | Non-identity   | `__isnot__()`    | `Identifiable` | Yes      |
+| `in`     | Membership     | `__contains__()` | —              | No       |
+| `not in` | Non-membership | `__contains__()` | —              | No       |
 
 `x in collection` calls `collection.__contains__(x)`. The method is on
 the **container**, not the element. `not in` calls the same method and
@@ -305,9 +297,9 @@ checks).
 Implement the methods directly on your struct to use `a[key]`
 reads and `a[key] = b` assigns.
 
-| Operation                | Method          |
-|--------------------------|-----------------|
-| `obj[key]` (read)        | `__getitem__()` |
-| `obj[key] = val` (write) | `__setitem__()` |
+| Operation                | Description | Method          |
+|--------------------------|-------------|-----------------|
+| `obj[key]` (read)        | Item access | `__getitem__()` |
+| `obj[key] = val` (write) | Item update | `__setitem__()` |
 
 Both accept variadic arguments (for multi-dimensional indexing).

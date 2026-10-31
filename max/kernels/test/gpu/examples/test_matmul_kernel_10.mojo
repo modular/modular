@@ -82,10 +82,13 @@ def sgemm_warp_tiling_kernel[
     CEngine: TensorEngine,
     AEngine: TensorEngine,
     BEngine: TensorEngine,
+    c_origin: MutOrigin,
+    a_origin: MutOrigin,
+    b_origin: MutOrigin,
 ](
-    mat_c: TileTensor[c_type, CLayoutType, MutAnyOrigin, Engine=CEngine],
-    mat_a: TileTensor[a_type, ALayoutType, MutAnyOrigin, Engine=AEngine],
-    mat_b: TileTensor[b_type, BLayoutType, MutAnyOrigin, Engine=BEngine],
+    mat_c: TileTensor[c_type, CLayoutType, c_origin, Engine=CEngine],
+    mat_a: TileTensor[a_type, ALayoutType, a_origin, Engine=AEngine],
+    mat_b: TileTensor[b_type, BLayoutType, b_origin, Engine=BEngine],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ) where (a_type.is_numeric() and b_type.is_numeric()):
@@ -254,10 +257,12 @@ def sgemm_warp_tiling_kernel[
                     C_interim.unsafe_store[alignment=16](c_idx, vec)
 
 
-def matmul_naive(
-    a_ptr: MutPointer[Float32, MutAnyOrigin],
-    b_ptr: MutPointer[Float32, MutAnyOrigin],
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
+def matmul_naive[
+    a_origin: MutOrigin, b_origin: MutOrigin, c_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float32, a_origin],
+    b_ptr: MutPointer[Float32, b_origin],
+    c_ptr: MutPointer[Float32, c_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -399,6 +404,9 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         CEngine=type_of(c_buffer).Engine,
         AEngine=type_of(a_buffer).Engine,
         BEngine=type_of(b_buffer).Engine,
+        c_origin=type_of(c_buffer).origin,
+        a_origin=type_of(a_buffer).origin,
+        b_origin=type_of(b_buffer).origin,
     ]
 
     @inline(.always)
@@ -431,14 +439,23 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host_naive)
 
+    var a_dev_ptr = a_device.unsafe_ptr()
+    var b_dev_ptr = b_device.unsafe_ptr()
+    var c_dev_ptr = c_device.unsafe_ptr()
+    comptime naive_type = matmul_naive[
+        type_of(a_dev_ptr).origin,
+        type_of(b_dev_ptr).origin,
+        type_of(c_dev_ptr).origin,
+    ]
+
     @inline(.always)
     def bench_naive(mut b: Bencher) {imm}:
         @inline(.always)
         def run_func_naive(ctx: DeviceContext) raises {imm}:
-            ctx.enqueue_function[matmul_naive](
-                a_device,
-                b_device,
-                c_device,
+            ctx.enqueue_function[naive_type](
+                a_dev_ptr,
+                b_dev_ptr,
+                c_dev_ptr,
                 Int32(M),
                 Int32(N),
                 Int32(K),

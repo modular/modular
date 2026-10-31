@@ -63,8 +63,6 @@ public:
                                        evaluator.getIndexBindings());
   }
 
-  const ParameterEvaluator &getEvaluator() const { return evaluator; }
-
   /// Pre-seed an inferred parameter value by index.
   void setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
     setInferredValue(paramIdx, paramVal);
@@ -201,10 +199,6 @@ private:
   OperandsNeedingOriginsList &operandsNeedingOrigins;
 
   LogicalResult inferOptionalLiteralSize();
-
-  /// Given an incomplete parameter binding set, try to infer parameters on
-  /// Self of a method from the first argument.
-  LogicalResult inferCTADParams();
 
   LogicalResult inferResultSlot(RefType expectedRef, size_t argIdx,
                                 const ExprDest &dest);

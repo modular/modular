@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V4.1 image preprocessing and image-span expansion.
 
 Follows the checkpoint's reference ``inference/image_processor.py``. An image
@@ -131,8 +130,10 @@ class DeepseekV41ImageProcessor:
     def __call__(
         self, image: Image.Image
     ) -> tuple[npt.NDArray[np.uint16], ImageGrid]:
-        """Returns the patches as bf16 bits ``[n_vit_h * n_vit_w, 3, p, p]``
-        in raster order, and the image's grid."""
+        """Returns the image's patches in raster order, and its grid.
+
+        The patches are bf16 bits shaped ``[n_vit_h * n_vit_w, 3, p, p]``.
+        """
         image = image.convert("RGB")
         grid, width, height = self.plan(image.width, image.height)
         padded = ImageOps.pad(image, (width, height), color=_PAD_COLOR)

@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 
 from .model_config import Qwen3VLConfig
 from .nn.decoder import Qwen3VLMoEDecoder
@@ -30,6 +30,7 @@ class Qwen3VL(Module):
         self.language_model = self.build_language_model()
 
     def build_vision_encoder(self) -> VisionTransformer:
+        """Builds the vision tower from the vision config."""
         return VisionTransformer(
             config=self.config.vision_config,
         )

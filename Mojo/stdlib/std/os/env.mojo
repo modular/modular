@@ -74,7 +74,7 @@ def getenv(var name: String, default: String = "") -> String:
       The value of the environment variable.
     """
     var ptr = external_call[
-        "getenv", OptionalPointer[UInt8, ImmUntrackedOrigin]
+        "getenv", Optional[Pointer[UInt8, ImmUntrackedOrigin]]
     ](name.as_c_string_span())
     if not ptr:
         return default

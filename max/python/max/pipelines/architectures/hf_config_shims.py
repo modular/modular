@@ -29,6 +29,8 @@ try:
 except ImportError:
 
     class Gemma4HFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Gemma 4 config for transformers releases that ship none."""
+
         model_type = "gemma4"
 
         def __init__(
@@ -333,7 +335,17 @@ class LagunaHFConfig(PretrainedConfig):
     model_type = "laguna"
 
     def __init__(self, **kwargs: object) -> None:
+        # Laguna nests its rope config per attention type, which transformers'
+        # flat rope validation rejects, so withhold the rope keys from the base
+        # initializer and restore them afterwards.
+        deferred_rope = {
+            key: kwargs.pop(key)
+            for key in ("rope_parameters", "rope_scaling", "rope_theta")
+            if key in kwargs
+        }
         super().__init__(**kwargs)
+        for key, value in deferred_rope.items():
+            setattr(self, key, value)
         for k, v in kwargs.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -365,6 +377,198 @@ class _MiMoV2HFConfig(PretrainedConfig):
 
 
 AutoConfig.register("mimo_v2", _MiMoV2HFConfig, exist_ok=True)
+
+
+class _Lfm3HFConfig(PretrainedConfig):
+    """Local config class for LiquidAI LFM3 (``model_type: lfm3``).
+
+    LFM3 repos point ``auto_map`` at ``configuration_lfm3.py``, which the
+    installed transformers does not ship. The published ``config.json``
+    states every field the decoder reads, so each is kept verbatim.
+    """
+
+    model_type = "lfm3"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+AutoConfig.register("lfm3", _Lfm3HFConfig, exist_ok=True)
+
+
+class _Lfm3VlVisionHFConfig(_Lfm3HFConfig):
+    """The LFM3-VL vision tower's config, kept verbatim."""
+
+    model_type = "lfm3_vl_vision"
+
+
+class _Lfm3VlHFConfig(PretrainedConfig):
+    """Local config class for LiquidAI LFM3-VL (``model_type: lfm3_vl``).
+
+    The repos point ``auto_map`` at remote configuration code, as LFM3's do.
+    Both halves become objects because the architecture reads their fields
+    by attribute.
+    """
+
+    model_type = "lfm3_vl"
+    sub_configs = {
+        "text_config": _Lfm3HFConfig,
+        "vision_config": _Lfm3VlVisionHFConfig,
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _Lfm3HFConfig | None = None,
+        vision_config: dict[str, Any] | _Lfm3VlVisionHFConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if not isinstance(text_config, _Lfm3HFConfig):
+            text_config = _Lfm3HFConfig(**(text_config or {}))
+        if not isinstance(vision_config, _Lfm3VlVisionHFConfig):
+            vision_config = _Lfm3VlVisionHFConfig(**(vision_config or {}))
+        self.text_config = text_config
+        self.vision_config = vision_config
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+AutoConfig.register("lfm3_vl", _Lfm3VlHFConfig, exist_ok=True)
+
+
+class _Lfm3AudioEncoderHFConfig(_Lfm3HFConfig):
+    """The LFM3 speech encoder's config.
+
+    Its LFM2 stack is ``text_config``.
+
+    The LFM3-Audio export names the downsampler's widths ``dim_in``,
+    ``dim_conv`` and ``dim_out``, which become LFM3-Omni's ``num_mel_bins``,
+    ``conv_channels`` and ``hidden_size``.
+    """
+
+    model_type = "lfm3_audio_encoder"
+    sub_configs = {"text_config": _Lfm3HFConfig}
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _Lfm3HFConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        for old, new in (
+            ("dim_in", "num_mel_bins"),
+            ("dim_conv", "conv_channels"),
+            ("dim_out", "hidden_size"),
+        ):
+            if old in kwargs:
+                kwargs[new] = kwargs.pop(old)
+        text_config = kwargs.pop("lfm", text_config)
+        if not isinstance(text_config, _Lfm3HFConfig):
+            text_config = _Lfm3HFConfig(**(text_config or {}))
+        self.text_config = text_config
+        super().__init__(**kwargs)
+
+
+class _Lfm3AudioHFConfig(PretrainedConfig):
+    """Local config class for LiquidAI LFM3-Audio (``model_type: lfm3_audio``).
+
+    The released ``config.json`` is the training export's: ``lfm`` holds the
+    language model, ``encoder`` the speech encoder and ``depthformer`` the
+    depth decoder. They become ``text_config``, ``audio_encoder_config`` and
+    ``depth_config``, the frame fields take the reference config's names,
+    and the special token ids default to the reference config's, which the
+    export leaves out.
+    """
+
+    model_type = "lfm3_audio"
+    sub_configs = {
+        "text_config": _Lfm3HFConfig,
+        "audio_encoder_config": _Lfm3AudioEncoderHFConfig,
+        "depth_config": _Lfm3HFConfig,
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _Lfm3HFConfig | None = None,
+        audio_encoder_config: dict[str, Any]
+        | _Lfm3AudioEncoderHFConfig
+        | None = None,
+        depth_config: dict[str, Any] | _Lfm3HFConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        text_config = kwargs.pop("lfm", text_config)
+        audio_encoder_config = kwargs.pop("encoder", audio_encoder_config)
+        depth_config = kwargs.pop("depthformer", depth_config)
+        if not isinstance(text_config, _Lfm3HFConfig):
+            text_config = _Lfm3HFConfig(**(text_config or {}))
+        if not isinstance(audio_encoder_config, _Lfm3AudioEncoderHFConfig):
+            audio_encoder_config = _Lfm3AudioEncoderHFConfig(
+                **(audio_encoder_config or {})
+            )
+        if not isinstance(depth_config, _Lfm3HFConfig):
+            depth_config = _Lfm3HFConfig(**(depth_config or {}))
+        self.text_config = text_config
+        self.audio_encoder_config = audio_encoder_config
+        self.depth_config = depth_config
+        for name, default in (
+            ("audio_token_id", 125_031),
+            ("audio_out_token_id", 125_032),
+            ("audio_start_token_id", 125_012),
+            ("text_end_token_id", 125_014),
+            ("mixed_start_token_id", 125_015),
+            ("num_codebooks", kwargs.pop("codebooks", 12)),
+            ("codebook_size", kwargs.pop("audio_vocab_size", 2017)),
+            ("interleaved_n_text", 6),
+            ("interleaved_n_audio", 12),
+        ):
+            kwargs.setdefault(name, default)
+        kwargs.setdefault("audio_eos_code", kwargs["codebook_size"] - 1)
+        num_codebooks, steps = (
+            kwargs["num_codebooks"],
+            kwargs.pop("maskgit_steps", 3),
+        )
+        kwargs.setdefault(
+            "maskgit_schedule",
+            [num_codebooks // steps] * (steps - 1)
+            + [num_codebooks - num_codebooks // steps * (steps - 1)],
+        )
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+AutoConfig.register("lfm3_audio", _Lfm3AudioHFConfig, exist_ok=True)
+
+
+class _Lfm3OmniHFConfig(_Lfm3AudioHFConfig):
+    """Local config class for LiquidAI LFM3-Omni.
+
+    Handles ``model_type: lfm3_omni``: LFM3-Audio's config plus LFM3-VL's
+    ``vision_config``.
+    """
+
+    model_type = "lfm3_omni"
+    sub_configs = {
+        **_Lfm3AudioHFConfig.sub_configs,
+        "vision_config": _Lfm3VlVisionHFConfig,
+    }
+
+    def __init__(
+        self,
+        vision_config: dict[str, Any] | _Lfm3VlVisionHFConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if not isinstance(vision_config, _Lfm3VlVisionHFConfig):
+            vision_config = _Lfm3VlVisionHFConfig(**(vision_config or {}))
+        self.vision_config = vision_config
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("lfm3_omni", _Lfm3OmniHFConfig, exist_ok=True)
 
 
 class _KimiK3SubHFConfig(PretrainedConfig):
@@ -548,8 +752,12 @@ except ImportError:
 
 
 class _InklingMMHFConfig(PretrainedConfig):
-    """Shim for the top-level ``inkling_mm_model`` model type; unmapped blocks
-    (``audio_config``, ``mtp_config``) stay as plain attributes."""
+    """Shim for the top-level ``inkling_mm_model`` model type.
+
+    ``text_config`` and ``vision_config`` become nested
+    ``PretrainedConfig`` objects. Everything else, ``audio_config`` and
+    ``mtp_config`` included, stays a plain attribute.
+    """
 
     model_type = "inkling_mm_model"
 
@@ -874,3 +1082,146 @@ class HYV4HFConfig(PretrainedConfig):
 
 
 AutoConfig.register("hy_v4", HYV4HFConfig, exist_ok=True)
+
+# Use the native FlintConfig if a transformers release ships one;
+# otherwise this passthrough shim covers the "flint" model_type.
+try:
+    from transformers import FlintConfig as FlintHFConfig
+except ImportError:
+
+    class FlintHFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Configuration shim for the ``flint`` model type.
+
+        Every field comes from the repo's config.json, and unknown
+        keyword arguments become attributes on ``PretrainedConfig``, so
+        no field mapping is needed.
+        """
+
+        model_type = "flint"
+
+
+AutoConfig.register("flint", FlintHFConfig, exist_ok=True)
+
+
+# TODO: drop these shims once transformers >= 5.20, which ships native
+# muse_spark configs.
+class _MuseSparkTextHFConfig(_MuseGlimmerSubHFConfig):
+    """Shim for the ``muse_spark_text`` model type.
+
+    Defaults and derivations follow transformers 5.20.0's
+    ``MuseSparkTextConfig``.
+    """
+
+    model_type = "muse_spark_text"
+    _defaults: ClassVar[dict[str, Any]] = {
+        "vocab_size": 202048,
+        "hidden_size": 8192,
+        "intermediate_size": 16384,
+        "num_hidden_layers": 62,
+        "num_attention_heads": 128,
+        "num_key_value_heads": 16,
+        "head_dim": 64,
+        "max_position_embeddings": 1048576,
+        "rms_norm_eps": 1e-5,
+        "tie_word_embeddings": False,
+        "sliding_window": 2048,
+        "final_logit_softcapping": 20.0,
+        "qk_scale_factor": 5.4730064863875,
+        "output_multiplier": 0.1767766952966369,
+        "post_norm_eps": 1e-8,
+        "hidden_act": "silu",
+        "moe_intermediate_size": 4096,
+        "num_local_experts": 256,
+        "num_experts_per_tok": 8,
+        "routed_scaling_factor": 1.0,
+        "moe_hidden_size": 4096,
+        "residual_gate_temperature": 0.3,
+        "rope_parameters": {"rope_type": "default", "rope_theta": 500000.0},
+    }
+
+    def __init__(self, use_cache: bool = True, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        # The base init drops generation parameters such as use_cache; the
+        # reference declares it as a field.
+        self.use_cache = use_cache
+        n = self.num_hidden_layers
+        if getattr(self, "mlp_layer_types", None) is None:
+            self.mlp_layer_types = ["sparse"] * n
+        if getattr(self, "layer_types", None) is None:
+            self.layer_types = [
+                "full_attention"
+                if (n - 1 - i) % 4 == 0
+                else "sliding_attention"
+                for i in range(n)
+            ]
+        # Indexed like layer_types' default, not read from layer_types, as in
+        # the reference.
+        if getattr(self, "layer_rope_theta", None) is None:
+            self.layer_rope_theta = [
+                0
+                if (n - 1 - i) % 4 == 0
+                else self.rope_parameters["rope_theta"]
+                for i in range(n)
+            ]
+
+
+class _MuseSparkVisionHFConfig(_MuseGlimmerVisionHFConfig):
+    model_type = "muse_spark_vision"
+    # The reference leaves rope_parameters unset; its tower accepts only
+    # rope_type "axial", which the published config states.
+    _defaults: ClassVar[dict[str, Any]] = {
+        k: v
+        for k, v in _MuseGlimmerVisionHFConfig._defaults.items()
+        if k != "rope_parameters"
+    }
+
+    # PretrainedConfig replaces the init of a subclass that defines none with
+    # a dataclass init, which would skip the layer_types derivation.
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+
+
+class _MuseSparkAudioHFConfig(PretrainedConfig):
+    """Keeps the audio tower's fields; MAX does not load the tower."""
+
+    model_type = "muse_spark_audio"
+
+
+class MuseSparkHFConfig(_MuseGlimmerSubHFConfig):
+    """Local config class for Muse Spark (``model_type: muse_spark``)."""
+
+    model_type = "muse_spark"
+    sub_configs = {
+        "text_config": _MuseSparkTextHFConfig,
+        "vision_config": _MuseSparkVisionHFConfig,
+        "audio_config": _MuseSparkAudioHFConfig,
+    }
+    _defaults: ClassVar[dict[str, Any]] = {
+        "image_token_id": 200092,
+        "video_token_id": 200091,
+        "audio_token_id": 200038,
+        "out_hidden_size": 6144,
+        "projector_hidden_size": 4096,
+        "projector_hidden_act": "gelu",
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | PretrainedConfig | None = None,
+        vision_config: dict[str, Any] | PretrainedConfig | None = None,
+        audio_config: dict[str, Any] | PretrainedConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        for name, value in (
+            ("text_config", text_config),
+            ("vision_config", vision_config),
+            ("audio_config", audio_config),
+        ):
+            if not isinstance(value, PretrainedConfig):
+                value = self.sub_configs[name](**(value or {}))
+            setattr(self, name, value)
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("muse_spark", MuseSparkHFConfig, exist_ok=True)
+AutoConfig.register("muse_spark_text", _MuseSparkTextHFConfig, exist_ok=True)

@@ -43,16 +43,17 @@ from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.kv_cache import BatchCharacteristics, MHAAttnKey
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import BatchCharacteristics, MHAAttnKey
+from max.nn.legacy.transformer import ReturnLogits
+from max.pipelines.architectures.deepseekV41.model import (
+    DeepseekV41BatchProcessor,
+    DeepseekV41Inputs,
+)
 from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
 )
-from max.pipelines.architectures.unified_dspark_deepseekV41.batch_processor import (
-    UnifiedDSparkDeepseekV41BatchProcessor,
-    UnifiedDSparkDeepseekV41Inputs,
-)
-from max.pipelines.architectures.unified_dspark_deepseekV41.model import (
+from max.pipelines.architectures.deepseekV41.spec_adapters import (
+    batch_trailing_buffers,
     read_engram_lookback,
     record_engram_lookback,
 )
@@ -62,11 +63,15 @@ from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     in_flight_draft_placeholders,
 )
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _Inputs,
+)
 from max.pipelines.lib.pipeline_variants.utils import (
     update_spec_decode_context_and_prepare_responses,
 )
 from max.pipelines.modeling.types import RequestID
 from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
+from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 
 DEPTH = 3
 """The checkpoint's ``engram_max_ngram_size - 1``."""
@@ -74,6 +79,8 @@ DEPTH = 3
 NUM_DRAFTS = 5
 """The checkpoint's ``dspark_block_size``, the drafts each step verifies."""
 
+REPLAY_WINDOW = 128
+REPLAY_MIN_TOKENS = 256
 MAX_BATCH_SIZE = 8
 MAX_LENGTH = 4096
 LOW_TOKEN, HIGH_TOKEN = 100, 1000
@@ -130,15 +137,31 @@ def lookback_device(request: pytest.FixtureRequest) -> _Device:
 
 
 def _processor(
-    device: Device, dp: int
-) -> UnifiedDSparkDeepseekV41BatchProcessor:
-    config = cast(
-        DeepseekV41Config,
-        SimpleNamespace(engram_layer_ids=(1, 14), engram_max_ngram_size=4),
-    )
+    device: Device, dp: int, *, replay: bool = False
+) -> DeepseekV41BatchProcessor:
+    fields: dict[str, Any] = {
+        "engram_layer_ids": (1, 14),
+        "engram_max_ngram_size": 4,
+        "data_parallel_degree": dp,
+        "engram_host_buffers": [],
+    }
+    if replay:
+        fields.update(
+            sliding_window=REPLAY_WINDOW,
+            dspark_target_layer_ids=[37, 38, 39],
+            kv_source_layer_ids=[0, 20],
+            num_hidden_layers=40,
+        )
+    config = cast(DeepseekV41Config, SimpleNamespace(**fields))
     runtime = BatchProcessorRuntime(
         pipeline_config=cast(
-            Any, SimpleNamespace(needs_bitmask_constraints=False)
+            Any,
+            SimpleNamespace(
+                needs_bitmask_constraints=False,
+                speculative=SimpleNamespace(),
+                runtime=SimpleNamespace(device_graph_capture=False),
+                model=SimpleNamespace(enable_echo=False),
+            ),
         ),
         devices=[device],
         return_logits=ReturnLogits.VARIABLE,
@@ -147,7 +170,11 @@ def _processor(
         max_batch_input_tokens=MAX_LENGTH,
         data_parallel_degree=dp,
     )
-    return UnifiedDSparkDeepseekV41BatchProcessor(config, runtime)
+    processor = DeepseekV41BatchProcessor(config, runtime)
+    if replay:
+        # The leaf id comes from kv_params, which this config does not carry.
+        processor._replay_leaf_id = "swa"
+    return processor
 
 
 @dataclass
@@ -218,6 +245,19 @@ class _Stats:
     """Steps that verified drafts while some row still prefilled."""
     from_history_after_mixed: int = 0
     """Rows that read a window a mixed verify step recorded."""
+    planned_steps: int = 0
+    planned_with_decode: int = 0
+    """Planned steps that also carried a decode row."""
+    planned_with_verify: int = 0
+    """Planned steps that verified drafts, so their rows include draft rows."""
+    skipped_rows: int = 0
+    """Rows a plan trimmed."""
+    skipped_rows_after_verify: int = 0
+    """Trimmed rows that also ran in the previous step while it verified."""
+    in_flight_rows_kept: int = 0
+    """In-flight verification rows a plan carried, kept whole."""
+    in_flight_accepted: set[int] = field(default_factory=set)
+    """Accepted counts the previous step reported for those rows."""
 
 
 class _Pipeline:
@@ -231,12 +271,15 @@ class _Pipeline:
         dp: int,
         rng: np.random.Generator,
         mixed: bool = False,
+        replay: bool = False,
     ) -> None:
         self._lookback = lookback
-        self._processor = _processor(lookback.device, dp)
+        self._replay = replay
+        self._processor = _processor(lookback.device, dp, replay=replay)
         self._overlap = overlap
         self._mixed = mixed
         self._prev_was_mixed = False
+        self._prev_width: dict[Any, int] = {}
         self._rng = rng
         self._prev: _Step | None = None
         self._num_decode_rows = 0
@@ -276,9 +319,10 @@ class _Pipeline:
         ).reshape(len(contexts), k)
 
         inputs = self._processor.prepare_initial_token_inputs(
-            [[r.ctx for r in replica] for replica in replicas]
+            [[r.ctx for r in replica] for replica in replicas],
+            return_n_logits=k + 1,
         )
-        assert isinstance(inputs, UnifiedDSparkDeepseekV41Inputs)
+        assert isinstance(inputs, DeepseekV41Inputs)
         assert inputs.engram_lookback_ids is not None
         assert inputs.engram_lookback_source is not None
         assert inputs.engram_lookback_history is not None
@@ -313,6 +357,9 @@ class _Pipeline:
             assert cache_length == r.start
             chunk = tokens[offsets[row] : offsets[row + 1]].tolist()
             assert chunk == r.truth[r.start : r.start + len(chunk)]
+
+        if self._replay:
+            self._check_plan(flat, contexts, inputs, accepted_before, k)
 
         accepted = np.zeros(len(flat), dtype=np.int64)
         if k:
@@ -367,6 +414,7 @@ class _Pipeline:
 
         launched = _Step(contexts, drafts, accepted, bonus, next_drafts)
         self._prev_was_mixed = is_mixed
+        self._prev_width = {c.request_id: k for c in contexts}
         if self._overlap:
             if prev is not None:
                 self._sync(prev)
@@ -375,6 +423,55 @@ class _Pipeline:
         else:
             self._mark_in_flight(contexts, k)
             self._sync(launched)
+
+    def _check_plan(
+        self,
+        flat: Sequence[_Request],
+        contexts: Sequence[TextContext],
+        inputs: DeepseekV41Inputs,
+        accepted_before: Sequence[int],
+        width: int,
+    ) -> None:
+        """A trimmed row's device start is its host start; the rest are whole.
+
+        The graph rebases every row at ``cache_lengths + skip``, where
+        ``cache_lengths`` is the device value ``r.start`` the simulation
+        realizes. The rebased rows must be the full graph's rows at the same
+        absolute positions, and a row may skip only where host and device
+        agree.
+        """
+        stats = self.stats
+        plan = inputs.replay_plan
+        if plan is None:
+            return
+        stats.planned_steps += 1
+        stats.planned_with_decode += int(
+            any(c.tokens.generated_length for c in contexts)
+        )
+        stats.planned_with_verify += int(width > 0)
+        original = 0
+        for row, (r, c) in enumerate(zip(flat, contexts, strict=True)):
+            merged = c.tokens.active_length + width
+            skip = int(plan.kept_skip[row])
+            first, last = plan.kept_offsets[row], plan.kept_offsets[row + 1]
+            kept = plan.kept_indices[first:last] - original
+            # Kept rows are the full graph's rows skip..merged of this
+            # request, so replay position r.start + skip + j is the full
+            # graph's position of the same row.
+            np.testing.assert_array_equal(kept, np.arange(skip, merged))
+            original += merged
+            in_flight = bool(c.spec_decoding_state.maybe_accepted_draft_tokens)
+            if in_flight:
+                assert skip == 0
+                stats.in_flight_rows_kept += 1
+                stats.in_flight_accepted.add(accepted_before[row])
+            if skip:
+                assert r.start == c.tokens.processed_length
+                assert not in_flight
+                stats.skipped_rows += 1
+                stats.skipped_rows_after_verify += int(
+                    self._prev_width.get(c.request_id, 0) > 0
+                )
 
     def drain(self) -> None:
         if self._prev is not None:
@@ -482,6 +579,53 @@ def test_mixed_verify_lookback_follows_accepted_drafts(
     assert stats.accepted_before_history_read == set(range(NUM_DRAFTS + 1))
 
 
+def test_planned_rows_start_where_the_device_does(
+    lookback_device: _Device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Replay rebases on the device position and trims only agreeing rows.
+
+    Mixed steps verify drafts, so a planned step carries in-flight verify
+    rows (any accepted count from none to all drafts) beside prefill rows
+    that may be a middle chunk the previous verifying step also ran. Every
+    trimmed row must have device cache length equal to its host length, and
+    every in-flight row is kept whole.
+    """
+    monkeypatch.setenv(
+        "MODULAR_DEEPSEEK_V41_REPLAY_MIN_TOKENS", str(REPLAY_MIN_TOKENS)
+    )
+    rng = np.random.default_rng(99)
+    pipeline = _Pipeline(
+        lookback_device,
+        overlap=True,
+        dp=1,
+        rng=rng,
+        mixed=True,
+        replay=True,
+    )
+    joins = {
+        0: [[300], [600, 1], [257, 129], [1, 1, 5]],
+        8: [[300]],
+        9: [[400, 300, 260]],
+        10: [[700]],
+    }
+    running: list[_Request] = []
+    for t in range(16):
+        running.extend(
+            _Request.prompt(rng, chunks) for chunks in joins.get(t, [])
+        )
+        pipeline.step([[running[i] for i in rng.permutation(len(running))]])
+    pipeline.drain()
+    stats = pipeline.stats
+    assert stats.planned_steps > 0
+    assert stats.planned_with_decode > 0
+    assert stats.planned_with_verify > 0
+    assert stats.in_flight_rows_kept > 0
+    assert stats.skipped_rows > 0
+    assert stats.skipped_rows_after_verify > 0
+    assert stats.in_flight_accepted >= {0, NUM_DRAFTS}
+    assert stats.in_flight_accepted & set(range(1, NUM_DRAFTS))
+
+
 def test_without_overlap_the_host_window_is_used(
     lookback_device: _Device,
 ) -> None:
@@ -522,11 +666,21 @@ def test_replay_records_into_the_history_the_next_step_reads() -> None:
     processor = _processor(device, dp=1)
     kv_cache_inputs = cast(Any, [Buffer.zeros((2,), DType.int64, device)])
 
-    def spec_inputs(
-        contexts: list[TextContext],
-    ) -> UnifiedDSparkDeepseekV41Inputs:
-        inputs = processor.prepare_initial_token_inputs(
+    def spec_inputs(contexts: list[TextContext]) -> _Inputs:
+        # As the pairing's batch processor wraps its target's inputs.
+        target = processor.prepare_initial_token_inputs(
             [contexts], kv_cache_inputs, NUM_DRAFTS + 1
+        )
+        inputs = _Inputs(
+            tokens=target.tokens,
+            input_row_offsets=target.input_row_offsets,
+            return_n_logits=target.return_n_logits,
+            kv_cache_inputs=target.kv_cache_inputs,
+            seed=Buffer.zeros((1,), DType.uint64, device),
+            spec=SpecDecodeInputTypeSpec(
+                devices=[DeviceRef.GPU()], distributed=False
+            ),
+            trailing=batch_trailing_buffers(target),
         )
         batch = len(contexts)
         inputs.draft_tokens = Buffer.zeros(
@@ -541,7 +695,7 @@ def test_replay_records_into_the_history_the_next_step_reads() -> None:
     @contextmanager
     def warmup_inputs(
         batch_size: int, batch_characteristics: BatchCharacteristics
-    ) -> Iterator[UnifiedDSparkDeepseekV41Inputs]:
+    ) -> Iterator[_Inputs]:
         # As `OverlapTextGenerationPipeline._warmup_model_inputs` builds them.
         yield spec_inputs(
             [
@@ -575,7 +729,7 @@ def test_replay_records_into_the_history_the_next_step_reads() -> None:
         num_speculative_tokens=NUM_DRAFTS,
     )
     runner.warmup_pre_ready()
-    history = processor._engram_history
+    history = processor._lookback.history
     assert history is not None
     assert engine.captured
     for captured in engine.captured:
@@ -588,7 +742,7 @@ def test_replay_records_into_the_history_the_next_step_reads() -> None:
     for r in requests:
         r.ctx.update(int(rng.integers(LOW_TOKEN, HIGH_TOKEN)))
     inputs = spec_inputs([r.ctx for r in requests])
-    assert inputs.engram_lookback_history is history
+    assert history in inputs.trailing
     runner.replay(
         model_inputs=inputs,
         batch_characteristics=runner.align(

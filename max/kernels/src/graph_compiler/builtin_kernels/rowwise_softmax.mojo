@@ -18,6 +18,7 @@ from std.collections import Optional
 from std.sys import align_of, size_of
 
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, CoordLike, TileTensor
 from std.utils.numerics import get_accum_type
 
@@ -49,6 +50,7 @@ def softmax[
     target: StaticString,
     logsoftmax: Bool = False,
     reduce_dim: Int = rank - 1,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     input_fn: InputFn,
     shape: Coord,
@@ -167,4 +169,5 @@ def softmax[
         computationally_expensive=True,
         num_phases=3,
         dtype_size=size_of[dtype](),
+        pdl_level=pdl_level,
     ](body, shape, context)

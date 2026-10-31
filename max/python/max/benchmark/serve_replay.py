@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Replays a captured serve session against a local server process."""
+
 from __future__ import annotations
 
 import contextlib
@@ -25,6 +27,7 @@ import httpx
 
 
 def do_serve(args: Sequence[str]) -> None:
+    """Invokes the ``max serve`` CLI with the given arguments."""
     from max._entrypoints.pipelines import main
 
     # We call "main" instead of "cli_serve" because it does some extra
@@ -35,6 +38,7 @@ def do_serve(args: Sequence[str]) -> None:
 
 
 def do_replay(args: Sequence[str]) -> None:
+    """Invokes the ``max replay-recording`` CLI with the given arguments."""
     from max._entrypoints.replay_recording import main
 
     ctx = main.make_context("max-replay-recording", list(args))
@@ -43,6 +47,7 @@ def do_replay(args: Sequence[str]) -> None:
 
 
 def ensure_dead(process: multiprocessing.process.BaseProcess) -> None:
+    """Terminates the process and waits for it to exit."""
     if not process.is_alive():
         return
     process.terminate()
@@ -63,6 +68,7 @@ def wait_for_up(
     *,
     timeout: float | None = 600,
 ) -> None:
+    """Waits until the server answers probes at ``url``."""
     start_time = time.time()
     with httpx.Client() as client:
         while True:
@@ -95,6 +101,7 @@ def wait_for_up(
 @click.option("--probe-timeout", type=click.FloatRange(min=0), default=600)
 @click.argument("sub_args", nargs=-1, type=str)
 def main(probe_url: str, probe_timeout: float, sub_args: Sequence[str]) -> None:
+    """Splits the arguments at ``--`` and runs serve, replay, then teardown."""
     if "--" not in sub_args:
         raise click.BadParameter(
             "usage: serve_replay.py -- <serve args> -- <replay args>"

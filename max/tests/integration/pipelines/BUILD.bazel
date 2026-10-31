@@ -41,12 +41,12 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/lora",
         requirement("numpy"),
     ],
@@ -153,9 +153,9 @@ modular_py_test(
     name = "test_weight_loader",
     srcs = ["test_weight_loader.py"],
     deps = [
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max:tensor",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
@@ -202,6 +202,73 @@ modular_py_test(
         "//max/python/max/pipelines/modeling",
         requirement("jinja2"),
         requirement("numpy"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_test(
+    name = "test_auto_model_images",
+    size = "medium",
+    srcs = ["test_auto_model_images.py"],
+    # Offline unit tests. Linux CI passes HF_HUB_OFFLINE=1 for the whole
+    # invocation (ci/default/test.sh), the macOS lane does not.
+    env = {"HF_HUB_OFFLINE": "1"},
+    # The architecture lookup materializes FLUX.2, Wan and Z-Image by name at
+    # runtime.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/flux2",
+        "//max/python/max/pipelines/architectures/wan",
+        "//max/python/max/pipelines/architectures/z_image_modulev3",
+    ],
+    tags = ["skip-external-ci"],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/flux2",
+        "//max/python/max/pipelines/architectures/wan",
+        "//max/python/max/pipelines/architectures/z_image_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/tests/integration/test_common:fake_weights",
+        requirement("pillow"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_test(
+    name = "test_auto_model_images_gpu",
+    size = "large",
+    srcs = ["test_auto_model_images_gpu.py"],
+    exec_properties = {
+        # FLUX.2 Klein 4B plans about 16 GiB of weights for its transformer
+        # and text encoder.
+        "test.resources:gpu-memory": "40",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # Resolves FLUX.2 Klein by name at runtime.
+        "//max/python/max/pipelines/architectures/flux2",
+        # Renders the text encoder's chat template.
+        requirement("jinja2"),
+    ],
+    tags = [
+        "gpu",
+        # Loads a full checkpoint, so it stays out of presubmit. Run it by name.
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/flux2",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
+        requirement("huggingface-hub"),
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pillow"),
     ],
 )
 
@@ -454,6 +521,7 @@ modular_py_test(
             "test_pipeline_config_resolve.py",
             "test_model_manifest.py",
             "test_auto_model.py",
+            "test_auto_model_images.py",
             "test_auto_pipeline.py",
             "test_auto_processor.py",
             "test_video.py",
@@ -468,12 +536,12 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
         "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
         "//max/python/max/pipelines/architectures/internvl",
@@ -515,7 +583,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:mocks",
         requirement("numpy"),
@@ -541,10 +609,8 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("numpy"),
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -561,10 +627,10 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
@@ -588,7 +654,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -612,7 +678,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
         "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
         "//max/python/max/pipelines/architectures/internvl",

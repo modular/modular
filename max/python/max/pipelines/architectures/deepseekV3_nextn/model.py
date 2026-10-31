@@ -24,9 +24,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPCommInitializer
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,
@@ -59,6 +59,8 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
+    """The DeepSeek-V3 speculative model and its draft head."""
+
     model_config_cls: ClassVar[type[Any]] = DeepseekV3NextNConfig
     batch_processor_cls: ClassVar[type[DeepseekV3NextNBatchProcessor]] = (
         DeepseekV3NextNBatchProcessor
@@ -279,6 +281,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, DeepseekV3NextNInputs)
 
         if model_inputs.hidden_states is None:

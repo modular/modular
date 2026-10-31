@@ -267,6 +267,13 @@ void M::Graph::Python::bindGraphModule(nb::module_ m) {
         Provides Python bindings for the MAX Graph API.
     )nbdoc";
 
+  nb::exception<KernelRegistrationError> registrationError(
+      m, "KernelRegistrationError", PyExc_ValueError);
+  registrationError.doc() =
+      "Raised when a custom op package fails to load or check, or a custom "
+      "op's Mojo kernel doesn't match its call. Where the error is in the "
+      "Mojo code, the message points at it.";
+
   /// Attribute factories
 
   /// Register dialects needed to build MAX graphs.

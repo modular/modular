@@ -33,7 +33,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
 from max.pipelines.architectures.deepseekV41.layer_resolver import LayerInfo
 from max.pipelines.architectures.deepseekV41.layers.attention import (
     CandidateBlocks,
@@ -141,7 +141,8 @@ def _index_graph(
                     TensorValue, CandidateBlocks
                 ](source_layer_id=20, indices=selected)
             # Keep end's real selection and index-list paths, replacing only
-            # GPU attention and the output projection with an index-list probe.
+            # GPU attention and its output projection (`_attend`) with an
+            # index-list probe.
             with (
                 patch.object(
                     CSA2Attention, "begin", return_value=state
@@ -154,17 +155,14 @@ def _index_graph(
                     "_attend",
                     side_effect=lambda state, rows, idx: idx,
                 ),
-                patch.object(
-                    CSA2Attention,
-                    "_output_projection",
-                    side_effect=lambda out, freqs: out,
-                ),
             ):
                 if route == "call":
                     result = attention(
                         positions, rows, None, swa_valid_from=boundary
                     )
-                    begin.assert_called_once_with(positions, rows, None)
+                    begin.assert_called_once_with(
+                        positions, rows, None, h_mxfp8=None
+                    )
                 else:
                     result = attention.end(state, rows, swa_valid_from=boundary)
                     begin.assert_not_called()
