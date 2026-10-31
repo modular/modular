@@ -248,7 +248,7 @@ def _unsafe_str_to_coord[
         var result = 0
 
         comptime for pos in range(str_len):
-            result = result * 10 + (ord(sub_string[byte=pos]) - ord("0"))
+            result = result * 10 + (Int(sub_string.as_bytes()[pos]) - ord("0"))
         coord[i] = rebind[coord.element_types[i]](Int64(result))
 
     return coord

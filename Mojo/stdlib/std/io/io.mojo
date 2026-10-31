@@ -117,10 +117,16 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         Does not include the delimiter in the result.
 
         Args:
-            delimiter: The delimiter to read until.
+            delimiter: The delimiter to read until. Must be a single
+                codepoint.
 
         Returns:
             The text read from the stdin.
+
+        Raises:
+            Error: If `delimiter` is empty or contains more than one
+                codepoint, or if reading fails or reaches EOF before any
+                input.
 
         Examples:
 
