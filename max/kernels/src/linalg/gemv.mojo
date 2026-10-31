@@ -1124,7 +1124,11 @@ def gemv_split_k_compute_fn[
 @inline(.always)
 def gemv_split_k_pdl_prefetch_enabled[
     pdl_level: PDLLevel,
+    static_m: Int,
     static_n: Int,
+    static_k: Int,
+    a_type: DType,
+    b_type: DType,
     *,
     target_is_nvidia: Bool = True,
 ]() -> Bool:
@@ -1134,12 +1138,37 @@ def gemv_split_k_pdl_prefetch_enabled[
     The caller supplies `target_is_nvidia` because `is_nvidia_gpu()` reads
     the compiler's target triple, which is the host triple while compiling
     host code such as a test's `main`.
+
+    The peel needs a PDL level and a static N. It applies at N <= 4096, and
+    at N >= 7168 with K >= 7168 when both operands are bf16 and M is dynamic,
+    the only wide-N launches where it measured as a win.
+
+    Parameters:
+        pdl_level: Programmatic dependent launch level of the launch.
+        static_m: Static M of the activation, or -1 when M is dynamic.
+        static_n: Static N of the output, or -1 when N is dynamic.
+        static_k: Static K of the activation, or -1 when K is dynamic.
+        a_type: Activation element type.
+        b_type: Weight element type.
+        target_is_nvidia: Whether the kernel compiles for an NVIDIA GPU.
+
+    Returns:
+        True when the weight loads are peeled above the PDL wait.
     """
     return (
         pdl_level > PDLLevel.OFF
         and target_is_nvidia
         and static_n > -1
-        and static_n <= 4096
+        and (
+            static_n <= 4096
+            or (
+                static_m == -1
+                and a_type == .bfloat16
+                and b_type == .bfloat16
+                and static_n >= 7168
+                and static_k >= 7168
+            )
+        )
     )
 
 
@@ -1392,24 +1421,42 @@ def _gemv_split_k_impl[
     # dispatcher's M<=64 transpose_b path sends any such matmul to this
     # kernel, so the contract lives in the launch, not the kernel.
     #
-    # Gated to narrow-N shapes. The peel's HBM traffic scales with the grid:
-    # at wide N thousands of blocks prefetch concurrently and contend with
-    # the predecessor's tail, and the pair regresses +7% to +10% versus
-    # serialized at N>=16384 (measured), so those shapes keep the
-    # wait-first order. The N<=4096 bound is empirical for M=1 decode
-    # (block count still varies with tile_n and M); `has_N` comes from the
-    # caller's static shape.
-    comptime has_static_n = output.static_shape[1] > -1
+    # Gated to shapes where the peel measured as a win (B200, bf16, M=1
+    # decode). The peel's HBM traffic scales with the grid: at wide N
+    # thousands of blocks prefetch concurrently and contend with the
+    # predecessor's tail. Wide-N shapes with shallow K regress (+2% to +14%
+    # for N>=6144 at K<=5120, +14% for the 128256x4096 LM head), so they keep
+    # the wait-first order. Narrow N (<=4096) keeps the earlier gate. Wide N
+    # wins (-3% to -8%, up to N=28672) once K>=7168, i.e. 7+ K-iterations at
+    # 128 threads, where the peeled iteration is a small share of the loop,
+    # but only with a dynamic M, which is what graph launches pass. With a
+    # static M the kernel already starts faster and the peel regresses most of
+    # those shapes by +1.0 to +1.4 us (7168x16384 still wins). The bounds are
+    # empirical (block count still varies with tile_n and M); `has_N` comes
+    # from the caller's static shape.
     # NVIDIA-only: `wait_on_dependent_grids` lowers to nothing on other
     # targets, so the peel there would only reshuffle the K-loop schedule
     # (and shift `num_k_iters` parity) with no overlap to gain.
     comptime gemv_pdl_prefetch = gemv_split_k_pdl_prefetch_enabled[
         pdl_level,
+        act.static_shape[0],
         output.static_shape[1],
+        act.static_shape[1],
+        a_type,
+        b_type,
         target_is_nvidia=is_nvidia_gpu(),
     ]()
+    # OVERLAP_AT_BEGINNING releases the dependent grid on entry, before this
+    # grid's own wait: the dependent's wait still blocks until this grid has
+    # completed and flushed its stores, so the release only decides when the
+    # dependent is scheduled. It does not need this grid's predecessor to
+    # finish first, so a GEMV -> GEMV chain overlaps all three launches.
+    comptime release_on_entry = pdl_level == PDLLevel.OVERLAP_AT_BEGINNING
 
     comptime if pdl_level > PDLLevel.OFF:
+        comptime if release_on_entry:
+            launch_dependent_grids()
+
         comptime if gemv_pdl_prefetch:
             if tid * simd_width < _k:
                 _load_weight_frags(0)
@@ -1667,7 +1714,7 @@ def _gemv_split_k_impl[
                 comptime for ni in range(tile_n):
                     output[row, col + ni] = out[ni]
 
-    comptime if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF and not release_on_entry:
         launch_dependent_grids()
 
 
