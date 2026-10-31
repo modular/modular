@@ -18,7 +18,6 @@ modular_py_library(
     name = "flint",
     srcs = glob(["**/*.py"]),
     deps = [
-        requirement("numpy"),
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max:tensor",

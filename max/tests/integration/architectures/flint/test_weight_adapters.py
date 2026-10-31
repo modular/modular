@@ -78,7 +78,7 @@ def config() -> FlintConfig:
 @pytest.fixture(scope="module")
 def expected_names(config: FlintConfig) -> set[str]:
     with F.lazy(), default_dtype(DType.bfloat16):
-        model = Flint(config, config.kv_params)
+        model = Flint(config)
     return {name for name, _ in model.parameters}
 
 

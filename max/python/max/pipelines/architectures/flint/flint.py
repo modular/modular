@@ -17,6 +17,7 @@ from __future__ import annotations
 import functools
 
 from max import functional as F
+from max import tree
 from max.dtype import DType
 from max.graph import ops
 from max.nn import Module
@@ -26,12 +27,12 @@ from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
 from max.nn.embedding import Embedding
-from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor
 
 from .layers.attention import FlintAttention
@@ -238,38 +239,26 @@ class FlintTextModel(
         )
 
 
-class Flint(Module[..., ModuleV3Outputs]):
-    """Unflattens the KV cache inputs and runs the text model."""
+class Flint(Module[[DecoderInputs], DecoderOutputs]):
+    """The Flint decoder, registered for the ``DECODER`` role.
 
-    def __init__(
-        self,
-        config: FlintConfig,
-        kv_params: KVCacheParamInterface,
-    ) -> None:
+    Unflattens the hybrid KV inputs and delegates to :class:`FlintTextModel`.
+    """
+
+    def __init__(self, config: FlintConfig) -> None:
         super().__init__()
-        # The pipeline hands models its cache tree as the generic interface;
-        # Flint's `construct_kv_params` always builds the hybrid tree, so
-        # narrow it once here rather than in every user of the tree.
-        assert isinstance(kv_params, MultiKVCacheParams), (
-            "Flint needs the hybrid (Multi) KV cache tree; got "
-            f"{type(kv_params).__name__}"
-        )
         self.language_model = FlintTextModel(config)
-        self.kv_params = kv_params
+        self.kv_params = config.kv_params
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *variadic_args: Tensor,
-    ) -> ModuleV3Outputs:
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         """Unflattens the hybrid KV leaves, then runs the text model."""
-        # The variadic KV arguments are the tree's leaves, sliding child
-        # first.
         sliding_kv, full_kv = unflatten_hybrid_kv(
-            self.kv_params, variadic_args, tokens
+            self.kv_params, tree.leaves(inputs.kv), inputs.tokens
         )
         return self.language_model(
-            tokens, sliding_kv, full_kv, return_n_logits, input_row_offsets
+            inputs.tokens,
+            sliding_kv,
+            full_kv,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
         )
