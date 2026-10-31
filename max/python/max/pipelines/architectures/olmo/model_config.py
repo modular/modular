@@ -13,18 +13,20 @@
 
 """Config for Olmo models."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
 from max.graph.weights import WeightData
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.architectures.llama3.decoder import Llama3DecoderConfig
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 
 
 @dataclass(kw_only=True)
-class OlmoConfig(Llama3Config):
+class OlmoConfig(Llama3DecoderConfig):
     """Model configuration for Olmo graph construction/execution."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float32"
@@ -36,8 +38,8 @@ class OlmoConfig(Llama3Config):
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
+        state_dict: Mapping[str, WeightData],
+        return_logits: ReturnLogits | ModelOutputConfig,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
