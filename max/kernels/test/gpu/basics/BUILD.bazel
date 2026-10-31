@@ -24,7 +24,12 @@ _FILECHECK_TESTS = [
     "test_tensor_core_fp8_mma_sync.mojo",
 ]
 
-_EXTRA_COPTS = {}
+_EXTRA_COPTS = {
+    "test_pdl_launch_wait_check.mojo": [
+        "-D",
+        "MAX_CHECK_PDL_WAIT=True",
+    ],
+}
 
 _EXTRA_DEPS = {
     "test_fast_div.mojo": ["//max:max_mojo"],
@@ -52,6 +57,12 @@ _EXTRA_CONSTRAINTS = {
     "test_semaphore.mojo": ["//:nvidia_gpu"],
     "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_grid_dependence_control.mojo": ["//:h100_gpu"],
+    # PDL needs SM90+; `pdl_launch_attributes` is empty on older NVIDIA GPUs.
+    "test_pdl_launch_wait_check.mojo": select({
+        "//:b200_gpu": [],
+        "//:h100_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_kernel_with_list.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377 remove this
     "test_producer_consumer.mojo": ["//:h100_gpu"],
     "test_tbc_launch_config.mojo": ["//:h100_gpu"],

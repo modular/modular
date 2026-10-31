@@ -27,6 +27,7 @@ from . import (
     ConstantMemoryMapping,
     DeviceAttribute,
 )
+from .launch_attribute import LaunchAttributeID
 
 from std.collections.optional import OptionalReg
 from std.math import align_up
@@ -3421,6 +3422,82 @@ struct DeviceFunction[
             else:
                 print(llvm)
 
+    @inline(.always)
+    def _check_pdl_wait(imm self, attributes: List[LaunchAttribute]) raises:
+        """Rejects a PDL launch of a kernel that never waits on its predecessor.
+
+        A grid launched with `PROGRAMMATIC_STREAM_SERIALIZATION` can start
+        before the preceding grid has finished, so it must execute
+        `griddepcontrol.wait` before reading anything that grid produced, or
+        its own dependents lose their ordering too. A kernel instantiated
+        without the `pdl_level` its launch passes to `pdl_launch_attributes`
+        compiles cleanly and then races.
+
+        Only an attribute whose value enables serialization counts; the same
+        attribute carrying `False` disables PDL for that launch and is not
+        checked.
+
+        The check compiles the kernel to PTX a second time, so it is off by
+        default. Build with `-D MAX_CHECK_PDL_WAIT=True` to turn it on.
+
+        This only checks that the kernel's PTX contains a `griddepcontrol.wait`
+        at all. It does not check that every path reaches the wait, or that the
+        wait precedes the first read of a predecessor's output: a kernel that
+        waits on one branch, or after such a read, still passes. Kernels may
+        legitimately read constant weights before the wait, so ordering cannot
+        be inferred from the PTX alone.
+
+        `pdl_launch_attributes` does not record the level, so the check cannot
+        exempt a kernel launched at `PDLLevel.NO_WAIT_OVERLAP_AT_END`, which
+        skips the wait on purpose; it is rejected like any other. Only
+        `DeviceFunction` launches are checked, not `DeviceExternalFunction`.
+
+        Args:
+            attributes: The launch attributes of the enqueue being checked.
+
+        Raises:
+            If a PDL launch targets a kernel whose PTX has no
+            `griddepcontrol.wait`.
+        """
+        comptime if (
+            get_defined_bool["MAX_CHECK_PDL_WAIT", False]()
+            and Self.target.is_nvidia_gpu()
+        ):
+            for ref attribute in attributes:
+                # The value is a Boolean in the first word; a caller can pass
+                # the attribute with `False` to switch PDL off for the launch.
+                if (
+                    attribute.id
+                    == LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION
+                    and attribute.value._storage[0] != 0
+                ):
+
+                    def ptx() {imm} -> StaticString:
+                        # Cross-compiling already holds the PTX.
+                        comptime if Self._emission_kind == "asm":
+                            return self._func_impl.asm
+                        return _compile_code[
+                            Self._wrapped_func,
+                            emission_kind="asm",
+                            target=Self.target,
+                            compile_options=Self.compile_options,
+                            link_options=Self.link_options,
+                        ]().asm
+
+                    if "griddepcontrol.wait" not in ptx():
+                        raise Error(
+                            "kernel '",
+                            self._func_impl.function_name,
+                            (
+                                "' is launched with the PDL attribute but its"
+                                " PTX has no `griddepcontrol.wait`; bind a"
+                                " non-OFF `pdl_level` in the kernel's"
+                                " instantiation, or call"
+                                " `wait_on_dependent_grids()` before its first"
+                                " read of predecessor output"
+                            ),
+                        )
+
     # Enqueue function on a stream
     @inline(.always)
     def _call_with_pack[
@@ -3437,6 +3514,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: Optional[SourceLocation] = None,
     ) raises:
+        self._check_pdl_wait(attributes)
         comptime num_args = Ts.length
         # A kernel may take no arguments; keep the buffers non-empty.
         comptime num_slots = max(num_args, 1)
@@ -3530,6 +3608,7 @@ struct DeviceFunction[
         closure compiled as the host callable. Encoding that closure would
         rewrite it to a synthesized `device_type` the kernel cannot read.
         """
+        self._check_pdl_wait(attributes)
         comptime for idx in range(HostArgs.length):
             Self._check_trailing_host[HostArgs[idx], Ts.length + idx]()
 
