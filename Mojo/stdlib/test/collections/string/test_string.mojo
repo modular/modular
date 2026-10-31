@@ -242,11 +242,29 @@ def test_ord() raises:
     comptime literal = "α"
     assert_equal(ord(literal), 945)
 
-    # Test StringSlice overload
+    # Test StringSpan overload: 1, 2, 3, and 4 byte codepoints.
     assert_equal(ord(StringSlice("A")), 65)
     assert_equal(ord(StringSlice("α")), 945)
     assert_equal(ord(StringSlice("➿")), 10175)
     assert_equal(ord(StringSlice("🔥")), 128293)
+    assert_equal(ord(String("A")), 65)
+    assert_equal(ord(String("α")), 945)
+    assert_equal(ord(String("➿")), 10175)
+    assert_equal(ord(String("🔥")), 128293)
+
+    # Boundaries of each UTF-8 encoding length.
+    assert_equal(ord(String("\x00")), 0)  # 1 byte
+    assert_equal(ord(String("\x7f")), 0x7F)  # 1 byte
+    assert_equal(ord(String("\x80")), 0x80)  # 2 bytes
+    assert_equal(ord(String("߿")), 0x7FF)  # 2 bytes, U+07FF
+    assert_equal(ord(String("ࠀ")), 0x800)  # 3 bytes, U+0800
+    assert_equal(ord(String("￿")), 0xFFFF)  # 3 bytes, U+FFFF
+    assert_equal(ord(String("\U00010000")), 0x10000)  # 4 bytes
+    assert_equal(ord(String("\U0010ffff")), 0x10FFFF)  # 4 bytes
+
+    # A single codepoint sliced out of a longer string.
+    var text = String("a🔥b")
+    assert_equal(ord(text[byte=1:5]), 128293)
 
     # `\xhh` and `\ooo` escapes denote Unicode code points (not raw bytes),
     # so values >= 0x80 are encoded to UTF-8 and `ord` recovers the original
@@ -261,6 +279,47 @@ def test_ord() raises:
     assert_equal(ord("\377"), 0xFF)  # octal form of U+00FF
 
 
+def test_ord_raises() raises:
+    with assert_raises(
+        contains="ord() expected a single codepoint, but got an empty string"
+    ):
+        _ = ord(String())
+
+    with assert_raises(contains="but got an empty string"):
+        _ = ord(StringSlice(""))
+
+    with assert_raises(
+        contains=(
+            "ord() expected a single codepoint, but got a string of 2"
+            " codepoints: 'ab'"
+        )
+    ):
+        _ = ord(String("ab"))
+
+    # Each multi-byte case would decode to a valid first codepoint, so these
+    # catch an implementation that only checks the leading codepoint.
+    with assert_raises(contains="got a string of 2 codepoints: 'α!'"):
+        _ = ord(String("α!"))
+
+    with assert_raises(contains="got a string of 2 codepoints: '🔥🔥'"):
+        _ = ord(String("🔥🔥"))
+
+    with assert_raises(contains="got a string of 3 codepoints: 'a➿🔥'"):
+        _ = ord(String("a➿🔥"))
+
+    # "é" spelled as "e" + U+0301 is one grapheme but two codepoints.
+    with assert_raises(contains="got a string of 2 codepoints"):
+        _ = ord(String("é"))
+
+    # The error is recoverable, so execution continues after catching it.
+    var result: Int
+    try:
+        result = ord(String(""))
+    except:
+        result = ord(String("z"))
+    assert_equal(result, 122)
+
+
 def test_ord_string_literal_folds() raises:
     # Unoptimized IR, so the constant must come from comptime evaluation of
     # the `StringLiteral` overload rather than from LLVM folding the decoder.
@@ -270,7 +329,7 @@ def test_ord_string_literal_folds() raises:
     def ord_multi_byte() -> Int:
         return ord("🔥")
 
-    def ord_slice() -> Int:
+    def ord_slice() raises -> Int:
         return ord(StringSlice("🔥"))
 
     var ascii_ir = compile_info[ord_ascii, emission_kind="llvm"]()
