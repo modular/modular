@@ -14,33 +14,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from max.driver import Buffer
-from max.pipelines.lib.interfaces.batch_processor import (
-    PaddedEncoderBatchProcessor,
-)
-
-if TYPE_CHECKING:
-    from .model import MPNetInputs
+from max.pipelines.lib.registration_encoder import PaddedEncoderProcessor
 
 
-class MPNetBatchProcessor(PaddedEncoderBatchProcessor["MPNetInputs"]):
+class MPNetBatchProcessor(PaddedEncoderProcessor):
     """Fixed-shape padded batching for MPNet encoder embedding models."""
 
     def _pad_token_id(self) -> int:
         # MPNet defaults pad_token_id to 1 when absent from the HF config.
         return self.runtime.pad_token_id or 1
-
-    def _make_inputs(
-        self,
-        *,
-        next_tokens_batch: Buffer,
-        attention_mask: Buffer,
-    ) -> MPNetInputs:
-        from .model import MPNetInputs
-
-        return MPNetInputs(
-            next_tokens_batch=next_tokens_batch,
-            attention_mask=attention_mask,
-        )
