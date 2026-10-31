@@ -135,6 +135,7 @@ from state_space.mamba2_replay_fold import mamba2_replay_fold_launch
 from state_space.mamba2_ssd_chunked import (
     mamba2_ssd_chunked_fwd_inplace_gpu,
     use_chunked_ssd,
+    use_mi355_ssd,
 )
 from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
@@ -5062,11 +5063,15 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 var has_prefill = x.dim_size(0) > batch
                 # A long prefill takes the chunked algorithm, which turns the
                 # token-serial recurrence into matmuls; see
-                # `state_space.mamba2_ssd_chunked`.
+                # `state_space.mamba2_ssd_chunked`. On AMD only MI355 has its
+                # chunk state and output kernels.
                 comptime if (
                     DSTATE == 128
                     and dtype == .bfloat16
-                    and ctx.target._is_sm_8x_or_newer()
+                    and (
+                        ctx.target._is_sm_8x_or_newer()
+                        or ctx.target.is_amd_gpu["gfx950"]()
+                    )
                 ):
                     if use_chunked_ssd(
                         x.dim_size(0),
@@ -5074,10 +5079,10 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                         head_dim,
                         _ssd_chunked_min_tokens(),
                     ):
-                        # The sm100 kernels read x, B and C by TMA, so they
-                        # need the rows of the tensor those slice: the conv
-                        # output `[total_len, x | B | C]`, when the caller
-                        # passes it.
+                        # The sm100 kernels read x, B and C by TMA, and the
+                        # MI355 ones 16 bytes a lane, so they need the rows of
+                        # the tensor those slice: the conv output
+                        # `[total_len, x | B | C]`, when the caller passes it.
                         var xbc_ld = xbc.strides()[0]
                         var rows_ok = (
                             xbc_dtype == dtype
@@ -5087,42 +5092,65 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                             and xbc.strides()[1] == 1
                         )
                         var xbc_addr = Int(xbc.unsafe_ptr())
-                        mamba2_ssd_chunked_fwd_inplace_gpu[
-                            DSTATE, dt_softplus=Self.dt_softplus
-                        ](
-                            ctx,
-                            x.dim_size(0),
-                            batch,
-                            ngroups,
-                            A_tt,
-                            D_tt,
-                            dt_bias_tt,
-                            y_tt,
-                            ssm_pool_tt,
-                            query_start_loc_tt,
-                            has_initial_state_tt,
-                            update_state_tt,
-                            x_fn,
-                            dt_fn,
-                            b_fn,
-                            c_fn,
-                            slot_fn,
-                            x_addr=xbc_addr if rows_ok else 0,
-                            x_ld=xbc_ld,
-                            b_addr=(
-                                xbc_addr
-                                + 2 * nheads * head_dim if rows_ok else 0
-                            ),
-                            c_addr=(
-                                xbc_addr
-                                + 2
-                                * (
-                                    nheads * head_dim + ngroups * DSTATE
-                                ) if rows_ok else 0
-                            ),
-                            bc_ld=xbc_ld,
-                        )
-                        return
+                        var b_off = 2 * nheads * head_dim
+                        var c_off = 2 * (nheads * head_dim + ngroups * DSTATE)
+                        var take = True
+                        comptime if ctx.target.is_amd_gpu():
+                            # MI355's kernels are the chunked scan's only
+                            # path on AMD; any other launch stays serial.
+                            take = rows_ok and use_mi355_ssd(
+                                nheads,
+                                ngroups,
+                                head_dim,
+                                DSTATE,
+                                Int(y.unsafe_ptr()),
+                                xbc_addr,
+                                xbc_ld,
+                                xbc_addr + b_off,
+                                xbc_addr + c_off,
+                                xbc_ld,
+                                D.strides()[0] if D.dim_size(0) > 0 else 1,
+                                y.strides()[0] == nheads * head_dim
+                                and y.strides()[1] == head_dim
+                                and y.strides()[2] == 1,
+                            )
+                        if take:
+                            mamba2_ssd_chunked_fwd_inplace_gpu[
+                                DSTATE, dt_softplus=Self.dt_softplus
+                            ](
+                                ctx,
+                                x.dim_size(0),
+                                batch,
+                                ngroups,
+                                A_tt,
+                                D_tt,
+                                dt_bias_tt,
+                                y_tt,
+                                ssm_pool_tt,
+                                query_start_loc_tt,
+                                has_initial_state_tt,
+                                update_state_tt,
+                                x_fn,
+                                dt_fn,
+                                b_fn,
+                                c_fn,
+                                slot_fn,
+                                x_addr=xbc_addr if rows_ok else 0,
+                                x_ld=xbc_ld,
+                                b_addr=(
+                                    xbc_addr
+                                    + 2 * nheads * head_dim if rows_ok else 0
+                                ),
+                                c_addr=(
+                                    xbc_addr
+                                    + 2
+                                    * (
+                                        nheads * head_dim + ngroups * DSTATE
+                                    ) if rows_ok else 0
+                                ),
+                                bc_ld=xbc_ld,
+                            )
+                            return
                 comptime for mode in range(2):
                     comptime prefill = mode == 1
                     comptime DSTATE_SPLIT = ssd_scan_tile_split(

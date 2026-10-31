@@ -56,6 +56,11 @@ from state_space.mamba2_ssd_out_sm100 import (
     ssd_out_sm100_supported,
 )
 from state_space.mamba2_ssd_state_sm100 import ssd_state_sm100
+from state_space.mamba2_ssd_out_mi355 import (
+    ssd_out_mi355,
+    ssd_out_mi355_supported,
+)
+from state_space.mamba2_ssd_state_mi355 import ssd_state_mi355
 from state_space.mamba2_ssd_scan import (
     _HeadScalars,
     _use_initial_state,
@@ -945,6 +950,38 @@ def _use_sm100(
     return ctx.device().get_name() == "NVIDIA B200"
 
 
+def use_mi355_ssd(
+    nheads: Int,
+    ngroups: Int,
+    head_dim: Int,
+    dstate: Int,
+    y_addr: Int,
+    x_addr: Int,
+    x_ld: Int,
+    b_addr: Int,
+    c_addr: Int,
+    bc_ld: Int,
+    d_stride: Int,
+    y_packed: Bool,
+) -> Bool:
+    """Returns whether the MI355 chunk state and output kernels can take a
+    launch: P 64, N 128, an even number of heads per group, x, B, C and y as
+    plain rows read and written 16 bytes a lane (16-byte aligned, row strides
+    a multiple of 8 elements), a packed row-major y (`y_packed`: strides
+    (H P, P, 1), since the output kernel writes y as dense [T, H, P]), and D,
+    if any, contiguous (`d_stride` 1). They are the chunked scan's only path
+    on AMD, so a launch they cannot take stays on the serial scan."""
+    if x_addr == 0 or b_addr == 0 or c_addr == 0 or d_stride != 1:
+        return False
+    if not y_packed:
+        return False
+    if not ssd_out_mi355_supported(nheads, ngroups, head_dim, dstate):
+        return False
+    if x_ld % 8 != 0 or bc_ld % 8 != 0:
+        return False
+    return (x_addr | b_addr | c_addr | y_addr) % 16 == 0
+
+
 def mamba2_ssd_chunked_fwd_inplace_gpu[
     kernel_dtype: DType,
     state_dtype: DType,
@@ -1040,7 +1077,10 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
             `x_ld` apart, unit stride inside a row), else 0. With `b_addr`,
             `c_addr` and `bc_ld` likewise, the scan takes the sm100 chunk
             state and output kernels (`mamba2_ssd_state_sm100`,
-            `mamba2_ssd_out_sm100`) where they apply.
+            `mamba2_ssd_out_sm100`) where they apply. On AMD (gfx950) the
+            MI355 kernels (`mamba2_ssd_state_mi355`, `mamba2_ssd_out_mi355`)
+            are the only chunk state and output, so there the caller checks
+            `use_mi355_ssd` first.
         x_ld: Row stride of x in elements.
         b_addr: B's first element, or 0.
         c_addr: C's first element, or 0.
@@ -1152,139 +1192,227 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         else:
             launch_pass[1, entry_bf16](entry_addr)
 
-    comptime if (
-        kernel_dtype == .bfloat16
-        and state_dtype == .float32
-        and DSTATE == 128
-        and (
-            ctx.target.is_nvidia_gpu["sm_100"]()
-            or ctx.target.is_nvidia_gpu["sm_100a"]()
-        )
-    ):
-        if _use_sm100(
-            ctx,
+    comptime if ctx.target.is_amd_gpu["gfx950"]():
+        comptime assert (
+            kernel_dtype == .bfloat16 and DSTATE == 128
+        ), "the MI355 chunked scan is bf16 with DSTATE 128"
+        if not use_mi355_ssd(
             nheads,
             ngroups,
             head_dim,
-            y,
-            D,
+            DSTATE,
+            Int(y.ptr),
             x_addr,
             x_ld,
             b_addr,
             c_addr,
             bc_ld,
+            Int(D.dynamic_stride(0)) if Int(D.dim[0]()) > 0 else 1,
+            Int(y.dynamic_stride(0)) == nheads * head_dim
+            and Int(y.dynamic_stride(1)) == head_dim
+            and Int(y.dynamic_stride(2)) == 1,
         ):
-            ssd_state_sm100(
+            raise Error(
+                "the chunked SSD scan on AMD needs the MI355 kernels'"
+                " shapes and rows; check use_mi355_ssd first"
+            )
+        ssd_state_mi355(
+            ctx,
+            batch,
+            slots,
+            nheads,
+            ngroups,
+            x_addr,
+            b_addr,
+            x_ld,
+            bc_ld,
+            Int(delta_d.unsafe_ptr()),
+            Int(cs_d.unsafe_ptr()),
+            Int(states_d.unsafe_ptr()),
+            Int(info_d.unsafe_ptr()),
+        )
+        var entry_d = ctx.enqueue_create_buffer[.bfloat16](
+            slots * nheads * head_dim * DSTATE
+        )
+        state_pass[True](Int(entry_d.unsafe_ptr()))
+        ssd_out_mi355(
+            ctx,
+            batch,
+            slots,
+            nheads,
+            ngroups,
+            x_addr,
+            b_addr,
+            c_addr,
+            x_ld,
+            bc_ld,
+            Int(D.ptr) if Int(D.dim[0]()) > 0 else 0,
+            Int(delta_d.unsafe_ptr()),
+            Int(cs_d.unsafe_ptr()),
+            Int(entry_d.unsafe_ptr()),
+            Int(y.ptr),
+            Int(info_d.unsafe_ptr()),
+        )
+        _ = entry_d^
+        _ = states_d^
+        _ = cs_d^
+        _ = delta_d^
+        _ = info_d^
+    else:
+        comptime if (
+            kernel_dtype == .bfloat16
+            and state_dtype == .float32
+            and DSTATE == 128
+            and (
+                ctx.target.is_nvidia_gpu["sm_100"]()
+                or ctx.target.is_nvidia_gpu["sm_100a"]()
+            )
+        ):
+            if _use_sm100(
                 ctx,
-                total_len,
-                batch,
-                slots,
                 nheads,
                 ngroups,
+                head_dim,
+                y,
+                D,
                 x_addr,
-                b_addr,
                 x_ld,
-                bc_ld,
-                Int(delta_d.unsafe_ptr()),
-                Int(cs_d.unsafe_ptr()),
-                Int(states_d.unsafe_ptr()),
-                Int(info_d.unsafe_ptr()),
-            )
-            var entry_d = ctx.enqueue_create_buffer[.bfloat16](
-                slots * nheads * head_dim * DSTATE
-            )
-
-            state_pass[True](Int(entry_d.unsafe_ptr()))
-            ssd_out_sm100(
-                ctx,
-                total_len,
-                batch,
-                slots,
-                nheads,
-                ngroups,
-                x_addr,
                 b_addr,
                 c_addr,
-                x_ld,
                 bc_ld,
-                Int(D.ptr) if Int(D.dim[0]()) > 0 else 0,
-                Int(delta_d.unsafe_ptr()),
-                Int(cs_d.unsafe_ptr()),
-                Int(entry_d.unsafe_ptr()),
-                Int(y.ptr),
-                Int(info_d.unsafe_ptr()),
-            )
-            _ = entry_d^
-            _ = states_d^
-            _ = cs_d^
-            _ = delta_d^
-            _ = info_d^
-            return
+            ):
+                ssd_state_sm100(
+                    ctx,
+                    total_len,
+                    batch,
+                    slots,
+                    nheads,
+                    ngroups,
+                    x_addr,
+                    b_addr,
+                    x_ld,
+                    bc_ld,
+                    Int(delta_d.unsafe_ptr()),
+                    Int(cs_d.unsafe_ptr()),
+                    Int(states_d.unsafe_ptr()),
+                    Int(info_d.unsafe_ptr()),
+                )
+                var entry_d = ctx.enqueue_create_buffer[.bfloat16](
+                    slots * nheads * head_dim * DSTATE
+                )
 
-    comptime state_kernel = ssd_chunk_state[
-        kernel_dtype,
-        cs.LayoutType,
-        cs.Engine,
-        type_of(x_fn),
-        type_of(b_fn),
-        DSTATE,
-    ]
-    ctx.enqueue_function[state_kernel](
-        Int32(slots),
-        Int32(nheads),
-        Int32(head_dim),
-        Int32(ngroups),
-        info,
-        cs,
-        delta,
-        states,
-        host_args=(x_fn, b_fn),
-        grid_dim=(slots, nheads, head_dim // TILE),
-        block_dim=(OUT_THREADS, 1, 1),
-    )
+                state_pass[True](Int(entry_d.unsafe_ptr()))
+                ssd_out_sm100(
+                    ctx,
+                    total_len,
+                    batch,
+                    slots,
+                    nheads,
+                    ngroups,
+                    x_addr,
+                    b_addr,
+                    c_addr,
+                    x_ld,
+                    bc_ld,
+                    Int(D.ptr) if Int(D.dim[0]()) > 0 else 0,
+                    Int(delta_d.unsafe_ptr()),
+                    Int(cs_d.unsafe_ptr()),
+                    Int(entry_d.unsafe_ptr()),
+                    Int(y.ptr),
+                    Int(info_d.unsafe_ptr()),
+                )
+                _ = entry_d^
+                _ = states_d^
+                _ = cs_d^
+                _ = delta_d^
+                _ = info_d^
+                return
 
-    state_pass[False](0)
-
-    def launch_output[use_grouped_cb: Bool]() raises {imm}:
-        comptime out_kernel = ssd_chunk_output[
+        comptime state_kernel = ssd_chunk_state[
             kernel_dtype,
             cs.LayoutType,
             cs.Engine,
-            A.LayoutType,
-            D.LayoutType,
-            dt_bias.LayoutType,
-            y.LayoutType,
-            y.Engine,
             type_of(x_fn),
             type_of(b_fn),
-            type_of(c_fn),
             DSTATE,
-            use_grouped_cb,
         ]
-        comptime if use_grouped_cb:
-            var cb_d = ctx.enqueue_create_buffer[.float32](
-                slots * ngroups * CHUNK * CHUNK
-            )
-            var cb = TileTensor(
-                cb_d, row_major(slots * ngroups * CHUNK * CHUNK)
-            )
-            comptime cb_kernel = ssd_chunk_cb[
+        ctx.enqueue_function[state_kernel](
+            Int32(slots),
+            Int32(nheads),
+            Int32(head_dim),
+            Int32(ngroups),
+            info,
+            cs,
+            delta,
+            states,
+            host_args=(x_fn, b_fn),
+            grid_dim=(slots, nheads, head_dim // TILE),
+            block_dim=(OUT_THREADS, 1, 1),
+        )
+
+        state_pass[False](0)
+
+        def launch_output[use_grouped_cb: Bool]() raises {imm}:
+            comptime out_kernel = ssd_chunk_output[
                 kernel_dtype,
                 cs.LayoutType,
                 cs.Engine,
+                A.LayoutType,
+                D.LayoutType,
+                dt_bias.LayoutType,
+                y.LayoutType,
+                y.Engine,
+                type_of(x_fn),
                 type_of(b_fn),
                 type_of(c_fn),
                 DSTATE,
+                use_grouped_cb,
             ]
-            ctx.enqueue_function[cb_kernel](
-                Int32(slots),
-                Int32(ngroups),
-                info.as_imm(),
-                cb,
-                host_args=(b_fn, c_fn),
-                grid_dim=(slots, ngroups, CHUNK // TILE),
-                block_dim=(OUT_THREADS, 1, 1),
-            )
+            comptime if use_grouped_cb:
+                var cb_d = ctx.enqueue_create_buffer[.float32](
+                    slots * ngroups * CHUNK * CHUNK
+                )
+                var cb = TileTensor(
+                    cb_d, row_major(slots * ngroups * CHUNK * CHUNK)
+                )
+                comptime cb_kernel = ssd_chunk_cb[
+                    kernel_dtype,
+                    cs.LayoutType,
+                    cs.Engine,
+                    type_of(b_fn),
+                    type_of(c_fn),
+                    DSTATE,
+                ]
+                ctx.enqueue_function[cb_kernel](
+                    Int32(slots),
+                    Int32(ngroups),
+                    info.as_imm(),
+                    cb,
+                    host_args=(b_fn, c_fn),
+                    grid_dim=(slots, ngroups, CHUNK // TILE),
+                    block_dim=(OUT_THREADS, 1, 1),
+                )
+                ctx.enqueue_function[out_kernel](
+                    Int32(slots),
+                    Int32(nheads),
+                    Int32(head_dim),
+                    Int32(ngroups),
+                    D,
+                    y,
+                    info,
+                    cs.as_imm(),
+                    delta,
+                    states,
+                    cb.as_imm(),
+                    host_args=(x_fn, b_fn, c_fn),
+                    grid_dim=(
+                        slots,
+                        nheads,
+                        (CHUNK // TILE) * (head_dim // TILE),
+                    ),
+                    block_dim=(OUT_THREADS, 1, 1),
+                )
+                return
             ctx.enqueue_function[out_kernel](
                 Int32(slots),
                 Int32(nheads),
@@ -1296,47 +1424,32 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                 cs.as_imm(),
                 delta,
                 states,
-                cb.as_imm(),
+                cs.as_imm(),
                 host_args=(x_fn, b_fn, c_fn),
                 grid_dim=(slots, nheads, (CHUNK // TILE) * (head_dim // TILE)),
                 block_dim=(OUT_THREADS, 1, 1),
             )
-            return
-        ctx.enqueue_function[out_kernel](
-            Int32(slots),
-            Int32(nheads),
-            Int32(head_dim),
-            Int32(ngroups),
-            D,
-            y,
-            info,
-            cs.as_imm(),
-            delta,
-            states,
-            cs.as_imm(),
-            host_args=(x_fn, b_fn, c_fn),
-            grid_dim=(slots, nheads, (CHUNK // TILE) * (head_dim // TILE)),
-            block_dim=(OUT_THREADS, 1, 1),
-        )
 
-    comptime if grouped_cb_mode == GROUPED_CB_ON:
-        launch_output[True]()
-    elif grouped_cb_mode == GROUPED_CB_OFF:
-        launch_output[False]()
-    else:
-        comptime if (
-            kernel_dtype == .bfloat16
-            and state_dtype == .float32
-            and DSTATE == 128
-            and (
-                ctx.target.is_nvidia_gpu["sm_100"]()
-                or ctx.target.is_nvidia_gpu["sm_100a"]()
-            )
-        ):
-            if (
-                use_grouped_cb_ssd(total_len, batch, nheads, head_dim, ngroups)
-                and ctx.device().get_name() == "NVIDIA B200"
+        comptime if grouped_cb_mode == GROUPED_CB_ON:
+            launch_output[True]()
+        elif grouped_cb_mode == GROUPED_CB_OFF:
+            launch_output[False]()
+        else:
+            comptime if (
+                kernel_dtype == .bfloat16
+                and state_dtype == .float32
+                and DSTATE == 128
+                and (
+                    ctx.target.is_nvidia_gpu["sm_100"]()
+                    or ctx.target.is_nvidia_gpu["sm_100a"]()
+                )
             ):
-                launch_output[True]()
-                return
-        launch_output[False]()
+                if (
+                    use_grouped_cb_ssd(
+                        total_len, batch, nheads, head_dim, ngroups
+                    )
+                    and ctx.device().get_name() == "NVIDIA B200"
+                ):
+                    launch_output[True]()
+                    return
+            launch_output[False]()
