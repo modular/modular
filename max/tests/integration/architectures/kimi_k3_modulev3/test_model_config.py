@@ -30,6 +30,9 @@ from max.nn.legacy.kv_cache import (
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.batch_processor import (
+    page_aligned_batch_context_length,
+)
 from max.pipelines.architectures.kimi_k3_modulev3.model_config import (
     KimiK3Config,
 )
@@ -355,3 +358,13 @@ def test_data_parallelism_is_rejected(configs: tuple[Any, Any, Any]) -> None:
         KimiK3Config.initialize(
             pipeline_config, model_config, max_seq_len=_MAX_LENGTH
         )
+
+
+@pytest.mark.parametrize(
+    ("positions", "expected"),
+    [([], 0), ([1, 1], 256), ([128, 129], 384), ([256], 256)],
+)
+def test_prefill_length_aligns_each_sequence(
+    positions: list[int], expected: int
+) -> None:
+    assert page_aligned_batch_context_length(positions, 128) == expected

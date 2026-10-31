@@ -25,16 +25,18 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from _paged_cache_test_utils import build_paged_cache
-from max.driver import Accelerator
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import MLAKVCacheParams, padded_lut_cols
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
     kimi_k3_mla_prefill_plan,
     kimi_k3_nope_freqs_cis,
 )
-from max.tensor import Tensor, default_device
+from max.tensor import Tensor, compilation, default_device
+from max.tensor.sharding import BufferLayout, TensorLayout
 
 _HIDDEN = 256
 _NUM_HEADS = 8
@@ -129,6 +131,9 @@ def test_forward_latent_ragged_matches_forward() -> None:
             kv_collection=kv_collection,
             input_row_offsets=input_row_offsets,
             buffer_size=_PAGE_SIZE,
+            buffer_length=Tensor(
+                np.array([_PAGE_SIZE], dtype=np.int32), device=CPU()
+            ),
         )
         freqs_cis = kimi_k3_nope_freqs_cis(
             max_seq_len=_SEQ_LEN,
@@ -149,3 +154,87 @@ def test_forward_latent_ragged_matches_forward() -> None:
         / max(np.max(np.abs(out_padded)), 1e-12)
     )
     assert err < 1e-2, f"latent ragged MLA vs padded parity diverges: {err}"
+
+
+def test_prefill_plan_capture_replays_across_page_boundaries() -> None:
+    device = Accelerator()
+    params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        num_q_heads=_NUM_HEADS,
+        head_dim=_KV_LORA_RANK + _QK_ROPE_HEAD_DIM,
+        num_layers=1,
+        devices=[DeviceRef.from_device(device)],
+        page_size=_PAGE_SIZE,
+    )
+    cache_types = {
+        "kv_blocks": BufferLayout(
+            params.dtype, [3, *params.shape_per_block], device
+        ),
+        "cache_lengths": TensorLayout(DType.uint32, [1], device),
+        "lookup_table": TensorLayout(
+            DType.uint32, [1, padded_lut_cols(2)], device
+        ),
+        "max_prompt_length": TensorLayout(DType.uint32, [1], CPU()),
+        "max_cache_length": TensorLayout(DType.uint32, [1], CPU()),
+        "page_stride": TensorLayout(DType.int64, [1], CPU()),
+        "attention_dispatch_metadata": TensorLayout(DType.int64, [3], device),
+        "mla_num_partitions": TensorLayout(DType.int64, [1], CPU()),
+    }
+
+    def plan(
+        row_offsets: Tensor, host_length: Tensor, *values: Tensor
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        fields = dict(zip(cache_types, values, strict=True))
+        collection = PagedCacheValues(
+            kv_blocks=fields["kv_blocks"],
+            cache_lengths=fields["cache_lengths"],
+            lookup_table=fields["lookup_table"],
+            max_prompt_length=fields["max_prompt_length"],
+            max_cache_length=fields["max_cache_length"],
+            page_stride=fields["page_stride"],
+            attention_dispatch_metadata=fields["attention_dispatch_metadata"],
+            mla_num_partitions=fields["mla_num_partitions"],
+        )
+        result = kimi_k3_mla_prefill_plan(
+            kv_params=params,
+            kv_collection=collection,
+            input_row_offsets=row_offsets,
+            buffer_size=256,
+            buffer_length=host_length,
+        )
+        # The plan reserves batch+1 cache-offset columns but writes only batch.
+        return (
+            result.buffer_row_offsets,
+            result.cache_offsets[:, :1],
+            result.buffer_lengths,
+        )
+
+    run = compilation.compile(plan)(
+        TensorLayout(DType.uint32, [2], device),
+        TensorLayout(DType.int32, [1], CPU()),
+        *cache_types.values(),
+    )
+    cache = build_paged_cache(params, [2], device, cache_lengths=[254])
+    cache_fields = {
+        name: value
+        for name, value in vars(cache).items()
+        if isinstance(value, Tensor)
+    }
+    offsets = Tensor(np.array([0, 2], dtype=np.uint32), device=device)
+    host_length = Tensor(np.array([256], dtype=np.int32), device=CPU())
+    inputs = [offsets, host_length, *cache_fields.values()]
+    buffers = [value.buffers[0] for value in inputs]
+    captured = run.engine_model.capture(1, *buffers)
+    for cache_length in [126, 127, 254]:
+        cache.cache_lengths.buffers[0].inplace_copy_from(
+            Buffer.from_numpy(np.array([cache_length], dtype=np.uint32))
+        )
+        cache.max_cache_length.buffers[0].to_numpy()[0] = cache_length + 2
+        host_length.buffers[0].to_numpy()[0] = (
+            (cache_length + 2 + _PAGE_SIZE - 1) // _PAGE_SIZE
+        ) * _PAGE_SIZE
+        run.engine_model.replay(1, *buffers)
+        actual = [value.to_numpy().copy() for value in captured]
+        expected = run(*inputs)
+        for got, want in zip(actual, expected, strict=True):
+            np.testing.assert_array_equal(got, want.to_numpy())

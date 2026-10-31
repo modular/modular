@@ -26,7 +26,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from _paged_cache_test_utils import build_paged_cache
-from max.driver import Accelerator
+from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import MHAKVCacheParams, MLAKVCacheParams
@@ -236,6 +236,9 @@ def test_decoder_layer_mla_latent_ragged_matches_padded() -> None:
             kv_collection=kv_collection,
             input_row_offsets=input_row_offsets,
             buffer_size=_PAGE_SIZE,
+            buffer_length=Tensor(
+                np.array([_PAGE_SIZE], dtype=np.int32), device=CPU()
+            ),
         )
         freqs_cis = kimi_k3_nope_freqs_cis(
             max_seq_len=total_seq_len,

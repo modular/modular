@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Model inputs for Kimi K3, on top of the generic Llama3 ones.
 
-They add the EP exchange's real buffers.
+They add the host MLA prefill length and the EP exchange's real buffers.
 """
 
 from __future__ import annotations
@@ -25,11 +25,17 @@ from max.pipelines.architectures.llama3_modulev3.inputs import Llama3Inputs
 
 @dataclass
 class KimiK3Inputs(Llama3Inputs):
-    """The generic Llama3 inputs plus the EP exchange's buffers."""
+    """The ragged inputs, host MLA prefill length, and EP exchange buffers."""
 
+    batch_context_length: Buffer | None = field(default=None, kw_only=True)
     ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        """The step's buffers, plus the EP exchange's."""
-        return (*super().buffers, *self.ep_inputs)
+        """Returns buffers in the model's compile order."""
+        prefill_length = (
+            ()
+            if self.batch_context_length is None
+            else (self.batch_context_length,)
+        )
+        return (*super().buffers, *prefill_length, *self.ep_inputs)

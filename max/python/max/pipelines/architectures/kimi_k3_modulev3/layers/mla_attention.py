@@ -444,6 +444,7 @@ def kimi_k3_mla_prefill_plan(
     kv_collection: PagedCacheValues,
     input_row_offsets: Tensor,
     buffer_size: int,
+    buffer_length: Tensor,
 ) -> MLAPrefillMetadata:
     """Plans the one-shot decompression buffer the latent prefill kernel fills.
 
@@ -453,7 +454,7 @@ def kimi_k3_mla_prefill_plan(
     not once per layer.
     """
     layer_idx = F.constant(0, DType.uint32, device=CPU())
-    buffer_row_offsets, cache_offsets, buffer_lengths = flare_mla_prefill_plan(
+    buffer_row_offsets, cache_offsets, _ = flare_mla_prefill_plan(
         kv_params,
         input_row_offsets,
         kv_collection,
@@ -461,18 +462,12 @@ def kimi_k3_mla_prefill_plan(
         buffer_size,
         max_chunks=1,
     )
-    # The kernel reads this scalar on the host; the plan op produces it on
-    # device.
-    mesh = buffer_lengths.mesh
-    buffer_lengths = buffer_lengths.to(
-        DeviceMesh(
-            (CPU(),) * mesh.num_devices, mesh.mesh_shape, mesh.axis_names
-        )
-    )
+    # Reading the device plan's length back appends a host synchronization,
+    # which device graph capture forbids. Batching supplies the same extent.
     return MLAPrefillMetadata(
         buffer_row_offsets=buffer_row_offsets,
         cache_offsets=cache_offsets,
-        buffer_lengths=buffer_lengths,
+        buffer_lengths=buffer_length,
     )
 
 

@@ -404,9 +404,10 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             scope, so ``total_seq_len == seq_len``).
             return_n_logits: ``[1]``, see ``kimi_k3_output_head``.
             input_row_offsets: ``[batch_size + 1]`` exclusive prefix sums.
-            kv_inputs: This model's ``kv_params`` cache tree, flattened. Empty
-            runs every MLA layer padded; a KDA layer always needs its state
-            here, since it has no padded form.
+            kv_inputs: This model's flattened cache tree, followed by the host
+                prefill length for an MLA cache and any EP buffers. Empty runs
+                every MLA layer padded; a KDA layer always needs its state here,
+                since it has no padded form.
         """
         tokens, input_row_offsets = self._place(tokens, input_row_offsets)
         hidden_states = self.embed_tokens(tokens)
@@ -446,6 +447,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     kv_collection=kv_collection,
                     input_row_offsets=input_row_offsets,
                     buffer_size=self.mla_buffer_size,
+                    buffer_length=Tensor.from_graph_value(next(graph_values)),
                 )
                 mla_freqs_cis = kimi_k3_nope_freqs_cis(
                     max_seq_len=self.mla_buffer_size,
