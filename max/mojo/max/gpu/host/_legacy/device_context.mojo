@@ -3320,7 +3320,10 @@ struct DeviceFunction[
             dump_llvm: Controls dumping of LLVM IR. Can be a boolean, a file path,
                 or a function returning a file path.
             _dump_sass: Controls dumping of SASS code (internal use). Can be a boolean,
-                a file path, or a function returning a file path.
+                a file path, or a function returning a file path. Runs
+                the `ptxas` and `nvdisasm` named by the `MODULAR_PTXAS_PATH`
+                and `MODULAR_NVDISASM_PATH` environment variables if set,
+                otherwise the ones in `/usr/local/cuda/bin`.
 
         Raises:
             If any file operations fail during the dumping process.
