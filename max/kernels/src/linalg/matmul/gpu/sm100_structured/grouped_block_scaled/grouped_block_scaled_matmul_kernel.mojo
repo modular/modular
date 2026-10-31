@@ -338,19 +338,19 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         group_sfb_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         tma_a: MutPointer[
             TMATensorTile[a_dtype, a_tile_shape, a_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
         tma_b: MutPointer[
             TMATensorTile[b_dtype, b_tile_shape, b_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
         tma_sfa: MutPointer[
             TMATensorTile[sfa_dtype, sfa_tile_shape, sfa_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
         tma_sfb: MutPointer[
             TMATensorTile[sfb_dtype, sfb_tile_shape, sfb_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
     ):
         """Update A/B/SFA/SFB tensormaps for the specified group.
@@ -461,7 +461,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         group_c_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         tma_c: MutPointer[
             TMATensorTile[c_dtype, c_tile_shape, c_desc_shape],
-            MutAnyOrigin,
+            _,
         ],
     ):
         """Update C tensormap for the specified group.

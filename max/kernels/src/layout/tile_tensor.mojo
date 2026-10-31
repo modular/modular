@@ -2280,7 +2280,7 @@ struct TileTensor[
         from max.gpu.memory import async_copy_commit_group, async_copy_wait_all
         from max.gpu.sync import barrier
 
-        def kernel(src_ptr: MutPointer[Float32, MutAnyOrigin]):
+        def kernel(src_ptr: ImmPointer[Float32, ImmUntrackedOrigin]):
             comptime thread_layout = row_major(Idx[2], Idx[2])
 
             var src = TileTensor(src_ptr, row_major[4, 4]())
