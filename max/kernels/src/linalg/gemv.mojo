@@ -1414,12 +1414,11 @@ def _gemv_split_k_impl[
     # PDL weight prefetch: iteration 0's weight fragments issue before the
     # PDL wait; the activation -- the predecessor's output -- is consumed
     # only after it. CONTRACT: like the SM100 matmul's `prefetch_tiles_n`,
-    # this assumes the B operand is a graph constant (model weights frozen
-    # at load time), never written by a PDL predecessor. Callers whose B is
-    # produced in-graph (runtime dequant, materialized transpose, LoRA
-    # merge, decode-time `q @ K^T`) must not enable PDL here -- the
-    # dispatcher's M<=64 transpose_b path sends any such matmul to this
-    # kernel, so the contract lives in the launch, not the kernel.
+    # B must be a weight loaded straight from the checkpoint and never
+    # written by a predecessor grid. A value the graph computes each call (a
+    # cast, concat, derived parameter or sharded view) is not one. Callers
+    # cannot disable PDL on this path (`_matmul_gpu` hard-codes the level
+    # for GEMV), so the requirement is on the caller's graph.
     #
     # Gated to shapes where the peel measured as a win (B200, bf16, M=1
     # decode). The peel's HBM traffic scales with the grid: at wide N
@@ -4720,7 +4719,8 @@ def _gemm_mma_cpasync_kernel_impl[
     barrier()
 
     # PDL selective gating: only the activation loader waits on the producer so
-    # the weight load streams during it. The launcher
+    # the weight load streams during it (B must be a weight loaded straight
+    # from the checkpoint, never written by a predecessor). The launcher
     # routes the activation to the A loader normally, or to the B loader under
     # `swapAB` (where the weight becomes the free-streaming A operand).
     if warp_idx_ < 2:

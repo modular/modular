@@ -2721,7 +2721,9 @@ struct Grouped1D1DMatmulKernel[
         This kernel always loads both sides in one call. Splitting around
         `wait_on_dependent_grids` is only sound for a caller whose tile
         coordinates (expert id, token offsets) do not come from a
-        predecessor grid, because they pick which weights to load.
+        predecessor grid, because they pick which weights to load, and whose
+        weights and weight scales are loaded straight from the checkpoint,
+        never written by a predecessor grid.
 
         The phase flags are runtime so a single instantiation of this
         function covers all three use-cases (both, weights-only,

@@ -1334,7 +1334,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     Int(work_info.k_start),
                 )
 
-                # Phase 1: prefetch weight K-groups before PDL wait
+                # Phase 1: prefetch weight K-groups before PDL wait. The
+                # weights (and weight scales) must be loaded straight from
+                # the checkpoint, never written by a predecessor grid.
                 comptime for pf in range(config.prefetch_tiles_n):
                     if UInt32(pf * config.k_group_size) < num_iters:
                         prefetch_stages[pf] = load_mma_pipeline.producer_stage()
