@@ -47,6 +47,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVectorExtras.h"
@@ -55,6 +56,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <future>
+#include <vector>
 
 using namespace M;
 using namespace MOGG;
@@ -1825,10 +1827,13 @@ namespace {
 // Holds state for emitting a call to a device-side entry point.
 struct DeclarativeCall {
   using Callee = std::function<MojoValue(ArrayRef<MojoValue>)>;
-  // fn execute_configuration(...)
+  // def execute_configuration(...)
   Callee executeConfiguration;
-  // fn execute_device(...)
+  // def execute_device(...)
   Callee executeDevice;
+  // The IR value of each of `operands`. `DeviceKernelArgs::add` keys on it, so
+  // an operand shared by several calls in a graph blob becomes one argument.
+  SmallVector<Value> values;
   // List of operands for both calls.
   SmallVector<MojoValue> operands;
   // Tracks whether operands[i] is a Tensor, which needs to be re-constructed
@@ -1838,12 +1843,16 @@ struct DeclarativeCall {
 
 // The arguments of a device kernel, and the values the launch passes for them:
 // a tensor as its `TileTensor` projection, a scalar as is. See
-// `emitDeviceKernel` for why.
+// `emitDeviceKernel` for why. Each vector holds one entry per argument, at the
+// argument's index.
 struct DeviceKernelArgs {
   SmallVector<NamedMojoDef> parameters;
   SmallVector<MojoValue> launchArgs;
   SmallVector<MojoValue> types;
   SmallVector<bool> isTensor;
+  // Maps an operand's IR value to the index of the argument that carries it, so
+  // an operand shared by several calls crosses the launch once.
+  llvm::DenseMap<Value, unsigned> indexOf;
 
   // Adds `call`'s operands as arguments and returns their indices. Emits each
   // operand's type, and records the kernel argument for it and the value the
@@ -1854,10 +1863,13 @@ struct DeviceKernelArgs {
   //   comptime T1 = type_of(operand1)  # argument a1: T1, passed operand1
   SmallVector<unsigned> add(MojoBuilder &builder, const DeclarativeCall &call) {
     SmallVector<unsigned> indices;
-    for (auto [operand, tensor] :
-         llvm::zip_equal(call.operands, call.isTensor)) {
+    for (auto [value, operand, tensor] :
+         llvm::zip_equal(call.values, call.operands, call.isTensor)) {
+      auto [it, inserted] = indexOf.try_emplace(value, parameters.size());
+      indices.push_back(it->second);
+      if (!inserted)
+        continue;
       MojoValue type = builder.comptime(MojoValue("type_of")({}, {operand}));
-      indices.push_back(parameters.size());
       types.push_back(type);
       isTensor.push_back(tensor);
       parameters.emplace_back("operand",
@@ -1865,6 +1877,16 @@ struct DeviceKernelArgs {
       launchArgs.push_back(tensor ? operand.get("to_tile_tensor")() : operand);
     }
     return indices;
+  }
+
+  // Adds a scalar argument of `type` that the launch passes `value` for, and
+  // returns its index.
+  unsigned addScalar(const MojoValue &value, const MojoValue &type) {
+    types.push_back(type);
+    isTensor.push_back(false);
+    parameters.emplace_back("operand", type);
+    launchArgs.push_back(value);
+    return parameters.size() - 1;
   }
 
   // Rebuilds, inside the kernel, the operands at `indices`: a tensor from its
@@ -1888,20 +1910,16 @@ struct DeviceKernelArgs {
 //   Kernel[...].execute_configuration[...](operand0, operand1, ...)
 //   Kernel[...].execute_device[...](operand0, operand1, ...)
 static FailureOr<DeclarativeCall> prepareDeclarativeCall(
-    CallOpaqueOp op, KernelDeclAdaptor &adaptor, ArrayRef<MojoValue> operands,
+    Operation *op, ValueRange outputs, ValueRange inputs,
+    KernelDeclAdaptor &adaptor, ArrayRef<MojoValue> operands,
     const std::function<ErrorOr<MojoValue>(StringRef)> &inferParam) {
-  if (op.getDeviceContexts().size() != 1) {
-    op.emitOpError("a declarative launch takes one device context");
-    return failure();
-  }
-
   DeclarativeCall call;
   call.operands.assign(operands.begin(), operands.end());
-  SmallVector<Value> operandValues(op.getOutputs());
-  llvm::append_range(operandValues, op.getInputs());
+  SmallVector<Value> operandValues(outputs.begin(), outputs.end());
+  llvm::append_range(operandValues, inputs);
   for (Value value : operandValues) {
     if (!isa<MOGG::TensorType, MOGG::ScalarType>(value.getType())) {
-      op.emitOpError()
+      op->emitOpError()
           << "a declarative launch passes only tensors and scalars to the "
              "device, but got "
           << value.getType();
@@ -1909,6 +1927,7 @@ static FailureOr<DeclarativeCall> prepareDeclarativeCall(
     }
     call.isTensor.push_back(isa<MOGG::TensorType>(value.getType()));
   }
+  call.values = std::move(operandValues);
 
   // Calls `Kernel[...].method[...]` with the given operands.
   auto calleeFor =
@@ -1918,9 +1937,9 @@ static FailureOr<DeclarativeCall> prepareDeclarativeCall(
         adaptor, kind,
         std::function<ErrorOr<MojoValue>(StringRef)>(inferParam));
     if (params.isError()) {
-      op.emitError() << "Failed to infer all the parameters of '"
-                     << fn.fullyResolvedName.strref()
-                     << "': " << params.takeError();
+      op->emitError() << "Failed to infer all the parameters of '"
+                      << fn.fullyResolvedName.strref()
+                      << "': " << params.takeError();
       return failure();
     }
     auto [kernel, method] =
@@ -1965,9 +1984,23 @@ emitDeviceKernel(MojoBuilder &builder, const DeviceKernelArgs &args,
                         /*captureConvention=*/"", std::move(body));
 }
 
+// Emits the launch of `kernel` on `ctx`. `mogg_launch_declarative` compiles
+// it and enqueues it with `config`'s grid and block dims:
+//
+//   mogg_launch_declarative[execute_device_N](ctx, config,
+//                                             operand0.to_tile_tensor(),
+//                                             operand1)
+static void emitLaunch(EmitMojoState &state, const MojoValue &ctx,
+                       const MojoValue &kernel, const DeviceKernelArgs &args,
+                       const MojoValue &config) {
+  SmallVector<MojoValue> launchArgs{ctx, config};
+  llvm::append_range(launchArgs, args.launchArgs);
+  state.builder.call(MojoValue(kFnMoggLaunchDeclarative), {kernel}, launchArgs);
+  state.genAllKeepAliveStatements();
+}
+
 // Emits the launch of a declarative kernel. `execute_configuration` returns a
-// `GridBlockLaunchConfig`, and `mogg_launch_declarative` compiles
-// `execute_device_N` and enqueues it with that config's grid and block dims:
+// `GridBlockLaunchConfig`, which provides grid and block dims for the launch:
 //
 //   var config = Kernel[...].execute_configuration[...](operands...)
 //   comptime T0 = type_of(operand0)  # one per operand
@@ -1980,8 +2013,10 @@ static LogicalResult emitDeclarativeLaunch(
     CallOpaqueOp op, EmitMojoState &state, KernelDeclAdaptor &adaptor,
     ArrayRef<MojoValue> operands,
     const std::function<ErrorOr<MojoValue>(StringRef)> &inferParam) {
-  FailureOr<DeclarativeCall> call =
-      prepareDeclarativeCall(op, adaptor, operands, inferParam);
+  if (op.getDeviceContexts().size() != 1)
+    return op.emitOpError("a declarative launch takes one device context");
+  FailureOr<DeclarativeCall> call = prepareDeclarativeCall(
+      op, op.getOutputs(), op.getInputs(), adaptor, operands, inferParam);
   if (failed(call))
     return failure();
 
@@ -1995,10 +2030,7 @@ static LogicalResult emitDeclarativeLaunch(
       emitDeviceKernel(builder, args, [&](const FunctionBody &body) {
         builder.verbatim(call->executeDevice(args.rebuild(body, indices)));
       });
-  SmallVector<MojoValue> launchArgs{ctx, config};
-  llvm::append_range(launchArgs, args.launchArgs);
-  builder.call(MojoValue(kFnMoggLaunchDeclarative), {kernel}, launchArgs);
-  state.genAllKeepAliveStatements();
+  emitLaunch(state, ctx, kernel, args, config);
   return success();
 }
 
@@ -2061,6 +2093,26 @@ static LogicalResult emitExecuteCall(
   return success();
 }
 
+// The declarative calls of the `mogg.graph_blob` being emitted, gathered as
+// each emits its host part.
+struct M::MOGG::GraphBlobEmission {
+  struct Member {
+    // The call, whose `execute_device` the kernel runs.
+    DeclarativeCall call;
+    // The indices in `args` of the arguments that carry the call's operands, in
+    // the call's operand order.
+    SmallVector<unsigned> indices;
+    // The value the call's `execute_configuration` returned.
+    MojoValue config;
+  };
+  // The device context every call launches on.
+  Value ctx;
+  // The kernel's arguments, which the calls share.
+  DeviceKernelArgs args;
+  // The calls, in the order the kernel runs them.
+  std::vector<Member> members;
+};
+
 LogicalResult CallOpaqueOp::emitMojo(EmitMojoState &state) {
   KernelDeclOp execKernelDecl =
       state.registry.lookupKernelBySymName(getCallee());
@@ -2085,15 +2137,160 @@ LogicalResult CallOpaqueOp::emitMojo(EmitMojoState &state) {
     return state.inferDefaultKernelParamValue(*this, paramName,
                                               getKernelParamAttr());
   };
-  // A call lowers one of two ways: to the launch the graph compiler writes for
-  // a declarative kernel, or to a call to `execute`, which launches the kernel
-  // itself. What every call needs belongs above, so neither lowering can miss
-  // it; each lowering owns the rest, including the keep-alives that must
-  // follow its launch.
+  // A call lowers one of two ways. A declarative kernel gets the launch the
+  // graph compiler writes; any other kernel is a call to its `execute`, which
+  // launches it itself. What every call needs belongs above, so no lowering can
+  // miss it; each lowering owns the rest, including the keep-alives that must
+  // follow its launch. In a graph blob, `mogg.call.execute_device` calls a
+  // declarative kernel instead.
   if (execAdaptor.isDeclarative())
     return emitDeclarativeLaunch(*this, state, execAdaptor, kernelOperands,
                                  inferParam);
   return emitExecuteCall(*this, state, execAdaptor, kernelOperands, inferParam);
+}
+
+//===----------------------------------------------------------------------===//
+// CallExecuteDeviceOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+CallExecuteDeviceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  auto decl =
+      symbolTable.lookupNearestSymbolFrom<KernelDeclOp>(*this, getCalleeAttr());
+  if (!decl)
+    return emitOpError("'")
+           << getCallee() << "' does not refer to a kernel.decl op";
+  if (!decl.getExecuteDevice())
+    return emitOpError("kernel '")
+           << getCallee() << "' has no 'execute_device' function";
+  return success();
+}
+
+bool CallExecuteDeviceOp::isThrows() { return true; }
+
+// Emits the call's `execute_configuration` and adds the call to the enclosing
+// blob, which launches it.
+LogicalResult CallExecuteDeviceOp::emitMojo(EmitMojoState &state) {
+  KernelDeclAdaptor adaptor(state.registry.lookupKernelBySymName(getCallee()));
+  SmallVector<MojoValue> operands;
+  for (Value out : getOutputs())
+    operands.push_back(state.getMojoValueFor(out));
+  for (Value in : getInputs())
+    operands.push_back(state.getMojoValueFor(in));
+  auto inferParam = [&](StringRef paramName) -> ErrorOr<MojoValue> {
+    return state.inferDefaultKernelParamValue(*this, paramName,
+                                              getKernelParamAttr());
+  };
+  FailureOr<DeclarativeCall> call = prepareDeclarativeCall(
+      *this, getOutputs(), getInputs(), adaptor, operands, inferParam);
+  if (failed(call))
+    return failure();
+
+  // The call's parent blob set `state.graphBlob` before emitting its body, and
+  // the blob's verifier gave every call the same context.
+  GraphBlobEmission &blob = *state.graphBlob;
+  blob.ctx = getDeviceContext();
+  MojoBuilder &builder = state.builder;
+  MojoValue config =
+      builder.var(call->executeConfiguration(call->operands), /*cache=*/false);
+  SmallVector<unsigned> indices = blob.args.add(builder, *call);
+  blob.members.push_back({std::move(*call), std::move(indices), config});
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GraphBlobOp
+//===----------------------------------------------------------------------===//
+
+bool GraphBlobOp::isThrows() { return true; }
+
+// Each `mogg.call.execute_device` checks its own callee, so this needs no
+// symbol lookup.
+LogicalResult GraphBlobOp::verifyRegions() {
+  Value ctx;
+  for (Operation &op : getBody().getOps()) {
+    if (!op.hasTrait<MOGG::CallLike>())
+      continue;
+    auto call = dyn_cast<CallExecuteDeviceOp>(op);
+    if (!call)
+      return emitOpError("calls kernels only through "
+                         "'mogg.call.execute_device', but holds '")
+             << op.getName() << "'";
+    if (!ctx)
+      ctx = call.getDeviceContext();
+    else if (call.getDeviceContext() != ctx)
+      return emitOpError("calls kernels on more than one device context");
+  }
+  if (!ctx)
+    return emitOpError("calls no kernel");
+  return success();
+}
+
+// Emits the body's declarative calls as one launch. Each configuration is a
+// `GraphBlobExecutionConfig`: the blob launches the configurations' `merge`,
+// passes each call's `active_threads`, and runs each `execute_device` only on
+// the threads it names:
+//
+//   var config0 = Kernel0[...].execute_configuration[...](operands0...)
+//   var config1 = Kernel1[...].execute_configuration[...](operands1...)
+//   comptime T0 = type_of(operand0)  # one per distinct operand
+//   comptime C = type_of(config0)
+//   var config = config0.merge(config1)
+//   def execute_device_N(a0: T0.TileTensorType, ..., a5: C.ActiveThreads,
+//                        a6: C.ActiveThreads):
+//       if C.is_thread_active(a5):
+//           Kernel0[...].execute_device[...](T0(a0), ...)
+//       C.barrier()
+//       if C.is_thread_active(a6):
+//           Kernel1[...].execute_device[...](...)
+//   mogg_launch_declarative[execute_device_N](ctx, config,
+//                                             operand0.to_tile_tensor(), ...,
+//                                             config0.active_threads(),
+//                                             config1.active_threads())
+//
+// `merge` takes `Self`, so the calls must return the same configuration type.
+// Every thread reaches every barrier, so a barrier sits outside the guards.
+LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
+  // Each body op emits through `lowerOpToMojo`, which passes it only the state,
+  // so the state carries the blob for each call to add itself to. `restore`
+  // clears it on every return, before `blob` goes out of scope; nothing needs
+  // the outer value back, because the verifier keeps a blob out of another.
+  assert(!state.graphBlob && "a graph blob can't hold another");
+  GraphBlobEmission blob;
+  state.graphBlob = &blob;
+  llvm::scope_exit restore([&] { state.graphBlob = nullptr; });
+  for (Operation &op : getBody().getOps())
+    if (failed(state.lowerOpToMojo(&op)))
+      return failure();
+  assert(!blob.members.empty() && "the verifier requires a call");
+
+  MojoBuilder &builder = state.builder;
+  MojoValue config = blob.members.front().config;
+  MojoValue configType = builder.comptime(MojoValue("type_of")({}, {config}));
+  for (const GraphBlobEmission::Member &member : llvm::drop_begin(blob.members))
+    config = builder.var(config.get("merge")({}, {member.config}),
+                         /*cache=*/false);
+
+  SmallVector<unsigned> active;
+  for (const GraphBlobEmission::Member &member : blob.members)
+    active.push_back(blob.args.addScalar(member.config.get("active_threads")(),
+                                         configType.get("ActiveThreads")));
+
+  MojoValue kernel =
+      emitDeviceKernel(builder, blob.args, [&](const FunctionBody &body) {
+        for (auto [i, member] : llvm::enumerate(blob.members)) {
+          if (i > 0)
+            builder.call(configType.get("barrier"));
+          MojoValue isActive = configType.get("is_thread_active")(
+              {}, {body.arguments[active[i]]});
+          builder.if_(isActive, [&] {
+            builder.verbatim(member.call.executeDevice(
+                blob.args.rebuild(body, member.indices)));
+          });
+        }
+      });
+  emitLaunch(state, state.getMojoValueFor(blob.ctx), kernel, blob.args, config);
+  return success();
 }
 
 LogicalResult ScalarCreateOp::emitMojo(EmitMojoState &state) {
