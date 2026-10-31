@@ -1004,9 +1004,9 @@ def make_linear_tuple() -> Tuple[SomeLinearType, SomeLinearType]:
 # CHECK:          lit.ref.from_pointer {{.*}}end_uninit
 # CHECK:          lit.ref.to_pointer
 # CHECK:          lit.ref.from_pointer {{.*}}end_uninit
-# CHECK:          lit.ownership.mark_destroyed
 # CHECK:          lit.var.decl "anonymous*" synth
 # CHECK:          lit.var.decl "x" var
+# CHECK:          lit.ownership.mark_consumed
 # CHECK-NOT:      lit.memcpy
 def match_rvalue_tuple_var_binding():
     match make_linear_tuple():
@@ -1058,9 +1058,9 @@ def match_rvalue_var_binding(var arg: SomeLinearType, a: SomeLinearType):
 # CHECK-NEXT:      [[CONSUMING_PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}([[CONSUMING_REF]])
 # CHECK-NEXT:      [[PAYLOAD_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_PAYLOAD]]
 # CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[PAYLOAD_PTR]] end_uninit
-# CHECK-NEXT:      lit.ownership.mark_destroyed [[SUBJECT]]
 # CHECK-NEXT:      [[X:%.*]] = lit.var.decl "x" var
 # CHECK-NEXT:      {{.*}}@"__init__(move{{.*}}([[OWNED_PAYLOAD]], [[X]])
+# CHECK-NEXT:      lit.ownership.mark_consumed [[SUBJECT]]
 # CHECK-NEXT:      lit.ownership.use [[X]]
 # CHECK-NEXT:      {{.*}}@"consume{{.*}}([[X]])
 # CHECK-NEXT:      hlcf.match.complete
