@@ -1616,8 +1616,12 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
                                            commands)))
       return failure();
 
-    PatternEmitState emissionState{*curDeclScope, subject, rootPath, whileLoc,
-                                   DenseMap<const PatternPath *, CValue>()};
+    PatternEmitState emissionState{*curDeclScope,
+                                   subject,
+                                   rootPath,
+                                   whileLoc,
+                                   DenseMap<const PatternPath *, CValue>(),
+                                   /*consumedRoots=*/{}};
     auto matchOp = HLCF::MatchOp::create(builder, whileLoc, TypeRange(),
                                          /*caseRegionsCount=*/1);
     Block &caseBlock = matchOp.getCaseRegions().front().emplaceBlock();
@@ -1886,9 +1890,12 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
   // Given we have the pile of patterns collected together as command lists, we
   // can add emission optimizations to improve the order various sub-patterns
   // are emitted.  For now, we simply emit each linearly.
-  PatternEmitState emissionState{*curDeclScope, subject, rootPath,
+  PatternEmitState emissionState{*curDeclScope,
+                                 subject,
+                                 rootPath,
                                  matchLocation,
-                                 DenseMap<const PatternPath *, CValue>()};
+                                 DenseMap<const PatternPath *, CValue>(),
+                                 /*consumedRoots=*/{}};
   if (isComptime)
     emitComptimeCases(caseEntries, emissionState, curIndent);
   else
@@ -2581,6 +2588,9 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
       if (failed(emitPatternBinding(emitter, binding, bindingValue)))
         return failure();
     }
+    // The bindings have been moved out, so every recorded aggregate is fully
+    // consumed and none of its fields may still be destroyed.
+    emissionState.markConsumedRoots(emitter, emissionState.matchLocation);
     return success();
   };
 
@@ -4018,9 +4028,12 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
                                                    rootPath, commands)))
           return failure();
 
-        PatternEmitState emissionState{*curDeclScope, subject, rootPath,
+        PatternEmitState emissionState{*curDeclScope,
+                                       subject,
+                                       rootPath,
                                        arm.keywordLoc,
-                                       DenseMap<const PatternPath *, CValue>()};
+                                       DenseMap<const PatternPath *, CValue>(),
+                                       /*consumedRoots=*/{}};
         return emissionState.emitComptimeCondition(commands,
                                                    arm.patternBindings);
       }();
@@ -4119,6 +4132,9 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
         if (failed(emitPatternBinding(emitter, binding, bindingValue)))
           return failure();
       }
+      // The bindings have been moved out, so every recorded aggregate is fully
+      // consumed and none of its fields may still be destroyed.
+      emissionState.markConsumedRoots(emitter, emissionState.matchLocation);
       return success();
     };
 
@@ -4201,9 +4217,12 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
                                                  rootPath, commands)))
         return failure();
 
-      PatternEmitState emissionState{*curDeclScope, subject, rootPath,
+      PatternEmitState emissionState{*curDeclScope,
+                                     subject,
+                                     rootPath,
                                      arm.keywordLoc,
-                                     DenseMap<const PatternPath *, CValue>()};
+                                     DenseMap<const PatternPath *, CValue>(),
+                                     /*consumedRoots=*/{}};
       auto matchOp = HLCF::MatchOp::create(builder, arm.keywordLoc, TypeRange(),
                                            /*caseRegionsCount=*/1);
       Region &caseRegion = matchOp.getCaseRegions().front();

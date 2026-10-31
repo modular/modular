@@ -1000,10 +1000,11 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
     if (!payload)
       return {};
 
-    // If we are allowed to consume the subject and it is an RValue, we do a
-    // little dance to mark the enum as destroyed while keeping the reference
-    // we got back from _unsafe_get_enum_payload alive.  This allows us to bind
-    // var patterns to enum payloads without them even needing to be movable.
+    // If we are allowed to consume the subject and it is an RValue, take an
+    // owning reference to the payload while keeping the reference we got back
+    // from _unsafe_get_enum_payload alive.  The parent is marked consumed once
+    // the bindings have been materialized, which lets var patterns bind enum
+    // payloads without them even needing to be movable.
     if (consume && parent.getIfMRValue()) {
       auto parentRef = parent.getMValueReference();
       auto payloadRef = payload.getMValueReference();
@@ -1019,8 +1020,9 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
       Value ownedPayload = RefFromPointerOp::create(
           *emitter.builder, loc, payloadPtr, origin, name,
           /*startsUninit=*/false, /*endsUninit=*/true);
-      // Make the parent subject look consumed here on after.
-      OwnershipMarkDestroyedOp::create(*emitter.builder, loc, parentRef);
+      // The payload reference owns the payload now, but the parent cannot be
+      // marked consumed yet: the binding still has to be moved out of it.
+      consumedRoots.push_back(parentRef);
       return MRValue(ownedPayload);
     }
 
@@ -1254,9 +1256,10 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
         /*startsUninit=*/false, /*endsUninit=*/true);
     ownedChildren.push_back(MRValue(owned));
   }
-  // Every child now has its own owning reference, so it is safe to suppress
-  // the aggregate destructor without invalidating later sibling projections.
-  OwnershipMarkDestroyedOp::create(*emitter.builder, loc, rootRef);
+  // Every child now has its own owning reference, so the aggregate owns
+  // nothing once the bindings have been moved out. Record it so the caller can
+  // mark it consumed after materializing them.
+  consumedRoots.push_back(rootRef);
 
   for (auto [childIndex, childPath] : llvm::enumerate(children)) {
     auto binding =
@@ -1282,6 +1285,18 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
       return failure();
   }
   return success();
+}
+
+void PatternEmitState::markConsumedRoots(IREmitter &emitter, Location loc) {
+  // A root can be recorded once per projected path (e.g. by a nested
+  // pattern), so only mark each one once.
+  SmallPtrSet<Value, 2> marked;
+  for (Value root : consumedRoots) {
+    if (!marked.insert(root).second)
+      continue;
+    OwnershipMarkConsumedOp::create(*emitter.builder, loc, root);
+  }
+  consumedRoots.clear();
 }
 
 CValue PatternEmitState::emitTestableValue(IREmitter &emitter,
@@ -1808,8 +1823,12 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
     alternativeBlocks.push_back(&block);
 
     ASTDecl &scope = createBindingScope(cmd.expr->getLoc());
-    PatternEmitState altState{scope, rootSubject, rootPath, matchLocation,
-                              pathValues};
+    PatternEmitState altState{scope,
+                              rootSubject,
+                              rootPath,
+                              matchLocation,
+                              pathValues,
+                              /*consumedRoots=*/{}};
     OrCaseBindings caseBindings;
     if (failed(altState.emitCommands(builder, alt, caseBindings)))
       return failure();
