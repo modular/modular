@@ -60,11 +60,20 @@ static constexpr size_t kTypicalParameterCount = 2;
 /// Currently about 95% of functions use ≤2 arguments.
 static constexpr size_t kTypicalArgumentCount = 2;
 } // namespace
-class PublicDecl;
 enum class PublicDeclKind;
 
-std::unique_ptr<PublicDecl> getPublicDecl(ASTDecl *decl);
+std::optional<PublicDeclKind> getPublicDeclKind(ASTDecl *decl);
 std::optional<PublicDeclKind> getApproximatePublicDeclKind(ASTDecl *decl);
+StringRef getPublicDeclKindAsString(PublicDeclKind kind);
+std::string getPublicDeclDeclarationSnippet(ASTDecl &decl,
+                                            MojoParserContext &ctx);
+std::string getPublicDeclMarkdownDocString(ASTDecl &decl);
+std::string getPublicDeclFullMarkdownString(ASTDecl &decl,
+                                            MojoParserContext &ctx);
+/// Serialize a supported AST declaration. Returns nullopt for declarations
+/// outside the public tooling model.
+std::optional<llvm::json::Object> serializePublicDecl(ASTDecl &decl,
+                                                      MojoParserContext &ctx);
 std::string getToolingAliasValue(AliasASTDecl &decl);
 SmallVector<KGEN::ParameterInfo, kTypicalParameterCount>
 getStructParameters(StructASTDecl &decl);
@@ -83,15 +92,10 @@ using ConformanceConditionMap =
     llvm::DenseMap<KGEN::TraitSymbolAttr, std::string>;
 
 //===----------------------------------------------------------------------===//
-// PublicDecls
+// Public declaration rendering
 //
-// The following classes provide simple and JSON-serializable representations of
-// the most common Mojo decls. They also include structured documentation from
-// the corresponding DocStrings and the ability to summarize themselves as code
-// snippets.
-//
-// The API for these decls is expected to be somewhat stable because other tools
-// rely on it, hence its `Public` name.
+// These helpers provide structured documentation and code snippets for the
+// most common Mojo AST declarations.
 //===----------------------------------------------------------------------===//
 
 /// Stability information extracted from the @stable decorator on a decl.
@@ -116,56 +120,6 @@ enum class PublicDeclKind {
   DK_PublicStructFieldDecl,
   DK_PublicTraitDecl,
   DK_PublicVariableDecl,
-};
-
-/// Base class of all public decls.
-class PublicDecl {
-public:
-  virtual ~PublicDecl() = default;
-
-  /// Generate a correct piece of code that summarizes this decl.
-  virtual std::string getDeclarationSnippet(MojoParserContext &ctx) const;
-
-  /// Get the name of the decl. It might be empty.
-  StringRef getName() const { return name; }
-
-  /// Return the declaration this public view represents.
-  ASTDecl &getDecl() const { return *decl; }
-
-  /// Get a string representation of the kind of decl, e.g., 'variable',
-  /// 'function', etc.
-  StringRef getKindAsString() const;
-
-  static StringRef getKindAsString(PublicDeclKind kind);
-
-  /// Serialize the fields in this decl to JSON.
-  virtual llvm::json::Object toJSON(MojoParserContext &ctx) const;
-
-  /// Return a nicely formatted markdown docstring of this declaration. It might
-  /// be empty if no docstring is available.
-  virtual std::string getMarkdownDocString() const;
-
-  /// Return a nicely formatted markdown blob containing the declaration snippet
-  /// and doc string of the decl.
-  std::string getFullMarkdownString(MojoParserContext &ctx) const;
-
-public:
-  //===----------------------------------------------------------------------===//
-  // LLVM RTTI Support
-  //===----------------------------------------------------------------------===//
-
-  PublicDeclKind getKind() const { return kind; }
-
-protected:
-  friend std::unique_ptr<PublicDecl> getPublicDecl(ASTDecl *decl);
-
-  PublicDecl(PublicDeclKind kind, ASTDecl &decl, StringRef name)
-      : kind(kind), decl(&decl), name(name) {}
-
-private:
-  PublicDeclKind kind;
-  ASTDecl *decl;
-  StringRef name;
 };
 
 /// Function tooling helpers operate on function signatures.
@@ -223,7 +177,6 @@ private:
 namespace M {
 using KGEN::LIT::ConformanceConditionMap;
 using KGEN::LIT::FunctionDeclOverloadSet;
-using KGEN::LIT::PublicDecl;
 using KGEN::LIT::PublicDeclKind;
 using KGEN::LIT::StableInfo;
 } // namespace M

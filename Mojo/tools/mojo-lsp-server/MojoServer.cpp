@@ -195,11 +195,11 @@ std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
     return processDecl("function", snippet, docString,
                        /*includeKindInSnippet=*/true);
   }
-  if (auto view = getPublicDecl(decl))
-    return processDecl(view->getKindAsString(),
-                       view->getDeclarationSnippet(ctx),
-                       view->getMarkdownDocString(),
-                       shouldIncludeViewKindInMarkdown(view->getKind()));
+  if (auto kind = getPublicDeclKind(decl))
+    return processDecl(getPublicDeclKindAsString(*kind),
+                       getPublicDeclDeclarationSnippet(*decl, ctx),
+                       getPublicDeclMarkdownDocString(*decl),
+                       shouldIncludeViewKindInMarkdown(*kind));
   // If didn't get a view, we fall back to simply printing the name of the
   // entity.
   if (auto name = decl->getName())

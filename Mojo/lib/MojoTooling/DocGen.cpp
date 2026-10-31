@@ -52,14 +52,15 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
   if (!moduleDecl || parserContext.wasErrorEmitted())
     return false;
 
-  std::unique_ptr<PublicDecl> publicDecl = getPublicDecl(moduleDecl);
-  if (!publicDecl)
+  std::optional<llvm::json::Object> serializedDecl =
+      serializePublicDecl(*moduleDecl, parserContext);
+  if (!serializedDecl)
     return false;
 
   llvm::json::OStream jsonOS(os, /*IndentSize=*/2);
   const char *version = getMojoVersionString();
   jsonOS.value(llvm::json::Object({
-      {"decl", publicDecl->toJSON(parserContext)},
+      {"decl", std::move(*serializedDecl)},
       {"version", llvm::formatv("{0}", version).str()},
   }));
 

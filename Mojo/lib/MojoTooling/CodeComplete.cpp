@@ -127,9 +127,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
                                       parserContext->getCompilationOptions(),
                                       frontendOptions);
       if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
-        if (auto decl = getPublicDecl(module))
+        if (getPublicDeclKind(module))
           results.back().documentation =
-              decl->getFullMarkdownString(*parserContext);
+              getPublicDeclFullMarkdownString(*module, *parserContext);
       }
     };
 
@@ -330,8 +330,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
     if (auto *function = dyn_cast<DefASTDecl>(decl))
       result.documentation =
           getFunctionFullMarkdownString(*function, *parserContext);
-    else if (auto publicDecl = getPublicDecl(decl))
-      result.documentation = publicDecl->getFullMarkdownString(*parserContext);
+    else if (getPublicDeclKind(decl))
+      result.documentation =
+          getPublicDeclFullMarkdownString(*decl, *parserContext);
     results.emplace_back(result);
   }
 
@@ -457,9 +458,6 @@ struct SignatureHelpListener : public BaseCompletionListener {
       auto *structDecl = dyn_cast<StructASTDecl>(decl);
       if (!structDecl)
         continue;
-      std::unique_ptr<PublicDecl> publicDecl = getPublicDecl(decl);
-      if (!publicDecl)
-        continue;
       SmallVector<ParameterInfo, kTypicalParameterCount> structParameters =
           getStructParameters(*structDecl);
       if (parameters.size() > structParameters.size())
@@ -468,7 +466,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
       SmallVector<std::pair<unsigned, unsigned>> paramOffsets;
       signature.label = getStructDeclarationSnippet(*structDecl, *parserContext,
                                                     &paramOffsets);
-      addDeclDocAndParametersToSignature(*parserContext, signature, *publicDecl,
+      addDeclDocAndParametersToSignature(*parserContext, signature, *structDecl,
                                          structParameters, paramOffsets);
       result.signatures.emplace_back(std::move(signature));
     }
@@ -479,9 +477,9 @@ struct SignatureHelpListener : public BaseCompletionListener {
   template <typename RangeT>
   static void addDeclDocAndParametersToSignature(
       MojoParserContext &ctx, SignatureHelpResult::Signature &signature,
-      PublicDecl &publicDecl, RangeT &&range,
+      ASTDecl &decl, RangeT &&range,
       ArrayRef<std::pair<unsigned, unsigned>> offsets) {
-    signature.documentation = publicDecl.getFullMarkdownString(ctx);
+    signature.documentation = getPublicDeclFullMarkdownString(decl, ctx);
     for (const auto &[arg, offset] : llvm::zip(range, offsets))
       signature.parameters.push_back({offset, arg.getMarkdownDocString()});
   }

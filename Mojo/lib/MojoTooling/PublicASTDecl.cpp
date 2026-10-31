@@ -291,12 +291,12 @@ maybeParseDocStringAdHocSection(SmallVector<std::string> &pureDescriptionLines,
 /// children whose name start with _, except for special functions that start
 /// and end with __. `shouldHideFn` allows for additional filtering of decls to
 /// hide.
-template <typename PublicDeclType, typename OpType>
-static SmallVector<PublicDeclType, 2>
+template <typename ASTDeclType, typename OpType>
+static SmallVector<ASTDeclType *, 2>
 extractChildDecls(const ASTDecl &decl,
                   function_ref<bool(OpType, StringRef)> shouldHideFn = {}) {
   DenseSet<Operation *> seenOps;
-  SmallVector<PublicDeclType, 2> children;
+  SmallVector<ASTDeclType *, 2> children;
 
   for (const auto &[name, decls] : decl.getDeclsInScope()) {
     if (decls.empty() || !decls.front() ||
@@ -319,12 +319,13 @@ extractChildDecls(const ASTDecl &decl,
         continue;
       if (shouldHideFn && shouldHideFn(childOp, name))
         continue;
-      children.push_back(cast<PublicDeclType>(*getPublicDecl(child)));
+      children.push_back(cast<ASTDeclType>(child));
     }
   }
 
-  llvm::stable_sort(children, [](auto &lhs, auto &rhs) {
-    return compareDeclNames(lhs.getName(), rhs.getName());
+  llvm::stable_sort(children, [](ASTDeclType *lhs, ASTDeclType *rhs) {
+    return compareDeclNames(lhs->getName().value_or(StringRef{}),
+                            rhs->getName().value_or(StringRef{}));
   });
 
   return children;
@@ -366,6 +367,18 @@ static llvm::json::Array toJSONArray(MojoParserContext &ctx,
   for (const auto &item : items)
     jsonItems.push_back(item.toJSON(ctx));
   return jsonItems;
+}
+
+template <typename ASTDeclRange>
+static llvm::json::Array toPublicDeclJSONArray(MojoParserContext &ctx,
+                                               const ASTDeclRange &decls) {
+  llvm::json::Array result;
+  for (ASTDecl *decl : decls) {
+    auto serialized = serializePublicDecl(*decl, ctx);
+    assert(serialized && "expected a serializable public declaration");
+    result.push_back(std::move(*serialized));
+  }
+  return result;
 }
 
 /// Dump the markdown header common to all decls that support docstring
@@ -508,7 +521,7 @@ static std::string getAliasDeclarationSnippet(AliasASTDecl &decl,
 static std::string getAliasMarkdownDocString(AliasASTDecl &decl);
 
 //===----------------------------------------------------------------------===//
-// PublicDecl
+// Public declaration rendering
 //===----------------------------------------------------------------------===//
 
 /// Return the rendered parameter information corresponding to `decl`, if its
@@ -548,53 +561,36 @@ ParameterInfo::ParameterInfo(ASTDecl &decl) {
     setDecl(decl);
 }
 
-std::unique_ptr<PublicDecl> M::KGEN::LIT::getPublicDecl(ASTDecl *decl) {
+std::optional<PublicDeclKind> M::KGEN::LIT::getPublicDeclKind(ASTDecl *decl) {
   if (!decl)
-    return nullptr;
+    return std::nullopt;
 
   if (auto varDecl = dyn_cast<VarASTDecl>(decl))
-    return std::unique_ptr<PublicDecl>(new PublicDecl(
-        varDecl->isArgument() ? PublicDeclKind::DK_PublicArgumentDecl
-                              : PublicDeclKind::DK_PublicVariableDecl,
-        *decl, decl->getName().value_or(StringRef())));
+    return varDecl->isArgument() ? PublicDeclKind::DK_PublicArgumentDecl
+                                 : PublicDeclKind::DK_PublicVariableDecl;
 
   if (Operation *declOp = decl->getIfOperation()) {
     if (isa<AliasDeclOp>(declOp))
-      return std::unique_ptr<PublicDecl>(
-          new PublicDecl(PublicDeclKind::DK_PublicAliasDecl, *decl,
-                         decl->getName().value_or(StringRef())));
+      return PublicDeclKind::DK_PublicAliasDecl;
     if (isa<FileModuleOp, ImportOp>(declOp))
-      return std::unique_ptr<PublicDecl>(
-          new PublicDecl(PublicDeclKind::DK_PublicModuleDecl, *decl,
-                         decl->getName().value_or(StringRef())));
+      return PublicDeclKind::DK_PublicModuleDecl;
     if (isa<StructDeclOp>(declOp))
-      return std::unique_ptr<PublicDecl>(
-          new PublicDecl(PublicDeclKind::DK_PublicStructDecl, *decl,
-                         decl->getName().value_or(StringRef())));
+      return PublicDeclKind::DK_PublicStructDecl;
     if (isa<StructFieldOp>(declOp))
-      return std::unique_ptr<PublicDecl>(
-          new PublicDecl(PublicDeclKind::DK_PublicStructFieldDecl, *decl,
-                         decl->getName().value_or(StringRef())));
+      return PublicDeclKind::DK_PublicStructFieldDecl;
     if (isa<PackageOp>(declOp))
-      return std::unique_ptr<PublicDecl>(
-          new PublicDecl(PublicDeclKind::DK_PublicPackageDecl, *decl,
-                         decl->getName().value_or(StringRef())));
+      return PublicDeclKind::DK_PublicPackageDecl;
     if (isa<TraitDeclOp>(declOp))
-      return std::unique_ptr<PublicDecl>(
-          new PublicDecl(PublicDeclKind::DK_PublicTraitDecl, *decl,
-                         decl->getName().value_or(StringRef())));
+      return PublicDeclKind::DK_PublicTraitDecl;
   }
 
   if (decl->getArgNumber() >= 0)
-    return std::unique_ptr<PublicDecl>(
-        new PublicDecl(PublicDeclKind::DK_PublicArgumentDecl, *decl,
-                       decl->getName().value_or(StringRef())));
+    return PublicDeclKind::DK_PublicArgumentDecl;
 
-  if (auto parameter = getParameterInfo(*decl))
-    return std::unique_ptr<PublicDecl>(new PublicDecl(
-        PublicDeclKind::DK_PublicParameterDecl, *decl, parameter->getName()));
+  if (getParameterInfo(*decl))
+    return PublicDeclKind::DK_PublicParameterDecl;
 
-  return nullptr;
+  return std::nullopt;
 }
 
 std::optional<PublicDeclKind>
@@ -631,7 +627,7 @@ M::KGEN::LIT::getApproximatePublicDeclKind(ASTDecl *decl) {
   return std::nullopt;
 }
 
-StringRef PublicDecl::getKindAsString(PublicDeclKind kind) {
+StringRef M::KGEN::LIT::getPublicDeclKindAsString(PublicDeclKind kind) {
   switch (kind) {
   case PublicDeclKind::DK_PublicAliasDecl:
     return "alias";
@@ -655,38 +651,44 @@ StringRef PublicDecl::getKindAsString(PublicDeclKind kind) {
   llvm_unreachable("invalid kind");
 }
 
-StringRef PublicDecl::getKindAsString() const { return getKindAsString(kind); }
-
-std::string PublicDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
+std::string
+M::KGEN::LIT::getPublicDeclDeclarationSnippet(ASTDecl &decl,
+                                              MojoParserContext &ctx) {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
 
-  switch (getKind()) {
+  std::optional<PublicDeclKind> kind = getPublicDeclKind(&decl);
+  if (!kind)
+    return {};
+  switch (*kind) {
   case PublicDeclKind::DK_PublicAliasDecl:
-    return getAliasDeclarationSnippet(cast<AliasASTDecl>(getDecl()), ctx);
+    return getAliasDeclarationSnippet(cast<AliasASTDecl>(decl), ctx);
   case PublicDeclKind::DK_PublicArgumentDecl:
-    if (auto argument = getArgumentInfo(getDecl()))
+    if (auto argument = getArgumentInfo(decl))
       return getArgumentDeclarationSnippet(*argument, ctx);
     return {};
   case PublicDeclKind::DK_PublicParameterDecl:
-    return getParameterDeclarationSnippet(ParameterInfo(getDecl()), ctx);
+    return getParameterDeclarationSnippet(ParameterInfo(decl), ctx);
   case PublicDeclKind::DK_PublicStructDecl:
-    return getStructDeclarationSnippet(cast<StructASTDecl>(getDecl()), ctx);
+    return getStructDeclarationSnippet(cast<StructASTDecl>(decl), ctx);
   case PublicDeclKind::DK_PublicTraitDecl:
-    return "trait " + getName().str();
+    return "trait " + decl.getName().value_or(StringRef()).str();
   case PublicDeclKind::DK_PublicStructFieldDecl:
-    dumpIdentifierWithType(
-        os, getName(), getStructFieldType(cast<StructFieldASTDecl>(getDecl())));
+    dumpIdentifierWithType(os, decl.getName().value_or(StringRef()),
+                           getStructFieldType(cast<StructFieldASTDecl>(decl)));
     return "var " + os.str();
   case PublicDeclKind::DK_PublicVariableDecl:
-    dumpIdentifierWithType(os, getName(), getVariableType(getDecl()));
+    dumpIdentifierWithType(os, decl.getName().value_or(StringRef()),
+                           getVariableType(decl));
     return "var " + os.str();
   default:
     return {};
   }
 }
 
-std::string PublicDecl::getFullMarkdownString(MojoParserContext &ctx) const {
+std::string
+M::KGEN::LIT::getPublicDeclFullMarkdownString(ASTDecl &decl,
+                                              MojoParserContext &ctx) {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
@@ -707,11 +709,18 @@ std::string PublicDecl::getFullMarkdownString(MojoParserContext &ctx) const {
 {0}
 ```)";
 
-  os << formatv("### {0} `{1}`\n", getKindAsString(), getName());
-  if (auto docString = getMarkdownDocString(); !docString.empty())
+  std::optional<PublicDeclKind> kind = getPublicDeclKind(&decl);
+  if (!kind)
+    return {};
+  StringRef name = decl.getName().value_or(StringRef());
+  if (*kind == PublicDeclKind::DK_PublicParameterDecl)
+    name = ParameterInfo(decl).getName();
+  os << formatv("### {0} `{1}`\n", getPublicDeclKindAsString(*kind), name);
+  if (auto docString = getPublicDeclMarkdownDocString(decl); !docString.empty())
     os << llvm::formatv(docStringSnippet, docString);
 
-  os << llvm::formatv(declarationSnippet, getDeclarationSnippet(ctx));
+  os << llvm::formatv(declarationSnippet,
+                      getPublicDeclDeclarationSnippet(decl, ctx));
   return buff;
 }
 
@@ -1427,7 +1436,7 @@ static llvm::json::Object serializeTraitDecl(TraitASTDecl &decl,
            decl.getSpecialFunctionKind() == SpecialFunctionKind::kDeinit;
   };
 
-  auto aliases = extractChildDecls<PublicDecl, AliasDeclOp>(decl);
+  auto aliases = extractChildDecls<AliasASTDecl, AliasDeclOp>(decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildFunctions<FnOp>(decl, shouldHideFn));
 
@@ -1439,7 +1448,7 @@ static llvm::json::Object serializeTraitDecl(TraitASTDecl &decl,
   StableInfo stableInfo = computeStableInfo(decl.getOp());
 
   return llvm::json::Object{
-      {"aliases", toJSONArray(ctx, aliases)},
+      {"aliases", toPublicDeclJSONArray(ctx, aliases)},
       {"deprecated", decl.getDeprecationWarning().value_or(StringRef())},
       {"description", decl.getDocumentationDescription()},
       {"fields", llvm::json::Array()},
@@ -1590,8 +1599,8 @@ static StringRef toString(TypeConvention convention) {
 static llvm::json::Object serializeStructDecl(StructASTDecl &decl,
                                               MojoParserContext &ctx) {
   StructDocumentation documentation = getStructDocumentation(decl);
-  auto aliases = extractChildDecls<PublicDecl, AliasDeclOp>(decl);
-  auto fields = extractChildDecls<PublicDecl, StructFieldOp>(decl);
+  auto aliases = extractChildDecls<AliasASTDecl, AliasDeclOp>(decl);
+  auto fields = extractChildDecls<StructFieldASTDecl, StructFieldOp>(decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildFunctions<FnOp>(decl));
 
@@ -1603,11 +1612,11 @@ static llvm::json::Object serializeStructDecl(StructASTDecl &decl,
     parameterInfos.push_back(serializeParameterInfo(parameter, ctx));
 
   return llvm::json::Object{
-      {"aliases", toJSONArray(ctx, aliases)},
+      {"aliases", toPublicDeclJSONArray(ctx, aliases)},
       {"constraints", documentation.constraints},
       {"deprecated", decl.getDeprecationWarning().value_or(StringRef())},
       {"description", documentation.description},
-      {"fields", toJSONArray(ctx, fields)},
+      {"fields", toPublicDeclJSONArray(ctx, fields)},
       {"functions", toJSONArray(ctx, functionOverloads)},
       {"kind", "struct"},
       {"name", decl.getName().value_or(StringRef())},
@@ -1628,19 +1637,19 @@ static llvm::json::Object serializeStructDecl(StructASTDecl &decl,
 
 static llvm::json::Object serializeModuleDecl(ASTDecl &decl,
                                               MojoParserContext &ctx) {
-  auto aliases = extractChildDecls<PublicDecl, AliasDeclOp>(decl);
-  auto structs = extractChildDecls<PublicDecl, StructDeclOp>(decl);
-  auto traits = extractChildDecls<PublicDecl, TraitDeclOp>(decl);
+  auto aliases = extractChildDecls<AliasASTDecl, AliasDeclOp>(decl);
+  auto structs = extractChildDecls<StructASTDecl, StructDeclOp>(decl);
+  auto traits = extractChildDecls<TraitASTDecl, TraitDeclOp>(decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildFunctions<FnOp>(decl));
 
-  return llvm::json::Object{{"aliases", toJSONArray(ctx, aliases)},
+  return llvm::json::Object{{"aliases", toPublicDeclJSONArray(ctx, aliases)},
                             {"description", decl.getDocumentationDescription()},
                             {"functions", toJSONArray(ctx, functionOverloads)},
                             {"kind", "module"},
                             {"name", decl.getName().value_or(StringRef{})},
-                            {"structs", toJSONArray(ctx, structs)},
-                            {"traits", toJSONArray(ctx, traits)},
+                            {"structs", toPublicDeclJSONArray(ctx, structs)},
+                            {"traits", toPublicDeclJSONArray(ctx, traits)},
                             {"summary", decl.getDocumentationSummary()}};
 }
 
@@ -1690,8 +1699,8 @@ static llvm::json::Array serializePublicDecls(MojoParserContext &ctx,
   for (ASTDecl *decl : decls)
     if (auto *function = dyn_cast<DefASTDecl>(decl))
       result.push_back(serializeFunctionDecl(*function, ctx));
-    else if (std::unique_ptr<PublicDecl> publicDecl = getPublicDecl(decl))
-      result.push_back(publicDecl->toJSON(ctx));
+    else if (auto serialized = serializePublicDecl(*decl, ctx))
+      result.push_back(std::move(*serialized));
   return result;
 }
 
@@ -1735,39 +1744,51 @@ static llvm::json::Object serializePackageDecl(PackageASTDecl &packageDecl,
   };
 }
 
-llvm::json::Object PublicDecl::toJSON(MojoParserContext &ctx) const {
-  switch (getKind()) {
-  case PublicDeclKind::DK_PublicAliasDecl:
-    return serializeAliasDecl(cast<AliasASTDecl>(getDecl()), ctx);
-  case PublicDeclKind::DK_PublicArgumentDecl:
-    if (auto argument = getArgumentInfo(getDecl()))
-      return serializeArgumentInfo(*argument, ctx);
-    return {};
-  case PublicDeclKind::DK_PublicParameterDecl:
-    return serializeParameterInfo(ParameterInfo(getDecl()), ctx);
-  case PublicDeclKind::DK_PublicStructDecl:
-    return serializeStructDecl(cast<StructASTDecl>(getDecl()), ctx);
-  case PublicDeclKind::DK_PublicStructFieldDecl:
-    return serializeStructFieldDecl(cast<StructFieldASTDecl>(getDecl()));
-  case PublicDeclKind::DK_PublicTraitDecl:
-    return serializeTraitDecl(cast<TraitASTDecl>(getDecl()), ctx);
-  case PublicDeclKind::DK_PublicVariableDecl:
-    return serializeVariableDecl(getDecl(), ctx);
-  case PublicDeclKind::DK_PublicModuleDecl:
-    return serializeModuleDecl(getDecl(), ctx);
-  case PublicDeclKind::DK_PublicPackageDecl:
-    return serializePackageDecl(cast<PackageASTDecl>(getDecl()), ctx);
+std::optional<llvm::json::Object>
+M::KGEN::LIT::serializePublicDecl(ASTDecl &decl, MojoParserContext &ctx) {
+  if (auto *variable = dyn_cast<VarASTDecl>(&decl)) {
+    if (variable->isArgument()) {
+      if (auto argument = getArgumentInfo(decl))
+        return serializeArgumentInfo(*argument, ctx);
+      return llvm::json::Object();
+    }
+    return serializeVariableDecl(decl, ctx);
   }
-  llvm_unreachable("generic PublicDecl has no renderer");
+
+  if (Operation *declOp = decl.getIfOperation()) {
+    if (isa<AliasDeclOp>(declOp))
+      return serializeAliasDecl(cast<AliasASTDecl>(decl), ctx);
+    if (isa<FileModuleOp, ImportOp>(declOp))
+      return serializeModuleDecl(decl, ctx);
+    if (isa<StructDeclOp>(declOp))
+      return serializeStructDecl(cast<StructASTDecl>(decl), ctx);
+    if (isa<StructFieldOp>(declOp))
+      return serializeStructFieldDecl(cast<StructFieldASTDecl>(decl));
+    if (isa<PackageOp>(declOp))
+      return serializePackageDecl(cast<PackageASTDecl>(decl), ctx);
+    if (isa<TraitDeclOp>(declOp))
+      return serializeTraitDecl(cast<TraitASTDecl>(decl), ctx);
+  }
+
+  if (decl.getArgNumber() >= 0) {
+    if (auto argument = getArgumentInfo(decl))
+      return serializeArgumentInfo(*argument, ctx);
+    return llvm::json::Object();
+  }
+  if (auto parameter = getParameterInfo(decl))
+    return serializeParameterInfo(*parameter, ctx);
+  return std::nullopt;
 }
 
-std::string PublicDecl::getMarkdownDocString() const {
+std::string M::KGEN::LIT::getPublicDeclMarkdownDocString(ASTDecl &decl) {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
-  ASTDecl &decl = getDecl();
-  switch (getKind()) {
+  std::optional<PublicDeclKind> kind = getPublicDeclKind(&decl);
+  if (!kind)
+    return {};
+  switch (*kind) {
   case PublicDeclKind::DK_PublicAliasDecl:
-    return getAliasMarkdownDocString(cast<AliasASTDecl>(getDecl()));
+    return getAliasMarkdownDocString(cast<AliasASTDecl>(decl));
   case PublicDeclKind::DK_PublicArgumentDecl:
     return ArgumentInfo::getMarkdownDocString(decl);
   case PublicDeclKind::DK_PublicParameterDecl:
