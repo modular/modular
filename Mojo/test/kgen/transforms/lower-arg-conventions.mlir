@@ -441,24 +441,30 @@ kgen.func @external_call_pack_expand(%a: !kgen.scalar<si32>, %b: !kgen.scalar<f3
   hlcf.return
 }
 
-// Nested packs are recursively flattened. This occurs in practice when Mojo
-// variadic args are forwarded to a C variadic function (e.g. fcntl(fd, cmd, *args)).
+// A pack forwarded as a single argument is nested by reference: the loaded
+// outer pack holds the by-reference pack, whose elements are pointers to the
+// forwarded values. The nested pack must be loaded before its elements are
+// passed to the callee. This occurs in practice when Mojo variadic args are
+// forwarded to a C variadic function (e.g. `external_call(..., args)`).
 // CHECK-LABEL: @external_call_nested_pack
 kgen.func @external_call_nested_pack(
-    %a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>, %c: !kgen.scalar<f64>) {
-  %inner = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
+    %a: !kgen.pointer<scalar<si32>>, %b: !kgen.pointer<scalar<f32>>,
+    %c: !kgen.scalar<f64>) {
+  %inner = kgen.struct.create(%a, %b)
+    : !kgen.struct<(pointer<scalar<si32>>, pointer<scalar<f32>>) isParamPack>
   %outer = kgen.struct.create(%inner, %c)
-    : !kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>
-  // The outer pack is expanded, and the inner pack extracted from it is
-  // recursively expanded as well, yielding three individual arguments.
+    : !kgen.struct<[struct<(pointer<scalar<si32>>, pointer<scalar<f32>>) isParamPack>, scalar<f64>] isParamPack value>
+  // The outer pack is expanded, and the inner pack extracted from it is loaded
+  // and then recursively expanded as well, yielding three individual arguments.
   // CHECK: [[INNER:%.*]] = kgen.struct.extract %{{.*}}[0]
-  // CHECK: [[A:%.*]] = kgen.struct.extract [[INNER]][0]
-  // CHECK: [[B:%.*]] = kgen.struct.extract [[INNER]][1]
+  // CHECK: [[LOADED:%.*]] = kgen.struct.load_indirect [[INNER]]
+  // CHECK: [[A:%.*]] = kgen.struct.extract [[LOADED]][0]
+  // CHECK: [[B:%.*]] = kgen.struct.extract [[LOADED]][1]
   // CHECK: [[C:%.*]] = kgen.struct.extract %{{.*}}[1]
   // CHECK: pop.external_call @my_extern([[A]], [[B]], [[C]])
   // CHECK-SAME: (!kgen.scalar<si32>, !kgen.scalar<f32>, !kgen.scalar<f64>) -> ()
   pop.external_call @my_extern(%outer)
-    : (!kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>) -> ()
+    : (!kgen.struct<[struct<(pointer<scalar<si32>>, pointer<scalar<f32>>) isParamPack>, scalar<f64>] isParamPack value>) -> ()
   hlcf.return
 }
 

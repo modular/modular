@@ -4279,10 +4279,13 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
     if (!eltCst || !isa<PointerType>(eltCst.getMlirType()))
       return {};
 
-    results.push_back(TypeParamAttr::get(
-        cast<PointerType>(eltCst.getTypeValue()).getElementType(),
-        cast<PointerType>(eltCst.getMlirType()).getElementType(),
-        resultEltType));
+    // The result holds values, not type expressions, so project to the MLIR
+    // type. Otherwise a pack loaded from a resolved layout-domain type would
+    // keep the pointee's metatype while the type inferred by
+    // `kgen.struct.load_indirect` (computed from the already-projected operand
+    // type) does not, and the two would not compare equal.
+    Type elementType = cast<PointerType>(eltCst.getMlirType()).getElementType();
+    results.push_back(TypeParamAttr::get(elementType, resultEltType));
   }
   return ParamListAttr::get(results, cast<ParamListType>(resultType));
 }
