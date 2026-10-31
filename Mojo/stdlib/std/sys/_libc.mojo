@@ -46,7 +46,7 @@ def free(ptr: MutPointer[NoneType, ...]):
 
 
 @inline(.always)
-def free(ptr: Optional[MutPointer[NoneType, MutAnyOrigin]]):
+def free(ptr: Optional[MutPointer[NoneType, _]]):
     """Frees memory previously allocated by `malloc`, `calloc`, or `realloc`.
 
     This overload accepts an `Optional[Pointer]` because it is valid in

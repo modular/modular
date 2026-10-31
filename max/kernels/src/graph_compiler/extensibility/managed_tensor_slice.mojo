@@ -2346,13 +2346,8 @@ struct ManagedTensorSlice[
         for i in range(Self.rank):
             shape.append(self.shape()[i])
 
-        # Pin the argument to a concrete-origin optional pointer so this call
-        # stays origin-exact across the `_serialize` safe-Pointer flip.
-        var serialize_ptr = Optional[
-            Pointer[Scalar[Self.dtype], ImmutAnyOrigin]
-        ](self._ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin]())
         # TODO(1937): make this work with all valid strides
-        _serialize[serialize_end_line=False](serialize_ptr, shape, serialize)
+        _serialize[serialize_end_line=False](self._ptr, shape, serialize)
 
         writer.write("){")
         writer.write("static_shape = ", self._static_shape_tuple)

@@ -583,16 +583,14 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             writer.write(val)
 
         var size = len(self)
-        var serialize_ptr = Optional[
-            Pointer[Scalar[Self.dtype], ImmutAnyOrigin]
-        ](self.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin]())
-
         if size < 1000:
             writer.write("[")
-            _serialize_elements(serialize_ptr, len(self), serialize)
+            _serialize_elements(self.unsafe_ptr(), len(self), serialize)
             writer.write("]")
         else:
-            _serialize_elements[compact=True](serialize_ptr, size, serialize)
+            _serialize_elements[compact=True](
+                self.unsafe_ptr(), size, serialize
+            )
         writer.write(")")
 
     # ===-------------------------------------------------------------------===#
@@ -2249,21 +2247,15 @@ struct DeviceBuffer[dtype: DType](
                     writer.write(val)
 
                 var size = len(self)
-                var serialize_ptr = Optional[
-                    Pointer[Scalar[Self.dtype], ImmutAnyOrigin]
-                ](
-                    host_buffer.unsafe_ptr()
-                    .as_imm()
-                    .unsafe_origin_cast[ImmutAnyOrigin]()
-                )
-
                 if size < 1000:
                     writer.write("[")
-                    _serialize_elements(serialize_ptr, len(self), serialize)
+                    _serialize_elements(
+                        host_buffer.unsafe_ptr(), len(self), serialize
+                    )
                     writer.write("]")
                 else:
                     _serialize_elements[compact=True](
-                        serialize_ptr, size, serialize
+                        host_buffer.unsafe_ptr(), size, serialize
                     )
                 writer.write(")")
         except e:

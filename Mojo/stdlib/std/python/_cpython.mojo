@@ -456,8 +456,13 @@ struct PyTypeObject:
 
 
 @fieldwise_init
-struct PyType_Spec(ImplicitlyCopyable, RegisterPassable):
+struct PyType_Spec[slots_origin: MutOrigin](
+    ImplicitlyCopyable, RegisterPassable
+):
     """Structure defining a type's behavior.
+
+    Parameters:
+        slots_origin: The origin of the `slots` array.
 
     References:
     - https://docs.python.org/3/c-api/type.html#c.PyType_Spec
@@ -467,7 +472,7 @@ struct PyType_Spec(ImplicitlyCopyable, RegisterPassable):
     var basicsize: c_int
     var itemsize: c_int
     var flags: c_uint
-    var slots: Optional[Pointer[PyType_Slot, MutUntrackedOrigin]]
+    var slots: Optional[Pointer[PyType_Slot, Self.slots_origin]]
 
 
 # https://github.com/python/cpython/blob/main/Include/typeslots.h
@@ -1186,7 +1191,7 @@ comptime PyType_FromSpec = ExternalFunction[
     "PyType_FromSpec",
     # PyObject *PyType_FromSpec(PyType_Spec *spec)
     def(
-        Optional[Pointer[PyType_Spec, MutAnyOrigin]]
+        Optional[Pointer[PyType_Spec[MutAnyOrigin], MutAnyOrigin]]
     ) thin abi("C") -> PyObjectPtr,
 ]
 comptime PyType_GetFlags = ExternalFunction[
@@ -2255,7 +2260,7 @@ struct CPython(Defaultable, Movable):
     def PyErr_SetString(
         self,
         type: PyObjectPtr,
-        message: Optional[Pointer[c_char, ImmutAnyOrigin]],
+        message: Optional[ImmPointer[c_char, _]],
     ):
         """This is the most common way to set the error indicator. The first
         argument specifies the exception type; it is normally one of the
@@ -2266,7 +2271,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
         """
-        self._PyErr_SetString(type, message)
+        self._PyErr_SetString(type, unsafe_cast[origin=ImmutAnyOrigin](message))
 
     def PyErr_SetNone(self, type: PyObjectPtr):
         """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
@@ -3151,7 +3156,7 @@ struct CPython(Defaultable, Movable):
         return self._PyType_GetName(type)
 
     def PyType_FromSpec(
-        self, spec: Optional[Pointer[PyType_Spec, MutAnyOrigin]]
+        self, spec: Optional[MutPointer[PyType_Spec[_], _]]
     ) -> PyObjectPtr:
         """Equivalent to `PyType_FromMetaclass(NULL, NULL, spec, NULL)`.
 
@@ -3160,7 +3165,11 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/type.html#c.PyType_FromSpec
         """
-        return self._PyType_FromSpec(spec)
+        return self._PyType_FromSpec(
+            unsafe_cast[Type=PyType_Spec[MutAnyOrigin], origin=MutAnyOrigin](
+                spec
+            )
+        )
 
     # ===-------------------------------------------------------------------===#
     # The None Object
@@ -3562,16 +3571,21 @@ struct CPython(Defaultable, Movable):
     def PyDict_Next(
         self,
         dict: PyObjectPtr,
-        pos: Optional[Pointer[Py_ssize_t, MutAnyOrigin]],
-        key: Optional[Pointer[PyObjectPtr, MutAnyOrigin]],
-        value: Optional[Pointer[PyObjectPtr, MutAnyOrigin]],
+        pos: Optional[MutPointer[Py_ssize_t, _]],
+        key: Optional[MutPointer[PyObjectPtr, _]],
+        value: Optional[MutPointer[PyObjectPtr, _]],
     ) -> c_int:
         """Iterate over all key-value pairs in the dictionary `dict`.
 
         References:
         - https://docs.python.org/3/c-api/dict.html#c.PyDict_Next
         """
-        return self._PyDict_Next(dict, pos, key, value)
+        return self._PyDict_Next(
+            dict,
+            unsafe_cast[origin=MutAnyOrigin](pos),
+            unsafe_cast[origin=MutAnyOrigin](key),
+            unsafe_cast[origin=MutAnyOrigin](value),
+        )
 
     # ===-------------------------------------------------------------------===#
     # Set Objects
@@ -3641,7 +3655,7 @@ struct CPython(Defaultable, Movable):
     def PyModule_AddFunctions(
         self,
         module: PyObjectPtr,
-        functions: Optional[Pointer[PyMethodDef, MutAnyOrigin]],
+        functions: Optional[MutPointer[PyMethodDef, _]],
     ) -> c_int:
         """Add the functions from the `NULL` terminated `functions` array to
         module.
@@ -3649,12 +3663,14 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions
         """
-        return self._PyModule_AddFunctions(module, functions)
+        return self._PyModule_AddFunctions(
+            module, unsafe_cast[origin=MutAnyOrigin](functions)
+        )
 
     def PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: Optional[Pointer[c_char, ImmutAnyOrigin]],
+        name: Optional[ImmPointer[c_char, _]],
         value: PyObjectPtr,
     ) -> c_int:
         """Add an object to `module` as `name`.
@@ -3662,7 +3678,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
         """
-        return self._PyModule_AddObjectRef(module, name, value)
+        return self._PyModule_AddObjectRef(
+            module, unsafe_cast[origin=ImmutAnyOrigin](name), value
+        )
 
     # ===-------------------------------------------------------------------===#
     # Slice Objects
