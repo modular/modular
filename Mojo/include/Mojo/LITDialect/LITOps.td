@@ -132,6 +132,9 @@ def LIT_FnOp : LITOp<"fn", [
     FuncSymbolGenerator
     getBoundSymbolRef(ParameterEvaluationContext &evalContext,
                       ParameterExprArrayAttr bindings = {});
+    FuncSymbolGenerator
+    getBoundSymbolRef(ParameterEvaluationContext &evalContext,
+                      ArrayRef<TypedAttr> bindings);
 
     /// Return a GeneratorAttr that generates a FuncLiteralAttr for this
     /// function. `dischargedBodyConstraints` is an optional bitmask over the

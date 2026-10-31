@@ -517,7 +517,7 @@ ParametricElaborator::concretizeSymbolsWithin(Attribute value,
         if (!*func) {
           return {cst, WalkResult::interrupt()};
         }
-        auto funcSym = SymbolConstantAttr::get(func.takeValue());
+        auto funcSym = FuncSymbolGenerator::get(func.takeValue());
         auto result = parent->getEvaluator().concretizeParameterExpr(
             parent, loc, funcSym);
         if (result.isError()) {

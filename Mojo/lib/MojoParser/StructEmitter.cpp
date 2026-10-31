@@ -459,10 +459,8 @@ StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
     return failure();
   }
 
-  SymbolRefAttr calleeSym =
-      LIT::getFullyResolvedSymbolRef(traitDefaultMethodOp);
-  TypedAttr typedSymbol = KGEN::SymbolConstantAttr::get(
-      calleeSym, specializedGenerator, callParamBindings);
+  TypedAttr typedSymbol = traitDefaultMethodOp.getBoundSymbolRef(
+      fnDecl.getShared().getEvaluationContext(), callParamBindings);
 
   SmallVector<Value> operands(fn.getArguments().begin(),
                               fn.getArguments().end());

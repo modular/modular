@@ -696,6 +696,13 @@ FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
   return getBoundReference(evalContext, bindings);
 }
 
+FuncSymbolGenerator
+FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
+                        ArrayRef<TypedAttr> bindings) {
+  return getBoundSymbolRef(evalContext,
+                           ParameterExprArrayAttr::get(getContext(), bindings));
+}
+
 TypedAttr FnOp::getFuncLiteralGenerator(
     ParameterEvaluationContext &evalContext, ParameterExprArrayAttr bindings,
     const llvm::BitVector &dischargedBodyConstraints) {

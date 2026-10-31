@@ -500,8 +500,7 @@ buildSymbol(ParameterEvaluationContext &evalCtx, FnOp impl,
   SmallVector<TypedAttr> bindings;
   for (ParamDeclAttr param : structLevelParams)
     bindings.push_back(ParamDeclRefAttr::get(param));
-  return impl.getBoundSymbolRef(
-      evalCtx, ParameterExprArrayAttr::get(impl.getContext(), bindings));
+  return impl.getBoundSymbolRef(evalCtx, bindings);
 }
 
 static size_t explicitParamCount(FnOp fn) {

@@ -11,12 +11,12 @@
 
 // CHECK-LABEL: kgen.func @execute_byref
 kgen.func @execute_byref(%arg0: index) {
-  // CHECK-NEXT: co.invoke[{{.*}}: #kgen.symbol.constant<@execute_byref_async_closure_0>](%arg0)
+  // CHECK-NEXT: co.invoke[{{.*}}: @execute_byref_async_closure_0](%arg0)
   co.execute (%arg1: !kgen.pointer<index> byref_result) {
     pop.store %arg0, %arg1 : !kgen.pointer<index>
     hlcf.return
   }
-  // CHECK-NEXT: co.invoke[{{.*}}: #kgen.symbol.constant<@execute_byref_async_closure_1>](%arg0)
+  // CHECK-NEXT: co.invoke[{{.*}}: @execute_byref_async_closure_1](%arg0)
   co.execute (%arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) {
     pop.store %arg0, %arg1 : !kgen.pointer<index>
     pop.store %arg0, %arg2 : !kgen.pointer<index>
@@ -39,14 +39,14 @@ kgen.func @execute_byref(%arg0: index) {
 // CHECK-LABEL: kgen.func @async_execute_async_closure_{{[0-9]}}
 // CHECK-SAME: (%arg0: index, %arg1: index) async
 // CHECK-NEXT: %idx1 = index.constant 1
-// CHECK-NEXT: co.invoke[{{.*}}: #kgen.symbol.constant<@async_execute_async_closure_{{[0-9]}}>](%arg0, %arg1)
+// CHECK-NEXT: co.invoke[{{.*}}: @async_execute_async_closure_{{[0-9]}}](%arg0, %arg1)
 // CHECK-NEXT: hlcf.return
 
 // CHECK-LABEL: kgen.func @async_execute
 kgen.func @async_execute(%arg0: index) {
   // CHECK: index.add
-  // CHECK-NEXT: co.invoke[{{.*}}: #kgen.symbol.constant<@async_execute_async_closure_0>](%arg0)
-  // CHECK-NEXT: co.invoke[{{.*}}: #kgen.symbol.constant<@async_execute_async_closure_2>](%arg0, %0)
+  // CHECK-NEXT: co.invoke[{{.*}}: @async_execute_async_closure_0](%arg0)
+  // CHECK-NEXT: co.invoke[{{.*}}: @async_execute_async_closure_2](%arg0, %0)
   %arg1 = index.add %arg0, %arg0
   %0 = co.execute : index {
     hlcf.return %arg0 : index

@@ -1325,6 +1325,12 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
     return flattened;
   }
 
+  // TODO: kill this after fully migrated.
+  if (auto symbolConstant = sugarDynCast<SymbolConstantAttr>(generator))
+    if (FuncSymbolGenerator converted =
+            FuncSymbolGenerator::get(symbolConstant))
+      generator = converted;
+
   // If the generator is a GeneratorAttr, specialize it directly. A null nested
   // evaluation propagates upwards as a null result.
   if (auto genAttr = sugarDynCast<GeneratorAttr>(generator)) {
@@ -1359,34 +1365,6 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
 
     llvm_unreachable("requested bind_params type is inconsistent with the "
                      "specialized generator");
-  }
-
-  // If the generator is a SymbolConstantAttr, fold the parameter values into it
-  // directly (this will be cleaned up once we remove param bindings from
-  // SymbolConstantAttr).
-  if (auto symbolConstant = sugarDynCast<SymbolConstantAttr>(generator)) {
-    [[maybe_unused]] bool hasUnboundParameters =
-        symbolConstant.getParamValues().empty();
-    hasUnboundParameters |=
-        llvm::any_of(symbolConstant.getParamValues(),
-                     [](TypedAttr value) { return ::isa<UnboundAttr>(value); });
-    assert(hasUnboundParameters &&
-           "cannot have already bound all the input parameters, because we'd "
-           "end up with a nongeneric signature that would fail verification");
-
-    if (symbolConstant.getParamValues().empty())
-      return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                     ::cast<FuncTypeGeneratorType>(type),
-                                     paramValues);
-
-    // We have to interleave the new values wherever there's an unbound thing so
-    // we preserve the order.
-    SmallVector<TypedAttr> mergedParamValues =
-        mergeParamBindings(symbolConstant.getParamValues(), paramValues);
-
-    return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                   ::cast<FuncTypeGeneratorType>(type),
-                                   mergedParamValues);
   }
 
   // No simplification applies. Build the BindParamsAttr directly.
@@ -2033,17 +2011,18 @@ FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
 
 FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
   FuncTypeGeneratorType type = func.getFuncTypeGenerator();
+  assert(type.getInputParamTypes().empty());
   return get(FlatSymbolRefAttr::get(func.getSymNameAttr()), type.getBody(),
              type.getParamListAttrs());
 }
 
-// TODO: kill this after fully migrated.
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolConstantAttr symbol) {
-  FuncTypeGeneratorType type = symbol.getType();
+FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
+                                             FuncTypeGeneratorType type,
+                                             ArrayRef<TypedAttr> paramValues) {
   ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
 
-  // The body binds every parameter of the callee. A parameter the symbol leaves
-  // unbound refers to the generator's next input parameter, so specializing the
+  // The body binds every parameter of the callee. A parameter left unbound
+  // refers to the generator's next input parameter, so specializing the
   // generator binds it; a bound value moves one scope deeper, into the body.
   SmallVector<TypedAttr> bodyValues;
   IndexDepthAdjuster adjuster(1);
@@ -2054,25 +2033,30 @@ FuncSymbolGenerator FuncSymbolGenerator::get(SymbolConstantAttr symbol) {
     ++nextInput;
     return ref;
   };
-  if (symbol.getParamValues().empty()) {
-    while (nextInput < inputParamTypes.size())
+  for (TypedAttr value : paramValues) {
+    if (sugarIsa<UnboundAttr>(value)) {
+      if (nextInput == inputParamTypes.size())
+        return {};
       bodyValues.push_back(selfRef());
-  } else {
-    for (TypedAttr value : symbol.getParamValues()) {
-      if (sugarIsa<UnboundAttr>(value)) {
-        if (nextInput == inputParamTypes.size())
-          return {};
-        bodyValues.push_back(selfRef());
-      } else {
-        bodyValues.push_back(cast<TypedAttr>(adjuster.replace(value)));
-      }
+    } else {
+      bodyValues.push_back(cast<TypedAttr>(adjuster.replace(value)));
     }
   }
-  if (nextInput != inputParamTypes.size())
-    return {};
-  auto funcSymbol =
-      FuncSymbolAttr::get(symbol.getSymbol(), type.getBody(), bodyValues);
-  return get(type.getInputParamTypes(), funcSymbol, type.getParamListAttrs());
+  while (nextInput < inputParamTypes.size())
+    bodyValues.push_back(selfRef());
+  auto funcSymbol = FuncSymbolAttr::get(symbol, type.getBody(), bodyValues);
+  return get(inputParamTypes, funcSymbol, type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(StringAttr name,
+                                             FuncTypeGeneratorType type,
+                                             ArrayRef<TypedAttr> paramValues) {
+  return get(FlatSymbolRefAttr::get(name), type, paramValues);
+}
+
+// TODO: kill this after fully migrated.
+FuncSymbolGenerator FuncSymbolGenerator::get(SymbolConstantAttr symbol) {
+  return get(symbol.getSymbol(), symbol.getType(), symbol.getParamValues());
 }
 
 FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {

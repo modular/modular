@@ -629,7 +629,7 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
         if (!*func)
           return {cst, WalkResult::interrupt()};
 
-        return {SymbolConstantAttr::get(func.takeValue()), WalkResult::skip()};
+        return {FuncSymbolGenerator::get(func.takeValue()), WalkResult::skip()};
       });
   replacer.addReplacement(
       [&](GeneratorAttr gen)

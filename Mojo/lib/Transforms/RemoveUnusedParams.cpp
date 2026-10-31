@@ -249,7 +249,7 @@ private:
         newOperands.push_back(operand);
       }
     }
-    auto symbol = SymbolConstantAttr::get(
+    auto symbol = FuncSymbolGenerator::get(
         flatSym,
         newFunc.getFuncTypeGenerator().getSpecializedGenerator(
             newParams, &*evaluationContext, oldCall.getLoc()),

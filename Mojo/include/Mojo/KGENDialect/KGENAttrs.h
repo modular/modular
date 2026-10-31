@@ -245,6 +245,15 @@ public:
   /// Returns a fully bound generator referencing `func`.
   static FuncSymbolGenerator get(FuncOp func);
 
+  /// Returns a generator of type `type` referencing `symbol` with
+  /// `paramValues` bound. An `UnboundAttr` value, or a parameter left off the
+  /// end, binds to the generator's next input parameter.
+  static FuncSymbolGenerator get(SymbolRefAttr symbol,
+                                 FuncTypeGeneratorType type,
+                                 ArrayRef<TypedAttr> paramValues = {});
+  static FuncSymbolGenerator get(StringAttr name, FuncTypeGeneratorType type,
+                                 ArrayRef<TypedAttr> paramValues = {});
+
   /// Converts `symbol` to the equivalent generator of function symbol attrs.
   /// TODO: this will be killed after fully migrated.
   static FuncSymbolGenerator get(SymbolConstantAttr symbol);
