@@ -838,12 +838,12 @@ def plan_engram(
     With several devices each reads only its rank's rows, viewing the same
     pinned buffers.
     """
-    _check_engram_host_ram_capacity(
-        state_dict, model_config, num_devices=len(devices)
-    )
+    if not is_virtual_device_mode():
+        _check_engram_host_ram_capacity(
+            state_dict, model_config, num_devices=len(devices)
+        )
     engram_layer_ids = model_config.engram_layer_ids
     pin_device = devices[0]
-    assert isinstance(pin_device, Accelerator)
     # Popped now so the strict `load_state_dict` never sees them.
     engram_sources: dict[str, Any] = {
         name: state_dict.pop(name)
@@ -872,6 +872,9 @@ def plan_engram(
                 )
 
     def pin() -> list[Buffer]:
+        if is_virtual_device_mode():
+            return []
+        assert isinstance(pin_device, Accelerator)
         tables = _load_engram_host_tables(
             engram_sources, model_config, pin_device
         )
