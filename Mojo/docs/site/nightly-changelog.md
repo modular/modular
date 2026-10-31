@@ -489,6 +489,17 @@ This version is still a work in progress.
   - `if s.find(x):` is now `True` only when `x` is found. Before, it was
     `True` when `x` was missing and `False` when `x` was at offset 0.
 
+- `List` and `Array` now conform to `ConvertibleToPython` when their element
+  type does, so they convert to a Python `list` implicitly, including nested
+  containers such as `List[List[Int]]`. The conversion raises the element
+  type's `ConversionToPythonErrorType`, so converting a `List[Int]` doesn't
+  raise, and converting a `List[String]` raises `Error`.
+
+  ```mojo
+  var values: List = [1, 2, 3]
+  var result = PythonObject(values^)  # [1, 2, 3]
+  ```
+
 ### Interior origins
 
 More standard library APIs now return references, pointers, spans, and
