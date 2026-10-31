@@ -133,7 +133,7 @@ struct _Ops(EnumLike, ScheduleOps):
 
     # Op tags are open-ended Ints (`OpDesc.tag` interchange): a tag value
     # outside the named cases must stay reachable, so the enum is not
-    # exhaustive and unknown tags map to discriminant -1.
+    # exhaustive. An unknown tag maps past the case indices.
     comptime _enum_is_exhaustive = False
 
     comptime _enum_case_names = ParameterList.of[
@@ -168,7 +168,7 @@ struct _Ops(EnumLike, ScheduleOps):
             case Self.NONE.value:
                 return 6
             case _:
-                return -1
+                return self.value + ParameterList[Self._enum_case_names].length
 
     @inline(.always)
     def _unsafe_get_enum_payload[
@@ -291,7 +291,12 @@ struct OpRole(EnumLike, Equatable, ImplicitlyCopyable, Movable):
 
     @inline(.always)
     def _get_enum_discriminant(self) -> Int:
-        return 7 if self._value == 255 else self._value
+        # NONE is case 7. Other values from 7 up map past the case indices.
+        if self._value == Self.NONE._value:
+            return 7
+        if self._value < 7:
+            return self._value
+        return self._value + ParameterList[Self._enum_case_names].length
 
     @inline(.always)
     def _unsafe_get_enum_payload[

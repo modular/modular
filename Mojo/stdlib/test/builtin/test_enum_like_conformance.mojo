@@ -16,8 +16,15 @@ Each helper names every case so the match fails to compile if
 `_enum_case_names` drifts from the comptime case constants.
 """
 
-from std.testing import TestSuite, assert_equal
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
 
+from std.builtin.variadics import ParameterList, TypeList
 from std.simd import FastMathFlag
 from std.testing.suite import TestResult
 
@@ -82,6 +89,53 @@ def test_result_match() raises:
         assert_equal(
             _test_result_rank(results[i]), i, "wrong TestResult case matched"
         )
+
+
+__enum _Color(Equatable, Hashable, ImplicitlyCopyable):
+    case red
+    case green
+
+
+@fieldwise_init
+struct _OpenTag(EnumLike, Equatable, Hashable, ImplicitlyCopyable):
+    """An open enum that gives each unnamed value its own discriminant."""
+
+    var value: Int
+
+    comptime A = Self(0)
+    comptime B = Self(1)
+
+    comptime _enum_is_exhaustive = False
+    comptime _enum_case_names = ParameterList.of["A".value, "B".value].values
+    comptime _enum_case_types = TypeList.splat[2, NoneType].values
+
+    def _get_enum_discriminant(self) -> Int:
+        if self.value < 2:
+            return self.value
+        return self.value + 2
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "_OpenTag has no payload"
+
+
+def test_default_eq_and_hash_without_payloads() raises:
+    assert_true(_Color.red == _Color.red)
+    assert_false(_Color.red == _Color.green)
+    assert_equal(hash(_Color.red), hash(_Color.red))
+    assert_not_equal(hash(_Color.red), hash(_Color.green))
+
+
+def test_default_eq_and_hash_open_enum() raises:
+    # Values outside the declared cases compare and hash by discriminant.
+    assert_true(_OpenTag(5) == _OpenTag(5))
+    assert_false(_OpenTag(5) == _OpenTag(6))
+    assert_false(_OpenTag(5) == _OpenTag.A)
+    assert_equal(hash(_OpenTag(5)), hash(_OpenTag(5)))
+    assert_not_equal(hash(_OpenTag(5)), hash(_OpenTag(6)))
 
 
 def main() raises:

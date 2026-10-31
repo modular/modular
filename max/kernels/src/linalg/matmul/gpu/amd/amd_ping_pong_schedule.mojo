@@ -70,9 +70,8 @@ struct PingPongOps(EnumLike, ScheduleOps):
     comptime MMA_LOAD_B = Self(4)
     comptime MMA = Self(5)
 
-    # Op tags are open-ended Ints (`OpDesc.tag` interchange): schedules can
-    # carry tags this struct does not name, so the enum is not exhaustive
-    # and unknown tags map to discriminant -1 (never a valid case index).
+    # Op tags are open-ended Ints (`OpDesc.tag` interchange), so the enum is
+    # not exhaustive. An unknown tag maps past the case indices.
     comptime _enum_is_exhaustive = False
 
     comptime _enum_case_names = ParameterList.of[
@@ -119,7 +118,7 @@ struct PingPongOps(EnumLike, ScheduleOps):
             case Self.SCHEDULE_BARRIER.value:
                 return 10
             case _:
-                return -1
+                return self.value + ParameterList[Self._enum_case_names].length
 
     @inline(.always)
     def _unsafe_get_enum_payload[
