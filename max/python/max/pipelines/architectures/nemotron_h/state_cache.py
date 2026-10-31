@@ -29,6 +29,7 @@ passed into the model graph as mutable ``BufferType`` inputs:
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 from max.driver import (
@@ -37,13 +38,19 @@ from max.driver import (
     Usage,
 )
 from max.dtype import DType
+from max.graph import BufferType, DeviceRef, TensorType
+from max.pipelines.context import TextContext
+from max.pipelines.lib.request_state import RequestStateStore
 from max.pipelines.modeling.types import RequestID
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 logger = logging.getLogger("max.pipelines")
 
+_BATCH_DIM = "batch_size"
+_HAS_INITIAL_STATE_DIM = "has_initial_state_len"
 
-class NemotronHStateCache:
+
+class NemotronHStateCache(RequestStateStore):
     """GPU-resident slot pool for Nemotron-H conv (bf16) and SSM (fp32) states.
 
     Lifecycle:
@@ -55,6 +62,13 @@ class NemotronHStateCache:
            op and the SSD inplace op mutate their pools in place — no graph
            state outputs to handle.)
         4. :meth:`release` — free the slot.
+
+    As the decoder's
+    :class:`~max.pipelines.lib.request_state.RequestStateStore`,
+    :meth:`prepare` runs steps 1 and 2 for a batch and returns the graph
+    inputs: ``slot_idx``, the conv pools, the SSM pools and
+    ``has_initial_state``. The graph returns no state, so it keeps the
+    default in-place :meth:`update`.
     """
 
     def __init__(
@@ -103,6 +117,11 @@ class NemotronHStateCache:
             for _ in range(num_mamba_layers)
         ]
 
+        # The per-step slot_idx and has_initial_state preallocs, created on the
+        # first step so a compile-only (virtual device) build allocates none.
+        self._slot_idx_prealloc: Buffer | None = None
+        self._has_initial_state_prealloc: Buffer | None = None
+
         # Pre-allocated zero buffers used to wipe a slot on claim().
         self._zero_conv = Buffer.zeros(
             [1, conv_dim, conv_kernel - 1], conv_dtype, device
@@ -150,6 +169,76 @@ class NemotronHStateCache:
             f" mamba layers — conv {to_human_readable_bytes(conv_bytes)}"
             f" + ssm {to_human_readable_bytes(ssm_bytes)}"
             f" = {to_human_readable_bytes(conv_bytes + ssm_bytes)} on {device}"
+        )
+
+    def input_types(self) -> tuple[TensorType | BufferType, ...]:
+        """Returns the slot indices, both pool sets and the initial flags.
+
+        In order: ``slot_idx``, the conv pools, the SSM pools and
+        ``has_initial_state``. The conv pools are model-dtype mutable buffers; the SSM pools are
+        mutable buffers of the SSM storage dtype, mutated in place at slot
+        ``slot_idx[batch_item]``. ``has_initial_state`` is ``[batch]`` bool.
+        """
+        device = DeviceRef.from_device(self._device)
+        conv_pools = tuple(
+            BufferType(
+                self._conv_dtype,
+                shape=["max_slots", self._conv_dim, self._conv_kernel - 1],
+                device=device,
+            )
+            for _ in range(self._num_layers)
+        )
+        ssm_pools = tuple(
+            BufferType(
+                self._ssm_dtype,
+                shape=[
+                    "max_slots",
+                    self._nheads,
+                    self._head_dim,
+                    self._dstate,
+                ],
+                device=device,
+            )
+            for _ in range(self._num_layers)
+        )
+        return (
+            TensorType(DType.uint32, shape=[_BATCH_DIM], device=device),
+            *conv_pools,
+            *ssm_pools,
+            TensorType(
+                DType.bool, shape=[_HAS_INITIAL_STATE_DIM], device=device
+            ),
+        )
+
+    def max_dims(self) -> Mapping[str, int]:
+        """Bounds the per-step dims by the slots, one per request in flight."""
+        return {
+            _BATCH_DIM: self._max_slots,
+            _HAS_INITIAL_STATE_DIM: self._max_slots,
+        }
+
+    def prepare(self, batch: Sequence[TextContext]) -> tuple[Buffer, ...]:
+        """Claims the batch's slots and returns the step's state inputs."""
+        if self._slot_idx_prealloc is None:
+            self._slot_idx_prealloc = Buffer(
+                shape=[self._max_slots], dtype=DType.uint32, device=self._device
+            )
+            # has_initial_state is always all-True: a fresh request's slot is
+            # zeroed on claim, so loading the (zero) initial state is
+            # identical to a from-scratch prefill.
+            self._has_initial_state_prealloc = Buffer.from_numpy(
+                np.ones((self._max_slots,), dtype=np.bool_)
+            ).to(self._device)
+        assert self._has_initial_state_prealloc is not None
+        request_ids = [ctx.request_id for ctx in batch]
+        for request_id in request_ids:
+            self.claim(request_id)
+        slot_idx = self.slot_idx_for(request_ids, self._slot_idx_prealloc)
+        return (
+            slot_idx,
+            *self._conv_pool,
+            *self._ssm_pool,
+            self._has_initial_state_prealloc[: len(request_ids)],
         )
 
     @property

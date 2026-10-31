@@ -31,6 +31,7 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -38,6 +39,7 @@ from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -227,6 +229,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     quantization_encoding: SupportedEncoding | None = None
 
+    quant_config: QuantConfig | None = None
+    """The per-tensor static FP8 scheme of the FP8 layers, from the
+    checkpoint (:meth:`finalize`)."""
+
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+
     @property
     def mamba_intermediate_size(self) -> int:
         """The mixer's width, from the head count and the head width."""
@@ -310,6 +318,23 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             f" {len(fp8_mlp)} MLP layers, {len(fp8_moe)} MoE layers,"
             f" {len(fp8_attention)} attention layers quantized"
         )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+    ) -> None:
+        """Completes the config in place from the checkpoint.
+
+        Records which layers are FP8 and their scheme, from the checkpoint's
+        ``weight_scale`` tensors, and the logits the pipeline returns.
+        """
+        self.populate_fp8_layers(state_dict)
+        self.quant_config = build_fp8_quant_config(
+            huggingface_config, state_dict
+        )
+        self.return_logits = outputs.return_logits
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:

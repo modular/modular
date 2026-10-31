@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -32,8 +32,8 @@ from ..qwen3_5.reasoning import (
 from ..qwen3_5.tool_parser import (
     Qwen3_5ToolParser,  # noqa: F401  registers "qwen3_5"
 )
-from .model import NemotronHModel
 from .model_config import NemotronHConfig
+from .nemotron_h import NemotronH
 from .weight_adapters import convert_nemotron_h_state_dict
 
 nemotron_h_arch = SupportedArchitecture(
@@ -48,7 +48,7 @@ nemotron_h_arch = SupportedArchitecture(
     # modelopt per-tensor static FP8 on the (non-excluded) mamba in/out_proj and
     # MLP up/down projections; attention, conv1d, norms, lm_head stay bf16.
     supported_encodings=NemotronHConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=NemotronHModel,
+    modules={GraphRole.DECODER: NemotronH},
     tokenizer=ReasoningTextTokenizer,
     context_type=TextContext,
     # NoPE: attention adds no rotary embedding (position flows through the SSM).
@@ -71,8 +71,9 @@ nemotron_h_arch = SupportedArchitecture(
     # mamba2_ssd_chunk_scan_varlen_fwd_inplace) mutate them directly on the
     # GPU via slot_idx — no host-device sync required.  ``inplace_copy_from``
     # short-circuits when src-is-self (same Buffer object) so pool contents
-    # survive graph-capture replay unchanged.  NemotronHModel implements
-    # SupportsSSMStateWarmup so the overlap pipeline releases warmup slots
-    # after each (batch_size, cache_length) probe, preventing pool exhaustion.
+    # survive graph-capture replay unchanged.  The registered pipeline model
+    # implements SupportsSSMStateWarmup for the decoder's request state, so the
+    # overlap pipeline releases warmup slots after each (batch_size,
+    # cache_length) probe, preventing pool exhaustion.
     supports_device_graph_capture=True,
 )
