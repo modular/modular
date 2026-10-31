@@ -160,6 +160,12 @@ This version is still a work in progress.
 - `ArcPointer` element types no longer need to be `Deinitable`. Destroy an
   `ArcPointer` of a non-`Deinitable` type with the new `deinit_with()` method.
 
+- Added an `OwnedPointer(init_with=)` initializer that constructs the value in
+  place, so the element type doesn't need to be `Movable`, and an
+  `OwnedPointer.deinit_with()` method that destroys an `OwnedPointer` whose
+  element type isn't `Deinitable`. The initializers that copied a value into the
+  allocation are now deprecated.
+
 - `FileHandle` now owns its descriptor through a `FileDescriptor` and always
   refers to an open file. It is no longer `Defaultable`, and `close()`
   consumes the handle (`f^.close()`) instead of leaving it in an invalid

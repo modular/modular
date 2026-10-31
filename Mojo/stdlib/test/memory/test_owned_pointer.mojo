@@ -19,6 +19,8 @@ from test_utils import (
     ImplicitCopyOnly,
     MoveOnly,
     ObservableDel,
+    Pinned,
+    PinnedExplicitDelOnly,
     check_niches,
     check_write_to,
 )
@@ -57,6 +59,11 @@ def test_owned_pointer_copy_constructor() raises:
 
     assert_false(b.ptr() == b2.ptr())
 
+    var c = OwnedPointer(ExplicitCopyOnly(1))
+    var c2 = OwnedPointer(other=c)
+    assert_equal(c2[].value, 1)
+    assert_equal(c2[].copy_count, 1)
+
 
 def test_copying_constructor() raises:
     var v = ImplicitCopyOnly(1)
@@ -64,11 +71,13 @@ def test_copying_constructor() raises:
 
     assert_equal(b[].value, 1)
     assert_equal(b[].copy_count, 1)  # this should only ever require one copy
+    # Using `v` after the call forces a copy instead of a last-use move.
+    assert_equal(v.copy_count, 0)
 
 
 def test_explicitly_copying_constructor() raises:
     var v = ExplicitCopyOnly(1)
-    var b = OwnedPointer(copy_value=v)
+    var b = OwnedPointer(v.copy())
 
     assert_equal(b[].value, 1)
     assert_equal(b[].copy_count, 1)  # this should only ever require one copy
@@ -79,6 +88,18 @@ def test_moving_constructor() raises:
     var b = OwnedPointer(v^)
 
     assert_equal(b[].data, 1)
+
+
+def test_init_with() raises:
+    var b = OwnedPointer(init_with=lambda () -> Pinned: Pinned(7))
+    assert_equal(b[].data, 7)
+
+    var v = ExplicitCopyOnly(1)
+    var b2 = OwnedPointer[ExplicitCopyOnly](
+        init_with=lambda () -> ExplicitCopyOnly: v.copy()
+    )
+    assert_equal(b2[].value, 1)
+    assert_equal(b2[].copy_count, 1)
 
 
 def test_basic_ref_mutate() raises:
@@ -167,6 +188,25 @@ def test_owned_pointer_linear_type() raises:
     var data3 = v3.data
     v3^.destroy()
     assert_equal(data3, 7)
+
+
+def test_deinit_with() raises:
+    var destroyed_data = 0
+
+    def destroy(var value: PinnedExplicitDelOnly) {mut destroyed_data}:
+        destroyed_data = value.data
+        value^.destroy()
+
+    var b = OwnedPointer(
+        init_with=lambda () -> PinnedExplicitDelOnly: PinnedExplicitDelOnly(5)
+    )
+    b^.deinit_with(destroy)
+    assert_equal(destroyed_data, 5)
+
+    var b2 = OwnedPointer(
+        init_with=lambda () -> PinnedExplicitDelOnly: PinnedExplicitDelOnly(7)
+    )
+    b2^.deinit_with(PinnedExplicitDelOnly.destroy)
 
 
 def test_write_to() raises:

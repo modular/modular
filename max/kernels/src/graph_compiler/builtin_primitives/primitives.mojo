@@ -1471,7 +1471,7 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
         def create() -> Pointer[DeviceGraphCache, MutUntrackedOrigin]:
             # Leaked because the state context takes over ownership; `destroy`
             # below pairs the pointer back up with this layout to release it.
-            var cache = OwnedPointer(value=DeviceGraphCache())
+            var cache = OwnedPointer(DeviceGraphCache())
             return cache^.unsafe_take_allocation().unsafe_leak()
 
         # The corresponding desructor function. Convert the raw pointer back to
