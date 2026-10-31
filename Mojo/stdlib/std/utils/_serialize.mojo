@@ -23,7 +23,7 @@ def _serialize_elements_compact[
     SerializeFnType: def[T: Writable](elem: T) -> None,
     //,
 ](
-    ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin],
+    ptr: Optional[Pointer[Scalar[dtype], ImmutAnyOrigin]],
     len: Int,
     serialize_fn: SerializeFnType,
 ):
@@ -36,8 +36,8 @@ def _serialize_elements_compact[
     _serialize_elements_complete(ptr, _kCompactElemPerSide, serialize_fn)
     serialize_fn(", ")
     serialize_fn(_kTensorFiller)
-    var tail_ptr: OptionalPointer[
-        Scalar[dtype], ImmutAnyOrigin
+    var tail_ptr: Optional[
+        Pointer[Scalar[dtype], ImmutAnyOrigin]
     ] = ptr.unsafe_value().unsafe_offset(len - _kCompactElemPerSide)
     _serialize_elements_complete(tail_ptr, _kCompactElemPerSide, serialize_fn)
     serialize_fn(_kEndTensorMarker)
@@ -48,7 +48,7 @@ def _serialize_elements_complete[
     SerializeFnType: def[T: Writable](elem: T) -> None,
     //,
 ](
-    ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin],
+    ptr: Optional[Pointer[Scalar[dtype], ImmutAnyOrigin]],
     len: Int,
     serialize_fn: SerializeFnType,
 ):
@@ -67,7 +67,7 @@ def _serialize_elements[
     //,
     compact: Bool = False,
 ](
-    ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin],
+    ptr: Optional[Pointer[Scalar[dtype], ImmutAnyOrigin]],
     len: Int,
     serialize_fn: SerializeFnType,
 ):
@@ -85,7 +85,7 @@ def _serialize[
     serialize_shape: Bool = True,
     serialize_end_line: Bool = True,
 ](
-    ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin],
+    ptr: Optional[Pointer[Scalar[dtype], ImmutAnyOrigin]],
     shape: List[Int],
     serialize_fn: SerializeFnType,
 ):
@@ -136,8 +136,8 @@ def _serialize[
             if row_idx > 0:
                 serialize_fn("\n")
 
-            var row_ptr: OptionalPointer[
-                Scalar[dtype], ImmutAnyOrigin
+            var row_ptr: Optional[
+                Pointer[Scalar[dtype], ImmutAnyOrigin]
             ] = ptr.unsafe_value().unsafe_offset(
                 matrix_idx * matrix_elem_count + row_idx * column_elem_count
             )

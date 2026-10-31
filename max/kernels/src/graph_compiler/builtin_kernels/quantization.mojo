@@ -2251,5 +2251,5 @@ struct QuantizeDynamicScaledFloat8RowBounded:
             scale_ub,
             ctx,
             num_rows=Int(input.shape()[0].value()),
-            row_limit=OptionalPointer[UInt32, ImmUntrackedOrigin](row_limit),
+            row_limit=Optional[Pointer[UInt32, ImmUntrackedOrigin]](row_limit),
         )

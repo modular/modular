@@ -161,6 +161,20 @@ This version is still a work in progress.
   `close()` consumes it, and `Optional[NamedTemporaryFile]` is the same size
   as `NamedTemporaryFile`.
 
+- The `OptionalPointer`, `OptionalMutPointer`, and `OptionalImmPointer`
+  aliases are deprecated. Write `Optional[Pointer[T, origin]]`,
+  `Optional[MutPointer[T, origin]]`, or `Optional[ImmPointer[T, origin]]`
+  instead. An `_` origin nested inside the `Optional` makes the function
+  generic over it, as it did with the aliases:
+
+  ```mojo
+  # Before
+  def fill(buf: OptionalMutPointer[Byte, _]): ...
+
+  # After
+  def fill(buf: Optional[MutPointer[Byte, _]]): ...
+  ```
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and

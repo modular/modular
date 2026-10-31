@@ -599,7 +599,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         library. For safer usage, prefer `OwnedDLHandle`.
     """
 
-    var handle: OptionalPointer[NoneType, MutUntrackedOrigin]
+    var handle: Optional[Pointer[NoneType, MutUntrackedOrigin]]
     """The handle to the dynamic library."""
 
     @inline(.always)
@@ -618,7 +618,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             If `dlopen(nullptr, flags)` fails.
         """
         self = Self._dlopen(
-            OptionalPointer[c_char, ImmUntrackedOrigin](), flags
+            Optional[Pointer[c_char, ImmUntrackedOrigin]](), flags
         )
 
     def __init__[
@@ -654,7 +654,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def _dlopen(
-        file: OptionalPointer[mut=False, c_char, ImmUntrackedOrigin], flags: Int
+        file: Optional[ImmPointer[c_char, ImmUntrackedOrigin]], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
         if not handle:
@@ -1047,7 +1047,9 @@ struct _Global[
         pass
 
     @staticmethod
-    def _init_wrapper() -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
+    def _init_wrapper() -> (
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
+    ):
         # Heap allocate space to store this "global"
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -1060,7 +1062,7 @@ struct _Global[
 
     @staticmethod
     def _deinit_wrapper(
-        opaque_ptr: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+        opaque_ptr: Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
     ):
         # Deinitialize and deallocate the storage.
         if case .Some(opaque_ptr) = opaque_ptr:
@@ -1099,7 +1101,7 @@ struct _Global[
     def get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
             "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-            OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+            Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
         ](
             idx,
             Self._init_wrapper,
@@ -1116,14 +1118,16 @@ struct _Global[
 @inline(.always)
 def _get_global[
     name: StaticString,
-    init_fn: def() thin -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+    init_fn: def() thin -> Optional[
+        Pointer[NoneType, UntrackedOrigin[mut=True]]
+    ],
     destroy_fn: def(
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
     ) thin -> None,
-]() -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
+]() -> Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]:
     return external_call[
         "KGEN_CompilerRT_GetOrCreateGlobal",
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
     ](
         name,
         init_fn,
@@ -1134,10 +1138,10 @@ def _get_global[
 @inline(.always)
 def _get_global_or_null(
     name: StringSlice,
-) -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
+) -> Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]:
     return external_call[
         "KGEN_CompilerRT_GetGlobalOrNull",
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
     ](name.as_bytes().unsafe_ptr(), name.byte_length())
 
 

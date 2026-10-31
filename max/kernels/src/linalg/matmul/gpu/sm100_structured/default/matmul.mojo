@@ -1079,7 +1079,7 @@ comptime _SPLITK_SLOT_COUNTS = _Global[
 struct _SplitKContext(ImplicitlyCopyable, Movable):
     """A device context's parallel split-K state."""
 
-    var workspace: OptionalPointer[UInt8, MutUntrackedOrigin]
+    var workspace: Optional[Pointer[UInt8, MutUntrackedOrigin]]
     """The context's persistent fp32 partials; none without a slot."""
     var slot: Int
     """The context's slot in each kernel's counter global, or -1."""
@@ -1119,7 +1119,7 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
         )
         if taken < SPLITK_COUNTER_SLOTS:
             slot = taken
-    var workspace = OptionalPointer[UInt8, MutUntrackedOrigin]()
+    var workspace = Optional[Pointer[UInt8, MutUntrackedOrigin]]()
     if slot >= 0:
         var buf = ctx.enqueue_create_buffer[DType.uint8](
             _SPLITK_WORKSPACE_BYTES

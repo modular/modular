@@ -650,7 +650,7 @@ def MojoHAL_DeviceContext_memmapFile(
         _ = external_call["close", Int32](fd)
         return _err_cstr("failed to query file size")
     # NULL address hint, modeled as Optional's null niche.
-    var no_hint = OptionalPointer[NoneType, MutUntrackedOrigin](None)
+    var no_hint = Optional[Pointer[NoneType, MutUntrackedOrigin]](None)
     var base = external_call["mmap", _RawMemoryPtr](
         no_hint,
         UInt64(size),

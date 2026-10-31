@@ -339,8 +339,8 @@ def _ffi_void_ptr[
 @inline(.always)
 def _ffi_void_ptr[
     T: AnyType, origin: Origin, addr: AddressSpace
-](ptr: Optional[Pointer[T, origin, address_space=addr]]) -> OptionalPointer[
-    NoneType, MutAnyOrigin
+](ptr: Optional[Pointer[T, origin, address_space=addr]]) -> Optional[
+    Pointer[NoneType, MutAnyOrigin]
 ]:
     """Cast an optional non-null pointer to a nullable void pointer for vendor
     FFI calls.
@@ -365,7 +365,7 @@ def _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
                         1,
                         1,
                         0,
-                        OptionalPointer[Int8, MutAnyOrigin](),
+                        Optional[Pointer[Int8, MutAnyOrigin]](),
                     )
                 )
             else:

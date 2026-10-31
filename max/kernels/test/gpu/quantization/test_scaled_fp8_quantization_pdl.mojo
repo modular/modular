@@ -240,7 +240,7 @@ def run_case[
             1200.0,
             ctx,
             rows,
-            row_limit=OptionalPointer[UInt32, ImmUntrackedOrigin](
+            row_limit=Optional[Pointer[UInt32, ImmUntrackedOrigin]](
                 src_limit.unsafe_ptr()
                 .unsafe_origin_cast[MutUntrackedOrigin]()
                 .as_imm()
@@ -294,7 +294,7 @@ def run_case[
                 1200.0,
                 ctx,
                 rows,
-                row_limit=OptionalPointer[UInt32, ImmUntrackedOrigin](
+                row_limit=Optional[Pointer[UInt32, ImmUntrackedOrigin]](
                     dst_limit.unsafe_ptr()
                     .unsafe_origin_cast[MutUntrackedOrigin]()
                     .as_imm()
@@ -525,7 +525,7 @@ def longest_residency_ns[
             1200.0,
             ctx,
             rows,
-            row_limit=OptionalPointer[UInt32, ImmUntrackedOrigin](
+            row_limit=Optional[Pointer[UInt32, ImmUntrackedOrigin]](
                 limit.unsafe_ptr()
                 .unsafe_origin_cast[MutUntrackedOrigin]()
                 .as_imm()

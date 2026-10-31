@@ -162,55 +162,55 @@ comptime _DeviceContextPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceContextCpp, origin]
+] = Optional[Pointer[_DeviceContextCpp, origin]]
 
 comptime _DeviceBufferPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceBufferCpp, origin]
+] = Optional[Pointer[_DeviceBufferCpp, origin]]
 
 comptime _DeviceFunctionPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceFunctionCpp, origin]
+] = Optional[Pointer[_DeviceFunctionCpp, origin]]
 
 comptime _DeviceMulticastBufferPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceMulticastBufferCpp, origin]
+] = Optional[Pointer[_DeviceMulticastBufferCpp, origin]]
 
 comptime _DeviceStreamPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceStreamCpp, origin]
+] = Optional[Pointer[_DeviceStreamCpp, origin]]
 
 comptime _DeviceEventPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceEventCpp, origin]
+] = Optional[Pointer[_DeviceEventCpp, origin]]
 
 comptime _DeviceTimerPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceTimerCpp, origin]
+] = Optional[Pointer[_DeviceTimerCpp, origin]]
 
 comptime _CompletionFlagPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_CompletionFlagCpp, origin]
+] = Optional[Pointer[_CompletionFlagCpp, origin]]
 
 comptime _DeviceContextScopePtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceContextScopeCpp, origin]
+] = Optional[Pointer[_DeviceContextScopeCpp, origin]]
 
 comptime _CString[origin: ImmOrigin = ImmUntrackedOrigin] = Optional[
     CStringSpan[origin]
@@ -583,9 +583,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             writer.write(val)
 
         var size = len(self)
-        var serialize_ptr = OptionalPointer[Scalar[Self.dtype], ImmutAnyOrigin](
-            self.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
-        )
+        var serialize_ptr = Optional[
+            Pointer[Scalar[Self.dtype], ImmutAnyOrigin]
+        ](self.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin]())
 
         if size < 1000:
             writer.write("[")
@@ -2249,8 +2249,8 @@ struct DeviceBuffer[dtype: DType](
                     writer.write(val)
 
                 var size = len(self)
-                var serialize_ptr = OptionalPointer[
-                    Scalar[Self.dtype], ImmutAnyOrigin
+                var serialize_ptr = Optional[
+                    Pointer[Scalar[Self.dtype], ImmutAnyOrigin]
                 ](
                     host_buffer.unsafe_ptr()
                     .as_imm()
@@ -2291,7 +2291,7 @@ trait _FunctionEnqueuer:
         num_attributes: Int,
         args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalPointer[mut=True, UInt64, _],
+        arg_sizes: Optional[MutPointer[UInt64, _]],
     ) -> _CString[]:
         """Dispatches a kernel launch via the AsyncRT C ABI.
 
@@ -2438,7 +2438,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         num_attributes: Int,
         args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalPointer[mut=True, UInt64, _],
+        arg_sizes: Optional[MutPointer[UInt64, _]],
     ) -> _CString[]:
         """Enqueues a kernel launch on this stream.
 
@@ -4076,7 +4076,7 @@ struct DeviceExternalFunction[
 
         # External functions carry no argument-size metadata, so no per-arg
         # sizes are passed to the enqueuer (matching the previous direct call).
-        var no_arg_sizes = OptionalPointer[UInt64, MutAnyOrigin](None)
+        var no_arg_sizes = Optional[Pointer[UInt64, MutAnyOrigin]](None)
 
         comptime if Self.target.is_apple_gpu():
             # Metal takes the launch payload via `args[0]`; see
@@ -4720,7 +4720,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         num_attributes: Int,
         args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalPointer[mut=True, UInt64, _],
+        arg_sizes: Optional[MutPointer[UInt64, _]],
     ) -> _CString[]:
         """Enqueues a kernel launch on this context's default stream.
 
@@ -6834,7 +6834,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         return DeviceStream(result)
 
     def create_external_stream(
-        self, external_stream: OptionalPointer[mut=True, NoneType, _]
+        self, external_stream: Optional[MutPointer[NoneType, _]]
     ) raises -> DeviceStream:
         """Creates a non-owning stream wrapper around an externally managed GPU stream.
 

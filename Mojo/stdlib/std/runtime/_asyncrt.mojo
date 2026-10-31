@@ -41,7 +41,7 @@ struct _Chain(Boolable, Defaultable, ImplicitlyCopyable, RegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: OptionalPointer[Int, MutUntrackedOrigin]
+    var storage: Optional[Pointer[Int, MutUntrackedOrigin]]
 
     def __init__(out self):
         self.storage = {}

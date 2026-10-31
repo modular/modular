@@ -65,7 +65,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = OptionalPointer[c_char, MutUntrackedOrigin]()
+        var line = Optional[Pointer[c_char, MutUntrackedOrigin]]()
         var res = String()
 
         while True:

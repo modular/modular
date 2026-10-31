@@ -35,13 +35,13 @@ comptime _DeviceGraphBuilderPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceGraphBuilderCpp, origin]
+] = Optional[Pointer[_DeviceGraphBuilderCpp, origin]]
 
 comptime _DeviceGraphPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceGraphCpp, origin]
+] = Optional[Pointer[_DeviceGraphCpp, origin]]
 
 
 trait DeviceGraphInput:

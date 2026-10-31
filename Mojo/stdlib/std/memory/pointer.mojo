@@ -159,6 +159,8 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated("Use `Optional[Pointer[T, origin]]` instead.")
 comptime OptionalPointer[
     mut: Bool,
     //,
@@ -167,7 +169,9 @@ comptime OptionalPointer[
     *,
     address_space: AddressSpace = .GENERIC,
 ] = Optional[Pointer[T, origin, address_space=address_space]]
-"""An optional (nullable) `Pointer`.
+"""Deprecated: An optional (nullable) `Pointer`.
+
+Use `Optional[Pointer[T, origin]]` instead.
 
 Parameters:
     mut: The mutability of the pointer.
@@ -176,13 +180,17 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated("Use `Optional[MutPointer[T, origin]]` instead.")
 comptime OptionalMutPointer[
     T: AnyType,
     origin: MutOrigin,
     *,
     address_space: AddressSpace = .GENERIC,
-] = OptionalPointer[T, origin, address_space=address_space]
-"""An optional (nullable) mutable `Pointer`.
+] = Optional[MutPointer[T, origin, address_space=address_space]]
+"""Deprecated: An optional (nullable) mutable `Pointer`.
+
+Use `Optional[MutPointer[T, origin]]` instead.
 
 Parameters:
     T: The pointee type.
@@ -190,13 +198,17 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated("Use `Optional[ImmPointer[T, origin]]` instead.")
 comptime OptionalImmPointer[
     T: AnyType,
     origin: ImmOrigin,
     *,
     address_space: AddressSpace = .GENERIC,
-] = OptionalPointer[T, origin, address_space=address_space]
-"""An optional (nullable) immutable `Pointer`.
+] = Optional[ImmPointer[T, origin, address_space=address_space]]
+"""Deprecated: An optional (nullable) immutable `Pointer`.
+
+Use `Optional[ImmPointer[T, origin]]` instead.
 
 Parameters:
     T: The pointee type.

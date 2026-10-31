@@ -101,7 +101,7 @@ struct _DirHandle:
             raise Error("the directory '", path, "' does not exist")
 
         var handle = external_call[
-            "opendir", OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+            "opendir", Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
         ](path.as_c_string_span())
 
         if not handle:
@@ -142,7 +142,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", OptionalPointer[_dirent_linux, MutUntrackedOrigin]
+                "readdir", Optional[Pointer[_dirent_linux, MutUntrackedOrigin]]
             ](self._handle)
             if not ep:
                 break
@@ -172,7 +172,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", OptionalPointer[_dirent_macos, MutUntrackedOrigin]
+                "readdir", Optional[Pointer[_dirent_macos, MutUntrackedOrigin]]
             ](self._handle)
             if not ep:
                 break

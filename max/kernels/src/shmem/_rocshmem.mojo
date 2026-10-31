@@ -468,7 +468,7 @@ def rocshmem_malloc[
         "rocshmem_malloc",
         def(
             c_size_t,
-        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
+        ) thin -> Optional[Pointer[Scalar[dtype], MutUntrackedOrigin]],
     ]()(size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
@@ -483,7 +483,7 @@ def rocshmem_calloc[
         "rocshmem_calloc",
         def(
             c_size_t, c_size_t
-        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
+        ) thin -> Optional[Pointer[Scalar[dtype], MutUntrackedOrigin]],
     ]()(count, size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_calloc", count * size)
@@ -492,7 +492,7 @@ def rocshmem_calloc[
 def _check_rocshmem_allocation[
     dtype: DType
 ](
-    ptr: OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
+    ptr: Optional[Pointer[Scalar[dtype], MutUntrackedOrigin]],
     func_name: StaticString,
     requested_bytes: c_size_t,
 ) raises -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:

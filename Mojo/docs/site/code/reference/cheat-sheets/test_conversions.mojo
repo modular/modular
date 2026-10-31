@@ -230,7 +230,7 @@ def test_pointers() raises:
     assert_equal(vec.reduce_add(), 6)  # 0+1+2+3
     assert_equal(r.unsafe_ptr()[unsafe_offset=0], 0)  # deref one element
     assert_equal(r.unsafe_ptr().unsafe_offset(2)[], 2)  # arithmetic, then deref
-    var none = OptionalPointer[Int, MutUntrackedOrigin]()  # nullable pointer
+    var none = Optional[Pointer[Int, MutUntrackedOrigin]]()  # nullable pointer
     assert_false(Bool(none))
 
 
