@@ -343,7 +343,9 @@ static Value emitFloorDivByConstant(DirectRewriter &rewriter, Location loc,
 }
 
 struct ConvertPOPFloorDiv : public ConvertPOPToLLVMPattern<FloorDivOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+  ConvertPOPFloorDiv(mlir::LLVMTypeConverter &typeConverter,
+                     const TargetLowering *lowering)
+      : ConvertPOPToLLVMPattern(typeConverter), lowering(lowering) {}
 
   LogicalResult matchAndRewrite(FloorDivOp op, FloorDivOpAdaptor adaptor,
                                 DirectRewriter &rewriter) const override {
@@ -369,7 +371,8 @@ struct ConvertPOPFloorDiv : public ConvertPOPToLLVMPattern<FloorDivOp> {
     // would need a multiply wider than 128 bits.
     auto intType = dyn_cast<IntegerType>(getElementTypeOrSelf(type));
     if (intType && intType.getWidth() >= 8 && intType.getWidth() <= 64 &&
-        llvm::isPowerOf2_32(intType.getWidth())) {
+        llvm::isPowerOf2_32(intType.getWidth()) &&
+        canWidenProduct(intType.getWidth())) {
       if (std::optional<APInt> divisor = getSplatConstantDivisor(
               op, adaptor.getRhs(), intType.getWidth())) {
         if (std::optional<FloorDivMagic> magic =
@@ -434,6 +437,18 @@ struct ConvertPOPFloorDiv : public ConvertPOPToLLVMPattern<FloorDivOp> {
                                              SmallVector<Value>{sdiv, sel});
     return success();
   }
+
+private:
+  /// Returns whether the target can compute a `2 * width`-bit product, the
+  /// widened multiply that the constant-divisor sequence needs. Dividing a
+  /// 64-bit dividend widens to `i128`, which Apple's GPU compiler rejects, so
+  /// such targets keep the generic sequence.
+  bool canWidenProduct(unsigned width) const {
+    return 2 * width <= 64 || !lowering || lowering->supportsI128();
+  }
+
+  /// This target's lowering, or null if none was registered for the triple.
+  const TargetLowering *lowering;
 };
 
 //===----------------------------------------------------------------------===//
@@ -2073,7 +2088,8 @@ using ConvertPOPPointerToIndex =
 //===----------------------------------------------------------------------===//
 
 static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
-                                      mlir::RewritePatternSet &patterns) {
+                                      mlir::RewritePatternSet &patterns,
+                                      const TargetLowering *lowering) {
   patterns.insert<
       // clang-format off
       ConvertPOPAbs,
@@ -2098,7 +2114,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCeil,
       ConvertPOPFence,
       ConvertPOPFloor,
-      ConvertPOPFloorDiv,
       ConvertPOPFMA,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
@@ -2135,6 +2150,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDReduceAnd
       // clang-format on
       >(typeConverter);
+
+  patterns.insert<ConvertPOPFloorDiv>(typeConverter, lowering);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2203,7 +2220,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
-  populatePOPToLLVMPatterns(typeConverter, patterns);
+  populatePOPToLLVMPatterns(typeConverter, patterns, lowering);
 
   patterns.insert<ConvertPOPMax, ConvertPOPMin>(typeConverter);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,

@@ -66,14 +66,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: KERN-3121 — same sampler as test_topk_gpu_fi.mojo
-    "test_topk_topp_degenerate_row.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-5250
-    "test_moe_indices.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-5250
     # `emit_dist` uses block collectives the Apple search path avoids.
     "test_topk_topp_sampling_with_dist.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],

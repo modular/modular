@@ -241,6 +241,13 @@ public:
     return false;
   }
 
+  /// Returns whether this target's code generator can compile arithmetic on
+  /// 128-bit integers. Lowerings that would widen an operation past the
+  /// target's native widths (e.g. the 2W-bit product in floor division by a
+  /// constant) consult this before emitting the wider type, and fall back to a
+  /// narrower sequence when it returns false. The default supports them.
+  virtual bool supportsI128() const { return true; }
+
   /// Returns a target-specific spelling of `dtype`'s name for debug info, or
   /// nullopt to use the generic encoding (e.g. a target's debugger may expect
   /// language-specific type names). The default has no preference.

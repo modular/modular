@@ -1164,6 +1164,10 @@ public:
     return floatDType.getWidthInBits() > 8;
   }
 
+  /// Apple's GPU compiler rejects `i128`, failing at pipeline creation with
+  /// "Compiler encountered an internal error".
+  bool supportsI128() const override { return false; }
+
   // This is max only target
   bool isBaseTarget() const override { return false; }
 
