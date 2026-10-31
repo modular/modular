@@ -27,7 +27,6 @@
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/Support/Constants.h"
 #include "Mojo/ToolCommon/KGENPasses.h"

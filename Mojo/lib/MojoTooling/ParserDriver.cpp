@@ -25,12 +25,11 @@
 #include "Mojo/MojoParser/Lexer.h"
 #include "Mojo/MojoParser/ModuleLoader.h"
 #include "Mojo/MojoParser/SharedState.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/POPDialect/POPDialect.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 
-#include "ParserDriverImpl.h"
+#include "MojoToolingInternals.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/Filesystem/Paths.h"
 #include "Support/Telemetry/Telemetry.h"

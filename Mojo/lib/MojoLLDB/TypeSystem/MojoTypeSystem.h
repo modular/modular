@@ -15,7 +15,6 @@
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 
 #include "AsyncRT/Runtime/CPUDevice.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "MojoDWARFParser.h"
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -38,7 +37,11 @@ class SourceNameAttr;
 } // namespace M
 
 namespace M::KGEN::LIT {
+class ASTDecl;
+class ASTType;
+class DefASTDecl;
 class MojoParserContext;
+class SharedState;
 class StructASTDecl;
 } // namespace M::KGEN::LIT
 

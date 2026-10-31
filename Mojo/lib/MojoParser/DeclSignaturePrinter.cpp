@@ -13,9 +13,8 @@
 //
 // Renders Mojo-syntax signatures directly from MLIR ops. This is the canonical
 // implementation used by both the compiler diagnostic path and the mojo-doc
-// tool (which delegates here via `PublicASTDecl`). The data model and rendering
-// primitives live in `SignatureModel.h`; this file just wires the
-// per-op-kind entry points together.
+// tool. The data model and rendering primitives live in `SignatureModel.h`;
+// this file just wires the per-op-kind entry points together.
 //
 //===----------------------------------------------------------------------===//
 

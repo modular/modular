@@ -30,7 +30,6 @@
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/SharedState.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/POPDialect/POPTypes.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "MojoTypeDataLayout.h"

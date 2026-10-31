@@ -22,7 +22,6 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/Precompile/Precompile.h"
 #include "Mojo/Support/CLOptionUtils.h"
 #include "Mojo/Support/CompilerProfiling.h"

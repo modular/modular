@@ -11,7 +11,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
@@ -26,8 +25,10 @@
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/MojoParser/SignatureModel.h"
 #include "Mojo/MojoParser/StabilityMarkers.h"
+#include "Mojo/MojoTooling/DeclRendering.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/MojoTooling/TypeExtractionUtils.h"
+#include "MojoToolingInternals.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -46,6 +47,9 @@ using namespace M::KGEN::LIT;
 using namespace M::KGEN::Mojo;
 
 namespace {
+
+static constexpr size_t kTypicalParameterCount = 2;
+static constexpr size_t kTypicalArgumentCount = 2;
 
 /// Stability information extracted from the @stable decorator on a decl.
 struct StableInfo {
@@ -383,7 +387,7 @@ static llvm::json::Array toPublicDeclJSONArray(MojoParserContext &ctx,
                                                const ASTDeclRange &decls) {
   llvm::json::Array result;
   for (ASTDecl *decl : decls) {
-    auto serialized = serializePublicDecl(*decl, ctx);
+    auto serialized = serializeDocDecl(*decl, ctx);
     assert(serialized && "expected a serializable public declaration");
     result.push_back(std::move(*serialized));
   }
@@ -1148,8 +1152,8 @@ M::KGEN::LIT::getFunctionFullMarkdownString(DefASTDecl &decl,
   return markdown;
 }
 
-llvm::json::Object M::KGEN::LIT::serializeFunctionDecl(DefASTDecl &decl,
-                                                       MojoParserContext &ctx) {
+static llvm::json::Object serializeFunctionDecl(DefASTDecl &decl,
+                                                MojoParserContext &ctx) {
   FunctionDocumentation documentation = getFunctionDocumentation(decl);
   SmallVector<ArgumentInfo, kTypicalArgumentCount> argumentsInfo =
       getArgumentInfos(decl);
@@ -1638,7 +1642,7 @@ static llvm::json::Array serializePublicDecls(MojoParserContext &ctx,
   for (ASTDecl *decl : decls)
     if (auto *function = dyn_cast<DefASTDecl>(decl))
       result.push_back(serializeFunctionDecl(*function, ctx));
-    else if (auto serialized = serializePublicDecl(*decl, ctx))
+    else if (auto serialized = serializeDocDecl(*decl, ctx))
       result.push_back(std::move(*serialized));
   return result;
 }
@@ -1684,7 +1688,7 @@ static llvm::json::Object serializePackageDecl(PackageASTDecl &packageDecl,
 }
 
 std::optional<llvm::json::Object>
-M::KGEN::LIT::serializePublicDecl(ASTDecl &decl, MojoParserContext &ctx) {
+M::KGEN::LIT::serializeDocDecl(ASTDecl &decl, MojoParserContext &ctx) {
   if (auto *variable = dyn_cast<VarASTDecl>(&decl)) {
     if (variable->isArgument()) {
       if (auto argument = getArgumentInfo(decl))

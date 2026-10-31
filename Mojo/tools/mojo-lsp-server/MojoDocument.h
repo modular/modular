@@ -18,7 +18,6 @@
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/tools/mojo-lsp-server/LSPTelemetryContext.h"
 #include "MojoServer.h"

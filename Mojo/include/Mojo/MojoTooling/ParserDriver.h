@@ -15,7 +15,7 @@
 #define KGEN_MOJOTOOLING_PARSERDRIVER_H
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
+#include "Mojo/MojoParser/ASTType.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <filesystem>

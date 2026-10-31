@@ -19,8 +19,8 @@
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/ExprNode.h"
 #include "Mojo/MojoParser/SharedState.h"
+#include "Mojo/MojoTooling/DeclRendering.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Support/Filesystem/Paths.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
@@ -437,8 +437,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
     // Collect the signatures for each of the decls.
     for (ASTDecl *decl : decls) {
       if (auto *function = dyn_cast<DefASTDecl>(decl)) {
-        SmallVector<ParameterInfo, kTypicalParameterCount> functionParameters =
-            getFunctionParameters(*function);
+        auto functionParameters = getFunctionParameters(*function);
         if (parameters.size() > functionParameters.size())
           continue;
         SignatureHelpResult::Signature signature;
@@ -458,8 +457,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
       auto *structDecl = dyn_cast<StructASTDecl>(decl);
       if (!structDecl)
         continue;
-      SmallVector<ParameterInfo, kTypicalParameterCount> structParameters =
-          getStructParameters(*structDecl);
+      auto structParameters = getStructParameters(*structDecl);
       if (parameters.size() > structParameters.size())
         continue;
       SignatureHelpResult::Signature signature;

@@ -18,7 +18,6 @@
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/DocGen.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CLOptions.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"

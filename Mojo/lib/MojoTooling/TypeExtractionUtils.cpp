@@ -21,7 +21,6 @@
 #include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/SharedState.h"
 #include "Mojo/MojoParser/SignatureModel.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
