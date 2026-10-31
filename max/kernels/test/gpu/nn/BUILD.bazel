@@ -17,6 +17,13 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # PDL grid controls are a no-op below SM90, where the test would pass under
+    # plain stream ordering without exercising PDL.
+    "test_fused_qk_rms_norm_rope_pdl_race.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # PDL (griddepcontrol) is a compile-time no-op below SM90, where the test
     # would only exercise stream ordering.
     "test_rowwise_pdl_race.mojo": select({

@@ -1088,7 +1088,10 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     else:
         global_token_idx, head_idx = divmod(combined_row, _q_num_heads)
 
-    with PDL():
+    # Release the dependent attention grid right after our wait instead of at
+    # exit: its pre-wait prologue overlaps this kernel, and its own wait still
+    # blocks until this grid has completed and its Q/K stores are visible.
+    with PDL[overlap_at_beginning=True]():
         _fused_qk_rms_norm_rope_process_row[
             simd_width,
             warps_per_block,
