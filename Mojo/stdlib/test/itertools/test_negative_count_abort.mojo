@@ -10,20 +10,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+#
+# Verifies that `take` and `drop` abort when given a negative `count`.
+#
+# ===----------------------------------------------------------------------=== #
 
-from std.itertools import take
-from std.testing import TestSuite
+from std.itertools import drop, take
+from std.testing import _assert_aborts, TestSuite
 
 
-# CHECK-LABEL: test_take_negative_count
 def test_take_negative_count() raises:
-    print("== test_take_negative_count")
-    var nums = [1, 2, 3]
-    # CHECK: The `count` argument must be non-negative
-    _ = take(nums, -1)
+    var nums: List = [1, 2, 3]
 
-    # CHECK-NOT: is never reached
-    print("is never reached")
+    def trigger() raises {nums} -> None:
+        _ = take(nums, -1)
+
+    _assert_aborts(
+        trigger, contains="The `count` argument must be non-negative"
+    )
+
+
+def test_drop_negative_count() raises:
+    var nums: List = [1, 2, 3]
+
+    def trigger() raises {nums} -> None:
+        _ = drop(nums, -1)
+
+    _assert_aborts(
+        trigger, contains="The `count` argument must be non-negative"
+    )
 
 
 def main() raises:
