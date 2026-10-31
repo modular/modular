@@ -34,6 +34,7 @@ _FILECHECK_TESTS = [
 ]
 
 _LIT_TESTS = [
+    "test_check_bounds_codegen.mojo",
     "test_bool_indexer_compile_fail.mojo",
     "test_pow_float_exponent_compile_fail.mojo",
     "test_debug_assert_no_message_codegen.mojo",

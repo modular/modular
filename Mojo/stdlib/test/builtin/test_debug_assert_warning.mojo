@@ -16,12 +16,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from std.collections import check_bounds
+
+
 # CHECK-LABEL: test_ok
 def main():
     print("== test_ok")
-    # CHECK: test_debug_assert_warning.mojo:23:17: Assert Error: failed, but we don't terminate
+    # CHECK: test_debug_assert_warning.mojo:[[@LINE+1]]:17: Assert Error: failed, but we don't terminate
     debug_assert(False, "failed, but we don't terminate")
-    # CHECK: test_debug_assert_warning.mojo:25:17: Assert Error: also failed, but in a Boolable
+    # CHECK: test_debug_assert_warning.mojo:[[@LINE+1]]:17: Assert Error: also failed, but in a Boolable
     debug_assert(Bool(0), Error("also failed, but in a Boolable"))
 
     # A no-message assertion must report the caller's location.
@@ -34,5 +37,11 @@ def main():
     assert zero > 0
     # CHECK: test_debug_assert_warning.mojo:[[@LINE+1]]:17: Assert Error: assertion failed
     debug_assert(is_positive)
+
+    # Warn must report invalid indices and continue, including opted-out checks.
+    # CHECK: Assert Error: index -1 is out of bounds, valid range is 0 to 1
+    check_bounds(-1, 2)
+    # CHECK: Assert Error: index 2 is out of bounds, valid range is 0 to 1
+    check_bounds[cpu_default=False](2, 2)
     # CHECK: is reached
     print("is reached")
