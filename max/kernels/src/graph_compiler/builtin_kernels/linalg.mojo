@@ -686,7 +686,6 @@ struct FusedMatmulAdd:
         var epilogue = (
             residual.to_tile_tensor[type_of(c).dtype]()
             .as_imm()
-            .as_unsafe_any_origin()
             .reshape(row_major(epi_m, epi_n))
         )
 
@@ -2909,21 +2908,15 @@ struct Struct_router_gate_mixed_gemv:
 
         # The GEMV paths view `c` and `a` through their flat pointers; a
         # non-pointer storage policy aborts here at run time.
-        var c_tt = (
-            c.to_tile_tensor[.float32]()
-            .as_unsafe_any_origin()
-            .reshape(row_major(M, Idx[N]))
-        )
+        var c_tt = c.to_tile_tensor[.float32]().reshape(row_major(M, Idx[N]))
 
         # SM100's fused window reaches M = 128 (c128 decode); above it the
         # TF32 tile GEMM below wins on weight reuse.
         comptime max_m = 64 if context.target.is_amd_gpu() else 128
         if router_gate_use_mixed_gemv(M, max_m):
             # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
-            var a_tt = (
-                a.to_tile_tensor[.bfloat16]()
-                .as_unsafe_any_origin()
-                .reshape(row_major(M, Idx[K]))
+            var a_tt = a.to_tile_tensor[.bfloat16]().reshape(
+                row_major(M, Idx[K])
             )
             router_gate_mixed_gemv[N](
                 c_tt,
@@ -2941,10 +2934,8 @@ struct Struct_router_gate_mixed_gemv:
         # avoids), then run the ordinary fp32 matmul against the fp32 weight.
         # Routing large M through the tiny-M GEMV is catastrophically slow.
         var a_f32 = context.enqueue_create_buffer[.float32](M * K)
-        var a_bf16_tt = (
-            a.to_tile_tensor[.bfloat16]()
-            .as_unsafe_any_origin()
-            .reshape(row_major(M, Idx[K]))
+        var a_bf16_tt = a.to_tile_tensor[.bfloat16]().reshape(
+            row_major(M, Idx[K])
         )
         var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
 
@@ -3051,22 +3042,14 @@ struct Struct_smallm_streaming_matmul:
                     .ptr
                 )
             )
-            var c_ptr = MutPointer[BFloat16, MutAnyOrigin](
-                unsafe_from_address=Int(
-                    c.to_tile_tensor[.bfloat16]().as_unsafe_any_origin().ptr
-                )
+            var c_tt = TileTensor(
+                c.to_tile_tensor[.bfloat16]().unsafe_ptr(),
+                row_major(M, Idx[N]),
             )
-            var c_tt = TileTensor[
-                .bfloat16, type_of(row_major(1, Idx[N])), MutAnyOrigin
-            ](c_ptr, row_major(M, Idx[N]))
-            var a_ptr = ImmPointer[BFloat16, ImmutAnyOrigin](
-                unsafe_from_address=Int(
-                    a.to_tile_tensor[.bfloat16]().as_unsafe_any_origin().ptr
-                )
+            var a_tt = TileTensor(
+                a.to_tile_tensor[.bfloat16]().unsafe_ptr().as_imm(),
+                row_major(M, Idx[K]),
             )
-            var a_tt = TileTensor[
-                .bfloat16, type_of(row_major(1, Idx[K])), ImmutAnyOrigin
-            ](a_ptr, row_major(M, Idx[K]))
             var scratch_ptr = MutPointer[BFloat16, MutAnyOrigin](
                 unsafe_from_address=Int(
                     a_scratch.to_tile_tensor[.bfloat16]()

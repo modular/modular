@@ -407,7 +407,7 @@ struct BundledAllGather:
         # only this device's slice, so the peers' slots alias it.
         comptime OutputTensorType = type_of(
             TileTensor(
-                rebind[Pointer[Scalar[dtype], MutAnyOrigin]](outputs[0]._ptr),
+                outputs[0]._ptr.unsafe_origin_cast[MutUntrackedOrigin](),
                 row_major(outputs[0].size()),
             )
         )
@@ -417,9 +417,7 @@ struct BundledAllGather:
         comptime for device in range(num_devices):
             comptime for i in range(num_devices):
                 out_tensors[device * num_devices + i] = TileTensor(
-                    rebind[Pointer[Scalar[dtype], MutAnyOrigin]](
-                        outputs[i]._ptr
-                    ),
+                    outputs[i]._ptr.unsafe_origin_cast[MutUntrackedOrigin](),
                     row_major(outputs[i].size()),
                 )
 

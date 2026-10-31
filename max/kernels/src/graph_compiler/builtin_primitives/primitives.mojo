@@ -316,13 +316,13 @@ struct OwnedTensor[
     def shape_only() -> Bool:
         return Self.kind == DeviceGraphInputKind.shape_only
 
-    def unsafe_ptr(self) -> Pointer[Scalar[Self.dtype], MutAnyOrigin]:
+    def unsafe_ptr(self) -> Pointer[Scalar[Self.dtype], MutUntrackedOrigin]:
         """Returns the view's raw device data pointer.
 
         Returns:
             The non-owning device data pointer of the view.
         """
-        return self.tensor.unsafe_ptr()
+        return self.tensor._ptr
 
     def shape(self) -> IndexList[Self.rank]:
         """Returns the tensor view's shape.
@@ -513,7 +513,7 @@ def unpack_buffer_ref(
     var size: UInt64 = 0
     var data_ptr = external_call[
         "MGP_RT_GetDataFromBuffer",
-        OpaquePointer[MutAnyOrigin],
+        OpaquePointer[MutUntrackedOrigin],
     ](value, Pointer(to=size))
     var shape = IndexList[1](Int(size))
     var view = MutByteBuffer(data_ptr.unsafe_bitcast[Int8](), shape)
@@ -538,7 +538,7 @@ def unpack_tensor[
     var shapes = IndexList[buffer_rank]()
     var buffer_ptr = external_call[
         "MGP_RT_GetShapeAndDataFromTensor",
-        OpaquePointer[MutAnyOrigin],
+        OpaquePointer[MutUntrackedOrigin],
     ](Pointer(to=shapes.data), value)
 
     comptime if tensor_rank == 0:
@@ -629,7 +629,7 @@ def mgp_device_graph_stable_tensor[
     """
     var ptr = (
         addr.ptr.unsafe_bitcast[Scalar[dtype]]()
-        .unsafe_origin_cast[MutAnyOrigin]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
         .unsafe_mut_cast[target_mut=True]()
     )
     comptime if spec_rank == 0:
@@ -1006,21 +1006,12 @@ def mgp_buffer_concat[
     inputs: Array[OwnedByteBuffer, ...],
     call_ctx: DeviceContext,
 ) raises:
-    var output_lt = TileTensor(
-        output.unsafe_ptr(),
-        row_major(output.size()),
-    )
+    var output_lt = output.view.to_tile_tensor()
     var input_tensors = StaticTuple[_, inputs.length](
-        TileTensor(inputs[0].unsafe_ptr(), row_major(inputs[0].size()))
-        .as_unsafe_any_origin()
-        .as_imm()
+        inputs[0].view.to_tile_tensor().as_imm()
     )
     for i in range(1, len(inputs)):
-        input_tensors[i] = (
-            TileTensor(inputs[i].unsafe_ptr(), row_major(inputs[i].size()))
-            .as_unsafe_any_origin()
-            .as_imm()
-        )
+        input_tensors[i] = inputs[i].view.to_tile_tensor().as_imm()
     concat[.int8, bDevice](output_lt, 0, input_tensors, context=call_ctx)
 
 
@@ -1442,7 +1433,7 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
             of this reference.
         """
         var buffer_size: UInt64 = 0
-        var buffer_data = Optional[OpaquePointer[MutAnyOrigin]]()
+        var buffer_data = Optional[OpaquePointer[MutUntrackedOrigin]]()
 
         var async_value = external_call[
             "MGP_RT_GetCachedBuffer", _AsyncValuePtr[mut=True]
@@ -1546,7 +1537,7 @@ def mogg_async_unpack[
     Returns the value stored in the AnyAsyncValueRef.
     """
     var ptr = external_call[
-        "MGP_RT_GetValueFromAsync", OpaquePointer[MutAnyOrigin]
+        "MGP_RT_GetValueFromAsync", OpaquePointer[MutUntrackedOrigin]
     ](async_ref.get_handle()).unsafe_bitcast[T]()
 
     return ptr[]

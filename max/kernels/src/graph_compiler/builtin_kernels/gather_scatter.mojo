@@ -152,7 +152,7 @@ def check_axis_in_range[dim_size: Int](idx: Int) raises:
 def _is_shape_index_listed[
     indices_type: DType
 ](
-    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices: ImmPointer[Scalar[indices_type], _],
     indices_stride: Int,
     num_indices: Int,
     rank: Int,
@@ -175,7 +175,7 @@ def _is_shape_index_listed[
 def _check_shape_index[
     indices_type: DType
 ](
-    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices: ImmPointer[Scalar[indices_type], _],
     indices_stride: Int,
     j: Int,
     rank: Int,
@@ -196,7 +196,7 @@ def _check_shape_index[
 def _check_shape_indices[
     indices_type: DType
 ](
-    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices: ImmPointer[Scalar[indices_type], _],
     indices_stride: Int,
     num_indices: Int,
     rank: Int,
@@ -209,7 +209,7 @@ def _check_shape_indices[
 def _count_listed_at_or_below[
     indices_type: DType
 ](
-    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices: ImmPointer[Scalar[indices_type], _],
     indices_stride: Int,
     num_indices: Int,
     rank: Int,
@@ -249,11 +249,11 @@ def _count_listed_at_or_below[
 def _squeeze_shape[
     dtype: DType, indices_type: DType
 ](
-    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], _],
     output_stride: Int,
-    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], _],
     input_stride: Int,
-    remove_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    remove_indices: ImmPointer[Scalar[indices_type], _],
     remove_indices_stride: Int,
     num_input_dims: Int,
     num_remove_indices: Int,
@@ -287,11 +287,11 @@ def _squeeze_shape[
 def _unsqueeze_shape[
     dtype: DType, indices_type: DType
 ](
-    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], _],
     output_stride: Int,
-    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], _],
     input_stride: Int,
-    padding_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    padding_indices: ImmPointer[Scalar[indices_type], _],
     padding_indices_stride: Int,
     num_input_dims: Int,
     num_padding_indices: Int,
@@ -331,11 +331,11 @@ comptime _SHAPE_BLOCK = 64
 def _squeeze_shape_kernel[
     dtype: DType, indices_type: DType
 ](
-    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     output_stride: Int32,
-    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
     input_stride: Int32,
-    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices: ImmPointer[Scalar[indices_type], ImmUntrackedOrigin],
     indices_stride: Int32,
     num_input_dims: Int32,
     num_indices: Int32,
@@ -366,11 +366,11 @@ def _squeeze_shape_kernel[
 def _unsqueeze_shape_kernel[
     dtype: DType, indices_type: DType
 ](
-    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     output_stride: Int32,
-    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
     input_stride: Int32,
-    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices: ImmPointer[Scalar[indices_type], ImmUntrackedOrigin],
     indices_stride: Int32,
     num_input_dims: Int32,
     num_indices: Int32,
@@ -399,11 +399,11 @@ def _unsqueeze_shape_kernel[
 def squeeze_shape_gpu[
     dtype: DType, indices_type: DType
 ](
-    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], _],
     output_stride: Int,
-    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], _],
     input_stride: Int,
-    remove_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    remove_indices: ImmPointer[Scalar[indices_type], _],
     remove_indices_stride: Int,
     num_input_dims: Int,
     num_remove_indices: Int,
@@ -447,11 +447,11 @@ def squeeze_shape_gpu[
 def unsqueeze_shape_gpu[
     dtype: DType, indices_type: DType
 ](
-    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], _],
     output_stride: Int,
-    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], _],
     input_stride: Int,
-    padding_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    padding_indices: ImmPointer[Scalar[indices_type], _],
     padding_indices_stride: Int,
     num_input_dims: Int,
     num_padding_indices: Int,
@@ -531,16 +531,11 @@ struct SqueezeShape:
             output_tt.dim[0]()
         ), "Incorrect output shape."
 
-        var output_ptr = output_tt.ptr.unsafe_origin_cast[MutAnyOrigin]()
+        var output_ptr = output_tt.unsafe_ptr()
         var output_stride = Int(output_tt.dynamic_stride(0))
-        # The helpers take mutable pointers but only read the inputs.
-        var input_ptr = input_tt.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
-            MutAnyOrigin
-        ]()
+        var input_ptr = input_tt.unsafe_ptr().as_imm()
         var input_stride = Int(input_tt.dynamic_stride(0))
-        var indices_ptr = remove_tt.ptr.unsafe_mut_cast[
-            True
-        ]().unsafe_origin_cast[MutAnyOrigin]()
+        var indices_ptr = remove_tt.unsafe_ptr().as_imm()
         var indices_stride = Int(remove_tt.dynamic_stride(0))
 
         comptime if is_cpu[target]():
@@ -626,16 +621,11 @@ struct UnsqueezeShape:
             output_tt.dim[0]()
         ), "Incorrect output shape."
 
-        var output_ptr = output_tt.ptr.unsafe_origin_cast[MutAnyOrigin]()
+        var output_ptr = output_tt.unsafe_ptr()
         var output_stride = Int(output_tt.dynamic_stride(0))
-        # The helpers take mutable pointers but only read the inputs.
-        var input_ptr = input_tt.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[
-            MutAnyOrigin
-        ]()
+        var input_ptr = input_tt.unsafe_ptr().as_imm()
         var input_stride = Int(input_tt.dynamic_stride(0))
-        var indices_ptr = padding_tt.ptr.unsafe_mut_cast[
-            True
-        ]().unsafe_origin_cast[MutAnyOrigin]()
+        var indices_ptr = padding_tt.unsafe_ptr().as_imm()
         var indices_stride = Int(padding_tt.dynamic_stride(0))
 
         comptime if is_cpu[target]():
@@ -2414,18 +2404,17 @@ struct Split:
             TileTensor[
                 output.dtype,
                 TileLayout[shape_types=shape_types, stride_types=stride_types],
-                MutAnyOrigin,
+                MutUntrackedOrigin,
             ],
             output.size,
         ]()
 
         comptime for i in range(output.size):
+            var output_tt = output[i].to_tile_tensor[.int64]()
             output_bufs[i] = rebind[output_bufs.element_type](
                 TileTensor(
-                    output[i].unsafe_ptr().as_unsafe_any_origin(),
-                    output[i]
-                    .to_tile_tensor[.int64]()
-                    .layout.make_dynamic[.int64](),
+                    output_tt.unsafe_ptr(),
+                    output_tt.layout.make_dynamic[.int64](),
                 ),
             )
 

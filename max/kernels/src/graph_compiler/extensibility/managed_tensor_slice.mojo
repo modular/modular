@@ -944,7 +944,7 @@ def simd_store_into_tensor_pointer[
     simd_width: SIMDLength,
     element_alignment: Int = 1,
 ](
-    ptr: Pointer[Scalar[dtype], MutAnyOrigin],
+    ptr: MutPointer[Scalar[dtype], _],
     shape: IndexList[rank],
     strides: IndexList[rank],
     indices: IndexList[rank],
@@ -992,7 +992,7 @@ def simd_load_from_tensor_pointer[
     simd_width: Int,
     element_alignment: Int = 1,
 ](
-    ptr: Pointer[Scalar[dtype], MutAnyOrigin],
+    ptr: MutPointer[Scalar[dtype], _],
     shape: IndexList[rank],
     strides: IndexList[rank],
     indices: IndexList[rank],
@@ -2103,7 +2103,9 @@ struct ManagedTensorSlice[
         self,
         new_runtime_shape: IndexList[new_layout.rank],
         new_runtime_strides: IndexList[new_layout.rank],
-        offset_ptr: Optional[Pointer[Scalar[Self.dtype], MutAnyOrigin]] = None,
+        offset_ptr: Optional[
+            Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
+        ] = None,
         out result: ManagedTensorSlice[
             rank=new_layout.rank,
             io_spec=Self.io_spec,
@@ -2111,7 +2113,7 @@ struct ManagedTensorSlice[
         ],
     ):
         return type_of(result)(
-            offset_ptr.or_else(self._ptr.as_unsafe_any_origin()),
+            offset_ptr.or_else(self._ptr),
             new_runtime_shape,
             new_runtime_strides,
         )

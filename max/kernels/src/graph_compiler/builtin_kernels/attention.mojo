@@ -622,8 +622,14 @@ def _mla_indexer_ragged_float8_paged_execute[
     scales_page_stride: TileTensor[
         mut=False, DType.int64, address_space=.GENERIC, ...
     ],
+    # The scales collection stores both lookup tables under one origin.
     k_scales_lookup_table: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False,
+        DType.uint32,
+        _,
+        k_lookup_table.origin,
+        address_space=.GENERIC,
+        ...,
     ],
     layer_idx: UInt32,
     remap: R,
@@ -952,12 +958,8 @@ struct MLAIndexerRaggedFloat8PagedRemap:
         # The remap reads the index tables through their flat pointers; a
         # non-pointer storage policy aborts here at run time.
         var remap = PagedKVRemap[mla_page_size](
-            physical_indices.to_tile_tensor[.int32]()
-            .as_unsafe_any_origin()
-            .ptr,
-            mla_lookup_table.to_tile_tensor[.uint32]()
-            .as_unsafe_any_origin()
-            .ptr,
+            physical_indices.to_tile_tensor[.int32]().unsafe_ptr(),
+            mla_lookup_table.to_tile_tensor[.uint32]().unsafe_ptr(),
             Int(mla_lookup_table.shape()[1].value()),
             Int(mla_lookup_table.shape()[0].value()),
             UInt32(Int(mla_kv_blocks.shape()[0].value())),
@@ -1148,15 +1150,9 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
         # The remap reads the index tables through their flat pointers; a
         # non-pointer storage policy aborts here at run time.
         var remap = PagedKVScaleRemap[mla_page_size, k](
-            physical_indices.to_tile_tensor[.int32]()
-            .as_unsafe_any_origin()
-            .ptr,
-            mla_lookup_table.to_tile_tensor[.uint32]()
-            .as_unsafe_any_origin()
-            .ptr,
-            mla_scales_lookup_table.to_tile_tensor[.uint32]()
-            .as_unsafe_any_origin()
-            .ptr,
+            physical_indices.to_tile_tensor[.int32]().unsafe_ptr(),
+            mla_lookup_table.to_tile_tensor[.uint32]().unsafe_ptr(),
+            mla_scales_lookup_table.to_tile_tensor[.uint32]().unsafe_ptr(),
             Int(mla_lookup_table.shape()[1].value()),
             Int(mla_scales_lookup_table.shape()[1].value()),
             Int(mla_lookup_table.shape()[0].value()),
@@ -1436,7 +1432,7 @@ struct PaddedFlashAttentionGPU:
         comptime valid_length_t = ImmutTileTensor1D[.uint32]
         # `valid_length` is read through its flat pointer; a non-pointer storage policy aborts here at run time.
         var _valid_length = immut_tile_tensor_1d(
-            valid_length.to_tile_tensor[.uint32]().as_unsafe_any_origin().ptr,
+            valid_length.to_tile_tensor[.uint32]().unsafe_ptr(),
             Int(valid_length.shape()[0].value()),
         )
 
@@ -2100,32 +2096,26 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
 @inline(.always)
 def _mut_pointer_tile(
     tile: TileTensor[mut=True, address_space=.GENERIC, ...],
-) -> TileTensor[tile.dtype, tile.LayoutType, MutAnyOrigin]:
+) -> TileTensor[tile.dtype, tile.LayoutType, tile.origin]:
     """Rebuilds `tile` as a mutable view over its pointer.
 
     The paged KV cache collection holds pointer-backed tiles, so a projected
     argument with another storage policy aborts here at run time.
     """
-    return TileTensor[tile.dtype, tile.LayoutType, MutAnyOrigin](
-        ptr=tile.ptr.unsafe_origin_cast[MutAnyOrigin](),
-        layout=tile.layout,
-    )
+    return {ptr = tile.unsafe_ptr(), layout = tile.layout}
 
 
 @inline(.always)
 def _imm_pointer_tile(
     tile: TileTensor[address_space=.GENERIC, ...],
-) -> TileTensor[tile.dtype, tile.LayoutType, ImmutAnyOrigin]:
+) -> TileTensor[tile.dtype, tile.LayoutType, ImmOrigin(tile.origin)]:
     """Rebuilds `tile` as an immutable view over its pointer.
 
     The scaled fused QKV matmul helpers take pointer-backed tiles, so a
     projected argument with another storage policy aborts here at run time.
     """
-    return TileTensor[tile.dtype, tile.LayoutType, ImmutAnyOrigin](
-        ptr=tile.ptr.unsafe_mut_cast[False]().unsafe_origin_cast[
-            ImmutAnyOrigin
-        ](),
-        layout=tile.layout,
+    return TileTensor[tile.dtype, tile.LayoutType, ImmOrigin(tile.origin)](
+        ptr=tile.unsafe_ptr().as_imm(), layout=tile.layout
     )
 
 
@@ -3349,7 +3339,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         comptime assert type_of(kv_blocks).dtype == cache_dtype
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = TileTensor(
-            MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
             row_major(0, 0),
         )
         var kv_collection = generic_get_paged_cache[v_head_size=v_head_dim](
@@ -3569,11 +3559,9 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         comptime assert type_of(max_cache_length).rank == 1
         comptime assert type_of(sink_weights).rank == 1
         comptime assert type_of(mha_decode_dispatch_metadata).rank == 1
-        var sink_weights_tt = (
-            sink_weights.to_tile_tensor[type_of(q).dtype]()
-            .as_imm()
-            .as_unsafe_any_origin()
-        )
+        var sink_weights_tt = sink_weights.to_tile_tensor[
+            type_of(q).dtype
+        ]().as_imm()
         _execute_mha_ragged_paged_scalar_args[
             target=target,
             mask_str=mask_str,

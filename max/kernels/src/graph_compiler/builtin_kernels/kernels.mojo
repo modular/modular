@@ -1943,7 +1943,9 @@ def _execute_mha_ragged_paged_scalar_args[
     ],
     context: DeviceContext,
     sink_weights: OptionalReg[
-        TileTensor[q_dtype, SinkLayoutType, ImmutAnyOrigin, Engine=SinkEngine]
+        TileTensor[
+            q_dtype, SinkLayoutType, ImmUntrackedOrigin, Engine=SinkEngine
+        ]
     ] = None,
 ) raises:
     comptime assert output.rank == 3
@@ -2058,21 +2060,15 @@ def _execute_mha_ragged_paged_rel_logits[
         output_dtype=output_dtype,
     ](
         q.as_imm(),
-        TileTensor[.uint32, input_row_offsets.LayoutType, ImmutAnyOrigin](
-            ptr=input_row_offsets.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+        TileTensor(
+            ptr=input_row_offsets.unsafe_ptr().as_imm(),
             layout=input_row_offsets.layout,
         ),
         kv_collection,
         layer_idx,
         scale,
-        TileTensor[q_dtype, bias.LayoutType, ImmutAnyOrigin](
-            ptr=bias.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=bias.layout,
-        ),
-        TileTensor[.uint32, cache_lengths.LayoutType, ImmutAnyOrigin](
-            ptr=cache_lengths.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=cache_lengths.layout,
-        ),
+        TileTensor(ptr=bias.unsafe_ptr(), layout=bias.layout),
+        TileTensor(ptr=cache_lengths.unsafe_ptr(), layout=cache_lengths.layout),
         output,
         context,
         decode_dispatch_metadata,
@@ -3205,7 +3201,7 @@ struct Struct_topk_topp_masked_probs:
         topk_topp_masked_probs(
             ctx,
             input.to_tile_tensor(),
-            probs.to_tile_tensor[.float32]().as_unsafe_any_origin(),
+            probs.to_tile_tensor[.float32](),
             top_k_val=-1,
             top_k_arr=K.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
@@ -3323,8 +3319,8 @@ struct Struct_keyed_uniform:
         comptime assert type_of(out_values).rank == 1
         comptime assert type_of(seed).rank == 1
         keyed_uniform[target=target](
-            out_values.to_tile_tensor[.float32]().as_unsafe_any_origin(),
-            seed.to_tile_tensor[.uint64]().as_unsafe_any_origin().as_imm(),
+            out_values.to_tile_tensor[.float32](),
+            seed.to_tile_tensor[.uint64]().as_imm(),
             ctx,
         )
 
@@ -3365,7 +3361,7 @@ struct Struct_min_p_sampling:
                 TileTensor(
                     ptr=input_tile.ptr.unsafe_mut_cast[
                         True
-                    ]().unsafe_origin_cast[MutAnyOrigin](),
+                    ]().unsafe_origin_cast[MutUntrackedOrigin](),
                     layout=input_tile.layout,
                 ),
                 out_token_ids.to_tile_tensor(),
@@ -5925,10 +5921,10 @@ struct StateSpaceCopyRows:
 
         @__name("state_space_copy_rows")
         def copy_rows_kernel(
-            dst_ptr: Pointer[Scalar[dtype], MutAnyOrigin],
-            src_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-            dst_ids: Pointer[UInt32, ImmutAnyOrigin],
-            src_ids: Pointer[UInt32, ImmutAnyOrigin],
+            dst_ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+            src_ptr: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
+            dst_ids: ImmPointer[UInt32, ImmUntrackedOrigin],
+            src_ids: ImmPointer[UInt32, ImmUntrackedOrigin],
             count: Int64,
             width: Int64,
         ):
@@ -5942,12 +5938,10 @@ struct StateSpaceCopyRows:
 
         comptime if is_gpu[target]():
             ctx.enqueue_function[copy_rows_kernel](
-                dst.unsafe_ptr(),
+                dst.to_tile_tensor().unsafe_ptr(),
                 # `src` is only read. Its tensor stays mutable to order the
                 # snapshot in the graph.
-                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    src.unsafe_ptr()
-                ),
+                src.to_tile_tensor().unsafe_ptr().as_imm(),
                 dst_rows.unsafe_ptr(),
                 src_rows.unsafe_ptr(),
                 Int64(rows),

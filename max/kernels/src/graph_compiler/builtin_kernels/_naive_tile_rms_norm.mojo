@@ -111,9 +111,7 @@ struct _NaiveRMSNormTileAdapter[
             dtype=Self.dtype, address_space=.LOCAL
         ](row_major[1, 1]())
         var dst = TileTensor(
-            dst_local._storage.unsafe_address_space_cast[
-                .GENERIC
-            ]().unsafe_origin_cast[MutAnyOrigin](),
+            dst_local._storage.unsafe_address_space_cast[.GENERIC](),
             row_major[1, 1](),
         )
         dst.store((0, 0), y.cast[Self.dtype]())

@@ -245,7 +245,7 @@ struct DistributedAllReduceSum:
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],
-            ImmutAnyOrigin,
+            ImmUntrackedOrigin,
         ]
 
         def input_tile[i: Int]() {imm inputs} -> InputTile:
@@ -443,7 +443,7 @@ struct DistributedReduceScatterSum:
                 shape_types=DynamicCoord[.int64, rank].element_types,
                 stride_types=DynamicCoord[.int64, rank].element_types,
             ],
-            ImmutAnyOrigin,
+            ImmUntrackedOrigin,
         ]
 
         def input_tile[i: Int]() {imm inputs} -> InputTile:
@@ -601,7 +601,7 @@ struct DistributedAllGather:
         # group-local slicing internally.
         comptime InputTensorType = type_of(
             TileTensor(
-                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmUntrackedOrigin]](
                     inputs[0]._ptr
                 ),
                 row_major(inputs[0].size()),
@@ -609,7 +609,7 @@ struct DistributedAllGather:
         )
         comptime OutputTensorType = type_of(
             TileTensor(
-                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
                     outputs[0]._ptr
                 ),
                 row_major(outputs[0].size()),
@@ -630,14 +630,14 @@ struct DistributedAllGather:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = TileTensor(
-                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmUntrackedOrigin]](
                     inputs[i]._ptr
                 ),
                 row_major(inputs[i].size()),
             )
         comptime for i in range(num_devices * group_size):
             out_tensors[i] = TileTensor(
-                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
                     outputs[i]._ptr
                 ),
                 row_major(outputs[i].size()),
@@ -1688,7 +1688,7 @@ struct DistributedAllGatherRMSNorm:
         )
         comptime OutViewType = type_of(
             TileTensor(
-                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
                     outputs_residual[0].to_tile_tensor[.int64]()._storage
                 ),
                 row_major(world_cols, world_cols),
@@ -1699,7 +1699,7 @@ struct DistributedAllGatherRMSNorm:
         )
         comptime for d in range(num_devices):
             comptime d_group_start = ualign_down(d, group_size)
-            var d_base = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+            var d_base = rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
                 outputs_residual[d].to_tile_tensor[.int64]()._storage
             )
             var row_off = 0
@@ -1932,7 +1932,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         )
         comptime OutViewType = type_of(
             TileTensor(
-                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
                     outputs_residual[0].to_tile_tensor[.int64]()._storage
                 ),
                 row_major(world_cols, world_cols),
@@ -1943,7 +1943,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         )
         comptime for d in range(num_devices):
             comptime d_group_start = ualign_down(d, group_size)
-            var d_base = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+            var d_base = rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
                 outputs_residual[d].to_tile_tensor[.int64]()._storage
             )
             var row_off = 0
@@ -2255,7 +2255,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         )
         comptime OutViewType = type_of(
             TileTensor(
-                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
                     outputs_residual[0].to_tile_tensor[.int64]()._storage
                 ),
                 row_major(world_cols, world_cols),
@@ -2266,7 +2266,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         )
         comptime for d in range(num_devices):
             comptime d_group_start = ualign_down(d, group_size)
-            var d_base = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+            var d_base = rebind[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
                 outputs_residual[d].to_tile_tensor[.int64]()._storage
             )
             var row_off = 0
