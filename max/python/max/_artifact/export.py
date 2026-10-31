@@ -20,6 +20,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from max.driver import CPU
+from max.engine import InferenceSession
 from max.graph import SymbolicDim
 from max.nn.legacy.kv_cache import (
     CacheLeafParamInterface,
@@ -34,8 +36,13 @@ from max.nn.legacy.kv_cache import (
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.graph_specs import GraphRole, compile_roles_separately
-from max.pipelines.lib.interfaces import PipelineModelWithKVCache
+from max.pipelines.lib.graph_specs import (
+    GraphRole,
+    GraphSpec,
+    compile_and_init_graphs,
+    compile_roles_separately,
+)
+from max.pipelines.lib.interfaces import PipelineModel, PipelineModelWithKVCache
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
@@ -141,6 +148,84 @@ def pipeline_modules(
             role.value if isinstance(role, GraphRole) else role: module
             for role, module in modules.items()
         }
+    )
+
+
+def vision_preprocess_modules(
+    model: PipelineModel[Any, Any, Any],
+) -> dict[str, CompiledCallable[..., Any]]:
+    """Compiles a model's image and video preprocessing graphs, keyed by role.
+
+    Serving never builds the graphs, so export compiles them on their own,
+    for the CPU, after the pipeline.
+
+    Args:
+        model: The built pipeline model.
+
+    Returns:
+        The ``vision_preprocess`` and ``vision_preprocess_video`` graphs the
+        model has, which may be none.
+    """
+    specs: dict[str, GraphSpec] = {
+        role: spec
+        for role, spec in (
+            (GraphRole.VISION_PREPROCESS, model.vision_preprocess_spec()),
+            (
+                GraphRole.VISION_PREPROCESS_VIDEO,
+                model.vision_preprocess_video_spec(),
+            ),
+        )
+        if spec is not None
+    }
+    if not specs:
+        return {}
+    compiled = compile_and_init_graphs(InferenceSession(devices=[CPU()]), specs)
+    return {GraphRole(role).value: compiled[role] for role in specs}
+
+
+def model_artifact(
+    modules: PipelineModules,
+    pipeline_model: PipelineModel[Any, Any, Any] | None,
+    batch_processor: BatchProcessorDims | None,
+    *,
+    engine_config: EngineConfig | None = None,
+    kv_cache: KVCacheLayout | None = None,
+    format_spec: FormatSpec | None = None,
+    weight_loader: WeightNaming | None = None,
+) -> ModelArtifact:
+    """Assembles the artifact of a built pipeline's graphs.
+
+    A pipeline with a ``vision`` graph also carries its model's vision
+    metadata and its image and video preprocessing graphs, which a serving
+    engine needs to lay out and preprocess media for that graph.
+
+    Args:
+        modules: The pipeline's graphs, keyed by role.
+        pipeline_model: The text-generation pipeline's model, or ``None``
+            for another pipeline.
+        batch_processor: The bounds of the decoder's per-step dims.
+        engine_config: The settings the pipeline is built with.
+        kv_cache: The layout of the pipeline's KV cache, if it has one.
+        format_spec: The FormatSpec document of the checkpoint it serves.
+        weight_loader: The entries that name each graph's weights.
+
+    Returns:
+        The artifact to serialize.
+    """
+    vision = None
+    if pipeline_model is not None and GraphRole.VISION in modules.roles:
+        modules = PipelineModules(
+            {**modules.roles, **vision_preprocess_modules(pipeline_model)}
+        )
+        vision = pipeline_model.vision_metadata()
+    return ModelArtifact(
+        model=modules,
+        format_spec=format_spec,
+        engine_config=engine_config,
+        kv_cache=kv_cache,
+        batch_processor=batch_processor,
+        weight_loader=weight_loader,
+        vision=vision,
     )
 
 
@@ -430,14 +515,6 @@ def export_pipeline(
         and "decoder" in model.roles
         else None
     )
-    engine_config = pipeline_engine_config(
-        pipeline_config, retrieved.memory_plan
-    )
-    kv_cache = (
-        pipeline_kv_cache(pipeline.kv_manager.params)
-        if isinstance(pipeline, SupportsKVManager)
-        else None
-    )
     if format_spec is None:
         format_spec = checkpoint_format_spec(
             PIPELINE_REGISTRY.architecture_for_config(pipeline_config, task),
@@ -452,18 +529,26 @@ def export_pipeline(
     named_graphs = {
         role: entries for role, entries in naming.items() if role in model.roles
     }
-    written = serialize(
-        ModelArtifact(
-            model=model,
-            format_spec=(
-                FormatSpec(format_spec) if format_spec is not None else None
-            ),
-            engine_config=engine_config,
-            kv_cache=kv_cache,
-            batch_processor=dims,
-            weight_loader=WeightNaming(named_graphs) if named_graphs else None,
+    artifact = model_artifact(
+        model,
+        pipeline._pipeline_model
+        if isinstance(pipeline, TextGenerationPipelineInterface)
+        else None,
+        dims,
+        engine_config=pipeline_engine_config(
+            pipeline_config, retrieved.memory_plan
         ),
-        dest,
+        kv_cache=pipeline_kv_cache(pipeline.kv_manager.params)
+        if isinstance(pipeline, SupportsKVManager)
+        else None,
+        format_spec=FormatSpec(format_spec)
+        if format_spec is not None
+        else None,
+        weight_loader=WeightNaming(named_graphs) if named_graphs else None,
     )
-    logger.info("Exported graphs %s to %s", sorted(model.roles), written)
+    written = serialize(artifact, dest)
+    assert artifact.model is not None
+    logger.info(
+        "Exported graphs %s to %s", sorted(artifact.model.roles), written
+    )
     return written

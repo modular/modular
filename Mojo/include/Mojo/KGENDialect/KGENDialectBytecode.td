@@ -271,14 +271,6 @@ def DTypeConstantAttr : DialectAttribute<(attr
   Custom<"KGENDType">:$dType
 )>;
 
-def SymbolConstantAttr : DialectAttribute<(attr
-  ConcreteAttribute<"SymbolRefAttr">:$symbol,
-  TypedAttrArray:$paramValues,
-  ConcreteType<"GeneratorType">:$type
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
-
 def FuncSymbolAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
@@ -630,7 +622,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     TypeGeneratorRefAttr,
     TypeInstanceRefAttr,
     DTypeConstantAttr,
-    SymbolConstantAttr,
     FuncSymbolAttr,
     QuoteAttr,
     GeneratorAttr,

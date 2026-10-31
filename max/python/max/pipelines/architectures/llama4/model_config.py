@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -43,6 +44,7 @@ from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ModelOutputConfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import (
@@ -430,11 +432,10 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
     ) -> None:
-        """Sets parameters that depend on the loaded state dict."""
+        """Sets parameters that depend on the loaded state dict and outputs."""
         text_config = get_text_config(huggingface_config)
 
         def _strip(name: str) -> str:
@@ -466,5 +467,5 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             )
 
         self.rms_norm_eps = float(getattr(text_config, "rms_norm_eps", 1e-5))
-        self.return_logits = return_logits
-        self.return_hidden_states = return_hidden_states
+        self.return_logits = outputs.return_logits
+        self.return_hidden_states = outputs.return_hidden_states

@@ -14,7 +14,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from typing import ClassVar
 
 from max.dtype import DType
@@ -30,6 +31,7 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ModelOutputConfig,
 )
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
@@ -228,16 +230,27 @@ class FlintConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-    ) -> None:
-        """Resolves the fields that depend on the loaded weights."""
-        self.tie_word_embeddings = resolve_tie_word_embeddings(
-            huggingface_config, state_dict
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns the config completed with checkpoint and output requirements.
+
+        Args:
+            huggingface_config: The checkpoint's model configuration.
+            state_dict: The adapted checkpoint weights.
+            outputs: The outputs the pipeline requires.
+
+        Returns:
+            A copy of this config with the checkpoint-dependent fields set.
+        """
+        return replace(
+            self,
+            tie_word_embeddings=resolve_tie_word_embeddings(
+                huggingface_config, state_dict
+            ),
+            return_logits=outputs.return_logits,
+            return_hidden_states=outputs.return_hidden_states,
         )
-        self.return_logits = return_logits
-        self.return_hidden_states = return_hidden_states
 
     @staticmethod
     def get_rope_theta(huggingface_config: AutoConfig) -> float:

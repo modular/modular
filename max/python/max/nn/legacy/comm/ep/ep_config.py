@@ -189,20 +189,12 @@ class EPConfig:
         Returns:
             Estimated memory usage in bytes per device per buffer group.
         """
-        # If we use allreduce as communication backend, the EP kernels are only
-        # used to route token within the current device. Hence, we only need to
-        # allocate the memory for the local experts.
-        _n_experts = (
-            self.n_experts // self.n_nodes
-            if self.use_allreduce
-            else self.n_experts
-        )
         return estimate_ep_memory_usage(
             hidden_size=self.hidden_size,
             dispatch_dtype=self.dispatch_dtype,
             combine_dtype=self.combine_dtype,
             max_tokens_per_rank=self.max_tokens_per_rank,
-            n_experts=_n_experts,
+            n_experts=self.n_experts,
             n_nodes=self.n_nodes,
             n_gpus_per_node=self.n_gpus_per_node,
             top_k=self.top_k,
@@ -342,7 +334,8 @@ def estimate_ep_memory_usage(
         n_gpus_per_node: Number of GPUs available per node.
         top_k: Number of experts each token is routed to.
         use_allreduce: Whether allreduce is used for cross-device communication.
-            When True, dispatch/combine buffers are sized for local experts only.
+            The EP kernels then route tokens within each device, so ``ep.init``
+            sizes the buffers for that device's experts on one rank.
         dispatch_element_dtype: The logical element dtype behind a packed
             ``uint8`` dispatch dtype (see
             :attr:`~max.nn.legacy.quant_config.QuantConfig.mx_element_dtype`). ``uint8``
@@ -371,29 +364,30 @@ def estimate_ep_memory_usage(
             return n_elems + n_elems // 32
         return n_elems * dtype.size_in_bytes
 
-    n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
+    if use_allreduce:
+        # What `_ep_common_parameters` gives `ep.init` under allreduce.
+        n_experts //= n_gpus_per_node
+        n_gpus_per_node = n_nodes = 1
     d_token_size = _n_elems_to_bytes(dispatch_dtype, hidden_size)
     dispatch_send_buf_size = max_tokens_per_rank * d_token_size
-    dispatch_recv_buf_size: int
-    if not use_allreduce:
-        dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
-    else:
-        dispatch_recv_buf_size = (
-            n_local_experts * max_tokens_per_rank * d_token_size
-        )
-
     c_token_size = hidden_size * combine_dtype.size_in_bytes
-    # When all the devices are on the same node, we skip the combine send buffer
-    # and directly send tokens to each device's recv buffer. Hence, we don't
-    # need to allocate the combine send buffer.
-    combine_send_buf_size = (
-        max_tokens_per_rank
-        * c_token_size
-        * min(n_experts, n_gpus_per_node * n_nodes * top_k)
-        if n_nodes > 1
-        else 0
-    )
     combine_recv_buf_size = top_k * max_tokens_per_rank * c_token_size
+    if n_nodes == 1:
+        # A device receives each token once, plus a token index per (expert,
+        # token). The combine sends straight into each device's receive buffer,
+        # so there is no combine send buffer.
+        dispatch_recv_buf_size = (
+            n_gpus_per_node * max_tokens_per_rank * d_token_size
+            + n_experts * max_tokens_per_rank * _EP_TOKEN_INDEX_BYTES
+        )
+        combine_send_buf_size = 0
+    else:
+        dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
+        combine_send_buf_size = (
+            max_tokens_per_rank
+            * c_token_size
+            * min(n_experts, n_gpus_per_node * n_nodes * top_k)
+        )
 
     return (
         dispatch_send_buf_size
@@ -436,6 +430,11 @@ def calculate_ep_max_tokens_per_rank(
     # must be ceil, not floor — otherwise the dispatch kernel rejects the
     # largest shard (see ep.mojo dispatch assertion).
     return ceildiv(max_batch_input_tokens, tp_size)
+
+
+_EP_TOKEN_INDEX_BYTES = 32
+"""Bytes of one token index in a single-node EP dispatch receive buffer.
+Mirrors ``EP_TOKEN_INDEX_BYTES`` in ``ep_comm.mojo``."""
 
 
 _EP_LOCAL_SYNC_RESERVED_WORDS = 262144

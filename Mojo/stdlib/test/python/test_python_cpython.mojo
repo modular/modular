@@ -387,7 +387,7 @@ def _test_capsule_api(cpy: CPython) raises:
 
 def _test_memory_management_api(cpy: CPython) raises:
     var ptr = cpy.lib.call[
-        "PyObject_Malloc", OptionalPointer[NoneType, MutUntrackedOrigin]
+        "PyObject_Malloc", Optional[Pointer[NoneType, MutUntrackedOrigin]]
     ](64)
     assert_true(ptr)
 

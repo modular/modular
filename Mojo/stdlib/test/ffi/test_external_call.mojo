@@ -22,7 +22,7 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 struct RegisterPassablePointer(RegisterPassable):
-    var pointer: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+    var pointer: Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
 
 
 def test_external_call_handles_rp_return_types() raises:

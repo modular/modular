@@ -285,7 +285,7 @@ private:
 ///
 /// - Rules for ParamIndexRefAttr:
 /// The attr/type initially passed to the evaluator is considered to be at
-/// depth `inputDepth` (0 for most cases, but can be overridden by the user).
+/// depth 0, unless the caller supplies a starting depth via `replaceAtDepth`.
 /// Only index references that point back to index bindings at this depth are
 /// candidates for substitution (see IRAIDAI and PSTIAIRAID for details).
 ///
@@ -294,7 +294,7 @@ private:
 /// (i.e. not all the index bindings are registered, only a given prefix of the
 /// index bindings are registered), the user can manually set the total number
 /// of index bindings so that the assertion is only triggered for real errors.
-class ParameterEvaluator final : public ParameterReplacer<ParameterEvaluator> {
+class ParameterEvaluator : public ParameterReplacer<ParameterEvaluator> {
 public:
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
@@ -306,10 +306,9 @@ public:
   ParameterEvaluator(
       DenseMap<StringAttr, TypedAttr> declBindings =
           DenseMap<StringAttr, TypedAttr>(),
-      ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>(),
-      size_t inputDepth = 0)
+      ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>())
       : declBindings(std::move(declBindings)),
-        indexBindings(std::move(indexBindings)), inputDepth(inputDepth) {}
+        indexBindings(std::move(indexBindings)) {}
 
   /// Set the evaluation context to use.
   void setEvaluationContext(ParameterEvaluationContext *context) {
@@ -392,22 +391,18 @@ public:
   /// Get all the input parameters.
   ArrayRef<TypedAttr> getIndexBindings() const { return indexBindings; }
 
-  /// Set the relative input depth.
-  void setInputDepth(size_t depth) { inputDepth = depth; }
-  size_t getInputDepth() const { return inputDepth; }
-
   void clearCache() { rewritten.clear(); }
 
 private:
   // CRTP methods.
-  Type doReplace(Type type, size_t rootDepth);
-  Attribute doReplace(Attribute attr, size_t rootDepth);
+  Type doReplace(Type type, size_t depth);
+  Attribute doReplace(Attribute attr, size_t depth);
   friend class ParameterReplacer<ParameterEvaluator>;
 
   /// Handle the `cond` operator. This needs to return a tri-state: whether the
   /// condition can be narrowed to an integer constant and whether we need to
   /// suspend, which is that the bool represents.
-  std::pair<IntegerAttr, bool> narrowCondOp(Attribute attr, size_t rootDepth);
+  std::pair<IntegerAttr, bool> narrowCondOp(Attribute attr, size_t depth);
 
   /// These are the name-based parameter bindings.
   DenseMap<StringAttr, TypedAttr> declBindings;
@@ -421,31 +416,6 @@ private:
   /// The optional context to use for evaluating contextually evaluated
   /// attributes.
   ParameterEvaluationContext *evaluationContext = nullptr;
-
-public:
-  /// The relative depth from the generator where the index-based parameter
-  /// bindings are from. This is zero for most applications, but should be set
-  /// accordingly when substituting attributes or types inside a generator, see
-  /// PSTIAIRAID.
-  size_t inputDepth = 0;
-};
-
-/// Sets the input depth of a ParameterEvaluator for the lifetime of this
-/// object, restoring the previous depth on destruction.
-class ScopedInputDepth {
-public:
-  ScopedInputDepth(ParameterEvaluator &evaluator, size_t depth)
-      : evaluator(evaluator), savedDepth(evaluator.getInputDepth()) {
-    evaluator.setInputDepth(depth);
-  }
-  ~ScopedInputDepth() { evaluator.setInputDepth(savedDepth); }
-
-  ScopedInputDepth(const ScopedInputDepth &) = delete;
-  ScopedInputDepth &operator=(const ScopedInputDepth &) = delete;
-
-private:
-  ParameterEvaluator &evaluator;
-  size_t savedDepth;
 };
 
 //===----------------------------------------------------------------------===//

@@ -17,7 +17,27 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # PDL grid controls are a no-op below SM90, where the test would pass under
+    # plain stream ordering without exercising PDL.
+    "test_fused_qk_rms_norm_rope_pdl_race.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # PDL (griddepcontrol) is a compile-time no-op below SM90, where the test
+    # would only exercise stream ordering.
+    "test_rowwise_pdl_race.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mha_decode_register_owners.mojo": ["//:nvidia_gpu"],
+    # PDL needs SM90+; below that the launches serialize and the test cannot fail.
+    "test_mha_fallback_pdl_wait.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # PDL (griddepcontrol) + llvm.nvvm.nanosleep: NVIDIA SM90+ only.
     "test_mla_index_kpool_pdl.mojo": select({
         "//:h100_gpu": [],
@@ -381,6 +401,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: GEX-2562
+    # Programmatic dependent launch is an SM90+ feature; elsewhere the test
+    # would only repeat the unfused comparison.
+    "test_moe_routing_pdl.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # The router's warp-bitonic top-k and lane-group reductions have never
     # been exercised on Metal; opt out until someone confirms them there.
     "test_sink_gate_router.mojo": select({
@@ -427,6 +453,11 @@ _EXTRA_CONSTRAINTS = {
     }),
     # SM100 FA4 tile configs for a 192-wide key with a 128-wide value.
     "attention/test_mha_sm100_split_kv_config.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # SM100 FA4 workspace split-K combine under PDL. B200-only.
+    "attention/test_fa4_splitk_combine_pdl.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -601,6 +632,7 @@ _EXTRA_DEPS = {
     "test_row_mean_of_squares.mojo": ["//max:builtin_kernels"],
     "test_row_mean_of_squares_qk.mojo": ["//max:builtin_kernels"],
     "test_rowwise_determinism.mojo": ["//max:builtin_kernels"],
+    "test_rowwise_pdl_race.mojo": ["//max:builtin_kernels"],
     "test_topk_gpu.mojo": ["//max:max_mojo"],
     "test_topk_gpu_fi.mojo": ["//max:max_mojo"],
     "test_topk_softmax_sample_topk_arr.mojo": ["//max:max_mojo"],

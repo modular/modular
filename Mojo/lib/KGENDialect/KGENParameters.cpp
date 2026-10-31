@@ -255,7 +255,7 @@ void ParameterCollector::collectUsesFromAttrImpl(
     return;
   }
 
-  // Check any SymbolConstantAttr's we encounter.
+  // Check any symbol references we encounter.
   if (auto ref = dyn_cast<DeclRefAttrInterface>(attr))
     verifyRefAttr(ref);
 

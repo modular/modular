@@ -15,7 +15,7 @@ module {
     %0:2 = mogg.routine.async (%arg0) : (%arg2: !mef.chain) -> (!mef.chain, !mgp.opaque<"">){
       // %1 = mogg.mgp_to_async_ref(%arg2) : (!mef.chain) -> !kgen.pointer<none>
       %3 = mogg.stack_allocate_opaques : !mgp.opaque<"">
-      %4 = "mogg.to_kgen"(%3) {typeMethodsDict = {__del__ = #kgen.symbol.constant<@"MOGGTests::MyCustomInt::__del__(MOGGTests::MyCustomInt)"> : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>, __moveinit__ = #kgen.symbol.constant<@"MOGGTests::MyCustomInt::__moveinit__(MOGGTests::MyCustomInt=&,MOGGTests::MyCustomInt)"> : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem, !kgen.pointer<struct<(index) memoryOnly>> byref_result) -> !kgen.none>}} : (!mgp.opaque<"">) -> !kgen.pointer<struct<(index) memoryOnly>>
+      %4 = "mogg.to_kgen"(%3) {typeMethodsDict = {__del__ = #kgen.gen<#kgen.func.symbol<@"MOGGTests::MyCustomInt::__del__(MOGGTests::MyCustomInt)">> : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>, __moveinit__ = #kgen.gen<#kgen.func.symbol<@"MOGGTests::MyCustomInt::__moveinit__(MOGGTests::MyCustomInt=&,MOGGTests::MyCustomInt)">> : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem, !kgen.pointer<struct<(index) memoryOnly>> byref_result) -> !kgen.none>}} : (!mgp.opaque<"">) -> !kgen.pointer<struct<(index) memoryOnly>>
       %index42 = kgen.param.constant = <42>
       %5 = kgen.call @"MOGGTests::MyCustomInt::__init__(MOGGTests::MyCustomInt=&,::Int)"(%index42, %4) : (index, !kgen.pointer<struct<(index) memoryOnly>> byref_result) -> !kgen.none
       %6 = mogg.to_mgp_from_opaque(%4) : (!kgen.pointer<struct<(index) memoryOnly>>) -> !mgp.opaque<"">

@@ -24,6 +24,9 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
+from max.pipelines.architectures.deepseekV41.engram_lookback import (
+    EngramLookbackBatchState,
+)
 from max.pipelines.architectures.deepseekV41.layers.engram_hash import (
     engram_lookback_token_ids,
 )
@@ -99,6 +102,7 @@ class DeepseekV41BatchProcessor(
             self._verifies = bool(config.dspark_trailing_inputs)
         self._dp_degree = runtime.pipeline_config.model.data_parallel_degree
         self._ep_comm_initializer: EPCommInitializer | None = None
+        self._lookback = EngramLookbackBatchState()
 
     def bind_engram(self, static_inputs: Mapping[str, Buffer]) -> None:
         """Hands over the ``engram_table_*`` and ``engram_token_map`` buffers."""
@@ -180,11 +184,6 @@ class DeepseekV41BatchProcessor(
             "global_write_floor": np.zeros(batch, np.int32),
             # Text only: no position is an image token.
             "image_token_mask": np.zeros(mask_rows, np.uint8),
-            "engram_lookback": engram_lookback_token_ids(
-                [ctx.tokens.all for ctx in context_batch],
-                [ctx.tokens.processed_length for ctx in context_batch],
-                _NUM_LOOKBACK,
-            ).astype(np.int32),
             "engram_lookback_dead": np.zeros((batch, _NUM_LOOKBACK), np.uint8),
             # The graph reads only the extent: the rows the decoder layers run.
             "decoder_rows": np.zeros(
@@ -192,10 +191,25 @@ class DeepseekV41BatchProcessor(
                 np.uint8,
             ),
         }
+        if self._v41.engram_lookback_history:
+            self._stage_lookback_history(per_request, context_batch)
+        else:
+            per_request["engram_lookback"] = engram_lookback_token_ids(
+                [ctx.tokens.all for ctx in context_batch],
+                [ctx.tokens.processed_length for ctx in context_batch],
+                _NUM_LOOKBACK,
+            ).astype(np.int32)
         buffers = {
             name: Buffer.from_numpy(array).to(device0)
             for name, array in per_request.items()
         }
+        if self._v41.engram_lookback_history:
+            buffers["engram_lookback_history"] = self._lookback.ensure_history(
+                capacity=self.runtime.max_global_batch_size,
+                batch=batch,
+                depth=_NUM_LOOKBACK,
+                device=device0,
+            )
         cpu_buffers: dict[str, Buffer] = {}
         if self._v41.decoder_replay:
             self._stage_replay(
@@ -228,6 +242,21 @@ class DeepseekV41BatchProcessor(
             if name in cpu_buffers
             else self._engram_static[name]
             for name in names
+        )
+
+    def _stage_lookback_history(
+        self,
+        per_request: dict[str, np.ndarray],
+        context_batch: Sequence[TextContext],
+    ) -> None:
+        """Stages the host window and the per-row source map of it."""
+        per_request["engram_lookback_ids"] = engram_lookback_token_ids(
+            [ctx.tokens.all for ctx in context_batch],
+            [ctx.tokens.processed_length for ctx in context_batch],
+            _NUM_LOOKBACK,
+        ).astype(np.int64)
+        per_request["engram_lookback_source"] = self._lookback.source(
+            context_batch
         )
 
     def _stage_replay(

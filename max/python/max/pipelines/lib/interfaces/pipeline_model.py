@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from max import functional as F
 from max import tree
+from max._artifact.vision import VisionMetadata
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -238,29 +239,33 @@ class ModelOutputs:
     """
 
 
+_OutputTensorT = TypeVar("_OutputTensorT", default=Tensor)
+
+
 @tree.dataclass
-class ModuleV3Outputs:
+class ModuleV3Outputs(Generic[_OutputTensorT]):
     """The outputs a ModuleV3 text model's ``forward`` returns.
 
     :class:`ModuleV3PipelineModelWithKVCache` maps each field to the
     :class:`ModelOutputs` field of the same name. A field left ``None`` is not
-    a graph output.
+    a graph output. A registered graph-API decoder returns the same fields as
+    :class:`~max.graph.TensorValue`.
     """
 
-    next_token_logits: Tensor
+    next_token_logits: _OutputTensorT
     """Last-token logits, shape ``[B, V]``."""
 
-    logits: Tensor | None = None
+    logits: _OutputTensorT | None = None
     """All or variable logits, shape ``[T, V]``, when the model returns them.
 
     When ``None``, :attr:`next_token_logits` also serves as
     :attr:`ModelOutputs.logits`.
     """
 
-    logit_offsets: Tensor | None = None
+    logit_offsets: _OutputTensorT | None = None
     """Row offsets into :attr:`logits`, shape ``[B + 1]``; set with it."""
 
-    hidden_states: Tensor | None = None
+    hidden_states: _OutputTensorT | None = None
     """Hidden states, when the model returns them."""
 
 
@@ -1044,6 +1049,37 @@ class PipelineModel(
         raise NotImplementedError(
             f"{type(self).__qualname__} must implement `graph_specs`."
         )
+
+    def vision_metadata(self) -> VisionMetadata | None:
+        """Returns this model's media layout and prompt-run tokens.
+
+        A serving engine lays out the model's media and splices its vision
+        embeddings into the prompt by them. ``None`` for a model whose
+        artifact serves no media.
+        """
+        return None
+
+    def vision_preprocess_spec(self) -> GraphSpec | None:
+        """Returns the graph that preprocesses one image for the vision encoder.
+
+        The graph runs on the CPU. ``None`` for a model without one. Only
+        ``max export`` compiles it, as the ``vision_preprocess`` role, for a
+        serving engine to run per image. Its outputs are the vision graph's
+        named inputs for that image, path for path.
+        """
+        return None
+
+    def vision_preprocess_video_spec(self) -> GraphSpec | None:
+        """Returns the graph that preprocesses one segment of a video clip.
+
+        A segment is the frames the vision encoder attends over together.
+        The graph runs on the CPU. ``None`` for a model that serves no video,
+        or whose segment is one frame that :meth:`vision_preprocess_spec`
+        preprocesses as an image. Only ``max export`` compiles it, as the
+        ``vision_preprocess_video`` role. Its outputs are the vision graph's
+        named inputs for that segment, path for path.
+        """
+        return None
 
     @traced
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:

@@ -41,6 +41,7 @@ from ssd_scan_test_utils.ssd_scan import (
     SSDRunObserver,
     run_ssd_gpu,
 )
+from state_space.mamba2_ssd_out_mi355 import ssd_out_mi355_supported
 from state_space.mamba2_ssd_chunked import (
     GROUPED_CB_AUTO,
     GROUPED_CB_ON,
@@ -392,13 +393,23 @@ def _benchmark_ssd_shape(
     var batch = len(seq_lengths)
     if kernel == "dispatch":
         kernel = "serial" if total_len > batch else "unstaged"
-        comptime if ctx.target._is_sm_8x_or_newer():
+        comptime if (
+            ctx.target._is_sm_8x_or_newer() or ctx.target.is_amd_gpu["gfx950"]()
+        ):
             if use_chunked_ssd(total_len, batch, head_dim, 512):
                 kernel = "chunked"
+            # MI355's chunk kernels take fewer shapes; the op keeps the rest
+            # on the serial scan.
+            comptime if ctx.target.is_amd_gpu():
+                if not ssd_out_mi355_supported(nheads, ngroups, head_dim, 128):
+                    kernel = "serial"
     match kernel:
         case "chunked" | "paired":
-            comptime if not (ctx.target._is_sm_8x_or_newer()):
-                raise Error("chunked SSD requires NVIDIA SM80 or newer")
+            comptime if not (
+                ctx.target._is_sm_8x_or_newer()
+                or ctx.target.is_amd_gpu["gfx950"]()
+            ):
+                raise Error("chunked SSD requires NVIDIA SM80+ or MI355")
             if head_dim % 64 != 0:
                 raise Error("chunked SSD requires head_dim divisible by 64")
             if kernel == "paired":

@@ -1356,6 +1356,71 @@ def MOGG_CallOpaqueOp : MOGG_Op<"call.opaque", [
   }];
 }
 
+def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
+  MOGG_CallLike,
+  AttrSizedOperandSegments,
+  HasParent<"MOGG::GraphBlobOp">,
+  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
+  DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+]> {
+  let summary = "Run a declarative kernel as a member of a graph blob.";
+  let description = [{
+    Runs `$callee`'s `execute_device` as one member of the enclosing
+    `mogg.graph_blob`'s launch. Emit calls the kernel's
+    `execute_configuration` on the host, and the blob's kernel calls its
+    `execute_device` on the device. Outside a blob, `mogg.call.opaque`
+    launches a declarative kernel by itself.
+
+    Example:
+    ```mlir
+    mogg.graph_blob {
+      mogg.call.execute_device @kernels.Softmax inputs(%x : !mogg.tensor)
+          outputs(%y : !mogg.tensor) context(%ctx : !mogg.context)
+    }
+    ```
+  }];
+  let arguments = (ins
+    FlatSymbolRefAttr:$callee,
+    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$inputs,
+    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$outputs,
+    MOGG_Context:$device_context,
+    OptionalAttr<DictionaryAttr>:$kernel_param
+  );
+  let assemblyFormat = [{
+    $callee `` custom<OptionalKernelParams>($kernel_param)
+    (`inputs` `(` $inputs^ `:` type($inputs) `)`)?
+    (`outputs` `(` $outputs^ `:` type($outputs) `)`)?
+    `context` `(` $device_context `:` type($device_context) `)`
+    attr-dict
+  }];
+}
+
+def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
+  MOGG_CallLike,
+  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
+  NoTerminator,
+  SingleBlock,
+]> {
+  let summary = "Launch several declarative kernels as one device kernel.";
+  let description = [{
+    Runs the `mogg.call.execute_device`s in its body, in order, in one launch
+    on their shared device context. Emit calls each kernel's
+    `execute_configuration` on the host, uses `merge` to combine them, then
+    compiles one kernel that runs each `execute_device` only on the threads
+    its configuration's `active_threads` names, with the configuration's
+    `barrier` between kernels. The kernels return the same configuration type,
+    a `GraphBlobExecutionConfig`.
+
+    The body is host code: it holds only the ops that build the calls'
+    operands, and the calls. The kernel takes each operand as an argument
+    rather than capturing it, so the body can use the enclosing region's values
+    and the op isn't isolated from above.
+  }];
+  let regions = (region SizedRegion<1>:$body);
+  let assemblyFormat = "$body attr-dict";
+  let hasRegionVerifier = 1;
+}
+
 def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,

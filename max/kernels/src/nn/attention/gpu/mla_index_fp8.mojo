@@ -1677,7 +1677,7 @@ def _mla_indexer_paged_impl[
     remap: R,
     score_hook: H,
     scores_budget_bytes: Int,
-    q_sf: OptionalPointer[UInt32, ImmutAnyOrigin] = None,
+    q_sf: Optional[Pointer[UInt32, ImmutAnyOrigin]] = None,
 ) raises:
     """Scores, bounds and selects the indexer's top-k over one paged K cache.
 

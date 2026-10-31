@@ -822,6 +822,7 @@ struct Struct_grouped_matmul_ragged:
         grouped_matmul[
             has_epilogue_fn=has_epilogue_fusion and not has_compute_lambda,
             has_compute_fn=has_epilogue_fusion and has_compute_lambda,
+            pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
         ](
             c.to_tile_tensor[.int64](),
             a.to_tile_tensor[.int64](),

@@ -19,6 +19,7 @@ from std.sys import size_of
 from std.sys.info import align_of
 
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, CoordLike, TileTensor
 from std.utils.numerics import get_accum_type
 from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
@@ -64,6 +65,7 @@ def rms_norm[
     weight_offset: Float32,
     multiply_before_cast: Bool = True,
     reduce_dim: Int = rank - 1,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     input_fn: InputFn,
     output_fn: OutputFn,
@@ -173,6 +175,7 @@ def rms_norm[
         num_phases=2,
         dtype_size=size_of[dtype](),
         computationally_expensive=True,
+        pdl_level=pdl_level,
     ](body, shape, context)
 
 

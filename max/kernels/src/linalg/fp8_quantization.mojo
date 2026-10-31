@@ -412,7 +412,7 @@ def quantize_dynamic_scaled_fp8[
     ctx: DeviceContext,
     num_rows: Int,
     amax_floor: Float32 = 0.0,
-    row_limit: OptionalPointer[UInt32, ImmUntrackedOrigin] = None,
+    row_limit: Optional[Pointer[UInt32, ImmUntrackedOrigin]] = None,
 ) raises:
     """TileTensor primary implementation of dynamic scaled FP8 quantization.
 
@@ -612,7 +612,7 @@ struct _QuantizeFp8Kernel[
     # It cannot be a launch parameter: on the EP path the dispatch that fills
     # the activation buffer publishes this count from the GPU, so the host has
     # no safe value for it at enqueue time.
-    var row_limit: OptionalPointer[UInt32, ImmUntrackedOrigin]
+    var row_limit: Optional[Pointer[UInt32, ImmUntrackedOrigin]]
     var num_rows: Int
 
     @staticmethod

@@ -59,7 +59,7 @@ def repro_struct_attr():
     struct_callee[2, type_of(my_fn)](my_fn)
 
 
-# COM: Verify SymbolConstantAttr matching: closure returning a type
+# COM: Verify FuncSymbolAttr matching: closure returning a type
 # COM: parameterized by a function reference (exercises symbol recursion).
 # S1-LABEL: lit.fn @"repro_symbol_attr()"
 # S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}}storage{{.*}}

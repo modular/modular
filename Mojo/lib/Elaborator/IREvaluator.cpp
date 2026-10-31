@@ -312,9 +312,10 @@ FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
   FuncSymbolGenerator callee =
       extractFuncSymbolGenerator(op.getOperands().front());
-  if (!callee || hasUnresolvedParamValue(callee))
+  if (!callee)
     return failure();
-
+  assert(!hasUnresolvedParamValue(callee) &&
+         "the symbol must be fully bound for calls");
   // Attempt to concretize the function first.
   ErrorTreeOr<FuncOp> funcOr =
       elaborator->getConcreteFunction(parent, *errorLoc, callee);

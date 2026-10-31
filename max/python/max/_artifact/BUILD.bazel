@@ -11,6 +11,7 @@ modular_py_library(
         "codec.py",
         "metadata.py",
         "value_types.py",
+        "vision.py",
     ],
     deps = [
         "//max/python/max:tree",
@@ -52,6 +53,8 @@ modular_py_library(
         ":_artifact",
         ":model_artifact",
         "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/kv_cache",

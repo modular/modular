@@ -34,7 +34,7 @@ from typing import Any, ClassVar
 
 from max.driver import Buffer
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -220,7 +220,7 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     # token map by input name, and the trunk's extras the fused graph takes
     # past the canonical tail.
     engram_static_inputs: dict[str, Buffer] = field(default_factory=dict)
-    dspark_trailing_inputs: list[tuple[str, TensorType]] = field(
+    dspark_trailing_inputs: list[tuple[str, TensorType | BufferType]] = field(
         default_factory=list
     )
 

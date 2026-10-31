@@ -22,7 +22,7 @@ from std.testing import assert_equal
 
 def native_stream_ptr(
     stream: DeviceStream,
-) raises -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
+) raises -> Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]:
     comptime if default_accelerator().is_nvidia_gpu():
         return unsafe_cast[Type=NoneType](CUDA(stream))
     else:

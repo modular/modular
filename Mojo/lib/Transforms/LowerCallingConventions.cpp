@@ -177,7 +177,7 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op,
 
   b.setInsertionPoint(op);
   b.replaceOpWithNewOp<CreateFuncPtrOp>(
-      op, SymbolConstantAttr::get(wrapper.getSymNameAttr(), resSigGen));
+      op, FuncSymbolGenerator::get(wrapper.getSymNameAttr(), resSigGen));
 }
 
 /// We need to roll our own walk function because we are converting types and

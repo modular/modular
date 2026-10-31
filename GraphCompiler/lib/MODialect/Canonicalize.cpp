@@ -354,6 +354,21 @@ LogicalResult AllGatherOp::fold(FoldAdaptor adaptor,
 }
 
 //===----------------------------------------------------------------------===//
+// AllGatherConcatOp
+//===----------------------------------------------------------------------===//
+LogicalResult AllGatherConcatOp::fold(FoldAdaptor adaptor,
+                                      SmallVectorImpl<OpFoldResult> &results) {
+  // The verifier ensures that with 1 input, there is exactly 1 output.
+  if (getInputs().size() == 1 &&
+      getInputs()[0].getType() == getOutputs()[0].getType()) {
+    results.push_back(getInputs()[0]);
+    results.push_back(getInChain());
+    return success();
+  }
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
 // DistributedScatterOp
 //===----------------------------------------------------------------------===//
 LogicalResult

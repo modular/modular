@@ -1239,7 +1239,7 @@ kgen.generator @func() {
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK: constant: string = <"func">
-  kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@func> : !kgen.generator<() -> ()>>>
+  kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.gen<#kgen.func.symbol<@func>> : !kgen.generator<() -> ()>>>
   hlcf.return
 }
 
@@ -1267,15 +1267,15 @@ kgen.generator export @get_linkage_name() {
   // CHECK-NEXT: constant: struct<(string, index)> = <{ "{{.*}}no_params
   %0 = kgen.param.constant: !kgen.struct<(string, index)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> () @no_params>>
   // CHECK-NEXT: constant: string = <"no_params">
-  %1 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@no_params> : !kgen.generator<() -> ()>>>
+  %1 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.gen<#kgen.func.symbol<@no_params>> : !kgen.generator<() -> ()>>>
   // CHECK-NEXT: constant: struct<(string, index)> = <{ "{{.*}}params,a=1,b=2
   %2 = kgen.param.constant: !kgen.struct<(string, index)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> (index, index) @params<1, 2>>>
   // CHECK-NEXT: constant: string = <"params,a=1,b=2">
-  %3 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@params<1, 2>> : !kgen.generator<() -> (index, index)>>>
+  %3 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.gen<#kgen.func.symbol<@params<1, 2>>> : !kgen.generator<() -> (index, index)>>>
   // CHECK-NEXT: constant: struct<(string, index)> = <{ "{{.*}}func_param,f=params
   %4 = kgen.param.constant: !kgen.struct<(string, index)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> index @func_param<:<index, index>() -> (index, index) @params<*(0,0), *(0,1)>>>>
   // CHECK-NEXT: constant: string = <"func_param,f=params<*(0,0), *(0,1)>">
-  %5 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@func_param<:<index, index>() -> (index, index) @params<*(0,0), *(0,1)>>> : !kgen.generator<() -> index>>>
+  %5 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.gen<#kgen.func.symbol<@func_param<:<index, index>() -> (index, index) @params<*(0,0), *(0,1)>>>> : !kgen.generator<() -> index>>>
   hlcf.return
 }
 
@@ -1303,21 +1303,21 @@ kgen.generator @raising_func() throws {
 // CHECK-LABEL: kgen.func export @get_function_reflection
 kgen.generator export @get_function_reflection() {
   // CHECK-NEXT: kgen.param.constant = <0>
-  kgen.param.constant: index = <#kgen.get_function_parameter_count<#kgen.symbol.constant<@no_parameters> : !kgen.generator<() -> ()>>>
+  kgen.param.constant: index = <#kgen.get_function_parameter_count<#kgen.gen<#kgen.func.symbol<@no_parameters>> : !kgen.generator<() -> ()>>>
   // CHECK-NEXT: kgen.param.constant: param_list<string> = <[]>
-  kgen.param.constant: !kgen.param_list<!kgen.string> = <#kgen.get_function_parameter_names<#kgen.symbol.constant<@no_parameters> : !kgen.generator<() -> ()>>>
+  kgen.param.constant: !kgen.param_list<!kgen.string> = <#kgen.get_function_parameter_names<#kgen.gen<#kgen.func.symbol<@no_parameters>> : !kgen.generator<() -> ()>>>
   // CHECK-NEXT: kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <#kgen.get_function_is_raising<#kgen.symbol.constant<@no_parameters> : !kgen.generator<() -> ()>>>
+  kgen.param.constant: i1 = <#kgen.get_function_is_raising<#kgen.gen<#kgen.func.symbol<@no_parameters>> : !kgen.generator<() -> ()>>>
 
   // CHECK-NEXT: kgen.param.constant = <2>
-  kgen.param.constant: index = <#kgen.get_function_parameter_count<#kgen.symbol.constant<@two_parameters<1, 2>> : !kgen.generator<() -> index>>>
+  kgen.param.constant: index = <#kgen.get_function_parameter_count<#kgen.gen<#kgen.func.symbol<@two_parameters<1, 2>>> : !kgen.generator<() -> index>>>
   // CHECK-NEXT: kgen.param.constant: param_list<string> = <["a", "b"]>
-  kgen.param.constant: !kgen.param_list<!kgen.string> = <#kgen.get_function_parameter_names<#kgen.symbol.constant<@two_parameters<1, 2>> : !kgen.generator<() -> index>>>
+  kgen.param.constant: !kgen.param_list<!kgen.string> = <#kgen.get_function_parameter_names<#kgen.gen<#kgen.func.symbol<@two_parameters<1, 2>>> : !kgen.generator<() -> index>>>
   // CHECK-NEXT: kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <#kgen.get_function_is_raising<#kgen.symbol.constant<@two_parameters<1, 2>> : !kgen.generator<() -> index>>>
+  kgen.param.constant: i1 = <#kgen.get_function_is_raising<#kgen.gen<#kgen.func.symbol<@two_parameters<1, 2>>> : !kgen.generator<() -> index>>>
 
   // CHECK-NEXT: kgen.param.constant: i1 = <1>
-  kgen.param.constant: i1 = <#kgen.get_function_is_raising<#kgen.symbol.constant<@raising_func> : !kgen.generator<() throws -> ()>>>
+  kgen.param.constant: i1 = <#kgen.get_function_is_raising<#kgen.gen<#kgen.func.symbol<@raising_func>> : !kgen.generator<() throws -> ()>>>
   hlcf.return
 }
 
@@ -1343,9 +1343,9 @@ kgen.generator @snapshot_only<survivor: index>() -> index attributes {
 kgen.generator export @get_function_reflection_snapshot() {
   // The count reflects the snapshot's three names, not the single live param.
   // CHECK-NEXT: kgen.param.constant = <3>
-  kgen.param.constant: index = <#kgen.get_function_parameter_count<#kgen.symbol.constant<@snapshot_only<7>> : !kgen.generator<() -> index>>>
+  kgen.param.constant: index = <#kgen.get_function_parameter_count<#kgen.gen<#kgen.func.symbol<@snapshot_only<7>>> : !kgen.generator<() -> index>>>
   // CHECK-NEXT: kgen.param.constant: param_list<string> = <["dropped_first", "survivor", "dropped_last"]>
-  kgen.param.constant: !kgen.param_list<!kgen.string> = <#kgen.get_function_parameter_names<#kgen.symbol.constant<@snapshot_only<7>> : !kgen.generator<() -> index>>>
+  kgen.param.constant: !kgen.param_list<!kgen.string> = <#kgen.get_function_parameter_names<#kgen.gen<#kgen.func.symbol<@snapshot_only<7>>> : !kgen.generator<() -> index>>>
   hlcf.return
 }
 
@@ -2241,7 +2241,7 @@ kgen.generator @static_ln_gen() attributes {linkageName = #kgen.linkage_name<"my
 // CHECK-LABEL: kgen.func export @test_get_static_linkage_name
 kgen.generator export @test_get_static_linkage_name() {
   // CHECK-NEXT: constant: string = <"my_export">
-  kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@static_ln_gen> : !kgen.generator<() -> ()>>>
+  kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.gen<#kgen.func.symbol<@static_ln_gen>> : !kgen.generator<() -> ()>>>
   hlcf.return
 }
 

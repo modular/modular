@@ -22,6 +22,8 @@ crate-type = ["rlib"]
 [dependencies]
 itertools = { workspace = true }
 kv-core = { path = "../kv-core" }
+# `statx(STATX_DIOALIGN)`, to check the disk tier's direct-I/O alignment.
+libc = "0.2.186"
 libloading = "0.8"
 max-profiler = { path = "../max-profiler" }
 parking_lot = { workspace = true }

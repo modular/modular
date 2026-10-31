@@ -236,11 +236,7 @@ private:
 
   /// Process a `kgen.param.apply` operation by concretizing its operands and
   /// callee and then invoking the interpreter.
-  ElaborationState
-  processParamApplyOp(PImplNode *inode,
-                      ParamApplyOp op); //,
-                                        // SymbolConstantAttr calleeSymbol);//,
-                                        // FuncOp func, GeneratorOp gen);
+  ElaborationState processParamApplyOp(PImplNode *inode, ParamApplyOp op);
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.

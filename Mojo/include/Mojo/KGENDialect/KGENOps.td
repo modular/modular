@@ -626,11 +626,6 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
       return build($_builder, $_state,
         callee.getType().getBody().getValues().getResults(), callee,
         operands, tailKind);
-    }]>,
-    // TODO: Remove once all callers build a FuncSymbolGenerator directly.
-    OpBuilder<(ins "SymbolConstantAttr":$callee, "ValueRange":$operands), [{
-      return build($_builder, $_state, FuncSymbolGenerator::get(callee),
-        operands);
     }]>
   ];
 

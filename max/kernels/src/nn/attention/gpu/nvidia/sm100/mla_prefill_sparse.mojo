@@ -1101,16 +1101,17 @@ struct MLAPrefillSparse[
             row_major[row_dim * num_col_tiles, 64]()
         )
 
-        comptime outer_row_start = col_range[0] // 64
-        comptime outer_row_end = col_range[1] // 64
+        comptime outer_row_start = Int(col_range[0]) // 64
+        comptime outer_row_end = Int(col_range[1]) // 64
         comptime for outer_row in range(outer_row_start, outer_row_end):
-            var tma_tile = tma_smem_tensor.tile[row_dim, 64](
-                Coord(Idx[Int(outer_row)], Idx[0])
-            )
             comptime for inner_row in range(64 // 16):
-                var inner_tma_tile = tma_tile.tile[16, 64](
-                    Coord(Idx[Int(inner_row)], Idx[0])
-                )
+                # Slice straight off `tma_smem_tensor`: a subscript of a
+                # subscript view nests their symbolic layout types, which made
+                # `nn`'s precompile 3.5x slower (MOCO-5240).
+                comptime row0 = outer_row * row_dim + inner_row * 16
+                var inner_tma_tile = tma_smem_tensor[
+                    Idx[row0] : Idx[row0 + 16], :
+                ]
                 var inner_warp_dist = inner_tma_tile.tile[4, 64](
                     Coord(warp_idx, Idx[0])
                 )

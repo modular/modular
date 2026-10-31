@@ -287,9 +287,9 @@ def run_ssd_gpu[
     var sm100_x = 0 if grouped_pair else Int(x_d.unsafe_ptr())
 
     def launch_chunked(lctx: DeviceContext) raises {imm}:
-        comptime if (
-            (DSTATE_SPLIT < 0 or compare_chunked)
-            and lctx.target._is_sm_8x_or_newer()
+        comptime if (DSTATE_SPLIT < 0 or compare_chunked) and (
+            lctx.target._is_sm_8x_or_newer()
+            or lctx.target.is_amd_gpu["gfx950"]()
         ):
             mamba2_ssd_chunked_fwd_inplace_gpu[
                 DSTATE, dt_softplus=True, grouped_cb_mode=GROUPED_CB_OFF

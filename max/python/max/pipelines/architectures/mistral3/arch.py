@@ -15,11 +15,11 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
+from ..mistral.decoder import MistralDecoder
 from . import weight_adapters
-from .model import Mistral3Model
 from .model_config import Mistral3Config
 from .tokenizer import Mistral3Tokenizer
 
@@ -31,7 +31,7 @@ mistral3_arch = SupportedArchitecture(
     default_encoding=Mistral3Config.DEFAULT_ENCODING,
     supported_encodings=Mistral3Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
-    pipeline_model=Mistral3Model,
+    modules={GraphRole.DECODER: MistralDecoder},
     tokenizer=Mistral3Tokenizer,
     context_type=TextContext,
     weight_adapters={

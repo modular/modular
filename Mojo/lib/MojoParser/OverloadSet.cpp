@@ -525,7 +525,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
         bestFitness.getValidity() ==
             OverloadFitness::Validity::kFunctionConstraintInconclusive) {
       for (ConstraintAttr c : bestFitness.getUnprovableConstraints())
-        deferredTypingContext->deferredConstraints.push_back({c, getExprLoc()});
+        deferredTypingContext->addInconclusive(c, getExprLoc());
     }
 
     // On success, wrap things up into one callee, we know that the best fitness
@@ -1009,7 +1009,7 @@ CalleeResult OverloadSet::filterOverloadSet(
       if (bestFitness.getValidity() ==
           OverloadFitness::Validity::kFunctionConstraintInconclusive) {
         for (ConstraintAttr c : bestFitness.getUnprovableConstraints())
-          context->deferredConstraints.push_back({c, getExprLoc()});
+          context->addInconclusive(c, getExprLoc());
       }
     }
 
@@ -1071,6 +1071,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
     ParamBindings paramBindings = getParamBindings(candidate);
+    // TODO(MOCO-5244): Speculative trials install no DeferredTypingContext.
     ParamInf inference(paramBindings, candidateType.getInputParamTypes(),
                        candidateType.getParamListAttrs(),
                        /*allowImplicitConversions=*/true,
@@ -1238,7 +1239,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
 }
 
 /// Perform substitutions of the specified bindings into the symbol, returning
-/// the resultant LITSymbolConstant attr or producing an error message and
+/// the resultant function reference or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {

@@ -127,6 +127,7 @@ struct TileScheduler[
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
+    invariant_offsets: Bool = True,
 ](TrivialRegisterPassable):
     """Schedules output tiles across CTAs for a persistent grouped matmul kernel.
 
@@ -144,6 +145,10 @@ struct TileScheduler[
         swizzle: Whether to swizzle block indices for improved L2 reuse.
         swapAB: Whether to swap A and B operands. When true, the static
             dimension is M; when false, it is N.
+        invariant_offsets: Whether `group_offsets` is read with invariant
+            (non-coherent) loads, which the compiler may schedule above a
+            programmatic-dependent-launch wait. Set it to False when a
+            predecessor grid writes `group_offsets`.
     """
 
     var num_active_experts: Int
@@ -203,12 +208,19 @@ struct TileScheduler[
         self.block_idx_start = 0
 
     @inline(.always)
+    def _group_offset(self, idx: UInt32) -> UInt32:
+        comptime if Self.invariant_offsets:
+            return self.group_offsets[Int(idx)]
+        else:
+            return self.group_offsets.load[invariant=False](Coord(Int(idx)))
+
+    @inline(.always)
     def fetch_next_work(mut self) -> WorkInfo:
         self.current_iter += 1
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             grid_dim.x
         ) + UInt32(block_idx.x)
-        var start_idx = self.group_offsets[Int(self.current_group_idx)]
+        var start_idx = self._group_offset(self.current_group_idx)
 
         var num_dynamic_dim_blocks: UInt32
         # Trim to the next group
@@ -217,7 +229,7 @@ struct TileScheduler[
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
-            var end_idx = self.group_offsets[Int(self.current_group_idx + 1)]
+            var end_idx = self._group_offset(self.current_group_idx + 1)
             var current_dynamic_dim = end_idx - start_idx
             num_dynamic_dim_blocks = UInt32(
                 rebind[Scalar[Self.div_dynamic_block.uint_type]](

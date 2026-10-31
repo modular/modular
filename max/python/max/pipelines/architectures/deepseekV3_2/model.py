@@ -18,6 +18,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any, ClassVar
 
+from max.driver import is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import WeightData
@@ -213,7 +214,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         model_config: DeepseekV3_2Config,
     ) -> None:
         self.ep_comm_initializer = None
-        if model_config.ep_config is None:
+        if model_config.ep_config is None or is_virtual_device_mode():
             return
         self.ep_comm_initializer = self._init_ep_comm(
             session, model_config.ep_config

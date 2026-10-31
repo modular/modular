@@ -459,8 +459,6 @@ LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value,
       return success();
     }
 
-    if (sugarIsa<SymbolConstantAttr>(value))
-      return failure();
     if (auto funcSym = FuncSymbolGenerator::dynCast(value)) {
       p << funcSym.getSymbol();
       printer.printParameterValues(p, funcSym.getFuncSymbol().getParamValues());

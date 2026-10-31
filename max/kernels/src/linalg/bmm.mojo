@@ -1004,6 +1004,12 @@ def _batched_matmul_gpu_impl[
         with Trace[TraceLevel.OP]("batched_matmul_via_matmul"):
             # If the batch size is 1, then this is just a matmul and we can use the
             # matmul kernel directly.
+            #
+            # B may be an activation here, outside the constant-weight
+            # contract of the PDL weight prefetch. The rank-2 views below
+            # take their dims from runtime ints, so N and K are dynamic and
+            # neither the prefetching SM100 configs (keyed on static N and K)
+            # nor the split-K GEMV's weight prefetch (static N) is selected.
 
             # batch_size==1, so flatten (1, X, Y) → (X, Y)
             # by constructing rank-2 TileTensors directly.

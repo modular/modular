@@ -15,8 +15,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import ClassVar
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -28,6 +29,7 @@ from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ModelOutputConfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import (
@@ -118,7 +120,16 @@ class MistralConfig(
         *,
         max_seq_len: int,
     ) -> Self:
-        """Builds the config from the pipeline and HF configs."""
+        """Builds the config from the pipeline and HF configs.
+
+        Raises:
+            ValueError: If the pipeline echoes the prompt, which Mistral
+                doesn't implement.
+        """
+        if pipeline_config.model.enable_echo:
+            raise ValueError(
+                "Mistral model does not currently implement enable echo."
+            )
         kv_cache_config = pipeline_config.model.kv_cache
         quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING
@@ -160,3 +171,17 @@ class MistralConfig(
             devices=device_refs,
             quantization_encoding=quantization_encoding,
         )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns a copy of the config that returns the logits asked for.
+
+        Mistral returns no hidden states, so ``outputs`` sets only the
+        logits.
+        """
+        del huggingface_config, state_dict
+        return replace(self, return_logits=outputs.return_logits)

@@ -166,6 +166,26 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_preprocess_graph",
+    srcs = ["test_preprocess_graph.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:vision_preprocess_parity",
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_test(
     name = "test_video_processing",
     srcs = ["test_video_processing.py"],
     deps = [

@@ -15,16 +15,12 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
-from ..llama3.batch_processor import Llama3BatchProcessor
-from ..llama3.model_config import Llama3Config
-from .model import Phi3Model
+from ..llama3.decoder import Llama3Decoder, Llama3DecoderConfig
+from .tokenizer import Phi3Tokenizer
 
 phi3_arch = SupportedArchitecture(
     name="Phi3ForCausalLM",
@@ -36,15 +32,14 @@ phi3_arch = SupportedArchitecture(
         "float32",
         "bfloat16",
     },
-    pipeline_model=Phi3Model,
-    tokenizer=TextTokenizer,
+    modules={GraphRole.DECODER: Llama3Decoder},
+    tokenizer=Phi3Tokenizer,
     context_type=TextContext,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
-    config=Llama3Config,
-    batching=Llama3BatchProcessor,
+    config=Llama3DecoderConfig,
     memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,

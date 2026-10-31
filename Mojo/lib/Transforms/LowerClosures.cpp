@@ -132,7 +132,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
     b.setLoc(callLoc);
   Value call = CO::InvokeOp::create(
       b, op.getType(),
-      SymbolConstantAttr::get(name, GeneratorType::get({}, sig)), captures);
+      FuncSymbolGenerator::get(name, GeneratorType::get({}, sig)), captures);
   op.replaceAllUsesWith(call);
   op.erase();
 

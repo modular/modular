@@ -18,12 +18,11 @@ from max.experimental.cascade.pipelines.common_textgen import (
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .batch_processor import Llama3BatchProcessor
-from .model import Llama3Model
+from .decoder import Llama3DecoderConfig, Llama3TargetDecoder
 from .model_config import Llama3Config
 
 llama_arch = SupportedArchitecture(
@@ -37,9 +36,10 @@ llama_arch = SupportedArchitecture(
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
+    # The models table generator reads these off the class that defines them.
     default_encoding=Llama3Config.DEFAULT_ENCODING,
     supported_encodings=Llama3Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Llama3Model,
+    modules={GraphRole.DECODER: Llama3TargetDecoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -49,8 +49,7 @@ llama_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
-    config=Llama3Config,
-    batching=Llama3BatchProcessor,
+    config=Llama3DecoderConfig,
     memory_planner=PagedMemoryPlanner,
     cascade_pipeline_factory=CommonTextGenPipeline,
     # An EAGLE checkpoint names the Llama architecture of its one decoder layer.

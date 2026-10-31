@@ -33,6 +33,15 @@ from max.graph import (
     Weight,
 )
 from max.graph import Module as GraphModule
+from max.nn.legacy.graph_groups import (
+    VisionEmbeddings,
+    VisionHostMax,
+    VisionRowIndex,
+    VisionRows,
+    VisionSegments,
+    group_fields,
+    vision_outputs,
+)
 from max.nn.legacy.layer import Module
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     compute_vision_freqs_cis,
@@ -232,7 +241,9 @@ class Gemma4VisionModel(Module):
         return tuple(tree.leaves(self.input_tree()))
 
     def input_tree(self) -> OrderedDict[str, object]:
-        """Names the vision graph's inputs, keyed by :meth:`__call__`'s arguments.
+        """Groups the vision graph's inputs as a serving engine packs them.
+
+        The groups' fields are :meth:`__call__`'s argument names.
 
         The vision model receives four tensors per device plus one CPU
         scalar.
@@ -287,11 +298,15 @@ class Gemma4VisionModel(Module):
         )
 
         return OrderedDict(
-            patches_flat=tuple(patches_flat_types),
-            pixel_position_ids=tuple(pixel_position_ids_types),
-            cu_seqlens=tuple(cu_seqlens_types),
-            pool_gather_index=tuple(pool_gather_index_types),
-            max_seq_len=max_seq_len_type,
+            patches=VisionRows(
+                patches_flat=tuple(patches_flat_types),
+                pixel_position_ids=tuple(pixel_position_ids_types),
+            ),
+            segments=VisionSegments(cu_seqlens=tuple(cu_seqlens_types)),
+            pooling=VisionRowIndex(
+                pool_gather_index=tuple(pool_gather_index_types)
+            ),
+            segment_bound=VisionHostMax(max_seq_len=max_seq_len_type),
         )
 
     def trace(
@@ -305,7 +320,8 @@ class Gemma4VisionModel(Module):
         """Traces the vision graph, whose inputs are :meth:`input_types`.
 
         Groups the flat graph inputs into :meth:`__call__`'s per-device
-        arguments by :meth:`input_tree`.
+        arguments by :meth:`input_tree`, and outputs the image embeddings
+        by name.
 
         Args:
             *input_types: The graph's input types, :meth:`input_types`.
@@ -322,20 +338,24 @@ class Gemma4VisionModel(Module):
         """
         treedef = tree.flatten(self.input_tree())[1]
 
-        def forward(*inputs: Value[Any]) -> list[TensorValue]:
+        def forward(
+            *inputs: Value[Any],
+        ) -> OrderedDict[str, VisionEmbeddings]:
             named = tree.unflatten(treedef, iter(inputs))
             assert isinstance(named, OrderedDict)
-            return self(
-                patches_flat=[v.tensor for v in named["patches_flat"]],
+            fields = group_fields(named)
+            embeddings = self(
+                patches_flat=[v.tensor for v in fields["patches_flat"]],
                 pixel_position_ids=[
-                    v.tensor for v in named["pixel_position_ids"]
+                    v.tensor for v in fields["pixel_position_ids"]
                 ],
-                cu_seqlens=[v.tensor for v in named["cu_seqlens"]],
+                cu_seqlens=[v.tensor for v in fields["cu_seqlens"]],
                 pool_gather_index=[
-                    v.tensor for v in named["pool_gather_index"]
+                    v.tensor for v in fields["pool_gather_index"]
                 ],
-                max_seq_len=named["max_seq_len"].tensor,
+                max_seq_len=fields["max_seq_len"].tensor,
             )
+            return vision_outputs(embeddings)
 
         return Graph(
             type(self).__qualname__ if name is None else name,

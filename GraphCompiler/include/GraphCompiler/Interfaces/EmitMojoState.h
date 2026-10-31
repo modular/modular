@@ -33,6 +33,7 @@ struct KernelDeclFunctionAdaptor;
 struct KernelDeclAdaptor;
 class PrimitiveDeclOp;
 class ShapeFunctionDeclOp;
+struct GraphBlobEmission;
 
 /// A fused load/store receiver's `ManagedTensorSlice` decomposed into a bare
 /// pointer, runtime shape/strides, and comptime `StaticTensorSpec`, all
@@ -90,6 +91,11 @@ struct EmitMojoState {
   SmallVector<std::tuple<MojoValue, MojoValue>> mojoConstantResources;
 
   MojoRegistry &registry;
+
+  /// The `mogg.graph_blob` being emitted, if any. Its
+  /// `mogg.call.execute_device`s emit only their host part and leave the
+  /// launch to the blob.
+  GraphBlobEmission *graphBlob = nullptr;
 
   /// Values kept alive with `_ = someVar` at function end, where the Mojo
   /// compiler misjudges lifetimes (mostly lambdas, until the new closures).

@@ -32,7 +32,6 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import (
     BufferType,
-    BufferValue,
     DeviceRef,
     TensorType,
     TensorValue,
@@ -67,6 +66,10 @@ from .deepseekV41 import (
     gather_rows,
 )
 from .dspark_drafter import DeepseekV41DSparkDrafter
+from .engram_lookback import (
+    read_engram_lookback,
+    record_engram_lookback,
+)
 from .kv_leaves import V41KVLeafSpec
 from .layers.attention import CSA2Attention, CSA2Cache
 from .layers.ragged import ReplayRows, ReplicaTokens
@@ -131,85 +134,6 @@ TrunkTaps = tuple[list[TensorValue], list[RaggedRows]]
 The states are ``[1, T, d * n_taps]``; the rows describe the verification
 pass that produced them.
 """
-
-
-def read_engram_lookback(
-    host_lookback: TensorValue, source: TensorValue, history: BufferValue
-) -> TensorValue:
-    """Returns the lookback window of each row, from the host or the history.
-
-    Args:
-        host_lookback: ``[batch, depth]`` window the host built from the
-            request's ``processed_length``.
-        source: ``[batch]`` int64, the row of ``history`` to read, or -1 for
-            the host window.
-        history: ``[rows, depth]`` windows the previous step recorded.
-    """
-    device = host_lookback.device
-    zero = ops.constant(0, DType.int64, device=device)
-    recorded = ops.gather(
-        ops.buffer_load(history), ops.max(source, zero), axis=0
-    )
-    return ops.where(ops.unsqueeze(source >= zero, -1), recorded, host_lookback)
-
-
-def record_engram_lookback(
-    history: BufferValue,
-    lookback: TensorValue,
-    tokens: TensorValue,
-    input_row_offsets: TensorValue,
-    draft_tokens: TensorValue,
-    num_accepted: TensorValue,
-) -> None:
-    """Stores each row's lookback window for the step after this one.
-
-    The next step starts after the row's chunk and its accepted drafts, so
-    its window ends with those tokens, then this step's window.
-
-    Args:
-        history: ``[rows, depth]`` buffer; row ``i`` receives batch row
-            ``i``'s window.
-        lookback: ``[batch, depth]`` this step's window; column ``j`` is the
-            token ``j + 1`` positions before the chunk.
-        tokens: ``[total_seq_len]`` ragged chunk tokens.
-        input_row_offsets: ``[batch + 1]`` offsets of the chunks.
-        draft_tokens: ``[batch, num_drafts]`` drafts this step verified.
-        num_accepted: ``[batch]`` drafts accepted per row.
-    """
-    device = lookback.device
-    batch, depth = lookback.shape[0], int(lookback.shape[1])
-    i = ops.range(0, depth, 1, depth, dtype=DType.int64, device=device)
-    starts = input_row_offsets[:-1].cast(DType.int64).rebind([batch])
-    lengths = input_row_offsets[1:].cast(DType.int64).rebind([batch]) - starts
-    # The last `depth` tokens up to the chunk's end, oldest first: chunk
-    # position `lengths - depth + i`, or this step's window before it.
-    position = ops.unsqueeze(lengths, -1) - depth + i
-    zero = ops.constant(0, DType.int64, device=device)
-    from_chunk = ops.gather(
-        tokens, ops.unsqueeze(starts, -1) + ops.max(position, zero), axis=0
-    )
-    from_window = ops.gather_nd(
-        lookback,
-        ops.unsqueeze(ops.max(-1 - position, zero), -1),
-        batch_dims=1,
-    )
-    ordered = ops.concat(
-        [
-            ops.where(position >= zero, from_chunk, from_window),
-            draft_tokens.rebind([batch, draft_tokens.shape[1]]),
-        ],
-        axis=1,
-    )
-    # Newest first, ending with the last accepted draft.
-    newest = ops.unsqueeze(
-        num_accepted.cast(DType.int64).rebind([batch]), -1
-    ) + (depth - 1 - i)
-    window = ops.gather_nd(ordered, ops.unsqueeze(newest, -1), batch_dims=1)
-    rows = ops.shape_to_tensor([batch]).reshape([])
-    first = ops.constant(0, DType.int64, DeviceRef.CPU())
-    ops.buffer_store_slice(
-        history, window, [(slice(first, rows), batch), slice(None)]
-    )
 
 
 def replica_verify_logits(

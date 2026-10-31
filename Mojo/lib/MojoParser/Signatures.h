@@ -213,6 +213,10 @@ private:
   /// Private constructor - use the static create method instead.
   TypeCheckedParamList(ASTDecl &declScope);
 
+  /// Set when an implicit parameter can't be prepended to the list because of
+  /// what its type depends on.
+  bool hadImplicitParamErrors = false;
+
 public:
   /// This is the declaration that we do name lookup against.
   ASTDecl &declScope;
@@ -233,6 +237,31 @@ public:
   /// Get an PogListAttr for this parameter list.
   PogListAttr getParamListAttr() const;
 
+  /// Owns the `DeferredTypingContext` for one emission into this list, and
+  /// installs it on `emitter` (if any) while alive. If `argName` is set, holes
+  /// may be declared as implicit parameters, named after it. When the scope
+  /// ends, they are added to the list: appended as `Implicit` parameters if
+  /// `append` is set, otherwise prepended as `Inferred` parameters after any
+  /// existing infer-only parameters. Deferred constraints on them are added to
+  /// the body constraints, and all other deferred constraints to
+  /// `deferredConstraints`.
+  class DeferredTypingScope {
+  public:
+    DeferredTypingScope(TypeCheckedParamList &paramList, IREmitter *emitter,
+                        StringAttr argName = {}, bool append = false);
+    DeferredTypingScope(const DeferredTypingScope &) = delete;
+    DeferredTypingScope &operator=(const DeferredTypingScope &) = delete;
+    ~DeferredTypingScope();
+
+    DeferredTypingContext &getContext() { return context; }
+
+  private:
+    TypeCheckedParamList &paramList;
+    IREmitter *emitter;
+    bool append;
+    DeferredTypingContext context;
+  };
+
   // These are the results of type checking 'params' in typeCheck.
   /// One ParamDeclAttr for each parameter being declared.
   SmallVector<ParamDeclAttr> paramDeclAttrs;
@@ -245,8 +274,9 @@ public:
   /// Default values for params.
   SmallVector<TypedAttr> defaults;
 
-  /// Deferred typing context from emitting parameter declaration types.
-  DeferredTypingContext deferredTypingContext;
+  /// Unprovable constraints deferred while emitting the signature, which the
+  /// trailing `where` clauses must imply.
+  SmallVector<DeferredConstraint> deferredConstraints;
 
   /// Constraints emitted for the body of the generator.
   SmallVector<ConstraintAttr> emittedBodyConstraints;

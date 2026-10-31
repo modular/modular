@@ -136,9 +136,9 @@ from max.pipelines.kv_cache.paged_kv_cache._common import (
 )
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsPooledVisionMetrics,
-    SupportsVisionEncoding,
     VisionEncoderCache,
     as_vision_context_batches,
+    vision_encoding,
 )
 from max.pipelines.modeling.eager_validation import (
     eager_usage_validator,
@@ -2142,7 +2142,8 @@ class OverlapTextGenerationPipeline(
         self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
             None
         )
-        if isinstance(self._pipeline_model, SupportsVisionEncoding):
+        self._vision_encoding = vision_encoding(self._pipeline_model)
+        if self._vision_encoding is not None:
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
                 plan=memory_plan.vision_cache_plan,
                 devices=self._devices,
@@ -2541,9 +2542,9 @@ class OverlapTextGenerationPipeline(
         # compiled graph unconditionally declares must be finalized here
         # with the model's empties.
         if self._encoder_cache is not None:
-            assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+            assert self._vision_encoding is not None
             self._encoder_cache.finalize_vision_inputs(
-                self._pipeline_model, model_inputs, self._devices, None
+                self._vision_encoding, model_inputs, self._devices, None
             )
 
         if self._spec_decode_state is not None:
@@ -3197,14 +3198,14 @@ class OverlapTextGenerationPipeline(
             )
 
         if self._encoder_cache is not None:
-            assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+            assert self._vision_encoding is not None
             vision_result = self._encoder_cache.run_vision_encode(
-                self._pipeline_model,
+                self._vision_encoding,
                 as_vision_context_batches(inputs.batches),
                 self._devices,
             )
             self._encoder_cache.finalize_vision_inputs(
-                self._pipeline_model,
+                self._vision_encoding,
                 model_inputs,
                 self._devices,
                 vision_result,

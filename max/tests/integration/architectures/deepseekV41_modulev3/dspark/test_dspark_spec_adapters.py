@@ -29,20 +29,34 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from types import SimpleNamespace
 from typing import Any, cast
 
+import numpy as np
 import pytest
 import torch
 from dspark_test_support import TESTDATA
 from max import functional as F
-from max.driver import CPU
+from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, TensorValue, ops
+from max.engine import InferenceSession
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Dim,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
+from max.pipelines.architectures.deepseekV41.engram_lookback import (
+    read_engram_lookback,
+)
 from max.pipelines.architectures.deepseekV41_modulev3 import spec_adapters
 from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
     DSparkDrafter,
@@ -88,6 +102,7 @@ STAGES = 3
 BLOCK = 2
 WINDOW = 8
 BATCH = 3
+DEPTH = 3
 
 _MESH = DeviceMesh((CPU(),), (1,), ("tp",))
 
@@ -284,7 +299,7 @@ def _kv_params_stub() -> Any:
 def _batch(
     *,
     lengths: list[int],
-    extra: dict[str, Tensor] | None = None,
+    extra: Mapping[str, Tensor | Buffer] | None = None,
 ) -> BlockBatch:
     """A single-device BlockBatch over requests of the given lengths.
 
@@ -292,6 +307,8 @@ def _batch(
     realized tensors in them -- the same duality ``_upstream_kv`` casts
     across -- so the tensor fields go through :func:`_graph_typed`.
     """
+    if extra is None:
+        extra = _extras()
     total = sum(lengths)
     offsets = [0]
     for length in lengths:
@@ -325,7 +342,7 @@ def _batch(
         batch_context_lengths=[],
         vision_embeddings=[],
         vision_scatter_indices=[],
-        extra=_extras() if extra is None else extra,
+        extra=extra,
         num_accepted=None,
         draft_slot_ids=None,
         draft_block_offsets=None,
@@ -491,6 +508,186 @@ def test_verify_fails_loud_on_a_missing_extra() -> None:
     }
     with pytest.raises(ValueError, match="engram_lookback_dead"), _eager():
         adapter(dataclasses.replace(batch, extra=starved))
+
+
+def test_verify_records_the_window_only_when_the_export_carries_the_history() -> (
+    None
+):
+    """The overlap export's verify owes the driver a lookback record.
+
+    The default export records nothing (the host window needs no history);
+    the history export's verify returns a roll-forward the driver runs once
+    the acceptance verdict exists, which is the only point the accepted
+    drafts the window ends with are known.
+    """
+    lengths = [2, 2]
+    adapter = DeepseekV41BlockTarget(_target(sum(lengths)), _kv_params_stub())
+    with _eager():
+        default = adapter(_batch(lengths=lengths))
+    assert default.roll_forward is None
+
+    config = dataclasses.replace(_v41_config(), engram_lookback_history=True)
+    batch = 2
+    extras: dict[str, Tensor | Buffer] = {**_extras()}
+    del extras["engram_lookback"]
+    extras["engram_lookback_ids"] = _to_max(
+        torch.zeros(batch, 3, dtype=torch.int64)
+    )
+    extras["engram_lookback_source"] = _to_max(
+        torch.full((batch,), -1, dtype=torch.int64)
+    )
+    extras["engram_lookback_history"] = Buffer.from_numpy(
+        np.zeros((batch, 3), np.int64)
+    )
+    assert set(extras) == set(extra_input_names(config))
+    target = _target(sum(lengths))
+    target.config = config
+    target.interface_config = config
+    adapter = DeepseekV41BlockTarget(target, _kv_params_stub())
+    with _eager():
+        recording = adapter(_batch(lengths=lengths, extra=extras))
+    assert recording.roll_forward is not None
+
+
+def _to_device(array: np.ndarray) -> Buffer:
+    return Buffer.from_numpy(np.ascontiguousarray(array)).to(CPU())
+
+
+def _lookback_record_graph() -> Graph:
+    """The roll-forward's graph: the window its record reads, then the record.
+
+    The driver hands the roll-forward a batch whose lookback extras are
+    the graph's own input values -- the roll-forward reads them through
+    ``.tensor`` and ``.buffer`` -- so the record runs here against the
+    batch exactly as the driver stages it.
+    """
+    adapter = DeepseekV41BlockTarget(_target(0), _kv_params_stub())
+    base = _batch(lengths=[1, 1])
+    device = DeviceRef.CPU()
+    input_types: list[TensorType | BufferType] = [
+        TensorType(
+            DType.int64, ["engram_lookback_batch", DEPTH], device=device
+        ),
+        TensorType(DType.int64, ["engram_lookback_batch"], device=device),
+        BufferType(DType.int64, ["engram_history_rows", DEPTH], device=device),
+        TensorType(DType.int64, ["total_seq_len"], device=device),
+        TensorType(DType.uint32, ["input_row_offsets_len"], device=device),
+        TensorType(
+            DType.int64, ["engram_lookback_batch", "num_drafts"], device=device
+        ),
+        TensorType(DType.int64, ["engram_lookback_batch"], device=device),
+    ]
+    with Graph(
+        "modulev3_dspark_lookback_record", input_types=input_types
+    ) as graph:
+        host, source, history, tokens, offsets, drafts, accepted = graph.inputs
+        window = read_engram_lookback(
+            host.tensor, source.tensor, history.buffer
+        )
+        batch = dataclasses.replace(
+            base,
+            tokens=tokens.tensor,
+            input_row_offsets=offsets.tensor,
+            draft_tokens=drafts.tensor,
+            num_accepted=accepted.tensor,
+            extra={
+                "engram_lookback_ids": host,
+                "engram_lookback_source": source,
+                "engram_lookback_history": history,
+            },
+        )
+        adapter._record_lookback(batch)
+        graph.output(window)
+    return graph
+
+
+def _lookback_read_graph() -> Graph:
+    """The trunk's read, as ``batch_from_parts`` runs it: the recorded row
+    the source map names, else the host window, cast to the int32 the
+    Engram hash reads."""
+    device = DeviceRef.CPU()
+    input_types: list[TensorType | BufferType] = [
+        TensorType(
+            DType.int64, ["engram_lookback_batch", DEPTH], device=device
+        ),
+        TensorType(DType.int64, ["engram_lookback_batch"], device=device),
+        BufferType(DType.int64, ["engram_history_rows", DEPTH], device=device),
+    ]
+    with Graph(
+        "modulev3_dspark_lookback_read", input_types=input_types
+    ) as graph:
+        host, source, history = graph.inputs
+        graph.output(
+            F.cast(
+                read_engram_lookback(
+                    host.tensor, source.tensor, history.buffer
+                ),
+                DType.int32,
+            )
+        )
+    return graph
+
+
+def test_roll_forward_records_the_window_a_following_step_reads() -> None:
+    """The roll-forward's record and the following read agree on the rows.
+
+    The verify hands the roll-forward the driver's batch, so a swapped
+    argument there records another row's window and only fed rows ever
+    notice: with a known batch, the record must leave each row's window
+    -- the ``DEPTH`` tokens ending with the row's last accepted draft --
+    in its history row, and the next step's read must return exactly
+    those rows, never the stale host windows it carries.
+    """
+    session = InferenceSession(devices=[CPU()])
+    record = session.load(_lookback_record_graph())
+    read = session.load(_lookback_read_graph())
+    # The persistent history, as the executor allocates it once per boot.
+    history = _to_device(np.zeros((4, DEPTH), np.int64))
+
+    # Step one: two fresh rows read their host windows and record the
+    # tokens their accepted drafts end with -- request 0 accepts one of
+    # its two drafts, request 1 both.
+    host = np.array([[901, 902, 903], [911, 912, 913]], np.int64)
+    (window,) = record.execute(
+        _to_device(host),
+        _to_device(np.array([-1, -1], np.int64)),
+        history,
+        _to_device(np.array([101, 102, 111, 112, 113], np.int64)),
+        _to_device(np.array([0, 2, 5], np.uint32)),
+        _to_device(np.array([[201, 202], [211, 212]], np.int64)),
+        _to_device(np.array([1, 2], np.int64)),
+    )
+    assert isinstance(window, Buffer)
+    np.testing.assert_array_equal(window.to_numpy(), host)
+    recorded = np.array([[201, 102, 101], [212, 211, 113]], np.int64)
+    np.testing.assert_array_equal(history.to_numpy()[:2], recorded)
+
+    # The following step's read sources the rows the record wrote, so
+    # the stale host windows it carries must not survive the source map.
+    stale = np.array([[701, 702, 703], [711, 712, 713]], np.int64)
+    sources = np.array([0, 1], np.int64)
+    (lookback,) = read.execute(_to_device(stale), _to_device(sources), history)
+    assert isinstance(lookback, Buffer)
+    np.testing.assert_array_equal(lookback.to_numpy(), recorded)
+
+    # A record over rows still in flight reads its windows out of the
+    # history the previous step recorded, then records past each chunk's
+    # single committed token: nothing accepted, and one draft accepted.
+    (window,) = record.execute(
+        _to_device(stale),
+        _to_device(sources),
+        history,
+        _to_device(np.array([103, 114], np.int64)),
+        _to_device(np.array([0, 1, 2], np.uint32)),
+        _to_device(np.array([[231, 232], [241, 242]], np.int64)),
+        _to_device(np.array([0, 1], np.int64)),
+    )
+    assert isinstance(window, Buffer)
+    np.testing.assert_array_equal(window.to_numpy(), recorded)
+    np.testing.assert_array_equal(
+        history.to_numpy()[:2],
+        np.array([[103, 201, 102], [241, 114, 212]], np.int64),
+    )
 
 
 # --------------------------------------------------------------------------- #

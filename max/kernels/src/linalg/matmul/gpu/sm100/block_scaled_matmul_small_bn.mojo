@@ -1841,7 +1841,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     Int(work_info.k_start),
                 )
 
-                # Phase 1: prefetch weight K-groups before PDL wait
+                # Phase 1: prefetch weight K-groups before PDL wait. The
+                # weights (and weight scales) must be loaded straight from
+                # the checkpoint, never written by a predecessor grid.
                 comptime for pf in range(config.prefetch_tiles_n):
                     if UInt32(pf * config.k_group_size) < num_iters:
                         prefetch_stages[pf] = load_mma_pipeline.producer_stage()
@@ -2014,7 +2016,10 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     if WarpRole.is_sfb_load():
         with MatmulProfilerType[0](workspace, 0):
             # When AB_swapped=True, SFB is the dynamic activation scale
-            # (user's SFA), so it must not be read before PDL fires.
+            # (user's SFA), so it must not be read before PDL fires. When
+            # unswapped, SFB is a weight scale read before the wait, so it
+            # must be loaded straight from the checkpoint, never written by
+            # a predecessor grid.
             comptime if pdl_level > PDLLevel.OFF and config.AB_swapped:
                 wait_on_dependent_grids()
 

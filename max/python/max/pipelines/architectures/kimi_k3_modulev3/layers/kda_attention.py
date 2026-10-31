@@ -10,20 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Kimi K3's Kimi Delta Attention (ModuleV3), ``kda_decode``-only form.
+"""Kimi K3's Kimi Delta Attention (ModuleV3).
 
 Direct V3 port of ``kimi_k3/layers/kda_attention.py``'s
 ``kimi_k3_kda_attention`` orchestration, calling the same ``kda_decode``
 custom op via :func:`max.functional.inplace_custom`.
 
-Scope cut, explicit: this ports ``kda_decode`` only, not ``kda_chunk`` (the
-prefill-optimized arm selected by ``ops.cond`` in V2) or the speculative-
-decoding ``replay_capture`` machinery. V2's own comment states
-``kda_decode`` alone is CORRECT for both decode and prefill batches -- just
-slower on long prefills (~6.8x at K3's production head count) -- so this is
-a performance cut, not a correctness one. On this hardware it isn't even a
-cut relative to V2: ``_chunk_prefill_available()`` returns ``False`` on HIP
-(no TMA on CDNA), so V2 already falls back to ``kda_decode``-only here too.
+Every batch takes ``kda_decode``, and the op itself picks the recurrence,
+so this layer carries no device knowledge: no accelerator query, no
+servability check, no per-batch conditional, no operand casts. On gfx950,
+under the bounded "safe" gate with bf16 q/k/v and a float32 state pool,
+a prefill batch runs the chunk-parallel pipeline inside the op while every
+other batch -- decode included -- runs the token-sequential kernel; on any
+other target, and under the "original" gate, every batch runs the
+token-sequential kernel. The K3 memory planner still reserves the chunk
+workspaces host-side (see ``memory_planner.py``); KERN-3869 tracks moving
+them into graph-planned buffers.
+
+Still scoped out: the speculative-decoding ``replay_capture`` machinery.
+``kda_decode`` alone is correct for both decode and prefill batches -- the
+chunk op is the same recurrence restructured, not a different one -- so the
+routing is a performance matter, never a correctness one.
 
 Both gate-lower-bound arms V2 supports are kept (not scoped out): the
 "original" arm (``gate_lower_bound is None``, the kernel's own per-head
@@ -36,13 +43,17 @@ rather than silently running the wrong gate.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferValue, TensorType, TensorValue, ops
 from max.nn import Linear, Module
 from max.nn.common_layers.mesh_axis import TP
+from max.nn.legacy.state_space.kimi_delta import (
+    STATE_LAYOUT,
+    KdaGateMode,
+)
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
@@ -67,7 +78,7 @@ def _kda_decode(
     state_pool: Tensor,
     recurrent_row_id: Tensor,
     *,
-    gate_mode: str,
+    gate_mode: KdaGateMode,
     out_type: TensorType,
 ) -> TensorValue:
     values: list[Any] = [
@@ -86,20 +97,19 @@ def _kda_decode(
     local_out_type = TensorType(
         out_type.dtype, out_type.shape, device=TensorValue(q).device
     )
-    return cast(
-        TensorValue,
-        ops.inplace_custom(
-            "kda_decode",
-            device=TensorValue(q).device,
-            values=values,
-            out_types=[local_out_type],
-            parameters={
-                "gate_mode": gate_mode,
-                "beta_mode": "logits",
-                "state_layout": "K_FIRST",
-            },
-        )[0],
-    )
+    out = ops.inplace_custom(
+        "kda_decode",
+        device=TensorValue(q).device,
+        values=values,
+        out_types=[local_out_type],
+        parameters={
+            "gate_mode": gate_mode,
+            "beta_mode": "logits",
+            "state_layout": STATE_LAYOUT,
+        },
+    )[0]
+    assert isinstance(out, TensorValue)
+    return out
 
 
 kda_decode = F.functional(_kda_decode)
@@ -108,7 +118,7 @@ kda_decode = F.functional(_kda_decode)
 class KimiK3KDAAttention(
     Module[[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor], Tensor]
 ):
-    """One KDA layer, ``kda_decode``-only; see the module docstring."""
+    """One KDA layer; see the module docstring."""
 
     def __init__(
         self,
@@ -248,7 +258,7 @@ class KimiK3KDAAttention(
             kernel_a_log = a_log_f32[:, 0]
             kernel_dt_bias = dt_bias_f32
             kernel_raw_gate = raw_gate_f32
-            gate_mode = "original"
+            gate_mode: KdaGateMode = "original"
         else:
             kernel_raw_gate = (raw_gate_f32 + dt_bias_f32) * F.exp(a_log_f32)
             kernel_a_log = F.zeros_like(a_log_f32[:, 0])
@@ -256,14 +266,15 @@ class KimiK3KDAAttention(
             gate_mode = "safe"
 
         # `out_type` is one device's result, so it takes the local head
-        # count. `_kda_decode` replaces the device. fp32 because `o_norm`
-        # computes in fp32 anyway: a model-dtype output would round `o` once
-        # before the norm and need a cast launch to widen it back. (The
-        # prefill-optimized `kda_chunk`, which this decode-only port never
-        # calls, asserts a bf16 output on AMD.)
+        # count: under TP each device runs `num_heads // tp_size` heads,
+        # while the pure-EP mesh replicates the layer and runs all of them.
+        # `_kda_decode` replaces the device. fp32 because `o_norm` computes
+        # in fp32 anyway: a model-dtype output would round `o` once before
+        # the norm and need a cast launch to widen it back.
+        heads_per_device = self.num_heads // tp_size
         out_type = TensorType(
             DType.float32,
-            [1, total_seq_len, self.num_heads // tp_size, self.head_dim],
+            [1, total_seq_len, heads_per_device, self.head_dim],
             device=x.mesh.devices[0] if x.is_distributed else x.device,
         )
         o = kda_decode(

@@ -69,13 +69,13 @@ comptime _DeviceGraphBuilderPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceGraphBuilderCpp, origin]
+] = Optional[Pointer[_DeviceGraphBuilderCpp, origin]]
 
 comptime _DeviceGraphPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceGraphCpp, origin]
+] = Optional[Pointer[_DeviceGraphCpp, origin]]
 
 
 struct _DeviceGraphMemoryPoolCpp:
@@ -86,7 +86,7 @@ comptime _DeviceGraphMemoryPoolPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceGraphMemoryPoolCpp, origin]
+] = Optional[Pointer[_DeviceGraphMemoryPoolCpp, origin]]
 
 
 @fieldwise_init
@@ -2620,7 +2620,7 @@ struct _DeviceGraphBuilderEnqueuer[
         num_attributes: Int,
         args: Pointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalPointer[mut=True, UInt64, _],
+        arg_sizes: Optional[MutPointer[UInt64, _]],
     ) -> _CString[]:
         """Adds a kernel-dispatch node to the borrowed graph builder.
 

@@ -882,7 +882,9 @@ def _allreduce_2stage_kernel[
         # resolving through its slot.
         var elem_start = rs_config.rank_start(_my_rank)
         var n_elements = rs_config.rank_num_elements(_my_rank)
-        comptime SlicedTile = type_of(src_tensors[0][0:0])
+        comptime SlicedTile = type_of(
+            src_tensors[0][elem_start : (elem_start + n_elements)]
+        )
         # Round-robin access pattern to balance NVLink traffic across GPUs.
         var sliced_tiles = Array[_, num_tensors](
             fill_with_unrolled=lambda [i: Int]() -> SlicedTile: src_tensors[

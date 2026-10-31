@@ -3444,9 +3444,10 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
 
 @inline(.always)
 def _device_leaf_ptr[
-    dtype: DType, //
-](storage: DevicePointer[dtype, _]) -> MutPointer[
-    Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL
+    dtype: DType,
+    origin: Origin,
+](storage: DevicePointer[dtype, origin]) -> Pointer[
+    Scalar[dtype], origin, address_space=.GLOBAL
 ]:
     """Returns the encoded device-leaf pointer held in `storage`'s first bytes.
 
@@ -3469,6 +3470,7 @@ def _device_leaf_ptr[
 
     Parameters:
         dtype: The element data type of the referenced storage.
+        origin: The origin of the referenced storage.
 
     Args:
         storage: The device-pointer handle to reinterpret.
@@ -3482,7 +3484,7 @@ def _device_leaf_ptr[
         # The leaf must be `GLOBAL` (device), not `GENERIC` — see the docstring:
         # a `GENERIC` leaf silently misses device memory on Metal.
         return Pointer(to=storage).unsafe_bitcast[
-            MutPointer[Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL]
+            Pointer[Scalar[dtype], origin, address_space=.GLOBAL]
         ]()[]
     else:
         abort("DevicePointerEngine operations are not supported on host")
@@ -3594,19 +3596,16 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
         ]
         # `_device_leaf_ptr` returns a `GLOBAL` (device) leaf because Metal has
         # no usable `GENERIC` device space and the compiler does not insert the
-        # address-space conversion itself. `rebind` cannot change a pointer's
-        # address space, so cast the leaf to the tile's declared space, then
-        # `rebind` the origin. On flat-address targets (CUDA/HIP) `GLOBAL` and
+        # address-space conversion itself, so cast the leaf to the tile's
+        # declared space. On flat-address targets (CUDA/HIP) `GLOBAL` and
         # `GENERIC` are the same address so this cast is a no-op reinterpret; on
         # segmented targets like Metal a `GENERIC` result cannot reach device
         # memory, but `.ptr`'s return type is fixed to the tile's (`GENERIC`)
         # space, so Metal is out of scope for this stopgap (see GPUA-6).
         comptime if is_gpu():
-            return rebind[ResultPtr](
-                _device_leaf_ptr(storage).unsafe_address_space_cast[
-                    address_space
-                ]()
-            )
+            return _device_leaf_ptr(storage).unsafe_address_space_cast[
+                address_space
+            ]()
         else:
             return rebind[ResultPtr](
                 storage.unsafe_ptr().unsafe_address_space_cast[address_space]()
@@ -3703,7 +3702,7 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
         comptime if is_gpu():
             var result = storage
             var leaf = Pointer(to=result).unsafe_bitcast[
-                MutPointer[Scalar[type_of(storage).dtype], MutAnyOrigin]
+                Pointer[Scalar[offset_dtype], offset_origin]
             ]()
             leaf[] = leaf[].unsafe_offset(_offset_elements(offset_coord))
             return result

@@ -1361,34 +1361,6 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                      "specialized generator");
   }
 
-  // If the generator is a SymbolConstantAttr, fold the parameter values into it
-  // directly (this will be cleaned up once we remove param bindings from
-  // SymbolConstantAttr).
-  if (auto symbolConstant = sugarDynCast<SymbolConstantAttr>(generator)) {
-    [[maybe_unused]] bool hasUnboundParameters =
-        symbolConstant.getParamValues().empty();
-    hasUnboundParameters |=
-        llvm::any_of(symbolConstant.getParamValues(),
-                     [](TypedAttr value) { return ::isa<UnboundAttr>(value); });
-    assert(hasUnboundParameters &&
-           "cannot have already bound all the input parameters, because we'd "
-           "end up with a nongeneric signature that would fail verification");
-
-    if (symbolConstant.getParamValues().empty())
-      return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                     ::cast<FuncTypeGeneratorType>(type),
-                                     paramValues);
-
-    // We have to interleave the new values wherever there's an unbound thing so
-    // we preserve the order.
-    SmallVector<TypedAttr> mergedParamValues =
-        mergeParamBindings(symbolConstant.getParamValues(), paramValues);
-
-    return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                   ::cast<FuncTypeGeneratorType>(type),
-                                   mergedParamValues);
-  }
-
   // No simplification applies. Build the BindParamsAttr directly.
   TypedAttr result =
       Base::get(generator.getContext(), generator, paramValues, discharged);
@@ -1632,7 +1604,7 @@ bool DTypeConstantAttr::isLessThan(Attribute rhs) const {
 }
 
 //===----------------------------------------------------------------------===//
-// SymbolConstantAttr
+// Function symbol helpers
 //===----------------------------------------------------------------------===//
 
 static FuncTypeGeneratorType
@@ -1676,89 +1648,6 @@ getSymbolSignature(FuncInterface func, ArrayRef<Operation *> symbolOps) {
       genMetadata, argListAttrs);
 }
 
-/// This symbol is a constant its bindings are constants.
-bool SymbolConstantAttr::isConstant() const {
-  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant) &&
-         !isParameterizedType(getType());
-}
-
-LogicalResult
-SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
-                                     Location loc) const {
-  VerboseCompilerTimeTraceScope traceScope(
-      "SymbolConstantAttr::verifySymbolUses");
-
-  Operation *module = evaluationContext.module;
-  mlir::LockedSymbolTableCollection &symtab = evaluationContext.symtab;
-
-  // Build the signature of the referenced symbol.
-  SymbolRefAttr symbol = getSymbol();
-  SmallVector<Operation *> symbolOps;
-  {
-    VerboseCompilerTimeTraceScope traceScope("lookupSymbolIn");
-    if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps))) {
-      return emitError(loc)
-             << symbol << " does not reference a KGEN declaration";
-    }
-  }
-
-  // The leaf symbol must refer to a function.
-  auto func = ::dyn_cast<FuncInterface>(symbolOps.back());
-  if (!func)
-    return emitError(loc) << symbol << " does not reference a KGEN function";
-
-  // Everything else must be a declaration.
-  for (Operation *op : llvm::drop_end(symbolOps)) {
-    if (!::isa<DeclInterface>(op)) {
-      return emitError(loc)
-             << "symbol @" << ::cast<mlir::SymbolOpInterface>(op).getName()
-             << " does not reference a KGEN declaration";
-    }
-  }
-
-  FuncTypeGeneratorType declSignature = getSymbolSignature(func, symbolOps);
-  if (getParamValues().empty() ||
-      !llvm::all_of(getParamValues(), llvm::IsaPred<UnboundAttr>)) {
-    // If all the provided bindings are unbound, use the original generator.
-    //
-    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
-    // type dependencies, which results in `getSpecializedGenerator` being
-    // computed in a wrong way.
-    //
-    // E.g.,
-    //
-    // def takeClosure[
-    //     origins: OriginSet,
-    //     //,
-    //     f: def() capturing[origins] -> None,
-    // ]():
-    //     pass
-    //
-    // where
-    //
-    // `f: def() capturing[origins]` will be replaced to
-    // `f: def() capturing[  ?    ]`. This will make the type dependency on
-    // `origins` unrecoverable.
-    declSignature = declSignature.getSpecializedGenerator(
-        getParamValues(), &evaluationContext, [&] { return emitError(loc); });
-  } else if (getParamValues().size() !=
-             declSignature.getInputParamTypes().size()) {
-    return mlir::emitError(loc)
-           << "generator type expects "
-           << declSignature.getInputParamTypes().size()
-           << " parameters but got bindings for " << getParamValues().size();
-  }
-
-  if (!declSignature)
-    return failure();
-
-  // Parameter types match exactly.  We could support higher order rebinding
-  // if there is a need.
-  return verifyDeclSignaturesMatch("symbol use", getType(), loc,
-                                   symbol.getLeafReference(), declSignature,
-                                   func->getLoc());
-}
-
 //===----------------------------------------------------------------------===//
 // FuncPtrBitcastAttr
 //===----------------------------------------------------------------------===//
@@ -1799,26 +1688,6 @@ ParseResult parseFuncPtrBitcastCallee(AsmParser &p, FuncSymbolAttr &callee) {
 
 void printFuncPtrBitcastCallee(AsmPrinter &p, FuncSymbolAttr callee) {
   p.printAttribute(callee);
-}
-
-ParseResult parseColonTypeSymbolConstant(AsmParser &p,
-                                         SymbolConstantAttr &value) {
-  mlir::SMLoc loc = p.getCurrentLocation();
-
-  TypedAttr typedAttr;
-  if (parseColonTypeParamValue(p, typedAttr))
-    return failure();
-
-  if (auto symbol = mlir::dyn_cast<SymbolConstantAttr>(typedAttr)) {
-    value = symbol;
-    return success();
-  }
-
-  return p.emitError(loc) << "symbol constant expected, got" << typedAttr;
-}
-
-void printColonTypeSymbolConstant(AsmPrinter &p, SymbolConstantAttr value) {
-  printColonTypeParamValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2033,17 +1902,18 @@ FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
 
 FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
   FuncTypeGeneratorType type = func.getFuncTypeGenerator();
+  assert(type.getInputParamTypes().empty());
   return get(FlatSymbolRefAttr::get(func.getSymNameAttr()), type.getBody(),
              type.getParamListAttrs());
 }
 
-// TODO: kill this after fully migrated.
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolConstantAttr symbol) {
-  FuncTypeGeneratorType type = symbol.getType();
+FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
+                                             FuncTypeGeneratorType type,
+                                             ArrayRef<TypedAttr> paramValues) {
   ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
 
-  // The body binds every parameter of the callee. A parameter the symbol leaves
-  // unbound refers to the generator's next input parameter, so specializing the
+  // The body binds every parameter of the callee. A parameter left unbound
+  // refers to the generator's next input parameter, so specializing the
   // generator binds it; a bound value moves one scope deeper, into the body.
   SmallVector<TypedAttr> bodyValues;
   IndexDepthAdjuster adjuster(1);
@@ -2054,25 +1924,25 @@ FuncSymbolGenerator FuncSymbolGenerator::get(SymbolConstantAttr symbol) {
     ++nextInput;
     return ref;
   };
-  if (symbol.getParamValues().empty()) {
-    while (nextInput < inputParamTypes.size())
+  for (TypedAttr value : paramValues) {
+    if (sugarIsa<UnboundAttr>(value)) {
+      if (nextInput == inputParamTypes.size())
+        return {};
       bodyValues.push_back(selfRef());
-  } else {
-    for (TypedAttr value : symbol.getParamValues()) {
-      if (sugarIsa<UnboundAttr>(value)) {
-        if (nextInput == inputParamTypes.size())
-          return {};
-        bodyValues.push_back(selfRef());
-      } else {
-        bodyValues.push_back(cast<TypedAttr>(adjuster.replace(value)));
-      }
+    } else {
+      bodyValues.push_back(cast<TypedAttr>(adjuster.replace(value)));
     }
   }
-  if (nextInput != inputParamTypes.size())
-    return {};
-  auto funcSymbol =
-      FuncSymbolAttr::get(symbol.getSymbol(), type.getBody(), bodyValues);
-  return get(type.getInputParamTypes(), funcSymbol, type.getParamListAttrs());
+  while (nextInput < inputParamTypes.size())
+    bodyValues.push_back(selfRef());
+  auto funcSymbol = FuncSymbolAttr::get(symbol, type.getBody(), bodyValues);
+  return get(inputParamTypes, funcSymbol, type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(StringAttr name,
+                                             FuncTypeGeneratorType type,
+                                             ArrayRef<TypedAttr> paramValues) {
+  return get(FlatSymbolRefAttr::get(name), type, paramValues);
 }
 
 FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {
@@ -2081,8 +1951,6 @@ FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {
     return {};
   if (isFuncSymbolGenerator(typedAttr))
     return FuncSymbolGenerator(typedAttr);
-  if (auto symbol = sugarDynCast<SymbolConstantAttr>(typedAttr))
-    return get(symbol);
   return {};
 }
 

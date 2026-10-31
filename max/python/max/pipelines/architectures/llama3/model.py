@@ -44,7 +44,6 @@ from max.pipelines.lib.graph_specs import (
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 
 from .batch_processor import Llama3BatchProcessor
@@ -337,68 +336,3 @@ class LlamaModelBase(
             self._bind_graph_inputs(single_model.input_tree(self.kv_params)),
             weights=single_model.state_dict(),
         )
-
-
-class Llama3Model(LlamaModelBase):
-    """Llama 3 pipeline model implementation."""
-
-    config_class: type[Llama3Config] = Llama3Config
-    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
-    """Normalization layer."""
-
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        *,
-        memory_plan: MemoryPlan,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        max_batch_size: int = 1,
-    ) -> None:
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter=adapter,
-            return_logits=return_logits,
-            return_hidden_states=return_hidden_states,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
-        )
-
-    @classmethod
-    def build_module(
-        cls, context: ModelLoadContext
-    ) -> tuple[Module, Llama3Config]:
-        """Builds the Llama 3 module on one device or tensor-parallel.
-
-        Defined here rather than on :class:`LlamaModelBase`, whose other
-        subclasses build modules of their own.
-
-        Raises:
-            ValueError: If the config is data-parallel, whose replicas the
-                data-parallel graph builds itself.
-        """
-        state_dict = parse_state_dict_from_weights(
-            context.pipeline_config, context.weights, context.adapter
-        )
-        config = cls._finalized_config(context, state_dict)
-        if config.data_parallel_degree > 1:
-            raise ValueError(
-                "Llama 3 builds data-parallel replicas inside its graph;"
-                " there is no single module to return."
-            )
-        module: Module = (
-            DistributedLlama3(config)
-            if len(config.devices) > 1
-            else Llama3(config)
-        )
-        _load_weights(module, state_dict)
-        return module, config

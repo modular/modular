@@ -1757,6 +1757,13 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     var scale_tile_idx = block_idx.x
 
     wait_on_dependent_grids()
+    # Release the grouped matmul that consumes this output now, not after the
+    # stores. The release takes effect once every block of this grid has
+    # reached it or exited, so the matmul's blocks can take SMs as ours retire
+    # and stream their weights while the last of this kernel runs. Its own
+    # wait still orders it after our stores, and it allocates TMEM only after
+    # that wait. A block that returns early below has released it all the same.
+    launch_dependent_grids()
 
     var expert_idx = _scale_tile_expert[num_experts](
         row_offsets, scales_offsets, scale_tile_idx
@@ -1770,7 +1777,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     var expert_num_tiles = uceildiv(
         curr_expert_end - curr_expert_start, SF_MN_GROUP_SIZE
     )
-    # Padded tiles have no payload, so they exit without releasing dependents.
+    # Padded tiles have no payload.
     if scale_tile_idx >= expert_tiles_start + expert_num_tiles:
         return
 
@@ -1951,8 +1958,6 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             )
         scales_tma_op.commit_group()
         scales_tma_op.wait_group[0]()
-
-    launch_dependent_grids()
 
 
 def grouped_quantize_dynamic_scaled_fp4_async[
@@ -2363,8 +2368,12 @@ def grouped_quantize_nvfp4_row_amax_kernel[
     var lane = thread_idx.x % WARP_SIZE
 
     # The expert offsets can come from the kernel this one overlaps under
-    # PDL, so they are read after the wait.
-    with PDL():
+    # PDL, so they are read after the wait. The grouped matmul that consumes
+    # this output is released right after the wait: its blocks turn resident
+    # while this one runs. At every PDL level above off it still waits for
+    # this grid to finish before it reads its routing tensors or any input,
+    # so the early release only decides when the matmul is scheduled.
+    with PDL[overlap_at_beginning=True]():
         if block_idx.x >= num_row_blocks:
             # A tile block: clear the scale slots of the tile's padding rows,
             # which must be zero.

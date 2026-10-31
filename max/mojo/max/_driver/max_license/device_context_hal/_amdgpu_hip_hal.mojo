@@ -28,9 +28,15 @@ struct _ihipModule_t:
     pass
 
 
-comptime hipDevice_t = OptionalPointer[_ihipDevice_t, UntrackedOrigin[mut=True]]
-comptime hipStream_t = OptionalPointer[_ihipStream_t, UntrackedOrigin[mut=True]]
-comptime hipModule_t = OptionalPointer[_ihipModule_t, UntrackedOrigin[mut=True]]
+comptime hipDevice_t = Optional[
+    Pointer[_ihipDevice_t, UntrackedOrigin[mut=True]]
+]
+comptime hipStream_t = Optional[
+    Pointer[_ihipStream_t, UntrackedOrigin[mut=True]]
+]
+comptime hipModule_t = Optional[
+    Pointer[_ihipModule_t, UntrackedOrigin[mut=True]]
+]
 
 
 @inline(.always)

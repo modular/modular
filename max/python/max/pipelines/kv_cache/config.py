@@ -261,9 +261,9 @@ class KVConnectorConfig(ConfigFileModel):
         description=(
             "Open the disk cache files with O_DIRECT so offload bypasses the "
             "page cache. There is no buffered fallback: startup fails if "
-            "direct I/O does not work. Requires 4096-byte-aligned leaf "
-            "blocks and is incompatible with host_staging_alloc='driver' on "
-            "AMD."
+            "direct I/O does not work. Host rows and disk slots are padded "
+            "to a multiple of 4096 bytes. Incompatible with "
+            "host_staging_alloc='driver' on AMD."
         ),
     )
     """Whether the disk tier's reads and writes bypass the page cache (O_DIRECT)."""

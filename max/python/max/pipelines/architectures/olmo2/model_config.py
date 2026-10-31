@@ -16,13 +16,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
@@ -32,11 +30,12 @@ from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from ..llama3.decoder import Llama3DecoderConfig
 from ..llama3.model_config import Llama3Config
 
 
 @dataclass(kw_only=True)
-class Olmo2Config(Llama3Config):
+class Olmo2Config(Llama3DecoderConfig):
     """Implementation of MAXModelConfig for Olmo2 models.
 
     Olmo2 models use a different approach for head_dim calculation compared to Llama3.
@@ -206,35 +205,4 @@ class Olmo2Config(Llama3Config):
             logits_scaling=base_config.logits_scaling,
             data_parallel_degree=base_config.data_parallel_degree,
             quantization_encoding=base_config.quantization_encoding,
-        )
-
-    def finalize(
-        self,
-        huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
-        attention_bias: bool = False,
-    ) -> None:
-        """Define parameters that can't be determined just from the pipeline config.
-
-        Delegates to the parent Llama3Config.finalize() method.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object.
-            state_dict: The model's state dictionary containing weights.
-            return_logits: Whether to return the last token, all tokens or a
-                variable number of logits.
-            return_hidden_states: Whether to return hidden states.
-            norm_method: The normalization method to use.
-            attention_bias: Whether to include bias in attention projections.
-        """
-        super().finalize(
-            huggingface_config=huggingface_config,
-            state_dict=state_dict,
-            return_logits=return_logits,
-            return_hidden_states=return_hidden_states,
-            norm_method=norm_method,
-            attention_bias=attention_bias,
         )

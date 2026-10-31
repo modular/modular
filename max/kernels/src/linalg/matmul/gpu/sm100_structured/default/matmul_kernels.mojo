@@ -2069,7 +2069,9 @@ struct BlackwellMatmulSM100Kernel[
                                 Int(current.k_start),
                             )
 
-                            # Phase 1: prefetch A (weight) tiles before PDL wait
+                            # Phase 1: prefetch the weight tiles before the PDL
+                            # wait. The weight must be loaded straight from the
+                            # checkpoint, never written by a predecessor grid.
                             var prefetch_stages = StaticTuple[
                                 UInt32, Self.config.prefetch_tiles_n
                             ]()

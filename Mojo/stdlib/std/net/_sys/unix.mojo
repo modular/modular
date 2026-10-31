@@ -350,8 +350,8 @@ def listen(sockfd: c_int, backlog: c_int) -> c_int:
 
 def accept(
     sockfd: c_int,
-    addr: OptionalMutPointer[sockaddr, _],
-    addrlen: OptionalMutPointer[socklen_t, _],
+    addr: Optional[MutPointer[sockaddr, _]],
+    addrlen: Optional[MutPointer[socklen_t, _]],
 ) -> c_int:
     """C `accept(2)`: accepts a connection on a listening socket.
 
@@ -543,8 +543,8 @@ def recvfrom(
     buf: MutPointer[UInt8, _],
     len: c_size_t,
     flags: c_int,
-    src_addr: OptionalMutPointer[sockaddr, _],
-    addrlen: OptionalMutPointer[socklen_t, _],
+    src_addr: Optional[MutPointer[sockaddr, _]],
+    addrlen: Optional[MutPointer[socklen_t, _]],
 ) -> c_ssize_t:
     """C `recvfrom(2)`: receives bytes and the address they came from."""
     return external_call["recvfrom", c_ssize_t](

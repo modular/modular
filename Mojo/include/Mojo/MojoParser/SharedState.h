@@ -46,7 +46,6 @@ class NoneAttr;
 class ParamDeclAttr;
 class ParamDeclRefAttr;
 class FuncTypeGeneratorType;
-class SymbolConstantAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {

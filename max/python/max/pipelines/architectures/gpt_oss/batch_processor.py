@@ -15,26 +15,48 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Buffer
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.context import TextContext
+from max.pipelines.lib import ModelInputs
 from max.pipelines.lib.interfaces.batch_processor import (
     SingleReplicaRaggedBatchProcessor,
     build_single_replica_ragged_token_arrays,
     single_replica_context_batch,
 )
 
-if TYPE_CHECKING:
-    from .model import GptOssInputs
+
+@dataclass
+class GptOssInputs(ModelInputs):
+    """The inputs of one step under :class:`GptOssBatchProcessor`."""
+
+    tokens: npt.NDArray[np.integer[Any]] | Buffer
+    """Tensor containing the input token IDs."""
+
+    input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer | list[Buffer]
+    """Tensor containing the offsets for each row in the ragged input sequence,
+    or the attention mask for the padded input sequence. For distributed execution,
+    this can be a list of tensors, one per device."""
+
+    signal_buffers: list[Buffer]
+    """Device buffers used for synchronization in communication collectives."""
+
+    return_n_logits: Buffer
+    """Number of logits to return."""
 
 
 class GptOssBatchProcessor(
-    SingleReplicaRaggedBatchProcessor[TextContext, "GptOssInputs"]
+    SingleReplicaRaggedBatchProcessor[TextContext, GptOssInputs]
 ):
-    """Single-replica ragged KV batching for GPT OSS with per-device row offsets."""
+    """Single-replica ragged KV batching with per-device row offsets.
+
+    MiMo V2 batches with it; GPT OSS registers its decoder instead.
+    """
 
     _include_signal_buffers = True
 
@@ -45,8 +67,6 @@ class GptOssBatchProcessor(
         return_n_logits: int = 1,
     ) -> GptOssInputs:
         """Builds the first step's inputs from the replica batches."""
-        from .model import GptOssInputs
-
         context_batch = single_replica_context_batch(
             replica_batches,
             processor_name=type(self).__qualname__,

@@ -36,9 +36,9 @@ from max.nn.legacy.state_space import (
     kda_chunk,
     kda_decode,
 )
-from max.nn.legacy.state_space.kimi_delta import KdaGateMode
-from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
+from max.nn.legacy.state_space.kimi_delta import (
     STATE_LAYOUT,
+    KdaGateMode,
     kda_chunk_predicate,
     kda_chunk_servable,
     kda_gate_mode,

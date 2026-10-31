@@ -68,6 +68,11 @@ from max.gpu import (
     lane_id,
 )
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+)
 from std.algorithm import vectorize
 from std.math import ceildiv, rsqrt
 from std.collections import Array
@@ -79,6 +84,7 @@ import max.gpu.primitives.warp as warp
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 
 from nn.activations import silu
+from state_space.pdl_wait import wait_on_producers
 
 
 # ===----------------------------------------------------------------------=== #
@@ -99,6 +105,7 @@ def gated_group_rmsnorm_kernel[
     GateFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int](Int, Int) -> SIMD[gate_dtype, width],
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     output: TileTensor[dtype, OutLayout, MutAnyOrigin, Engine=OutEngine],
     y: TileTensor[dtype, YLayout, ImmutAnyOrigin, Engine=YEngine],
@@ -117,10 +124,18 @@ def gated_group_rmsnorm_kernel[
     comptime assert output.flat_rank == 2 and y.flat_rank == 2
     comptime assert weight.flat_rank == 1
 
+    # Every CTA waits before any early exit so this grid cannot finish ahead
+    # of its predecessor. Releasing the dependents here is safe: their own wait
+    # still blocks until this grid completes.
     # One warp owns one (row, group). All 32 lanes share `group_flat` (it is
     # `global_idx.x // WARP_SIZE`, constant within a simdgroup), so the early
     # return is warp-uniform -- safe before the `warp.sum` collective below.
     var group_flat = global_idx.x // WARP_SIZE
+    comptime if pdl_level != PDLLevel.OFF:
+        wait_on_producers()
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
+
     if group_flat >= n_rows * num_groups:
         return
     var n = group_flat // num_groups
@@ -158,6 +173,11 @@ def gated_group_rmsnorm_kernel[
         output.store((n, col), prod.cast[dtype]())
         jj += WARP_SIZE
 
+    comptime if (
+        pdl_level != PDLLevel.OFF and pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
+        launch_dependent_grids()
+
 
 # ===----------------------------------------------------------------------=== #
 # NVIDIA/AMD GPU kernel: one warp per (row, group), vectorized, single pass
@@ -185,6 +205,7 @@ def gated_group_rmsnorm_vec_kernel[
     GateFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int](Int, Int) -> SIMD[gate_dtype, width],
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     output: TileTensor[dtype, OutLayout, MutAnyOrigin, Engine=OutEngine],
     y: TileTensor[dtype, YLayout, ImmutAnyOrigin, Engine=YEngine],
@@ -209,11 +230,21 @@ def gated_group_rmsnorm_vec_kernel[
 
     var num_groups = Int(num_groups_dev)
     var group_flat = global_idx.x // WARP_SIZE
+    var lane = lane_id()
+    var base = (group_flat % num_groups) * group_size
+
+    # `y`, the gate and the weight (the graph casts it per call) are produced
+    # by earlier grids. Every CTA waits before any early exit so this grid
+    # cannot finish ahead of its predecessor. Releasing the dependents here is
+    # safe: their own wait still blocks until this grid completes.
+    comptime if pdl_level != PDLLevel.OFF:
+        wait_on_producers()
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
+
     if group_flat >= Int(n_rows_dev) * num_groups:
         return
     var n = group_flat // num_groups
-    var base = (group_flat % num_groups) * group_size
-    var lane = lane_id()
 
     var gated = Array[Vec, iters](uninitialized=True)
     var w = Array[Vec, iters](uninitialized=True)
@@ -246,6 +277,11 @@ def gated_group_rmsnorm_vec_kernel[
         var prod = w[k] * t_in.cast[accum_type]()
         output.store[alignment=y_align]((n, col), prod.cast[dtype]())
 
+    comptime if (
+        pdl_level != PDLLevel.OFF and pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
+        launch_dependent_grids()
+
 
 @inline(.always)
 def _is_vec_ok(t: TileTensor) -> Bool:
@@ -269,6 +305,7 @@ def gated_group_rmsnorm_gpu[
     GateFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int](Int, Int) -> SIMD[gate_dtype, width],
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     output: TileTensor[mut=True, dtype, ...],
     y: TileTensor[dtype, ...],
@@ -287,6 +324,8 @@ def gated_group_rmsnorm_gpu[
         group_size: Width of each independently normalized group.
         GateFn: Reads the gate projection `[n_rows, num_groups * group_size]`,
             claiming `alignment` elements of alignment.
+        pdl_level: Programmatic dependent launch level. Every enabled level
+            waits on the predecessor grid, including `NO_WAIT_OVERLAP_AT_END`.
 
     Args:
         output: The `[n_rows, num_groups * group_size]` result.
@@ -321,6 +360,7 @@ def gated_group_rmsnorm_gpu[
                 type_of(y).Engine,
                 type_of(weight).Engine,
                 GateFn,
+                pdl_level,
             ]
             ctx.enqueue_function[vec_kernel](
                 output,
@@ -332,6 +372,7 @@ def gated_group_rmsnorm_gpu[
                 host_args=(gate_fn,),
                 grid_dim=ceildiv(total_warps * warp_size, VEC_BLK),
                 block_dim=VEC_BLK,
+                attributes=pdl_launch_attributes(pdl_level),
             )
             return
 
@@ -348,6 +389,7 @@ def gated_group_rmsnorm_gpu[
         type_of(y).Engine,
         type_of(weight).Engine,
         GateFn,
+        pdl_level,
     ]
     ctx.enqueue_function[kernel](
         output,
@@ -360,6 +402,7 @@ def gated_group_rmsnorm_gpu[
         host_args=(gate_fn,),
         grid_dim=grid,
         block_dim=BLK,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 

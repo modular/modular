@@ -2693,8 +2693,8 @@ def _unsafe_strlen(ptr: ImmPointer[Byte, _], max: Int = Int.MAX) -> Int:
 @inline(.always)
 def _memchr[
     dtype: DType, //
-](source: ImmSpan[Scalar[dtype], _], char: Scalar[dtype]) -> OptionalPointer[
-    Scalar[dtype], source.origin
+](source: ImmSpan[Scalar[dtype], _], char: Scalar[dtype]) -> Optional[
+    Pointer[Scalar[dtype], source.origin]
 ]:
     if (
         __is_run_in_comptime_interpreter
@@ -2716,8 +2716,8 @@ def _memchr_impl[
 ](
     source: ImmSpan[Scalar[dtype], _],
     char: Scalar[dtype],
-) -> OptionalPointer[
-    Scalar[dtype], source.origin
+) -> Optional[
+    Pointer[Scalar[dtype], source.origin]
 ]:
     var haystack = source.unsafe_ptr()
     var length = len(source)
@@ -2746,7 +2746,7 @@ def _memmem[
 ](
     haystack_span: ImmSpan[Scalar[dtype], _],
     needle_span: ImmSpan[Scalar[dtype], _],
-) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
+) -> Optional[Pointer[Scalar[dtype], haystack_span.origin]]:
     if (
         __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
@@ -2783,7 +2783,7 @@ def _memmem_impl[
 ](
     haystack_span: ImmSpan[Scalar[dtype], _],
     needle_span: ImmSpan[Scalar[dtype], _],
-) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
+) -> Optional[Pointer[Scalar[dtype], haystack_span.origin]]:
     var haystack: Pointer[
         Scalar[dtype], haystack_span.origin
     ] = haystack_span.unsafe_ptr()
@@ -2852,8 +2852,8 @@ def _memrchr[
 ](
     source: ImmSpan[Scalar[dtype], _],
     char: Scalar[dtype],
-) -> OptionalPointer[
-    Scalar[dtype], source.origin
+) -> Optional[
+    Pointer[Scalar[dtype], source.origin]
 ]:
     var base: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
     for i in reversed(range(len(source))):
@@ -2868,7 +2868,7 @@ def _memrmem[
 ](
     haystack: ImmSpan[Scalar[dtype], _],
     needle: ImmSpan[Scalar[dtype], _],
-) -> OptionalPointer[Scalar[dtype], haystack.origin]:
+) -> Optional[Pointer[Scalar[dtype], haystack.origin]]:
     var hp: Pointer[Scalar[dtype], haystack.origin] = haystack.unsafe_ptr()
     if not needle:
         return hp

@@ -180,7 +180,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
 
   // See InferenceState::getParamIndexRefDepth's comments for what this
   // increment is for.
-  ScopedInputDepth depth = state.enterSignatureScope();
+  auto depth = state.enterSignatureScope();
 
   // Functions with different parameterization cannot be converted between each
   // other. If the types are equal but the passing conventions are different,
@@ -636,7 +636,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
     if (auto expected = dyn_cast<GeneratorType>(expectedType)) {
       // See InferenceState::getParamIndexRefDepth's comments for what this
       // increment is for.
-      ScopedInputDepth depth = state.enterSignatureScope();
+      auto depth = state.enterSignatureScope();
 
       if (isa<FuncType>(actual.getBody()) ||
           isa<FuncType>(expected.getBody())) {
@@ -1024,20 +1024,6 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
-  if (auto actualSym = dyn_cast<SymbolConstantAttr>(actualAttr)) {
-    if (auto expectedSym = dyn_cast<SymbolConstantAttr>(expectedAttr)) {
-      if (actualSym.getSymbol() != expectedSym.getSymbol() ||
-          actualSym.getParamValues().size() !=
-              expectedSym.getParamValues().size())
-        return error(MatchFailure::Unclassified{});
-      for (auto [act, exp] : llvm::zip(actualSym.getParamValues(),
-                                       expectedSym.getParamValues())) {
-        PROP(matchParams(act, exp));
-      }
-      return success();
-    }
-  }
-
   if (auto actualSym = FuncSymbolGenerator::dynCast(actualAttr)) {
     if (auto expectedSym = FuncSymbolGenerator::dynCast(expectedAttr)) {
       if (actualSym.getSymbol() != expectedSym.getSymbol() ||
@@ -1046,7 +1032,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       FuncSymbolAttr actualFn = actualSym.getFuncSymbol();
       FuncSymbolAttr expectedFn = expectedSym.getFuncSymbol();
       // We are entering the generator body, increase the depth
-      ScopedInputDepth depth = state.enterSignatureScope();
+      auto depth = state.enterSignatureScope();
       for (auto [act, exp] : llvm::zip_equal(actualFn.getParamValues(),
                                              expectedFn.getParamValues()))
         PROP(matchParams(act, exp));

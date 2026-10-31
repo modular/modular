@@ -28,8 +28,8 @@ from max.nn.legacy.kv_cache import MultiKVCacheParams, spec_decode_cache_slack
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gpt_oss.batch_processor import (
     GptOssBatchProcessor,
+    GptOssInputs,
 )
-from max.pipelines.architectures.gpt_oss.model import GptOssInputs
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,

@@ -162,6 +162,102 @@ def test_render_flags_a_substitute_user_simulator() -> None:
     assert "openai/some-local-model" in text
 
 
+def test_render_names_a_pinned_simulator_and_its_endpoint() -> None:
+    out = io.StringIO()
+    exacto_summary.render(
+        {
+            "gpqa": None,
+            "taubench": {
+                "accuracy": 0.70,
+                "total": 200,
+                "num_tasks": 50,
+                "full_task_count": 50,
+                "num_trials": 4,
+                "user_llm": "openai/google/gemma-4-31b-it",
+                "user_api_base": "https://sim.example",
+                "self_simulated": False,
+                "reference_user_llm": "gemini/gemini-2.5-flash",
+                "max_steps": 200,
+                "hit_step_cap": 0,
+                "harness_commit": "864350a",
+            },
+        },
+        out,
+    )
+    text = out.getvalue()
+    assert (
+        "substitute user simulator `openai/google/gemma-4-31b-it`, not "
+        "OpenRouter's `gemini/gemini-2.5-flash`" in text
+    )
+    assert "same simulator" in text
+    assert "`openai/google/gemma-4-31b-it` at https://sim.example" in text
+    assert "self-simulated" not in text
+
+
+def test_notes_flag_empty_simulator_turns_with_their_finish_reasons() -> None:
+    out = exacto_summary.notes(
+        {
+            "num_tasks": 50,
+            "full_task_count": 50,
+            "empty_user_turns": 3,
+            "empty_user_turn_finish_reasons": {"stop": 2, "length": 1},
+        },
+        "taubench_airline",
+    )
+    assert out == "3 empty simulator turns (finish_reason length: 1, stop: 2)"
+
+
+def test_notes_ignore_zero_empty_simulator_turns() -> None:
+    out = exacto_summary.notes(
+        {
+            "num_tasks": 50,
+            "full_task_count": 50,
+            "empty_user_turns": 0,
+            "empty_user_turn_finish_reasons": {},
+        },
+        "taubench_airline",
+    )
+    assert out == "—"
+
+
+def test_notes_flag_self_simulation_rather_than_a_substitute() -> None:
+    out = exacto_summary.notes(
+        {
+            "num_tasks": 50,
+            "full_task_count": 50,
+            "user_llm": "openai/served-name",
+            "self_simulated": True,
+            "reference_user_llm": "gemini/gemini-2.5-flash",
+        },
+        "taubench_airline",
+    )
+    assert out == "self-simulated: regression signal only"
+
+
+def test_render_marks_self_simulation_in_provenance() -> None:
+    out = io.StringIO()
+    exacto_summary.render(
+        {
+            "gpqa": None,
+            "taubench": {
+                "accuracy": 0.5,
+                "total": 2,
+                "num_tasks": 2,
+                "full_task_count": 50,
+                "num_trials": 1,
+                "user_llm": "openai/served-name",
+                "user_api_base": "http://localhost:8000",
+                "self_simulated": True,
+                "max_steps": 200,
+                "hit_step_cap": 0,
+                "harness_commit": "864350a",
+            },
+        },
+        out,
+    )
+    assert "self-simulated by the endpoint under test" in out.getvalue()
+
+
 def test_render_treats_a_task_subset_as_partial() -> None:
     out = io.StringIO()
     exacto_summary.render(

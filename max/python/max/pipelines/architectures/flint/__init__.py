@@ -13,13 +13,11 @@
 """FlintForCausalLM architecture."""
 
 from .arch import flint_arch
-from .inputs import FlintInputs
-from .model import FlintModel
+from .flint import Flint
 from .model_config import FlintConfig
 
 __all__ = [
+    "Flint",
     "FlintConfig",
-    "FlintInputs",
-    "FlintModel",
     "flint_arch",
 ]

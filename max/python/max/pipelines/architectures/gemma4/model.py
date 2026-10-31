@@ -23,6 +23,13 @@ from typing import Any, ClassVar, cast
 import numpy as np
 import numpy.typing as npt
 from max import tree
+from max._artifact.vision import (
+    AspectRatioPreserving,
+    ModalityLayout,
+    PromptText,
+    Span,
+    VisionMetadata,
+)
 from max.driver import Buffer, Device, DLPackArray
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -31,6 +38,7 @@ from max.graph import (
     Module,
 )
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn.legacy.image_preprocess import image_preprocess_input_types
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import ImageMetadata
@@ -55,12 +63,17 @@ from max.pipelines.lib.pipeline_parallel import (
 )
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.profiler import traced
+from transformers import AutoConfig
 
 from .batch_processor import Gemma4BatchProcessor
 from .batch_vision_inputs import VisionRawInputs
 from .context import Gemma4Context
 from .gemma4 import Gemma4TextModel, language_input_tree
-from .model_config import Gemma4ForConditionalGenerationConfig
+from .image_processor import Gemma4ImageProcessor
+from .model_config import Gemma4ForConditionalGenerationConfig, video_token_id
+from .processing_utils import load_processor_config
+from .video_processor import Gemma4VideoProcessor
+from .vision_model.preprocess_graph import Gemma4ImagePreprocess
 from .vision_model.vision_model import Gemma4VisionModel
 from .weight_adapters import adapt_gemma4_checkpoint, gemma4_weight_entry
 
@@ -160,6 +173,68 @@ class Gemma3MultiModalModelInputs(ModelInputs):
             *self.signal_buffers,
             *tree.leaves(self.kv_cache_inputs),
         )
+
+
+def gemma4_vision_metadata(
+    huggingface_config: AutoConfig,
+    image_processor: Gemma4ImageProcessor,
+    video_processor: Gemma4VideoProcessor,
+) -> VisionMetadata | None:
+    """Returns the media layout a Gemma 4 checkpoint is served with.
+
+    Returns ``None`` for a text-only checkpoint.
+
+    Args:
+        huggingface_config: The checkpoint's config.
+        image_processor: The processor the tokenizer sizes images with.
+        video_processor: The processor the tokenizer sizes video frames with.
+    """
+    vision = getattr(huggingface_config, "vision_config", None)
+    if vision is None:
+        return None
+
+    def layout(token_id: int, max_soft_tokens: int) -> ModalityLayout:
+        pooling = vision.pooling_kernel_size
+        # A video frame's run uses the image markers around its own
+        # placeholder.
+        return ModalityLayout(
+            patch_size=vision.patch_size,
+            merge_size=pooling,
+            strategy=AspectRatioPreserving(max_soft_tokens * pooling**2),
+            span=Span(
+                token_id,
+                huggingface_config.boi_token_id,
+                huggingface_config.eoi_token_id,
+            ),
+        )
+
+    return VisionMetadata.from_layouts(
+        image=layout(
+            huggingface_config.image_token_id, image_processor.max_soft_tokens
+        ),
+        video=layout(
+            video_token_id(huggingface_config), video_processor.max_soft_tokens
+        ),
+        # MAX declares no byte caps for this family; 64 MiB is the serving
+        # engine's own video cap.
+        max_image_bytes=0,
+        max_video_bytes=64 << 20,
+        # The tokenizer expands a clip as space-joined "<timestamp> <run>"
+        # units.
+        prompt=PromptText(video_unit_separator=" ", video_label_suffix=" "),
+    )
+
+
+def _processor_config(model: Any) -> dict[str, Any]:
+    """Returns the checkpoint's ``processor_config.json``.
+
+    A function rather than a method, so the export tools' stand-ins for the
+    model, which carry only its pipeline config, can call it.
+    """
+    path = model.pipeline_config.model
+    return load_processor_config(
+        path.model_path, revision=path.huggingface_model_revision
+    )
 
 
 class Gemma3_MultiModalModel(
@@ -426,6 +501,33 @@ class Gemma3_MultiModalModel(
         self.config = model_config
         return model_config
 
+    def vision_metadata(self) -> VisionMetadata | None:
+        """Returns the media layout the checkpoint is served with."""
+        processor_config = _processor_config(self)
+        return gemma4_vision_metadata(
+            self.huggingface_config,
+            Gemma4ImageProcessor(**processor_config.get("image_processor", {})),
+            Gemma4VideoProcessor(**processor_config.get("video_processor", {})),
+        )
+
+    def vision_preprocess_spec(self) -> GraphSpec | None:
+        """Returns the graph that preprocesses one image for the tower.
+
+        It does what the tokenizer's image processor and the vision input
+        packing do.
+        """
+        if self.config.vision_config is None:
+            return None
+        processor = Gemma4ImageProcessor(
+            **_processor_config(self).get("image_processor", {})
+        )
+        return GraphSpec(
+            Gemma4ImagePreprocess(processor, self.config.unquantized_dtype),
+            "gemma4_vision_preprocess",
+            image_preprocess_input_types(),
+            weights={},
+        )
+
     def _include_vision_graph(
         self, model_config: Gemma4ForConditionalGenerationConfig
     ) -> bool:
@@ -476,7 +578,7 @@ class Gemma3_MultiModalModel(
         return GraphSpec(
             vision_model,
             "gemma4_vision",
-            vision_model.input_types(),
+            vision_model.input_tree(),
             weights=vision_model.state_dict(),
             group=_COMPILE_GROUP,
         )

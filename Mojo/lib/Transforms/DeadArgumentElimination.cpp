@@ -589,7 +589,7 @@ void DeadArgumentElimination::rewriteCalleesFromFunction(CallGraphNode *node) {
 
     if (auto kgenCall = dyn_cast<CallOp>(call.getOperation())) {
       auto newOp = CallOp::create(b, call.getLoc(),
-                                  SymbolConstantAttr::get(calleeNode->func),
+                                  FuncSymbolGenerator::get(calleeNode->func),
                                   newOperands);
 
       kgenCall->replaceAllUsesWith(newOp.getResults());
@@ -632,8 +632,6 @@ void DeadArgumentElimination::markLiveMaybeIndirectCalled() {
         << " maybe live due references other than a CallOp. Mark live.\n");
   };
   mlir::AttrTypeWalker walker;
-  walker.addWalk(
-      [&](SymbolConstantAttr attr) { markLiveSymbol(attr.getSymbol()); });
   walker.addWalk(
       [&](FuncSymbolAttr attr) { markLiveSymbol(attr.getSymbol()); });
 

@@ -1788,7 +1788,12 @@ struct DistributedAllGatherRMSNorm:
                     dev_ctxs_input[index],
                 )
 
-            _dispatch_ag_norm[group_size=group_size](
+            # PDL is verified on 2 GPUs only; 4/8-GPU and grouped runs stay OFF
+            # until someone measures them.
+            comptime ag_norm_pdl = (
+                PDLLevel.ON if num_devices == 2 else PDLLevel.OFF
+            )
+            _dispatch_ag_norm[group_size=group_size, pdl_level=ag_norm_pdl](
                 in_tensors,
                 normed_buf,
                 sum_buf,

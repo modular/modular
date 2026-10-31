@@ -42,7 +42,6 @@ class ConstraintAttr;
 class FnMetadataAttr;
 class PogListAttr;
 class StructDefFieldAttr;
-class SymbolConstantAttr;
 class ParamListType;
 class ParamListAttr;
 } // namespace M::KGEN

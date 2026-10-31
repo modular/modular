@@ -17,6 +17,10 @@ pipeline config is built from the real ``PipelineRuntimeConfig``/
 ``KVCacheConfig`` classes so a new required field cannot silently go unread
 here. Mirrors ``kimi_k3/tests/test_memory_planner.py``'s behaviours, adjusted
 for this planner's narrower scope (no DSpark, no KDA live-state term).
+
+The gfx950 chunk-workspace tests patch the driver queries inside
+``max.nn.legacy.state_space.kimi_delta``, the module whose helper decides the
+reservation, so they run from any host.
 """
 
 from __future__ import annotations
@@ -27,6 +31,8 @@ from typing import Any, cast
 
 import pytest
 from max.driver import Device, DeviceSpec
+from max.nn.legacy.state_space import kimi_delta
+from max.nn.legacy.state_space.kimi_delta import kda_chunk_workspace_bytes
 from max.pipelines.architectures.kimi_k3_modulev3.memory_planner import (
     KimiK3ModuleV3MemoryPlanner,
     _layer_counts,
@@ -38,6 +44,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.memory_planner import (
 )
 from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.modeling.config_enums import PipelineRole
 
 _GiB = 1024**3
 
@@ -47,6 +54,10 @@ _KDA_LAYERS = [1, 2, 3, 5, 6, 7]
 _KDA_NUM_HEADS = 8
 _KDA_HEAD_DIM = 32
 _KDA_CONV_KERNEL = 4
+
+# Published K3's KDA geometry, which the gfx950 chunk path is built for.
+_K3_KDA_HEADS = 96
+_K3_KDA_HEAD_DIM = 128
 
 _PER_REQUEST_BF16 = 6 * ((768 * 3 + 8 * 32 * 32) * 2)
 _PER_REQUEST_MIXED = 6 * (768 * 3 * 2 + 8 * 32 * 32 * 4)
@@ -71,7 +82,9 @@ _EP_EXTRA_REPLICATED_ELEMS = _MOE_LAYERS * (
 )
 
 
-def _text_config() -> types.SimpleNamespace:
+def _text_config(
+    linear_attn_config: dict[str, Any] | None = None,
+) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         hidden_size=_HIDDEN,
         num_attention_heads=8,
@@ -81,13 +94,16 @@ def _text_config() -> types.SimpleNamespace:
         v_head_dim=64,
         q_lora_rank=256,
         kv_lora_rank=128,
-        linear_attn_config={
-            "full_attn_layers": _FULL_ATTN_LAYERS,
-            "kda_layers": _KDA_LAYERS,
-            "num_heads": _KDA_NUM_HEADS,
-            "head_dim": _KDA_HEAD_DIM,
-            "short_conv_kernel_size": _KDA_CONV_KERNEL,
-        },
+        linear_attn_config=(
+            linear_attn_config
+            or {
+                "full_attn_layers": _FULL_ATTN_LAYERS,
+                "kda_layers": _KDA_LAYERS,
+                "num_heads": _KDA_NUM_HEADS,
+                "head_dim": _KDA_HEAD_DIM,
+                "short_conv_kernel_size": _KDA_CONV_KERNEL,
+            }
+        ),
         vocab_size=163840,
         rms_norm_eps=1e-5,
         first_k_dense_replace=1,
@@ -131,9 +147,15 @@ _VT_ELEMS = _VT_LAYERS * (
 )
 
 
-def _huggingface_config(*, vision: bool, stored_dtype: str = "bfloat16") -> Any:
+def _huggingface_config(
+    *,
+    vision: bool,
+    stored_dtype: str = "bfloat16",
+    linear_attn_config: dict[str, Any] | None = None,
+) -> Any:
     text_only = types.SimpleNamespace(
-        text_config=_text_config(), torch_dtype=stored_dtype
+        text_config=_text_config(linear_attn_config),
+        torch_dtype=stored_dtype,
     )
     if not vision:
         return text_only
@@ -175,8 +197,13 @@ def _pipeline_config(
     vision: bool = False,
     weights_total: int = 0,
     max_batch_size: int | None = None,
+    pipeline_role: PipelineRole = "prefill_and_decode",
+    enable_chunked_prefill: bool = True,
+    linear_attn_config: dict[str, Any] | None = None,
 ) -> PipelineConfig:
-    huggingface_config = _huggingface_config(vision=vision)
+    huggingface_config = _huggingface_config(
+        vision=vision, linear_attn_config=linear_attn_config
+    )
     model_config = _model_config(
         huggingface_config,
         encoding=encoding,
@@ -191,6 +218,8 @@ def _pipeline_config(
             max_batch_input_tokens=_MAX_BATCH_INPUT_TOKENS,
             max_batch_size=max_batch_size,
             ep_size=ep_size,
+            pipeline_role=pipeline_role,
+            enable_chunked_prefill=enable_chunked_prefill,
         ),
     )
     return cast(PipelineConfig, stub)
@@ -301,6 +330,251 @@ def test_dense_checkpoint_reserves_no_dequant_buffer() -> None:
     )
 
     assert activation == 0
+
+
+def _k3_linear_attn_config(
+    gate_lower_bound: float | None = -5.0,
+) -> dict[str, Any]:
+    """K3's KDA geometry: the widths the gfx950 chunk path is built for."""
+    return {
+        "full_attn_layers": _FULL_ATTN_LAYERS,
+        "kda_layers": _KDA_LAYERS,
+        "num_heads": _K3_KDA_HEADS,
+        "head_dim": _K3_KDA_HEAD_DIM,
+        "short_conv_kernel_size": _KDA_CONV_KERNEL,
+        "gate_lower_bound": gate_lower_bound,
+    }
+
+
+def _patch_driver(
+    monkeypatch: pytest.MonkeyPatch, api: str, architecture: str
+) -> None:
+    monkeypatch.setattr(kimi_delta, "accelerator_api", lambda: api)
+    monkeypatch.setattr(
+        kimi_delta, "accelerator_architecture_name", lambda: architecture
+    )
+
+
+def _activation_memory(
+    *,
+    linear_attn_config: dict[str, Any] | None = None,
+    n_devices: int = 1,
+    ep_size: int = 1,
+    max_batch_size: int | None = None,
+    pool_dtype: str | None = None,
+    pipeline_role: PipelineRole = "prefill_and_decode",
+    enable_chunked_prefill: bool = True,
+) -> int:
+    pipeline_config = _pipeline_config(
+        linear_attn_config=linear_attn_config,
+        n_devices=n_devices,
+        ep_size=ep_size,
+        max_batch_size=max_batch_size,
+        pool_dtype=pool_dtype,
+        pipeline_role=pipeline_role,
+        enable_chunked_prefill=enable_chunked_prefill,
+    )
+    return _planner().estimate_activation_memory(
+        pipeline_config, pipeline_config.model.huggingface_config
+    )
+
+
+def test_tp8_reserves_the_chunk_workspaces_on_gfx950(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The gfx950 ``kda_chunk`` launch allocates its workspaces per call.
+
+    TP8 splits the 96 KDA heads 12 per device, and the estimate is compared
+    against free memory summed over devices, so the reservation is the
+    per-device bytes times the device count. The token bound caps at
+    ``max_batch_size * max_length``; every other activation term is zero for
+    this fixture.
+    """
+    _patch_driver(monkeypatch, "hip", "gfx950")
+
+    n_devices = 8
+    max_batch_size = 8
+    activation = _activation_memory(
+        n_devices=n_devices,
+        max_batch_size=max_batch_size,
+        linear_attn_config=_k3_linear_attn_config(),
+    )
+
+    tokens = min(_MAX_BATCH_INPUT_TOKENS, max_batch_size * _MAX_LENGTH)
+    expected = n_devices * kda_chunk_workspace_bytes(
+        _K3_KDA_HEADS // n_devices, _K3_KDA_HEAD_DIM, tokens, max_batch_size
+    )
+    assert activation == expected
+
+
+def test_ep_mesh_reserves_replicated_chunk_workspaces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under the pure-EP mesh the KDA layers run replicated, 96 heads each."""
+    _patch_driver(monkeypatch, "hip", "gfx950")
+
+    n_devices = 8
+    max_batch_size = 8
+    routed = _activation_memory(
+        linear_attn_config=_k3_linear_attn_config(),
+        n_devices=n_devices,
+        ep_size=n_devices,
+        max_batch_size=max_batch_size,
+    )
+    sequential = _activation_memory(
+        linear_attn_config=_k3_linear_attn_config(gate_lower_bound=None),
+        n_devices=n_devices,
+        ep_size=n_devices,
+        max_batch_size=max_batch_size,
+    )
+
+    # The EP dispatch buffers are the only other term; differencing the two
+    # gate arms removes it without re-deriving it here.
+    tokens = min(_MAX_BATCH_INPUT_TOKENS, max_batch_size * _MAX_LENGTH)
+    expected = n_devices * kda_chunk_workspace_bytes(
+        _K3_KDA_HEADS, _K3_KDA_HEAD_DIM, tokens, max_batch_size
+    )
+    assert routed - sequential == expected
+
+
+@pytest.mark.parametrize(
+    ("api", "architecture"), [("cuda", "sm_100a"), ("hip", "gfx942")]
+)
+def test_off_gfx950_reserves_no_chunk_workspace(
+    monkeypatch: pytest.MonkeyPatch, api: str, architecture: str
+) -> None:
+    _patch_driver(monkeypatch, api, architecture)
+    assert (
+        _activation_memory(
+            n_devices=8, linear_attn_config=_k3_linear_attn_config()
+        )
+        == 0
+    )
+
+
+def test_original_gate_reserves_no_chunk_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The AMD chunk kernels implement only the bounded ``"safe"`` gate."""
+    _patch_driver(monkeypatch, "hip", "gfx950")
+    assert (
+        _activation_memory(
+            n_devices=8,
+            linear_attn_config=_k3_linear_attn_config(gate_lower_bound=None),
+        )
+        == 0
+    )
+
+
+def test_bf16_state_pool_reserves_no_chunk_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The AMD chunk kernels take only a float32 state pool."""
+    _patch_driver(monkeypatch, "hip", "gfx950")
+    assert (
+        _activation_memory(
+            n_devices=8,
+            pool_dtype="bfloat16",
+            linear_attn_config=_k3_linear_attn_config(),
+        )
+        == 0
+    )
+
+
+def test_decode_only_reserves_no_chunk_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A decode-only pipeline never prefills, so the chunk path never runs."""
+    _patch_driver(monkeypatch, "hip", "gfx950")
+
+    routed = _activation_memory(
+        n_devices=8,
+        max_batch_size=8,
+        linear_attn_config=_k3_linear_attn_config(),
+    )
+    decode_only = _activation_memory(
+        n_devices=8,
+        max_batch_size=8,
+        pipeline_role="decode_only",
+        linear_attn_config=_k3_linear_attn_config(),
+    )
+
+    assert routed > 0
+    assert decode_only == 0
+
+
+def test_disabled_chunked_prefill_reserves_the_soft_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without chunked prefill the token budget is soft.
+
+    One oversized prompt rides on top of a full batch, so the reservation
+    covers ``max_batch_input_tokens + max_length`` tokens, not the hard
+    budget alone.
+    """
+    _patch_driver(monkeypatch, "hip", "gfx950")
+
+    n_devices = 8
+    max_batch_size = 32
+    routed = _activation_memory(
+        n_devices=n_devices,
+        max_batch_size=max_batch_size,
+        enable_chunked_prefill=False,
+        linear_attn_config=_k3_linear_attn_config(),
+    )
+    chunked = _activation_memory(
+        n_devices=n_devices,
+        max_batch_size=max_batch_size,
+        linear_attn_config=_k3_linear_attn_config(),
+    )
+
+    tokens = min(
+        _MAX_BATCH_INPUT_TOKENS + _MAX_LENGTH, max_batch_size * _MAX_LENGTH
+    )
+    expected = n_devices * kda_chunk_workspace_bytes(
+        _K3_KDA_HEADS // n_devices, _K3_KDA_HEAD_DIM, tokens, max_batch_size
+    )
+    assert routed == expected
+    assert routed > chunked
+
+
+def test_unset_max_batch_size_uses_the_inferred_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With ``max_batch_size`` unset the reservation uses the inferred size.
+
+    Planning never writes the batch size :meth:`infer_max_batch_size` chose
+    back to the runtime config, so the plumbing must carry it separately;
+    dropping it would size the workspace for one giant batch of
+    ``max_batch_input_tokens`` single-token sequences instead.
+    """
+    _patch_driver(monkeypatch, "hip", "gfx950")
+
+    n_devices = 8
+    planner = _planner()
+    pipeline_config = _pipeline_config(
+        n_devices=n_devices,
+        max_batch_size=None,
+        linear_attn_config=_k3_linear_attn_config(),
+    )
+    weights_size = planner.estimate_weights_size(pipeline_config)
+    inferred = planner.infer_max_batch_size(
+        pipeline_config, _devices(free_memory=38_000_000), weights_size
+    )
+
+    assert inferred is not None
+    # The inferred size must bite: at or above 8192 // 512 = 16 sequences
+    # the cap max_batch_size * max_length stops discriminating.
+    assert inferred < _MAX_BATCH_INPUT_TOKENS // _MAX_LENGTH
+
+    activation = planner.estimate_activation_memory(
+        pipeline_config, pipeline_config.model.huggingface_config
+    )
+    tokens = min(_MAX_BATCH_INPUT_TOKENS, inferred * _MAX_LENGTH)
+    expected = n_devices * kda_chunk_workspace_bytes(
+        _K3_KDA_HEADS // n_devices, _K3_KDA_HEAD_DIM, tokens, inferred
+    )
+    assert activation == expected
 
 
 def test_per_request_state_bytes_covers_only_the_kda_layers() -> None:

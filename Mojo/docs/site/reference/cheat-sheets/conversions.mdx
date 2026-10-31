@@ -347,7 +347,7 @@ var total = v.reduce_add() # SIMD-wide reduce
 - Unsafe operations carry the `unsafe_` prefix or an `unsafe_` keyword
 - `unsafe_ptr()` has contiguous storage and is never null, even when
   empty. Check lengths before access
-- `Pointer` is non-null by design; use `OptionalPointer` when the pointer
+- `Pointer` is non-null by design; use `Optional[Pointer]` when the pointer
   may be null
 - The pointer's origin keeps its owner alive until its last use, but it doesn't
   protect against reallocation. After a `List` grows or a `String` changes,

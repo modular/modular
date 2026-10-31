@@ -105,6 +105,11 @@ ParseResult parseAllGatherAttrs(OpAsmParser &p, IntegerAttr &groupSize,
 void printAllGatherAttrs(OpAsmPrinter &p, Operation *, IntegerAttr groupSize,
                          BoolAttr sliceRows);
 
+ParseResult parseAllGatherConcatAttrs(OpAsmParser &p, IntegerAttr &axis,
+                                      IntegerAttr &groupSize);
+void printAllGatherConcatAttrs(OpAsmPrinter &p, Operation *, IntegerAttr axis,
+                               IntegerAttr groupSize);
+
 ParseResult parseReduceScatterSumAttrs(OpAsmParser &p, IntegerAttr &axis,
                                        IntegerAttr &groupSize);
 

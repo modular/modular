@@ -934,6 +934,17 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   CrashReporter handler(paramBindings.getExprLoc(), "ParamInf::inferForStruct",
                         getShared());
 
+  // A failed binding drops everything it deferred. Declared first so it runs
+  // after `attachNoteOnError`.
+  DeferredTypingContext::Checkpoint deferralCheckpoint;
+  if (deferredTypingContext)
+    deferralCheckpoint = deferredTypingContext->getCheckpoint();
+  bool succeeded = false;
+  auto rollbackOnFailure = llvm::scope_exit([&]() {
+    if (!succeeded && deferredTypingContext)
+      deferredTypingContext->rollback(deferralCheckpoint);
+  });
+
   auto attachNoteOnError = llvm::scope_exit([&]() {
     if (diag.hasErrorEmitted() && declIfKnown) {
       auto *defDecl = llvm::dyn_cast<DefASTDecl>(declIfKnown);
@@ -954,10 +965,8 @@ VerifiedParamBindings ParamInf::inferForStruct() {
       // the body-unprovable constraints there and suppress the error.
       // Otherwise, fall back to the existing hard-error path.
       if (deferredTypingContext) {
-        SMLoc deferralLoc = paramBindings.getExprLoc();
         for (ConstraintAttr c : bodyUnprovableConstraints)
-          deferredTypingContext->deferredConstraints.push_back(
-              {c, deferralLoc});
+          deferredTypingContext->addInconclusive(c, paramBindings.getExprLoc());
       } else {
         emitUnprovableConstraintsFromFitness(
             bodyUnprovableConstraints, paramBindings.shared,
@@ -985,6 +994,7 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   if (failed(checkBodyConstraints()))
     return {};
 
+  succeeded = true;
   ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
       getShared().getContext(), evaluator.getIndexBindings());
   return VerifiedParamBindings(rawBindings,
@@ -1364,6 +1374,16 @@ LogicalResult ParamInf::finalizeWithUnbound() {
     if (installUnbound) {
       Type targetType =
           evaluator.getReboundType(getCanonicalType(declaredParamTypes[idx]));
+      // Declare an implicit parameter for the hole if supported.
+      if (deferredTypingContext &&
+          deferredTypingContext->canDeclareImplicitParams()) {
+        ParamDeclAttr implicitParam =
+            deferredTypingContext->declareImplicitParam(
+                targetType, pog.getName(), paramBindings.getExprLoc());
+        evaluator.overwriteIndexBinding(idx,
+                                        ParamDeclRefAttr::get(implicitParam));
+        continue;
+      }
       evaluator.overwriteIndexBinding(idx, UnboundAttr::get(targetType));
       continue;
     }

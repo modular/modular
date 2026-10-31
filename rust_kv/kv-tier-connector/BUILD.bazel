@@ -12,6 +12,7 @@ rust_library(
         "//rust_kv/kv-core",
         "//rust_kv/max-profiler",
         "@crates//:itertools",
+        "@crates//:libc",
         "@crates//:libloading",
         "@crates//:parking_lot",
         "@crates//:thiserror",

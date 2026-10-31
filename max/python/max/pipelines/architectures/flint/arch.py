@@ -15,12 +15,11 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .batch_processor import FlintBatchProcessor
-from .model import FlintModel
+from .flint import Flint
 from .model_config import FlintConfig
 
 flint_arch = SupportedArchitecture(
@@ -28,7 +27,7 @@ flint_arch = SupportedArchitecture(
     example_repo_ids=["RecursiveSI/flint"],
     default_encoding=FlintConfig.DEFAULT_ENCODING,
     supported_encodings=FlintConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=FlintModel,
+    modules={GraphRole.DECODER: Flint},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -38,6 +37,5 @@ flint_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=FlintConfig,
-    batching=FlintBatchProcessor,
     memory_planner=PagedMemoryPlanner,
 )

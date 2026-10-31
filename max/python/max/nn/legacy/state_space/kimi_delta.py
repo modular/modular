@@ -10,7 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Python wrapper for the KDA (Kimi Delta Attention) recurrence op."""
+"""Python wrapper for the KDA (Kimi Delta Attention) recurrence op.
+
+Also the home of the prefill-routing predicates and the gfx950 workspace
+bound every KDA architecture shares, so no architecture imports them from
+another.
+"""
 
 from __future__ import annotations
 
@@ -32,11 +37,18 @@ from ..kernels import _check_dtype, _check_rank, _check_same_dtype
 
 __all__ = [
     "KDA_GATE_LOWER_BOUND",
+    "STATE_LAYOUT",
     "KdaBetaMode",
     "KdaGateMode",
     "KdaStateLayout",
+    "amd_kda_chunk_eligible",
+    "amd_kda_chunk_workspace_bytes",
     "kda_chunk",
+    "kda_chunk_predicate",
+    "kda_chunk_servable",
+    "kda_chunk_workspace_bytes",
     "kda_decode",
+    "kda_gate_mode",
     "kda_ring_record_elements",
     "kda_state_fold",
     "kda_verify_ring",
@@ -50,6 +62,14 @@ KdaBetaMode = Literal["logits", "probability"]
 
 KdaStateLayout = Literal["K_FIRST", "V_FIRST"]
 """Pool axis order: ``[N, HV, K, V]`` or ``[N, HV, V, K]``."""
+
+STATE_LAYOUT: KdaStateLayout = "K_FIRST"
+"""Pool axis order, ``[num_rows, heads, head_dim, head_dim]``.
+
+Pinned here so the recurrence ops and the caches' declared leaves cannot
+disagree; it also matches the ``[num_rows, num_v_heads, key_dim,
+val_dim]`` layout Qwen3.5's recurrent state cache declares.
+"""
 
 _SUPPORTED_HEAD_DIMS = ((32, 32), (128, 128))
 """``(key_head_dim, value_head_dim)`` pairs the op is compiled for."""
@@ -134,12 +154,13 @@ def _check_amd_chunk_contract(
         raise ValueError("kda_chunk on AMD has no compute-bound variant")
     if (
         q.dtype != DType.bfloat16
-        or output_dtype != DType.bfloat16
+        or output_dtype not in (DType.bfloat16, DType.float32)
         or raw_gate.dtype != DType.float32
         or state_pool.dtype != DType.float32
     ):
         raise ValueError(
-            "kda_chunk on AMD takes bf16 q/k/v/output and fp32 gates/state, "
+            "kda_chunk on AMD takes bf16 q/k/v, a bf16 or fp32 output and fp32"
+            " gates/state, "
             f"got q {q.dtype}, output {output_dtype}, raw_gate "
             f"{raw_gate.dtype}, state_pool {state_pool.dtype}"
         )
@@ -163,6 +184,234 @@ def _check_amd_chunk_contract(
 
 KDA_GATE_LOWER_BOUND = -5.0
 """Hard-coded lower bound for ``gate_mode="safe"``."""
+
+_CHUNK_MIN_COMPUTE_CAPABILITY = 100
+"""Lowest NVIDIA compute capability (``sm_100`` -> 100) ``kda_chunk`` builds for."""
+
+_AMD_CHUNK_MAX_ELEMENTS = 1 << 31
+"""Largest tensor or workspace the gfx950 ``kda_chunk`` launch indexes; it
+raises past this rather than overflow its 32-bit offsets."""
+
+_CHUNK_LEN = 64
+"""Tokens per chunk of the AMD ``kda_chunk`` recurrence."""
+
+
+def kda_gate_mode(lower_bound: float | None) -> KdaGateMode:
+    """Selects the kernel's forget-gate form from the config's lower bound.
+
+    Raises:
+        ValueError: If the bound is neither absent nor the one value the
+            ``"safe"`` kernel path hard-codes. The constant lives in the
+            kernel, so a checkpoint with a different bound would run and be
+            quietly wrong.
+    """
+    if lower_bound is None:
+        return "original"
+    if lower_bound != KDA_GATE_LOWER_BOUND:
+        raise ValueError(
+            "KDA's bounded forget gate is compiled with a lower bound of "
+            f"{KDA_GATE_LOWER_BOUND}, but this checkpoint asks for "
+            f"{lower_bound}. Thread a new compile-time axis through the kernel "
+            "rather than accepting the mismatch."
+        )
+    return "safe"
+
+
+def kda_chunk_servable(
+    head_dim: int, gate_mode: KdaGateMode, pool_dtype: DType
+) -> bool:
+    """Returns whether prefill can take ``kda_chunk``, not ``kda_decode``.
+
+    The op's NVIDIA kernels only instantiate on SM100+, and its AMD kernels
+    only on gfx950, where they also take only the ``"safe"`` gate and a
+    float32 pool. The AMD kernels take bf16 q/k/v and a bf16 or fp32 output,
+    so callers cast at the op boundary there. Builds without the closed-source kernels lack
+    the op. Anything outside that keeps the sequential recurrence for prefill.
+
+    Call this while a graph is being built: it reads that graph's kernel
+    library.
+
+    Args:
+        head_dim: Key and value head width.
+        gate_mode: The forget-gate form the layer passes the op.
+        pool_dtype: Dtype of the recurrent state pool.
+
+    Returns:
+        ``True`` when ``kda_chunk`` accepts this layer's arguments.
+    """
+    api = accelerator_api()
+    if api == "hip":
+        return (
+            amd_kda_chunk_eligible(head_dim, gate_mode, pool_dtype)
+            and kda_chunk_is_registered()
+        )
+    # TODO(KERN-3635): widen once kda_chunk compiles below SM100.
+    name = accelerator_architecture_name()
+    digits = name.removeprefix("sm_").rstrip("abcdefghijklmnopqrstuvwxyz")
+    return (
+        api == "cuda"
+        and digits.isdigit()
+        and int(digits) >= _CHUNK_MIN_COMPUTE_CAPABILITY
+        and kda_chunk_supports_head_dims(head_dim, head_dim)
+        and kda_chunk_is_registered()
+    )
+
+
+def amd_kda_chunk_eligible(
+    head_dim: int, gate_mode: KdaGateMode, pool_dtype: DType
+) -> bool:
+    """Returns whether gfx950 prefill takes ``kda_chunk``, registration aside.
+
+    The part of :func:`kda_chunk_servable` that needs no graph, so the memory
+    planner can ask it too.
+
+    Args:
+        head_dim: Key and value head width.
+        gate_mode: The forget-gate form the layer passes the op.
+        pool_dtype: Dtype of the recurrent state pool.
+
+    Returns:
+        ``True`` on a gfx950 accelerator whose AMD ``kda_chunk`` contract
+        these arguments meet.
+    """
+    return (
+        accelerator_api() == "hip"
+        and _is_amd_chunk_arch()
+        and gate_mode == "safe"
+        and pool_dtype == DType.float32
+        and kda_chunk_supports_head_dims(head_dim, head_dim)
+    )
+
+
+def kda_chunk_predicate(
+    total_tokens: TensorValue,
+    batch_size: TensorValue,
+    num_heads: int,
+    head_dim: int,
+) -> TensorValue:
+    """Returns whether a batch takes the ``kda_chunk`` side of the cond.
+
+    A batch with more tokens than sequences is a prefill. On AMD it must also
+    fit the launch's 32-bit indexing, or it falls back to ``kda_decode``
+    instead of raising: the largest buffer, ``kg_t``, holds ``(T // 64 + N) *
+    64 <= T + 64 N`` rows of ``num_heads * head_dim``. That also bounds q/k/v,
+    gate and output, and the launch's stride check, because every q/k/v the
+    layers pass reaches the op as dense rows of that same width: a cast that
+    changes dtype copies, and where the cast is elided (K3's bf16 slices of
+    the fused qkv) the graph compiler materializes the slices for the op.
+
+    Args:
+        total_tokens: Scalar token count of the batch.
+        batch_size: Scalar sequence count of the batch.
+        num_heads: KDA heads on this device.
+        head_dim: Key and value head width.
+
+    Returns:
+        A boolean scalar.
+    """
+    is_prefill = total_tokens > batch_size
+    if accelerator_api() != "hip":
+        return is_prefill
+    max_rows = _AMD_CHUNK_MAX_ELEMENTS // (num_heads * head_dim)
+    return is_prefill & (total_tokens + _CHUNK_LEN * batch_size <= max_rows)
+
+
+def kda_chunk_workspace_bytes(
+    num_heads: int, head_dim: int, batch_tokens: int, batch_size: int
+) -> int:
+    """Returns an upper bound on one gfx950 ``kda_chunk`` call's workspaces.
+
+    Mirrors the allocations in ``kda_amd_chunk_launch``
+    (``Kernels/lib/kda/amd_chunk_launch.mojo``), per head: bf16 ``qg``, ``w``,
+    ``u`` and ``aqk`` per token; bf16 ``kg_t`` and float32 ``decay`` per
+    64-token chunk, of which a batch holds at most ``tokens // 64 +
+    sequences``; and the float32 split-walk workspace, which the launch sizes
+    for at most one group per four chunks and 32 groups per sequence. The
+    per-device int32 chunk offsets are counted per head, which covers them on
+    any split. Every term is per head, so the bytes for a set of devices is
+    the sum over each device's heads, however the heads are split.
+
+    Args:
+        num_heads: KDA heads the reservation sizes.
+        head_dim: Key and value head width.
+        batch_tokens: Most tokens one execute prefills.
+        batch_size: Most sequences one execute prefills.
+
+    Returns:
+        Workspace bytes for ``num_heads``.
+    """
+    chunk_len = _CHUNK_LEN
+    min_chunks_per_group = 4
+    max_groups_per_sequence = 32
+    chunks = batch_tokens // chunk_len + batch_size
+    split_planes = min(
+        -(-batch_tokens // chunk_len) // min_chunks_per_group,
+        max_groups_per_sequence * batch_size,
+    )
+    plane_elems = head_dim * head_dim
+    per_head = (
+        batch_tokens * (3 * head_dim + chunk_len) * DType.bfloat16.size_in_bytes
+        + chunks * head_dim * chunk_len * DType.bfloat16.size_in_bytes
+        + chunks * head_dim * DType.float32.size_in_bytes
+        + split_planes
+        * (2 * plane_elems + head_dim + plane_elems // 2)
+        * DType.float32.size_in_bytes
+        + batch_size * DType.int32.size_in_bytes
+    )
+    return num_heads * per_head
+
+
+def amd_kda_chunk_workspace_bytes(
+    *,
+    num_heads: int,
+    head_dim: int,
+    lower_bound: float | None,
+    state_dtype: DType,
+    decode_only: bool,
+    max_batch_input_tokens: int,
+    enable_chunked_prefill: bool,
+    max_batch_size: int | None,
+    max_length: int | None,
+) -> int:
+    """Returns what to reserve for gfx950 ``kda_chunk`` prefill, or ``0``.
+
+    Nonzero only where AMD prefill is eligible for ``kda_chunk``; see
+    :func:`amd_kda_chunk_eligible`. The runtime numbers arrive as plain
+    arguments because this module cannot import the runtime config that
+    holds them.
+
+    Args:
+        num_heads: KDA heads the reservation sizes. Every term is per head,
+            so pass one device's heads and multiply by the device count, or
+            every device's heads for the whole cluster.
+        head_dim: Key and value head width.
+        lower_bound: The forget gate's lower bound, ``None`` for the
+            unbounded gate.
+        state_dtype: Dtype of the recurrent state pool.
+        decode_only: Whether the pipeline never prefills.
+        max_batch_input_tokens: Most tokens one execute prefills.
+        enable_chunked_prefill: Whether the scheduler splits long prompts.
+        max_batch_size: Most sequences in one batch, or ``None`` when not
+            yet known.
+        max_length: Longest sequence the model serves, or ``None`` when
+            unset.
+
+    Returns:
+        Workspace bytes for ``num_heads``.
+    """
+    if decode_only or not amd_kda_chunk_eligible(
+        head_dim, kda_gate_mode(lower_bound), state_dtype
+    ):
+        return 0
+    tokens = max_batch_input_tokens
+    # Without chunked prefill the token budget is soft: the scheduler admits
+    # an oversized prompt whole on top of a full batch.
+    if not enable_chunked_prefill:
+        tokens += max_length or 0
+    if max_batch_size and max_length:
+        tokens = min(tokens, max_batch_size * max_length)
+    sequences = min(max_batch_size or tokens, tokens)
+    return kda_chunk_workspace_bytes(num_heads, head_dim, tokens, sequences)
 
 
 def _check_same_dim(axis: str, **dims: Dim) -> None:

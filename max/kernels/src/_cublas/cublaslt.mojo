@@ -26,7 +26,9 @@ from .dtype import DataType
 from .result import Result
 
 
-comptime cublasLtHandle_t = OptionalPointer[NoneType, _]
+comptime cublasLtHandle_t[mut: Bool, //, origin: Origin[mut=mut]] = Optional[
+    Pointer[NoneType, origin]
+]
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -139,7 +141,7 @@ struct PointerMode(TrivialRegisterPassable, Writable):
 
 # Opaque descriptor for matrix memory layout
 # .
-comptime cublasLtMatrixLayout_t = OptionalPointer[MatrixLayout, MutAnyOrigin]
+comptime cublasLtMatrixLayout_t = Optional[Pointer[MatrixLayout, MutAnyOrigin]]
 
 # Opaque descriptor for cublasLtMatrixTransform() operation details
 # .
@@ -738,12 +740,12 @@ def cublasLtMatrixLayoutDestroy(
 
 # Opaque descriptor for cublasLtMatmul() operation details
 # .
-comptime cublasLtMatmulDesc_t = OptionalPointer[Descriptor, MutAnyOrigin]
+comptime cublasLtMatmulDesc_t = Optional[Pointer[Descriptor, MutAnyOrigin]]
 
 # Opaque descriptor for cublasLtMatmulAlgoGetHeuristic() configuration
 # .
-comptime cublasLtMatmulPreference_t = OptionalPointer[
-    PreferenceOpaque, MutAnyOrigin
+comptime cublasLtMatmulPreference_t = Optional[
+    Pointer[PreferenceOpaque, MutAnyOrigin]
 ]
 
 
@@ -753,12 +755,12 @@ def cublasLtMatmul(
     alpha: OpaquePointer[ImmutAnyOrigin],
     _a: OpaquePointer[ImmutAnyOrigin],
     _adesc: cublasLtMatrixLayout_t,
-    _b: OptionalPointer[NoneType, ImmutAnyOrigin],
+    _b: Optional[Pointer[NoneType, ImmutAnyOrigin]],
     _bdesc: cublasLtMatrixLayout_t,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: OptionalPointer[NoneType, ImmutAnyOrigin],
+    _c: Optional[Pointer[NoneType, ImmutAnyOrigin]],
     _cdesc: cublasLtMatrixLayout_t,
-    _d: OptionalPointer[NoneType, MutAnyOrigin],
+    _d: Optional[Pointer[NoneType, MutAnyOrigin]],
     _ddesc: cublasLtMatrixLayout_t,
     algo: ImmPointer[MatmulAlgorithm, ImmutAnyOrigin],
     workspace: OpaquePointer[MutAnyOrigin],

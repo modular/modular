@@ -23,7 +23,6 @@ Matches amd/mha.mojo config target:
 
 from std.math.uutils import umod, ufloordiv
 from max.gpu import block_idx, lane_id
-from std.utils import IndexList
 from nn.attention.mha_utils import MHAConfig
 
 
@@ -173,7 +172,7 @@ def decode_mma_shape[
     num_heads: Int,
     mla_mode: Bool = False,
     fold_wide_mma: Bool = False,
-]() -> IndexList[3]:
+]() -> Tuple[Int, Int, Int]:
     """Return the MFMA shape the gfx950 decode kernels use for this shape.
 
     Split out of `AMDStructuredConfig.get_mma_shape` so host-side dispatch can
@@ -196,7 +195,7 @@ def decode_mma_shape[
     # The MHA token fold's wide arm overrides the depth rule below: it keeps P
     # in registers, which needs a 32-row MFMA.
     comptime if fold_wide_mma:
-        return IndexList[3](
+        return (
             _MHA_DECODE_WIDE_MMA_M,
             _MHA_DECODE_WIDE_MMA_M,
             _MHA_DECODE_WIDE_MMA_K,
@@ -208,10 +207,10 @@ def decode_mma_shape[
         # query heads). Otherwise prefer `16x16x128` when `depth % 128 == 0`
         # and fall back to `32x32x64` for full M-dim utilization.
         comptime if (mla_mode and num_heads <= 16) or depth % 128 == 0:
-            return IndexList[3](16, 16, 128)
-        return IndexList[3](32, 32, 64)
+            return (16, 16, 128)
+        return (32, 32, 64)
     # BF16 decode: 16x16x32 regardless of depth.
-    return IndexList[3](16, 16, 32)
+    return (16, 16, 32)
 
 
 @fieldwise_init
@@ -286,7 +285,7 @@ struct AMDStructuredConfig[
 
     @staticmethod
     @inline(.always)
-    def get_mma_shape() -> IndexList[3]:
+    def get_mma_shape() -> Tuple[Int, Int, Int]:
         comptime if Self.token_gen:
             return decode_mma_shape[
                 Self.config.dtype,
@@ -305,8 +304,8 @@ struct AMDStructuredConfig[
             ]()
         # FP8 prefill: 32x32x64.  BF16 prefill: 32x32x16.
         comptime if Self.config.dtype.is_float8():
-            return IndexList[3](32, 32, 64)
-        return IndexList[3](32, 32, 16)
+            return (32, 32, 64)
+        return (32, 32, 16)
 
     @staticmethod
     @inline(.always)

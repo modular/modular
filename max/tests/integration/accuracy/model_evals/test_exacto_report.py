@@ -572,12 +572,113 @@ def test_tau2_config_names_the_user_simulator_and_a_subset() -> None:
         "temperature": 0.0,
         "reasoning_effort": "high",
         "user_llm": "gemini/gemini-2.5-flash",
+        "user_api_base": None,
+        "user_max_tokens": None,
         "sample_size": 2,
     }
     summary["full_task_count"] = 2
     assert (
         exacto_report.eval_config("tau2", summary, rows)["sample_size"] is None
     )
+
+
+def _tau2_log_with_user(user_info: dict[str, Any]) -> dict[str, Any]:
+    log = json.loads(json.dumps(TAU2_LOG))
+    log["info"]["user_info"] = user_info
+    return log
+
+
+def test_a_third_party_simulator_has_no_endpoint_and_is_not_self() -> None:
+    _, summary = exacto_report.parse_tau2_log(TAU2_LOG)
+    assert summary["user_api_base"] is None
+    assert summary["self_simulated"] is False
+
+
+def test_a_pinned_simulator_records_its_own_endpoint() -> None:
+    log = _tau2_log_with_user(
+        {
+            "llm": "openai/google/gemma-4-31b-it",
+            "llm_args": {
+                "api_base": "https://sim.example/v1",
+                "api_key_env": "EXACTO_USER_API_KEY",
+                "max_tokens": 8192,
+            },
+        }
+    )
+    rows, summary = exacto_report.parse_tau2_log(log)
+    assert summary["user_api_base"] == "https://sim.example"
+    assert summary["self_simulated"] is False
+    # Same simulator name on another endpoint must not share a config hash.
+    config = exacto_report.eval_config("tau2", summary, rows)
+    assert config["user_api_base"] == "https://sim.example"
+    assert config["user_max_tokens"] == 8192
+
+
+def test_the_endpoint_under_test_playing_the_customer_is_self_simulation() -> (
+    None
+):
+    log = _tau2_log_with_user(
+        {
+            "llm": "openai/served-name",
+            "llm_args": {"api_base": "http://localhost:8000/v1"},
+        }
+    )
+    rows, summary = exacto_report.parse_tau2_log(log)
+    assert summary["self_simulated"] is True
+    # Already identified by base_url, so a self-simulated config is unchanged.
+    config = exacto_report.eval_config("tau2", summary, rows)
+    assert config["user_api_base"] is None
+    assert config["user_max_tokens"] is None
+
+
+def test_the_same_model_on_another_endpoint_is_not_self_simulation() -> None:
+    # A reference engine serving the model under test can play the customer
+    # for a comparison run; that is a pinned simulator, not self-simulation.
+    log = _tau2_log_with_user(
+        {
+            "llm": "openai/served-name",
+            "llm_args": {"api_base": "https://sim.example/v1"},
+        }
+    )
+    _, summary = exacto_report.parse_tau2_log(log)
+    assert summary["self_simulated"] is False
+
+
+def test_empty_simulator_attempts_are_counted_by_finish_reason() -> None:
+    log = json.loads(json.dumps(TAU2_LOG))
+    sims = log["simulations"]
+    # A retry recovered after one empty attempt.
+    sims[0]["messages"] = [
+        {"role": "assistant", "content": "How can I help?"},
+        {
+            "role": "user",
+            "content": "Cancel my booking.",
+            "raw_data": {"exacto_empty_turns": ["stop"]},
+        },
+        {"role": "user", "content": "Thanks.", "raw_data": {}},
+    ]
+    # Every attempt came back empty, so the task ended as a user_error.
+    sims[1]["messages"] = [
+        {
+            "role": "user",
+            "content": "",
+            "raw_data": {"exacto_empty_turns": ["stop", "length", "None"]},
+        },
+    ]
+    rows, summary = exacto_report.parse_tau2_log(log)
+    assert [r["empty_user_turns"] for r in rows] == [1, 3]
+    assert summary["empty_user_turns"] == 4
+    assert summary["empty_user_turn_finish_reasons"] == {
+        "stop": 2,
+        "length": 1,
+        "None": 1,
+    }
+
+
+def test_a_run_without_empty_simulator_turns_records_zero() -> None:
+    _, summary = exacto_report.parse_tau2_log(TAU2_LOG)
+    assert summary["empty_user_turns"] == 0
+    assert summary["empty_user_turn_finish_reasons"] == {}
 
 
 def test_an_unknown_full_count_keeps_the_subset_size() -> None:

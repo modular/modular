@@ -5291,6 +5291,42 @@ def MO_AllGatherOp : MO_DistributedOp<"distributed.allgather", [
   }];
 }
 
+def MO_AllGatherConcatOp : MO_DistributedOp<"distributed.allgather.concat", [
+  MO_HasDeviceInterface,
+  MO_MultiDevice,
+]> {
+  let summary = "AllGather across N devices into one tensor per device.";
+  let description = [{
+    Concatenates inputs, one per device, along `axis` and replicates the
+    result on every device. `axis` may be negative. A `group_size` smaller
+    than the input count splits devices into contiguous groups, each of which
+    gathers only its own inputs.
+
+    Unlike `mo.distributed.allgather`, which returns each gathered piece
+    separately, each device receives one tensor, so a target whose collective
+    writes the concatenated tensor directly needs no per-piece copies.
+  }];
+  let hasVerifier = 1;
+  // Folds the single-input case.
+  let hasFolder = 1;
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    MO_Chain:$inChain,
+    DefaultValuedAttr<I64Attr, "-1">:$axis,
+    DefaultValuedAttr<I64Attr, "0">:$group_size
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$outputs,
+    MO_Chain:$outChain
+  );
+
+  let assemblyFormat = [{
+    `(` operands `)` `` custom<AllGatherConcatAttrs>($axis, $group_size)
+    attr-dict `:` functional-type(operands, results)
+  }];
+}
+
 def MO_EPDispatchOp : MO_DistributedOp<"distributed.ep.dispatch", [
   MO_MultiDeviceFrom<"inputTokens">,
 ]> {

@@ -14,7 +14,7 @@ has.
 
 - WitnessOp: A witness entry. It provides a parameter value for a trait
 requirement (identified by a name and a type). For example, for methods, it
-might provide a GeneratorOp/FuncOp reference (as SymbolConstantAttr).
+might provide a GeneratorOp/FuncOp reference (as a `FuncSymbolGenerator`).
 
 - StructInstanceOp: A concrete struct declaration containing the make up of the
 type. At this moment it does not yet contain conformance tables since we have no

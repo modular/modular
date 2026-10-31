@@ -742,3 +742,22 @@ struct MyList(MyIndexable):
 # CHECK-NEXT: %2 = lit.call tail[!lit.generator<defines_interior_origins
 # CHECK-NEXT: %3 = lit.ref.upcast %2
 # CHECK-NEXT: lit.return %3
+
+# // -----
+
+# The origin here is an *implicit* one (`x` is passed by value, so it has no
+# origin parameter), which the thunk has to substitute in its ref result type
+# just like it does in its argument types -- otherwise the result keeps talking
+# about `*[0,0]` while the body talks about `0_unnamed`, and the upcast into the
+# erased subtree origin is unprovable.
+def get_ref(x: String) -> ref[x] String:
+    return x
+
+def form_thunk():
+    var fp: def(x: String) thin -> ref[origin_of(x).subtree] String = get_ref
+
+# CHECK-LABEL: lit.fn @"def(x: ::String) thin -> ref[*[0,0].subtree] ::String|
+# CHECK-SAME: refresult -> !lit.ref<!String, imm #lit.origin.subtree<#kgen.param.decl.ref<"0_unnamed`">
+# CHECK-NEXT: %1 = lit.call
+# CHECK-NEXT: %2 = lit.ref.upcast %1 : <!String, imm *"0_unnamed`"> -> <!String, imm #lit.origin.subtree<#kgen.param.decl.ref<"0_unnamed`">
+# CHECK-NEXT: lit.return %2

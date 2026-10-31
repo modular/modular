@@ -21,10 +21,24 @@ from typing import Any, ClassVar, Literal
 
 import numpy as np
 from max import tree
+from max._artifact.vision import (
+    ModalityLayout,
+    PerClip,
+    PromptText,
+    SmartResize,
+    Span,
+    TemplateMarkers,
+    VideoSmartResize,
+    VisionMetadata,
+)
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.buffer_utils import cast_tensors_to
+from max.nn.legacy.image_preprocess import (
+    image_preprocess_input_types,
+    video_preprocess_input_types,
+)
 from max.nn.legacy.kv_cache import KVCacheParamInterface, recurrent_leaf
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
@@ -38,11 +52,19 @@ from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
+from transformers import AutoConfig, PretrainedConfig
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
 from ..qwen3vl_moe.context import Qwen3VLTextAndVisionContext
+from ..qwen3vl_moe.nn.data_processing import QWEN3VL_MAX_PIXELS
+from ..qwen3vl_moe.nn.video_processing import (
+    QWEN3VL_VIDEO_MAX_PIXELS,
+    QWEN3VL_VIDEO_MIN_PIXELS,
+)
+from ..qwen3vl_moe.tokenizer import VISION_END_TOKEN, VISION_START_TOKEN
 from .batch_processor import Qwen3_5BatchProcessor
 from .model_config import Qwen3_5Config
+from .preprocess_graph import Qwen3_5ImagePreprocess
 from .qwen3_5 import Qwen3_5
 from .vision_packing import Qwen3_5VisionInputs, pack_uncached_images
 
@@ -177,6 +199,67 @@ def _loaded_module(
         strict=False,
     )
     return module
+
+
+def qwen3_5_vision_metadata(
+    huggingface_config: AutoConfig,
+) -> VisionMetadata | None:
+    """Returns the media layout a Qwen3.5 checkpoint is served with.
+
+    Returns ``None`` for a text-only checkpoint. The chat template writes the vision start and end markers around each
+    placeholder as text, so the spliced runs are bare placeholders.
+    """
+    vision = getattr(huggingface_config, "vision_config", None)
+    if vision is None:
+        return None
+    markers = TemplateMarkers(
+        huggingface_config.vision_start_token_id,
+        huggingface_config.vision_end_token_id,
+    )
+    return VisionMetadata.from_layouts(
+        image=ModalityLayout(
+            patch_size=vision.patch_size,
+            merge_size=vision.spatial_merge_size,
+            # The min_pixels Qwen3VLTokenizer gives its image processor.
+            strategy=SmartResize(
+                min_pixels=65536, max_pixels=QWEN3VL_MAX_PIXELS
+            ),
+            span=Span(huggingface_config.image_token_id),
+            template_markers=markers,
+        ),
+        video=ModalityLayout(
+            patch_size=vision.patch_size,
+            merge_size=vision.spatial_merge_size,
+            strategy=VideoSmartResize(
+                temporal_patch_size=vision.temporal_patch_size,
+                min_pixels=QWEN3VL_VIDEO_MIN_PIXELS,
+                max_pixels=QWEN3VL_VIDEO_MAX_PIXELS,
+            ),
+            span=Span(huggingface_config.video_token_id),
+            template_markers=markers,
+            # The clip budget bounds every frame at once, so a clip's frame
+            # count changes how each frame is resized.
+            video_layout=PerClip(),
+        ),
+        # MAX declares no byte caps for this family; 512 MiB is the serving
+        # engine's own video cap, which real lecture clips need.
+        max_image_bytes=0,
+        max_video_bytes=512 << 20,
+        prompt=PromptText(
+            video_clip_open=VISION_START_TOKEN,
+            video_clip_close=VISION_END_TOKEN,
+        ),
+    )
+
+
+def _preprocess(vision: PretrainedConfig) -> Qwen3_5ImagePreprocess:
+    """Returns the preprocessing module for a checkpoint's vision config."""
+    return Qwen3_5ImagePreprocess(
+        patch_size=vision.patch_size,
+        temporal_patch_size=vision.temporal_patch_size,
+        merge_size=vision.spatial_merge_size,
+        num_position_embeddings=vision.num_position_embeddings,
+    )
 
 
 class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
@@ -410,6 +493,42 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             ModelLoadContext.from_pipeline_model(self), state_dict
         )
 
+    def vision_metadata(self) -> VisionMetadata | None:
+        """Returns the checkpoint's vision metadata."""
+        return qwen3_5_vision_metadata(self.huggingface_config)
+
+    def vision_preprocess_spec(self) -> GraphSpec | None:
+        """Returns the graph that preprocesses one image for the tower.
+
+        It does what the tokenizer and the vision input packing do.
+        """
+        vision = getattr(self.huggingface_config, "vision_config", None)
+        if vision is None:
+            return None
+        return GraphSpec(
+            _preprocess(vision),
+            "qwen3_5_vision_preprocess",
+            image_preprocess_input_types(),
+            weights={},
+        )
+
+    def vision_preprocess_video_spec(self) -> GraphSpec | None:
+        """Returns the graph that preprocesses one temporal patch of a clip.
+
+        It does for the tower what the video processor does. The tower
+        attends within each temporal patch, so a patch is a clip's attention
+        segment.
+        """
+        vision = getattr(self.huggingface_config, "vision_config", None)
+        if vision is None:
+            return None
+        return GraphSpec(
+            _preprocess(vision),
+            "qwen3_5_vision_preprocess_video",
+            video_preprocess_input_types(vision.temporal_patch_size, 1),
+            weights={},
+        )
+
     def graph_specs(self, model_config: Qwen3_5Config) -> dict[str, GraphSpec]:
         """Returns the decoder and the vision encoder as one compile group.
 
@@ -461,7 +580,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             specs[GraphRole.VISION] = GraphSpec(
                 vision_encoder,
                 "qwen3_5_vision",
-                vision_encoder.input_types(),
+                vision_encoder.input_tree(),
                 weights=vision_state_dict,
                 group=_COMPILE_GROUP,
             )

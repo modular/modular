@@ -35,9 +35,11 @@ from max._artifact.export import (
     SupportsCompiledModules,
     batch_processor_dims,
     checkpoint_format_spec,
+    model_artifact,
     pipeline_engine_config,
     pipeline_kv_cache,
     pipeline_modules,
+    vision_preprocess_modules,
 )
 from max._artifact.kv_cache import (
     KVCacheQuantization,
@@ -51,6 +53,13 @@ from max._artifact.kv_cache import (
 from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.serialization import deserialize, serialize
+from max._artifact.vision import (
+    AspectRatioPreserving,
+    ModalityLayout,
+    PromptText,
+    Span,
+    VisionMetadata,
+)
 from max.driver import CPU, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -218,6 +227,82 @@ def test_a_model_that_loads_its_own_graphs_is_refused() -> None:
 def test_a_pipeline_without_compiled_modules_is_not_exportable() -> None:
     assert isinstance(_Pipeline({}), SupportsCompiledModules)
     assert not isinstance(object(), SupportsCompiledModules)
+
+
+_VISION = VisionMetadata.from_layouts(
+    image=ModalityLayout(
+        patch_size=16,
+        merge_size=3,
+        strategy=AspectRatioPreserving(max_patches=2520),
+        span=Span(image_token_id=1, begin_marker=2, end_marker=3),
+    ),
+    video=None,
+    max_image_bytes=0,
+    max_video_bytes=0,
+    prompt=PromptText(),
+)
+
+
+def test_export_adds_the_vision_preprocess_roles(tmp_path: Path) -> None:
+    """A pipeline with a vision graph exports the graphs its model returns
+    for preprocessing images and video beside the roles it serves, and its
+    vision metadata."""
+    image, video = _specs(
+        {
+            GraphRole.VISION_PREPROCESS: None,
+            GraphRole.VISION_PREPROCESS_VIDEO: None,
+        }
+    ).values()
+    model = _fake(
+        vision_preprocess_spec=lambda: image,
+        vision_preprocess_video_spec=lambda: video,
+        vision_metadata=lambda: _VISION,
+    )
+    graphs = pipeline_modules(
+        _Pipeline(
+            _compile(_specs({GraphRole.DECODER: None, GraphRole.VISION: None}))
+        ),
+        "Fake",
+    )
+
+    dest = serialize(model_artifact(graphs, model, None), tmp_path / "a")
+    written = json.loads((dest / "artifact.json").read_text())
+    assert set(written["model"]) == {
+        "decoder",
+        "vision",
+        "vision_preprocess",
+        "vision_preprocess_video",
+    }
+    for role in ("vision_preprocess", "vision_preprocess_video"):
+        assert written["model"][role]["mef"] == {"$file": f"{role}/model.mef"}
+    assert deserialize(dest).vision == _VISION
+
+    text_only = pipeline_modules(
+        _Pipeline(_compile(_specs({GraphRole.DECODER: None}))), "Fake"
+    )
+    artifact = model_artifact(text_only, model, None)
+    assert artifact.model is not None
+    assert set(artifact.model.roles) == {"decoder"}
+    assert artifact.vision is None
+    assert model_artifact(graphs, None, None).vision is None
+
+    assert set(
+        vision_preprocess_modules(
+            _fake(
+                vision_preprocess_spec=lambda: image,
+                vision_preprocess_video_spec=lambda: None,
+            )
+        )
+    ) == {"vision_preprocess"}
+    assert (
+        vision_preprocess_modules(
+            _fake(
+                vision_preprocess_spec=lambda: None,
+                vision_preprocess_video_spec=lambda: None,
+            )
+        )
+        == {}
+    )
 
 
 def test_spec_decoder_pipeline_is_exported() -> None:

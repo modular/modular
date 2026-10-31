@@ -683,7 +683,7 @@ def test_dynamic_fp8_quant_row_bounded[
         1200.0,
         ctx,
         rows,
-        row_limit=OptionalPointer[UInt32, ImmUntrackedOrigin](
+        row_limit=Optional[Pointer[UInt32, ImmUntrackedOrigin]](
             offsets_device.unsafe_ptr()
             .unsafe_offset(3)
             .unsafe_origin_cast[MutUntrackedOrigin]()

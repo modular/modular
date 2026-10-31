@@ -18,9 +18,7 @@ the binding constraint depending on context length:
 * **The KDA state pools.** 146 MiB per sequence at float32 -- 136 MiB of
   recurrent state plus 9.6 MiB of conv state across 34 layers -- and
   *independent of context length*. Below roughly 12K context this dominates a
-  sequence's cost and caps concurrency before the KV pool fills. SGLang says
-  the same thing operationally: "the KDA state pool can limit concurrency
-  before the KV pool is full."
+  sequence's cost and caps concurrency before the KV pool fills.
 * **The 4x mHC residual widening.** A prefill chunk of ``T`` tokens holds
   ``T * hc_mult * hidden_size`` elements per live residual tensor, so the chunk
   size that fits a given activation budget drops by roughly ``hc_mult``
@@ -51,114 +49,18 @@ import math
 from typing import Any
 
 from max.driver import Device
-from max.dtype import DType
 from max.graph import DeviceRef
-from max.pipelines.lib import PipelineConfig, PipelineRuntimeConfig
+from max.nn.legacy.state_space.kimi_delta import amd_kda_chunk_workspace_bytes
+from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
 from .image_processor import Glm5NextImageProcessor
-from .layers.kimi_delta_attention import amd_kda_chunk_eligible, kda_gate_mode
 from .model_config import Glm5NextConfig
 from .nn.visual_transformer import Glm5NextVisionTransformer
 
-__all__ = [
-    "Glm5NextMemoryPlanner",
-    "amd_kda_chunk_workspace_bytes",
-    "kda_chunk_workspace_bytes",
-]
-
-
-def kda_chunk_workspace_bytes(
-    num_heads: int, head_dim: int, batch_tokens: int, batch_size: int
-) -> int:
-    """Returns an upper bound on one gfx950 ``kda_chunk`` call's workspaces.
-
-    Mirrors the allocations in ``kda_amd_chunk_launch``
-    (``Kernels/lib/kda/amd_chunk_launch.mojo``), per head: bf16 ``qg``, ``w``,
-    ``u`` and ``aqk`` per token; bf16 ``kg_t`` and float32 ``decay`` per
-    64-token chunk, of which a batch holds at most ``tokens // 64 +
-    sequences``; and the float32 split-walk workspace, which the launch sizes
-    for at most one group per four chunks and 32 groups per sequence. The
-    per-device int32 chunk offsets are counted per head, which covers them on
-    any split. Every term is per head, so the sum is the same however the
-    heads are split across devices.
-
-    Args:
-        num_heads: KDA heads across all devices.
-        head_dim: Key and value head width.
-        batch_tokens: Most tokens one execute prefills.
-        batch_size: Most sequences one execute prefills.
-
-    Returns:
-        Bytes, summed over devices.
-    """
-    chunk_len = 64
-    min_chunks_per_group = 4
-    max_groups_per_sequence = 32
-    chunks = batch_tokens // chunk_len + batch_size
-    split_planes = min(
-        -(-batch_tokens // chunk_len) // min_chunks_per_group,
-        max_groups_per_sequence * batch_size,
-    )
-    plane_elems = head_dim * head_dim
-    per_head = (
-        batch_tokens * (3 * head_dim + chunk_len) * DType.bfloat16.size_in_bytes
-        + chunks * head_dim * chunk_len * DType.bfloat16.size_in_bytes
-        + chunks * head_dim * DType.float32.size_in_bytes
-        + split_planes
-        * (2 * plane_elems + head_dim + plane_elems // 2)
-        * DType.float32.size_in_bytes
-        + batch_size * DType.int32.size_in_bytes
-    )
-    return num_heads * per_head
-
-
-def amd_kda_chunk_workspace_bytes(
-    runtime: PipelineRuntimeConfig,
-    *,
-    num_heads: int,
-    head_dim: int,
-    lower_bound: float | None,
-    state_dtype: DType,
-    max_batch_size: int | None,
-    max_length: int | None,
-) -> int:
-    """Returns what to reserve for gfx950 ``kda_chunk`` prefill, or ``0``.
-
-    Nonzero only where the layers route prefill to ``kda_chunk`` on AMD; see
-    :func:`~.layers.kimi_delta_attention.amd_kda_chunk_eligible`.
-
-    Args:
-        runtime: The pipeline's runtime configuration.
-        num_heads: KDA heads across all devices.
-        head_dim: Key and value head width.
-        lower_bound: The forget gate's lower bound, ``None`` for the
-            unbounded gate.
-        state_dtype: Dtype of the recurrent state pool.
-        max_batch_size: Most sequences in one batch, or ``None`` when not
-            yet known.
-        max_length: Longest sequence the model serves, or ``None`` when
-            unset.
-
-    Returns:
-        Bytes, summed over devices.
-    """
-    if runtime.pipeline_role == "decode_only" or not amd_kda_chunk_eligible(
-        head_dim, kda_gate_mode(lower_bound), state_dtype
-    ):
-        return 0
-    tokens = runtime.max_batch_input_tokens
-    # Without chunked prefill the token budget is soft: the scheduler admits
-    # an oversized prompt whole on top of a full batch.
-    if not runtime.enable_chunked_prefill:
-        tokens += max_length or 0
-    if max_batch_size and max_length:
-        tokens = min(tokens, max_batch_size * max_length)
-    sequences = min(max_batch_size or tokens, tokens)
-    return kda_chunk_workspace_bytes(num_heads, head_dim, tokens, sequences)
-
+__all__ = ["Glm5NextMemoryPlanner"]
 
 # Peak live activation per patch inside the vision tower, in units of the
 # tower's hidden width in bytes. A block holds the bfloat16 gate and up
@@ -257,19 +159,20 @@ class Glm5NextMemoryPlanner(DeepseekV3MemoryPlanner):
         config = self._config
         assert isinstance(config, Glm5NextConfig)
 
+        runtime = pipeline_config.runtime
         residual_bytes = (
-            pipeline_config.runtime.max_batch_input_tokens
-            * config.activation_bytes_per_token()
+            runtime.max_batch_input_tokens * config.activation_bytes_per_token()
         )
         chunk_workspace_bytes = amd_kda_chunk_workspace_bytes(
-            pipeline_config.runtime,
             num_heads=config.linear_num_heads,
             head_dim=config.linear_head_dim,
             lower_bound=config.linear_lower_bound,
             state_dtype=config.state_dtype,
+            decode_only=runtime.pipeline_role == "decode_only",
+            max_batch_input_tokens=runtime.max_batch_input_tokens,
+            enable_chunked_prefill=runtime.enable_chunked_prefill,
             max_batch_size=(
-                pipeline_config.runtime.max_batch_size
-                or self._inferred_max_batch_size
+                runtime.max_batch_size or self._inferred_max_batch_size
             ),
             max_length=pipeline_config.model.max_length,
         )

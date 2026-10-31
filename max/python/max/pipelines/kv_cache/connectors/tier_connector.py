@@ -103,9 +103,44 @@ _HOST_OFFLOAD_MAX_FRACTION_OF_AVAILABLE = 0.9
 _DRIVER_STAGING_CHUNK_BYTES = 4 * 1024**3
 
 # O_DIRECT requires the buffer address and length aligned to the device's
-# logical block size; 4 KiB covers the devices MAX runs on and matches
-# `DIRECT_IO_ALIGN` in rust_kv/kv-tier-connector/src/disk_tier.rs.
+# logical block size. Host rows are padded to 4 KiB, the ext4/XFS block size,
+# rather than to the 512 bytes many devices accept: a direct write that is not
+# block-aligned serializes on the file's inode lock, and an unaligned hole
+# punch zeroes its edges through the page cache. Matches `DIRECT_IO_ALIGN` in
+# rust_kv/kv-tier-connector/src/disk_tier.rs.
 _DIRECT_IO_ALIGN_BYTES = 1 << 12
+
+
+def _host_row_bytes(block_bytes: int, direct_io: bool) -> int:
+    """The host row (and disk slot) a block of ``block_bytes`` occupies."""
+    if not direct_io:
+        return block_bytes
+    return -(-block_bytes // _DIRECT_IO_ALIGN_BYTES) * _DIRECT_IO_ALIGN_BYTES
+
+
+def _log_padded_rows(
+    leaf_memory: Mapping[str, KVCacheMemory], row_bytes: Mapping[str, int]
+) -> None:
+    """Logs the leaves whose host rows direct I/O pads, and what it costs."""
+    padded = {
+        leaf_id: (mem.host_bytes_per_page, row_bytes[leaf_id])
+        for leaf_id, mem in leaf_memory.items()
+        if row_bytes[leaf_id] != mem.host_bytes_per_page
+    }
+    if not padded:
+        return
+    total_block = sum(mem.host_bytes_per_page for mem in leaf_memory.values())
+    total_row = sum(row_bytes.values())
+    logger.info(
+        "TierConnector: direct I/O pads host rows and disk slots to "
+        f"{_DIRECT_IO_ALIGN_BYTES} bytes: "
+        + ", ".join(
+            f"{leaf_id} {block}->{row} (+{(row - block) / block:.1%})"
+            for leaf_id, (block, row) in padded.items()
+        )
+        + f"; {(total_row - total_block) / total_block:.1%} more bytes per "
+        "page across all leaves"
+    )
 
 
 @functools.cache
@@ -739,25 +774,18 @@ class TierConnector(KVConnector):
         else:
             _check_host_memory_capacity(host_offload_max_bytes)
 
+        # Each leaf's host row: its block's bytes, padded under direct I/O to a
+        # whole number of 4 KiB so the disk tier reads and writes the row in
+        # place. Only the host row and its disk slot grow; the device block
+        # does not, and the copies move only its bytes.
         leaf_cache_sizes = {
-            leaf_id: leaf_buffers.host_bytes_per_page
+            leaf_id: _host_row_bytes(
+                leaf_buffers.host_bytes_per_page, use_disk_direct_io
+            )
             for leaf_id, leaf_buffers in replica_kv_memory[0].items()
         }
         if use_disk_direct_io:
-            # O_DIRECT needs every block length aligned to 4096 bytes. Check
-            # all leaves before allocating anything, so one error names every
-            # offender.
-            unaligned = {
-                leaf_id: size
-                for leaf_id, size in leaf_cache_sizes.items()
-                if size % _DIRECT_IO_ALIGN_BYTES != 0
-            }
-            if unaligned:
-                raise ValueError(
-                    "use_disk_direct_io requires every leaf's block size to "
-                    f"be a multiple of 4096 bytes; offending leaves: {unaligned}. "
-                    "Disable the flag."
-                )
+            _log_padded_rows(replica_kv_memory[0], leaf_cache_sizes)
         # The host pool is built without a null block -- unlike the device
         # pool -- so it hands out every huge block, and one is enough.
         num_huge_blocks, huge_page_bytes, cache_ratios = compute_jenga_ratios(
@@ -797,9 +825,8 @@ class TierConnector(KVConnector):
             max_leaf_id_len = max(len(leaf_id) for leaf_id in leaves)
             for leaf_id in leaves:
                 ratio = cache_ratios[leaf_id]
-                mem = replica_kv_memory[0][leaf_id]
                 logger.info(
-                    f"\t{leaf_id:<{max_leaf_id_len}}: {ratio * num_huge_blocks} pages of {mem.host_bytes_per_page}  ({ratio} per huge page)"
+                    f"\t{leaf_id:<{max_leaf_id_len}}: {ratio * num_huge_blocks} pages of {leaf_cache_sizes[leaf_id]}  ({ratio} per huge page)"
                 )
 
             return cls(

@@ -15,14 +15,12 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
 from .batch_processor import Qwen3BatchProcessor
+from .decoder import Qwen3Decoder
 from .model import Qwen3Model
 from .model_config import Qwen3Config
 from .weight_adapters import convert_qwen3_moe_state_dict
@@ -34,14 +32,13 @@ qwen3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Qwen3Config.DEFAULT_ENCODING,
     supported_encodings=Qwen3Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Qwen3Model,
+    modules={GraphRole.DECODER: Qwen3Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=Qwen3Config,
-    batching=Qwen3BatchProcessor,
     multi_gpu_supported=True,
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
@@ -49,8 +46,9 @@ qwen3_arch = SupportedArchitecture(
     supports_device_graph_capture=False,
 )
 
-# Qwen3MoE architecture - uses the same model and config as Qwen3,
-# but with MoE-specific weight adapter to handle expert weight stacking
+# Qwen3MoE architecture - uses the same config as Qwen3, but with
+# MoE-specific weight adapter to handle expert weight stacking. It keeps its
+# pipeline model until registered decoders serve expert parallelism.
 qwen3_moe_arch = SupportedArchitecture(
     name="Qwen3MoeForCausalLM",
     task=PipelineTask.TEXT_GENERATION,

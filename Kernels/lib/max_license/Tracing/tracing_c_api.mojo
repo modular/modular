@@ -27,8 +27,10 @@ comptime OpTrace = Trace[TraceLevel.OP]
 # any structs that pass their pointers to the below functions. Don't
 # use UntrackedOrigin here or it will turn off extending the lifetime
 # of Mojo structs that are responsible for deallocating the pointer.
-comptime TracePointer = OptionalPointer[NoneType, AnyOrigin[mut=True]]
-comptime NestedTracePointer = OptionalPointer[TracePointer, AnyOrigin[mut=True]]
+comptime TracePointer = Optional[Pointer[NoneType, AnyOrigin[mut=True]]]
+comptime NestedTracePointer = Optional[
+    Pointer[TracePointer, AnyOrigin[mut=True]]
+]
 
 
 @fieldwise_init

@@ -28,6 +28,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn import Module
+from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
@@ -40,6 +41,7 @@ from max.pipelines.lib.module_registration import (
     DecoderModelInputs,
     ModuleV3DecoderPipelineModel,
     _DecoderGraph,
+    consumes_vision,
     decoder_input_types,
     finalize_config,
     graph_name,
@@ -47,7 +49,19 @@ from max.pipelines.lib.module_registration import (
     module_pipeline_model,
     supports_data_parallel,
 )
-from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.registration_graph_api import registered_pipeline_model
+from max.pipelines.lib.registration_runtime import (
+    DeploymentConfig,
+    ExpertParallelDeploymentConfig,
+    ModuleRuntime,
+    role_weights,
+)
+from max.pipelines.lib.role_contracts import (
+    DecoderInputs,
+    DecoderOutputs,
+    VisionInputs,
+)
+from max.pipelines.lib.vision_encoder_cache import vision_encoding
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
 from max.pipelines.modeling.types import PipelineTask
 from max.tensor import Tensor
@@ -125,6 +139,29 @@ class PlainDecoder(Module[[DecoderInputs], DecoderOutputs]):
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         return DecoderOutputs(next_token_logits=inputs.tokens)
+
+
+class VisionDecoder(PlainDecoder):
+    consumes_vision: ClassVar[bool] = True
+
+
+class ToyVision(PlainDecoder):
+    def input_types(self) -> tuple[TensorType, ...]:
+        return (X,)
+
+
+class ToyVisionBatchProcessor(DecoderBatchProcessor):
+    def pack_vision_inputs(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+    def vision_execute(self, *args: Any, **kwargs: Any) -> list[Buffer]:
+        return []
+
+    def empty_vision_embeddings(self, devices: Any) -> list[Buffer]:
+        return []
+
+    def bind_vision_encoder(self, *, vision_model: Any, session: Any) -> None:
+        return None
 
 
 def _arch(**kwargs: Any) -> SupportedArchitecture:
@@ -210,11 +247,37 @@ def test_the_graph_binds_lora_inputs_rather_than_reading_them_as_kv() -> None:
 def test_decoder_inputs_take_the_canonical_order() -> None:
     assert [field.name for field in fields(DecoderInputs)] == [
         "tokens",
+        "vision",
         "input_row_offsets",
         "host_input_row_offsets",
         "return_n_logits",
         "data_parallel_splits",
+        "signals",
         "kv",
+        "batch_context_lengths",
+        "ep",
+        "lora",
+    ]
+
+
+def test_optional_decoder_inputs_take_their_canonical_place() -> None:
+    kv_params = NonCallableMock(get_symbolic_inputs=lambda: (X,))
+    types = decoder_input_types(
+        kv_params,
+        DeviceRef.CPU(),
+        vision=NonCallableMock(spec=VisionInputs),
+        batch_context_lengths=(X,),
+        ep=NonCallableMock(),
+        lora=(X,),
+    )
+    assert list(types) == [
+        "tokens",
+        "vision",
+        "input_row_offsets",
+        "return_n_logits",
+        "kv",
+        "batch_context_lengths",
+        "ep",
         "lora",
     ]
 
@@ -259,19 +322,27 @@ def test_decoder_input_types_follow_the_deployment(
         assert splits.shape == [data_parallel_degree + 1]
 
 
-def _context(*tokens: int) -> TextContext:
+def _context(*tokens: int, position: int = 0) -> TextContext:
     active = np.array(tokens, dtype=np.int64)
     return NonCallableMock(
         spec=TextContext,
-        tokens=SimpleNamespace(active=active, active_length=len(active)),
+        tokens=SimpleNamespace(
+            active=active,
+            active_length=len(active),
+            current_position=position,
+        ),
     )
 
 
-def _batch_processor(data_parallel_degree: int) -> DecoderBatchProcessor:
+def _batch_processor(
+    data_parallel_degree: int, page_size: int = 128
+) -> DecoderBatchProcessor:
+    pipeline_config = NonCallableMock()
+    pipeline_config.model.kv_cache.kv_cache_page_size = page_size
     return DecoderBatchProcessor(
         ToyConfig(),
         BatchProcessorRuntime(
-            pipeline_config=NonCallableMock(),
+            pipeline_config=pipeline_config,
             devices=[CPU()],
             return_logits=ReturnLogits.LAST_TOKEN,
             max_batch_size=4,
@@ -327,6 +398,122 @@ def test_the_batch_processor_omits_data_parallel_inputs_on_one_replica() -> (
         inputs.return_n_logits,
         kv,
     )
+
+
+def test_the_batch_processor_fills_the_optional_inputs_its_graph_takes() -> (
+    None
+):
+    kv = NonCallableMock(spec=KVCacheInputsPerDevice)
+    processor = _batch_processor(2, page_size=4)
+    processor.bind_input_tree(
+        decoder_input_types(
+            NonCallableMock(get_symbolic_inputs=lambda: (X,)),
+            DeviceRef.CPU(),
+            data_parallel_degree=2,
+            batch_context_lengths=(X, X),
+            ep=NonCallableMock(),
+        )
+    )
+    ep_buffer = Buffer.zeros((1,), dtype=DType.int32)
+    processor.bind_ep_comm_initializer(
+        NonCallableMock(model_inputs=lambda: [ep_buffer])
+    )
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1, 2, position=5), _context(3, position=1)], []],
+        kv_cache_inputs=kv,
+    )
+    assert inputs.batch_context_lengths is not None
+    assert [b.to_numpy()[0] for b in inputs.batch_context_lengths] == [12, 0]
+    assert inputs.ep_inputs == (ep_buffer,)
+    assert inputs.buffers[-3:] == (*inputs.batch_context_lengths, ep_buffer)
+
+
+def test_the_batch_processor_runs_an_empty_batch() -> None:
+    inputs = _batch_processor(1).prepare_initial_token_inputs(
+        [[]], kv_cache_inputs=NonCallableMock(spec=KVCacheInputsPerDevice)
+    )
+    assert inputs.tokens.to_numpy().shape == (0,)
+    np.testing.assert_array_equal(inputs.input_row_offsets.to_numpy(), [0])
+
+
+@dataclass(frozen=True)
+class SplitCheckpointConfig(ToyConfig, DeploymentConfig):
+    weight_prefixes: ClassVar[Mapping[str, str]] = {
+        GraphRole.DECODER: "language_model."
+    }
+
+
+@dataclass(frozen=True)
+class ShardedExpertsConfig(ToyConfig, ExpertParallelDeploymentConfig):
+    ep_dispatch_token_layout: ClassVar[str | None] = "tp_sharded"
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        raise NotImplementedError
+
+
+def test_a_role_takes_the_weights_under_its_prefix() -> None:
+    state = {"language_model.a": 1, "vision_encoder.b": 2}
+    config = SplitCheckpointConfig()
+    assert role_weights(state, config, GraphRole.DECODER) == {"a": 1}
+    assert role_weights(state, config, GraphRole.VISION) == state
+    assert role_weights(state, ToyConfig(), GraphRole.DECODER) == state
+
+
+def test_a_deployment_config_applies_no_runtime_by_default() -> None:
+    config = SplitCheckpointConfig()
+    assert config.apply_runtime(NonCallableMock(spec=ModuleRuntime)) is config
+    assert not config.takes_batch_context_lengths
+
+
+def test_one_pipeline_model_serves_text_generation_with_or_without_vision() -> (
+    None
+):
+    model = _arch(
+        modules={GraphRole.DECODER: VisionDecoder, GraphRole.VISION: ToyVision},
+        batching=ToyVisionBatchProcessor,
+    ).pipeline_model
+    plain = _arch(modules={GraphRole.DECODER: ToyDecoder}).pipeline_model
+    assert isinstance(model, type) and isinstance(plain, type)
+    assert issubclass(model, ModuleV3DecoderPipelineModel)
+    assert issubclass(plain, ModuleV3DecoderPipelineModel)
+    assert model.__mro__[1:] == plain.__mro__[1:]
+    assert model.vision_cls is ToyVision
+    assert plain.vision_cls is None
+    assert pickle.loads(pickle.dumps(model)) is model
+
+
+def test_registered_modules_serve_only_text_generation() -> None:
+    with pytest.raises(NotImplementedError, match="embeddings_generation"):
+        registered_pipeline_model(
+            PipelineTask.EMBEDDINGS_GENERATION,
+            ToyConfig,
+            ((GraphRole.DECODER, PlainDecoder),),
+            None,
+        )
+
+
+def test_a_pipeline_model_without_vision_encodes_no_images() -> None:
+    delegating = NonCallableMock(spec=["vision_encoding"], vision_encoding=None)
+    assert vision_encoding(delegating) is None
+    assert vision_encoding(object()) is None
+
+
+def test_a_registration_exposes_its_ep_dispatch_token_layout() -> None:
+    model = SupportedArchitecture(
+        name="ToyForCausalLM",
+        example_repo_ids=[],
+        default_encoding="float32",
+        supported_encodings={"float32"},
+        task=PipelineTask.TEXT_GENERATION,
+        tokenizer=TextTokenizer,
+        context_type=TextContext,
+        default_weights_format=WeightsFormat.safetensors,
+        config=ShardedExpertsConfig,
+        modules={GraphRole.DECODER: PlainDecoder},
+    ).pipeline_model
+    assert vars(model)["ep_dispatch_token_layout"] == "tp_sharded"
+    plain = _arch(modules={GraphRole.DECODER: PlainDecoder}).pipeline_model
+    assert not hasattr(plain, "ep_dispatch_token_layout")
 
 
 def test_the_batch_processor_needs_a_batch_per_replica() -> None:
@@ -400,11 +587,27 @@ def test_a_derived_architecture_keeps_its_own_pipeline_model() -> None:
         ({}, ValueError, "needs a DECODER"),
         ({GraphRole.SAMPLER: PlainDecoder}, ValueError, "framework builds"),
         (
-            {GraphRole.DECODER: PlainDecoder, GraphRole.VISION: PlainDecoder},
+            {GraphRole.DECODER: PlainDecoder, GraphRole.ENCODER: PlainDecoder},
             NotImplementedError,
-            "vision",
+            "encoder",
         ),
         ({GraphRole.DECODER: ToyConfig}, TypeError, "max.nn.Module"),
+        ({GraphRole.DECODER: VisionDecoder}, TypeError, "needs a VISION"),
+        (
+            {GraphRole.DECODER: VisionDecoder, GraphRole.VISION: PlainDecoder},
+            TypeError,
+            "needs input_types",
+        ),
+        (
+            {GraphRole.DECODER: PlainDecoder, GraphRole.VISION: ToyVision},
+            TypeError,
+            "doesn't consume image embeddings",
+        ),
+        (
+            {GraphRole.DECODER: VisionDecoder, GraphRole.VISION: ToyVision},
+            TypeError,
+            "implements VisionBatchProcessor",
+        ),
     ],
 )
 def test_a_malformed_registration_fails(
@@ -412,6 +615,16 @@ def test_a_malformed_registration_fails(
 ) -> None:
     with pytest.raises(error, match=match):
         module_pipeline_model(ToyConfig, tuple(modules.items()), None)
+
+
+def test_a_vision_registration_rejects_a_text_batch_processor() -> None:
+    modules = {GraphRole.DECODER: VisionDecoder, GraphRole.VISION: ToyVision}
+    with pytest.raises(TypeError, match="VisionBatchProcessor"):
+        module_pipeline_model(
+            ToyConfig, tuple(modules.items()), DecoderBatchProcessor
+        )
+    assert consumes_vision(VisionDecoder)
+    assert not consumes_vision(PlainDecoder)
 
 
 def test_finalize_config_returns_the_finalized_config() -> None:

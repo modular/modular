@@ -245,12 +245,16 @@ public:
   /// Returns a fully bound generator referencing `func`.
   static FuncSymbolGenerator get(FuncOp func);
 
-  /// Converts `symbol` to the equivalent generator of function symbol attrs.
-  /// TODO: this will be killed after fully migrated.
-  static FuncSymbolGenerator get(SymbolConstantAttr symbol);
+  /// Returns a generator of type `type` referencing `symbol` with
+  /// `paramValues` bound. An `UnboundAttr` value, or a parameter left off the
+  /// end, binds to the generator's next input parameter.
+  static FuncSymbolGenerator get(SymbolRefAttr symbol,
+                                 FuncTypeGeneratorType type,
+                                 ArrayRef<TypedAttr> paramValues = {});
+  static FuncSymbolGenerator get(StringAttr name, FuncTypeGeneratorType type,
+                                 ArrayRef<TypedAttr> paramValues = {});
 
-  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr` or a
-  /// `SymbolConstantAttr`.
+  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr`.
   static FuncSymbolGenerator dynCast(Attribute attr);
 
   /*implicit*/ operator Attribute() const { return storage; }

@@ -16,18 +16,18 @@ from .arch import (
     kimik2_5_modulev3_arch,
     kimivl_modulev3_arch,
 )
-from .inputs import KimiK2_5ModelInputs
-from .model import KimiK2_5Model
+from .layers.language_model import KimiK2_5Decoder
+from .layers.vision.transformer import KimiK2_5VisionEncoder
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig, VisionConfig
 from .reasoning import KimiK2_5ReasoningParser
 from .tool_parser import KimiToolParser
 
 __all__ = [
     "KimiK2_5Config",
-    "KimiK2_5Model",
-    "KimiK2_5ModelInputs",
+    "KimiK2_5Decoder",
     "KimiK2_5ReasoningParser",
     "KimiK2_5TextConfig",
+    "KimiK2_5VisionEncoder",
     "KimiToolParser",
     "VisionConfig",
     "kimik2_5_modulev3_arch",

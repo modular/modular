@@ -1092,6 +1092,17 @@ TypedAttr OriginType::stripMutCastAndRebind(TypedAttr origin) {
   return origin;
 }
 
+bool OriginType::covers(TypedAttr wider, TypedAttr narrower) {
+  wider = getCanonicalAttr(wider);
+  narrower = getCanonicalAttr(narrower);
+  auto widerType = dyn_cast<OriginType>(wider.getType());
+  if (!widerType)
+    return false;
+  auto originUnion = OriginUnionAttr::get(
+      {wider, OriginMutCastAttr::get(narrower, widerType)}, widerType);
+  return wider == originUnion;
+}
+
 std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
   // Sugar for !lit.origin<true> and !lit.origin<false> can be elided, as these
   // print as MutableOrigin / ImmutableOrigin.  This ends up being a lot nicer

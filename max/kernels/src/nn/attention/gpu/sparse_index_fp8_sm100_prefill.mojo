@@ -2785,7 +2785,7 @@ def fp8_index_score_sm100_prefill[
     causal: Int,
     ctx: DeviceContext,
     out_row_begin: Int = 0,
-    q_sf: OptionalPointer[UInt32, ImmutAnyOrigin] = None,
+    q_sf: Optional[Pointer[UInt32, ImmutAnyOrigin]] = None,
 ) raises:
     """Enqueue the warp-specialized K-streaming prefill scorer into `output`.
 
@@ -2880,7 +2880,7 @@ def fp8_index_score_sm100_prefill[
     causal: Int,
     ctx: DeviceContext,
     out_row_begin: Int,
-    q_sf: OptionalPointer[UInt32, ImmutAnyOrigin],
+    q_sf: Optional[Pointer[UInt32, ImmutAnyOrigin]],
     score_hook: H,
 ) raises:
     """Enqueue the K-streaming prefill scorer into `output` with a score hook.

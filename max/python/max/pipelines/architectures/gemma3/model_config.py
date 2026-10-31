@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -38,11 +39,13 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
+    ModelOutputConfig,
 )
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -341,8 +344,8 @@ class Gemma3Config(
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
+        state_dict: Mapping[str, WeightData],
+        return_logits: ReturnLogits | ModelOutputConfig,
         quant_config: QuantConfig | None = None,
     ) -> None:
         """Define parameters that can't be determined just from the pipeline config.
@@ -354,9 +357,21 @@ class Gemma3Config(
             huggingface_config: The HuggingFace model configuration object.
             state_dict: The model's state dictionary containing weights.
             return_logits: Whether to return the last token, all tokens or a
-                variable number of logits.
+                variable number of logits, or the outputs the pipeline
+                requires. Given the outputs, as a registered ``DECODER``'s
+                config is, the scaled quantization config is read from
+                ``state_dict``.
             quant_config: Scaled quantization configuration (optional).
         """
+        if isinstance(return_logits, ModelOutputConfig):
+            return_logits = return_logits.return_logits
+            quant_config = parse_quant_config(
+                huggingface_config,
+                state_dict,
+                self.dtype,
+                state_dict_name_prefix="",
+                ignored_modules_prefix="model.",
+            )
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
         tie_word_embeddings = (

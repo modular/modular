@@ -721,6 +721,12 @@ def grouped_matmul[
     `(row, col)` in `c`, and groups whose expert id is -1 pass it zeros.
     With `has_compute_fn`, `compute_fn` maps each value before the kernel's
     own store; SM100 applies it in registers and keeps its TMA store.
+
+    `pdl_level` only affects the SM100 persistent kernel. Above
+    `PDLLevel.OFF` it waits for the predecessor grid before its first read of
+    the routing tensors and activations; `PDLLevel.OVERLAP_AT_BEGINNING` also
+    releases dependent grids right after its TMEM allocation instead of at the
+    end. Other backends ignore it.
     """
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2

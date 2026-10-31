@@ -520,7 +520,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
              .size() == 0);
 
   // Stash the fully-bound-when-thunk-is-bound callee expression on the thunk so
-  // we can later recover the wrapped function's SymbolConstantAttr with all its
+  // we can later recover the wrapped function's symbol reference with all its
   // compile-time params filled in (sourced from the thunk's bound paramValues).
   thunk->setAttr(kTransparentThunkCalleeExprAttr, calleeParam);
 
@@ -565,17 +565,17 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // result slot.
   Value retVal;
   if (hasRegisterResult) {
-    // If we're returning an SSA value, it could be an RValue or could be a
-    // ref-result.
+    // Return a ref result as the ref itself rather than loading through it.
     if (thunkSignature.isRefResult()) {
-      retVal = emitter.emitRefValue({callResult, &node}, EC_ConversionThunk);
-      // Implicitly convert to the right result type if needed, e.g. widening
-      // the origin to a union or discarding mutability.
-      retVal = emitter.emitSRValue({SRValue(retVal), &node}, EC_ConversionThunk,
-                                   thunk.getUserResultType());
-    } else {
-      retVal = emitter.emitSRValue({callResult, &node}, EC_ConversionThunk);
+      Value ref = emitter.emitRefValue({callResult, &node}, EC_ConversionThunk);
+      if (!ref)
+        return {};
+      callResult = SRValue(ref);
     }
+    // Implicitly convert to the right result type if needed, e.g. widening
+    // the origin to a union or discarding mutability.
+    retVal = emitter.emitSRValue({callResult, &node}, EC_ConversionThunk,
+                                 thunk.getUserResultType());
     if (!retVal)
       return {};
   }
@@ -1170,6 +1170,43 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
       if (remover.replace(fromType.mlirType) ==
           remover.replace(toType.mlirType))
         return TriBool::yes();
+
+      // This can be allowed if the bindings differ only by origin widening.
+      ArrayRef<TypedAttr> fromBindings = fromType.getParamBindings();
+      ArrayRef<TypedAttr> toBindings = toType.getParamBindings();
+      if (fromBindings.size() != toBindings.size())
+        return TriBool::no();
+      for (auto [fromBinding, toBinding] :
+           llvm::zip(fromBindings, toBindings)) {
+        if (remover.replace(fromBinding) == remover.replace(toBinding))
+          continue;
+
+        auto fromOriginType = sugarDynCast<OriginType>(fromBinding.getType());
+        auto toOriginType = sugarDynCast<OriginType>(toBinding.getType());
+        if (fromOriginType && toOriginType) {
+          // Mutability may be dropped but never gained.
+          if (fromOriginType != toOriginType &&
+              !canZeroCostConvertImpl(fromOriginType, toOriginType, shared,
+                                      declScope, additionalAssumptions,
+                                      /*unprovenConstraints=*/nullptr)
+                   .isTrue())
+            return TriBool::no();
+          if (!OriginType::covers(toBinding, fromBinding))
+            return TriBool::no();
+          continue;
+        }
+
+        // Handle parameters of the stdlib `Origin` struct type, which
+        // carries an mlir origin attr. We consider the overall `Origin`
+        // instance to be zero-cost convertible if its mlir origin attr is.
+        if (!ASTType(fromBinding.getType()).isSingleton(shared) ||
+            !canZeroCostConvertImpl(fromBinding.getType(), toBinding.getType(),
+                                    shared, declScope, additionalAssumptions,
+                                    /*unprovenConstraints=*/nullptr)
+                 .isTrue())
+          return TriBool::no();
+      }
+      return TriBool::yes();
     }
     return TriBool::no();
   }
@@ -1229,11 +1266,8 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
       }
 
       // We can convert origin subset to a origins superset.
-      auto toOrigin = toRef.getOrigin();
-      auto originUnion = OriginUnionAttr::get(
-          {toOrigin, OriginMutCastAttr::get(fromRef.getOrigin(), toOriginType)},
-          toOriginType);
-      return TriBool::fromBool(toOrigin == originUnion);
+      return TriBool::fromBool(
+          OriginType::covers(toRef.getOrigin(), fromRef.getOrigin()));
     }
   }
 

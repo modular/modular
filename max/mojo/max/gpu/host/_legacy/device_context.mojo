@@ -27,6 +27,7 @@ from . import (
     ConstantMemoryMapping,
     DeviceAttribute,
 )
+from .launch_attribute import LaunchAttributeID
 
 from std.collections.optional import OptionalReg
 from std.math import align_up
@@ -161,55 +162,55 @@ comptime _DeviceContextPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceContextCpp, origin]
+] = Optional[Pointer[_DeviceContextCpp, origin]]
 
 comptime _DeviceBufferPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceBufferCpp, origin]
+] = Optional[Pointer[_DeviceBufferCpp, origin]]
 
 comptime _DeviceFunctionPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceFunctionCpp, origin]
+] = Optional[Pointer[_DeviceFunctionCpp, origin]]
 
 comptime _DeviceMulticastBufferPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceMulticastBufferCpp, origin]
+] = Optional[Pointer[_DeviceMulticastBufferCpp, origin]]
 
 comptime _DeviceStreamPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceStreamCpp, origin]
+] = Optional[Pointer[_DeviceStreamCpp, origin]]
 
 comptime _DeviceEventPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceEventCpp, origin]
+] = Optional[Pointer[_DeviceEventCpp, origin]]
 
 comptime _DeviceTimerPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceTimerCpp, origin]
+] = Optional[Pointer[_DeviceTimerCpp, origin]]
 
 comptime _CompletionFlagPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_CompletionFlagCpp, origin]
+] = Optional[Pointer[_CompletionFlagCpp, origin]]
 
 comptime _DeviceContextScopePtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_DeviceContextScopeCpp, origin]
+] = Optional[Pointer[_DeviceContextScopeCpp, origin]]
 
 comptime _CString[origin: ImmOrigin = ImmUntrackedOrigin] = Optional[
     CStringSpan[origin]
@@ -582,9 +583,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             writer.write(val)
 
         var size = len(self)
-        var serialize_ptr = OptionalPointer[Scalar[Self.dtype], ImmutAnyOrigin](
-            self.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
-        )
+        var serialize_ptr = Optional[
+            Pointer[Scalar[Self.dtype], ImmutAnyOrigin]
+        ](self.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin]())
 
         if size < 1000:
             writer.write("[")
@@ -2248,8 +2249,8 @@ struct DeviceBuffer[dtype: DType](
                     writer.write(val)
 
                 var size = len(self)
-                var serialize_ptr = OptionalPointer[
-                    Scalar[Self.dtype], ImmutAnyOrigin
+                var serialize_ptr = Optional[
+                    Pointer[Scalar[Self.dtype], ImmutAnyOrigin]
                 ](
                     host_buffer.unsafe_ptr()
                     .as_imm()
@@ -2290,7 +2291,7 @@ trait _FunctionEnqueuer:
         num_attributes: Int,
         args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalPointer[mut=True, UInt64, _],
+        arg_sizes: Optional[MutPointer[UInt64, _]],
     ) -> _CString[]:
         """Dispatches a kernel launch via the AsyncRT C ABI.
 
@@ -2437,7 +2438,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         num_attributes: Int,
         args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalPointer[mut=True, UInt64, _],
+        arg_sizes: Optional[MutPointer[UInt64, _]],
     ) -> _CString[]:
         """Enqueues a kernel launch on this stream.
 
@@ -3319,7 +3320,10 @@ struct DeviceFunction[
             dump_llvm: Controls dumping of LLVM IR. Can be a boolean, a file path,
                 or a function returning a file path.
             _dump_sass: Controls dumping of SASS code (internal use). Can be a boolean,
-                a file path, or a function returning a file path.
+                a file path, or a function returning a file path. Runs
+                the `ptxas` and `nvdisasm` named by the `MODULAR_PTXAS_PATH`
+                and `MODULAR_NVDISASM_PATH` environment variables if set,
+                otherwise the ones in `/usr/local/cuda/bin`.
 
         Raises:
             If any file operations fail during the dumping process.
@@ -3421,6 +3425,82 @@ struct DeviceFunction[
             else:
                 print(llvm)
 
+    @inline(.always)
+    def _check_pdl_wait(imm self, attributes: List[LaunchAttribute]) raises:
+        """Rejects a PDL launch of a kernel that never waits on its predecessor.
+
+        A grid launched with `PROGRAMMATIC_STREAM_SERIALIZATION` can start
+        before the preceding grid has finished, so it must execute
+        `griddepcontrol.wait` before reading anything that grid produced, or
+        its own dependents lose their ordering too. A kernel instantiated
+        without the `pdl_level` its launch passes to `pdl_launch_attributes`
+        compiles cleanly and then races.
+
+        Only an attribute whose value enables serialization counts; the same
+        attribute carrying `False` disables PDL for that launch and is not
+        checked.
+
+        The check compiles the kernel to PTX a second time, so it is off by
+        default. Build with `-D MAX_CHECK_PDL_WAIT=True` to turn it on.
+
+        This only checks that the kernel's PTX contains a `griddepcontrol.wait`
+        at all. It does not check that every path reaches the wait, or that the
+        wait precedes the first read of a predecessor's output: a kernel that
+        waits on one branch, or after such a read, still passes. Kernels may
+        legitimately read constant weights before the wait, so ordering cannot
+        be inferred from the PTX alone.
+
+        `pdl_launch_attributes` does not record the level, so the check cannot
+        exempt a kernel launched at `PDLLevel.NO_WAIT_OVERLAP_AT_END`, which
+        skips the wait on purpose; it is rejected like any other. Only
+        `DeviceFunction` launches are checked, not `DeviceExternalFunction`.
+
+        Args:
+            attributes: The launch attributes of the enqueue being checked.
+
+        Raises:
+            If a PDL launch targets a kernel whose PTX has no
+            `griddepcontrol.wait`.
+        """
+        comptime if (
+            get_defined_bool["MAX_CHECK_PDL_WAIT", False]()
+            and Self.target.is_nvidia_gpu()
+        ):
+            for ref attribute in attributes:
+                # The value is a Boolean in the first word; a caller can pass
+                # the attribute with `False` to switch PDL off for the launch.
+                if (
+                    attribute.id
+                    == LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION
+                    and attribute.value._storage[0] != 0
+                ):
+
+                    def ptx() {imm} -> StaticString:
+                        # Cross-compiling already holds the PTX.
+                        comptime if Self._emission_kind == "asm":
+                            return self._func_impl.asm
+                        return _compile_code[
+                            Self._wrapped_func,
+                            emission_kind="asm",
+                            target=Self.target,
+                            compile_options=Self.compile_options,
+                            link_options=Self.link_options,
+                        ]().asm
+
+                    if "griddepcontrol.wait" not in ptx():
+                        raise Error(
+                            "kernel '",
+                            self._func_impl.function_name,
+                            (
+                                "' is launched with the PDL attribute but its"
+                                " PTX has no `griddepcontrol.wait`; bind a"
+                                " non-OFF `pdl_level` in the kernel's"
+                                " instantiation, or call"
+                                " `wait_on_dependent_grids()` before its first"
+                                " read of predecessor output"
+                            ),
+                        )
+
     # Enqueue function on a stream
     @inline(.always)
     def _call_with_pack[
@@ -3437,6 +3517,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: Optional[SourceLocation] = None,
     ) raises:
+        self._check_pdl_wait(attributes)
         comptime num_args = Ts.length
         # A kernel may take no arguments; keep the buffers non-empty.
         comptime num_slots = max(num_args, 1)
@@ -3530,6 +3611,7 @@ struct DeviceFunction[
         closure compiled as the host callable. Encoding that closure would
         rewrite it to a synthesized `device_type` the kernel cannot read.
         """
+        self._check_pdl_wait(attributes)
         comptime for idx in range(HostArgs.length):
             Self._check_trailing_host[HostArgs[idx], Ts.length + idx]()
 
@@ -3994,7 +4076,7 @@ struct DeviceExternalFunction[
 
         # External functions carry no argument-size metadata, so no per-arg
         # sizes are passed to the enqueuer (matching the previous direct call).
-        var no_arg_sizes = OptionalPointer[UInt64, MutAnyOrigin](None)
+        var no_arg_sizes = Optional[Pointer[UInt64, MutAnyOrigin]](None)
 
         comptime if Self.target.is_apple_gpu():
             # Metal takes the launch payload via `args[0]`; see
@@ -4638,7 +4720,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         num_attributes: Int,
         args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: OptionalPointer[mut=True, UInt64, _],
+        arg_sizes: Optional[MutPointer[UInt64, _]],
     ) -> _CString[]:
         """Enqueues a kernel launch on this context's default stream.
 
@@ -6752,7 +6834,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         return DeviceStream(result)
 
     def create_external_stream(
-        self, external_stream: OptionalPointer[mut=True, NoneType, _]
+        self, external_stream: Optional[MutPointer[NoneType, _]]
     ) raises -> DeviceStream:
         """Creates a non-owning stream wrapper around an externally managed GPU stream.
 

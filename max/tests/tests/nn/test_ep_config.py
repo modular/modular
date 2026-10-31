@@ -131,16 +131,16 @@ def test_estimate_ep_memory_usage_mxfp6_uses_three_quarter_byte_packing() -> (
     distinct byte counts for the same logical shape.
     """
     assert (
-        _ep_memory_usage(DType.uint8, DType.float6_e2m3fn) == 556
+        _ep_memory_usage(DType.uint8, DType.float6_e2m3fn) == 812
     )  # d_token_size = 32*3//4 + 32//32 = 25 bytes.
     assert (
-        _ep_memory_usage(DType.uint8, DType.float6_e3m2fn) == 556
+        _ep_memory_usage(DType.uint8, DType.float6_e3m2fn) == 812
     )  # Both FP6 encodings pack identically; only the codes differ.
 
 
 def test_estimate_ep_memory_usage_distinguishes_fp6_from_fp4_packing() -> None:
-    assert _ep_memory_usage(DType.uint8, None) == 472  # NVFP4/MXFP4 ratio.
-    assert _ep_memory_usage(DType.bfloat16, None) == 1024  # Unpacked.
+    assert _ep_memory_usage(DType.uint8, None) == 728  # NVFP4/MXFP4 ratio.
+    assert _ep_memory_usage(DType.bfloat16, None) == 1280  # Unpacked.
 
 
 def test_estimate_ep_memory_usage_counts_mxfp8_block_scales() -> None:
@@ -150,10 +150,91 @@ def test_estimate_ep_memory_usage_counts_mxfp8_block_scales() -> None:
     so a float8 dispatch dtype with an MX element dtype adds one byte per
     32 to every send and receive slot.
     """
-    assert _ep_memory_usage(DType.float8_e4m3fn, None) == 640
+    assert _ep_memory_usage(DType.float8_e4m3fn, None) == 896
     assert (
-        _ep_memory_usage(DType.float8_e4m3fn, DType.float8_e4m3fn) == 652
+        _ep_memory_usage(DType.float8_e4m3fn, DType.float8_e4m3fn) == 908
     )  # 12 message slots, one scale byte each at hidden_size 32.
+
+
+def test_estimate_ep_memory_usage_receives_a_token_once_per_device() -> None:
+    """A device receives each token once, whichever of its experts it picked.
+
+    GLM-5.3's MTP draft dispatch on eight devices at an 8192-token chunk
+    (1024 tokens a rank): the receive buffer holds every rank's tokens once,
+    plus a 32-byte token index per (expert, token). A slot per (expert, token)
+    took 3 GiB. Across nodes the SHMEM dispatch keeps that slot per expert.
+    """
+    token = 6144 * DType.bfloat16.size_in_bytes
+    send = 1024 * token
+    combine_recv = 8 * 1024 * token
+
+    def estimate(n_nodes: int) -> int:
+        return estimate_ep_memory_usage(
+            hidden_size=6144,
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            max_tokens_per_rank=1024,
+            n_experts=256,
+            n_nodes=n_nodes,
+            n_gpus_per_node=8,
+            top_k=8,
+        )
+
+    assert estimate(1) == (
+        send + 8 * 1024 * token + 256 * 1024 * 32 + combine_recv
+    )
+    combine_send = 128 * 1024 * token
+    assert estimate(2) == (
+        send + 256 * 1024 * token + combine_send + combine_recv
+    )
+
+
+@pytest.mark.parametrize("use_allreduce", [False, True])
+def test_ep_config_estimate_sizes_what_ep_init_is_given(
+    use_allreduce: bool,
+) -> None:
+    """The plan sizes the buffers for the experts and ranks ``ep.init`` gets.
+
+    Under allreduce each device routes among its own experts, so ``ep.init``
+    sees those experts on one rank. Planning for every expert on every rank
+    would reserve memory nothing allocates.
+    """
+    config = dataclasses.replace(_base_ep_config(), use_allreduce=use_allreduce)
+    params = {
+        k: v
+        for k, v in ep_kernels._ep_common_parameters(config).items()
+        if isinstance(v, int)
+    }
+    assert config.estimate_memory_usage() == estimate_ep_memory_usage(
+        hidden_size=config.hidden_size,
+        dispatch_dtype=config.dispatch_dtype,
+        combine_dtype=config.combine_dtype,
+        max_tokens_per_rank=params["max_token_per_rank"],
+        n_experts=params["n_experts"],
+        n_nodes=params["n_nodes"],
+        n_gpus_per_node=params["n_gpus_per_node"],
+        top_k=config.top_k,
+    )
+
+
+def test_estimate_ep_memory_usage_under_allreduce() -> None:
+    """Under allreduce a device's buffers hold its own tokens, once, and a
+    token index for each of its 32 experts."""
+    token = 6144 * DType.bfloat16.size_in_bytes
+    assert (
+        estimate_ep_memory_usage(
+            hidden_size=6144,
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            max_tokens_per_rank=1024,
+            n_experts=256,
+            n_nodes=1,
+            n_gpus_per_node=8,
+            top_k=8,
+            use_allreduce=True,
+        )
+        == (1024 * token) * 2 + 32 * 1024 * 32 + 8 * 1024 * token
+    )
 
 
 def test_ep_config_mxfp8_estimate_includes_block_scales() -> None:
@@ -172,7 +253,7 @@ def test_ep_config_mxfp8_estimate_includes_block_scales() -> None:
         n_gpus_per_node=config.n_gpus_per_node,
         top_k=config.top_k,
     )
-    slots = config.max_tokens_per_rank * (1 + config.n_experts)
+    slots = config.max_tokens_per_rank * (1 + config.n_gpus_per_node)
     assert config.estimate_memory_usage() == (
         without_scales + slots * config.hidden_size // 32
     )

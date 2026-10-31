@@ -61,9 +61,9 @@ def cwd() raises -> Path:
     var buf = Array[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
 
     var ptr = buf.unsafe_ptr()
-    var res = external_call["getcwd", OptionalPointer[c_char, origin_of(buf)]](
-        ptr, Int(MAX_CWD_BUFFER_SIZE)
-    )
+    var res = external_call[
+        "getcwd", Optional[Pointer[c_char, origin_of(buf)]]
+    ](ptr, Int(MAX_CWD_BUFFER_SIZE))
 
     # If we get a nullptr, then we raise an error.
     if not res:

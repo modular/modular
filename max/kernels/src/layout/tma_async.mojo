@@ -3527,7 +3527,7 @@ def create_split_tma[
     row_major: Bool = False,
 ](
     ctx: DeviceContext,
-    ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    ptr: ImmPointer[Scalar[dtype], _],
     runtime_dim0: Int,
     runtime_dim1: Int,
     out res: SplitLastDimTMATensorTile[
@@ -3748,7 +3748,7 @@ struct TMATensorTileArray[
         self, index: Int
     ) -> MutPointer[
         TMATensorTile[Self.dtype, Self.cta_tile_shape, Self.desc_shape],
-        MutAnyOrigin,
+        MutUntrackedOrigin,
     ]:
         """
         Retrieve a TMA descriptor.
@@ -3760,12 +3760,10 @@ struct TMATensorTileArray[
             `Pointer` to the `TMATensorTile` at the specified index.
         """
         return (
-            (self.tensormaps_ptr.unsafe_offset(index * self.descriptor_bytes))
-            .unsafe_bitcast[
-                TMATensorTile[Self.dtype, Self.cta_tile_shape, Self.desc_shape]
-            ]()
-            .as_unsafe_any_origin()
-        )
+            self.tensormaps_ptr.unsafe_offset(index * self.descriptor_bytes)
+        ).unsafe_bitcast[
+            TMATensorTile[Self.dtype, Self.cta_tile_shape, Self.desc_shape]
+        ]()
 
 
 struct RaggedTMA3DTile[

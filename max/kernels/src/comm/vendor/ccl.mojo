@@ -37,7 +37,7 @@ from comm.reducescatter import CollectiveEpilogueFn
 from max.gpu.primitives.grid_controls import PDLLevel
 from std.utils.coord import Coord
 
-comptime ncclComm_t = OptionalPointer[NoneType, MutUntrackedOrigin]
+comptime ncclComm_t = Optional[Pointer[NoneType, MutUntrackedOrigin]]
 
 
 @fieldwise_init
@@ -274,7 +274,7 @@ def _ccl_broadcast(
 @inline(.always)
 def _ccl_stream_ptr(
     ctx: DeviceContext,
-) raises -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
+) raises -> Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]:
     comptime if ctx.target.is_amd_gpu():
         return unsafe_cast[Type=NoneType](HIP(ctx.stream()))
     else:

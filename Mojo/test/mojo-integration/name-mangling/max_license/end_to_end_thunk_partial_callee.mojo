@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 #
 # Regression test for MOCO-3842: a parametric conversion thunk wrapping a
-# user kernel where the callee's `SymbolConstantAttr` does NOT carry the
+# user kernel where the callee's `FuncSymbolAttr` does NOT carry the
 # matching compile-time params directly. The missing params are sourced
 # from the thunk's own params at the inner `kgen.call_param[callee](…)`
 # site inside the thunk body.
@@ -57,7 +57,7 @@ def named_partial_kernel[width: Int](data: Pointer[Float32, MutAnyOrigin]):
 # `expected` signature inherits the parametric `<width: Int>`, so the
 # thunk itself ends up parametric — and its `callee` paramValue carries
 # `named_partial_kernel` *without* `width` applied directly to the
-# SymbolConstantAttr. The redirect machinery still recovers the
+# FuncSymbolAttr. The redirect machinery still recovers the
 # fully-bound callee via `kgen.transparent_thunk_callee_expr`.
 def helper[
     op_fn: def[width: Int](
@@ -79,6 +79,6 @@ def main() raises:
 # ---------------------------------------------------------------------------
 
 # The user's `@__name` reaches the PTX entry symbol even though the conv
-# thunk is parametric and the wrapped callee's SymbolConstantAttr is
-# partially bound at the SymbolConstantAttr level.
+# thunk is parametric and the wrapped callee's FuncSymbolAttr is
+# partially bound at the FuncSymbolAttr level.
 # CHECK-PTX: .visible .entry named_partial_kernel_{{[0-9a-f]+}}(

@@ -69,6 +69,7 @@ from shmem.ep import (
     ep_dispatch_wait_kernel_api,
     ep_fused_combine_kernel_api,
     ep_fused_dispatch_kernel_api,
+    ep_token_recv,
 )
 from shmem.ep_comm import (
     EP_WARP_TOKENS_MIN_TOKENS,
@@ -77,6 +78,7 @@ from shmem.ep_comm import (
     EPLocalSyncCounters,
     MXTokenFormat,
     NVBlockScaledTokenFormat,
+    ep_dispatch_recv_size,
     fused_silu_kernel,
     fused_silu_mx_kernel,
     fused_silu_mxfp6_kernel,
@@ -211,8 +213,12 @@ struct Struct_ep_init:
                 )
 
         var dispatch_send_size = max_token_per_rank * dispatch_msg_size
-        var dispatch_recv_size = (
-            n_experts * max_token_per_rank * dispatch_msg_size
+        var dispatch_recv_size = ep_dispatch_recv_size(
+            n_experts=n_experts,
+            n_ranks=n_gpus_per_node * n_nodes,
+            max_tokens_per_rank=max_token_per_rank,
+            msg_bytes=dispatch_msg_size,
+            token_recv=ep_token_recv[n_nodes](),
         )
 
         # Calculate buffer sizes for combine phase

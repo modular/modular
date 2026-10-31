@@ -34,7 +34,7 @@ from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor
 
-from ..lfm3.lfm3 import Lfm3, Lfm3MLP
+from ..lfm3.lfm3 import Lfm3Base, Lfm3MLP
 from ..lfm3.model_config import FULL_ATTENTION
 from .model_config import Lfm3VlConfig, Lfm3VlVisionConfig
 
@@ -275,7 +275,7 @@ class Lfm3VlVision(Module[..., Tensor]):
         )
 
 
-class Lfm3VlLanguage(Lfm3):
+class Lfm3VlLanguage(Lfm3Base):
     """The LFM3 decoder, reading image embeddings at their placeholders."""
 
     def forward(

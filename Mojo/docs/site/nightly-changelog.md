@@ -170,6 +170,18 @@ This version is still a work in progress.
   ```mojo
   var values: List = [1, 2, 3]
   var result = PythonObject(values^)  # [1, 2, 3]
+- The `OptionalPointer`, `OptionalMutPointer`, and `OptionalImmPointer`
+  aliases are deprecated. Write `Optional[Pointer[T, origin]]`,
+  `Optional[MutPointer[T, origin]]`, or `Optional[ImmPointer[T, origin]]`
+  instead. An `_` origin nested inside the `Optional` makes the function
+  generic over it, as it did with the aliases:
+
+  ```mojo
+  # Before
+  def fill(buf: OptionalMutPointer[Byte, _]): ...
+
+  # After
+  def fill(buf: Optional[MutPointer[Byte, _]]): ...
   ```
 
 ## GPU programming

@@ -24,7 +24,6 @@ from std.ffi import (
     c_ssize_t,
     external_call,
     CStringSpan,
-    OptionalPointer,
 )
 from std.memory.unsafe_pointer import unsafe_cast
 from std.sys import (
@@ -142,7 +141,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = OptionalPointer[UInt8, MutUntrackedOrigin]()
+        var buffer = Optional[Pointer[UInt8, MutUntrackedOrigin]]()
         var n = c_size_t(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);

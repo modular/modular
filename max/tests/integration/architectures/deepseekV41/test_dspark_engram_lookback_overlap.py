@@ -729,7 +729,7 @@ def test_replay_records_into_the_history_the_next_step_reads() -> None:
         num_speculative_tokens=NUM_DRAFTS,
     )
     runner.warmup_pre_ready()
-    history = processor._engram_history
+    history = processor._lookback.history
     assert history is not None
     assert engine.captured
     for captured in engine.captured:

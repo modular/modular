@@ -53,6 +53,10 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.nn.legacy.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
 from max.nn.legacy.transformer import ReturnHiddenStates
+from max.pipelines.architectures.deepseekV41.engram_lookback import (
+    read_engram_lookback,
+    record_engram_lookback,
+)
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,
@@ -431,6 +435,33 @@ class DeepseekV41BlockTarget:
         return Verified(
             logits=as_graph_values(target.logits_all_rows(var_h)),
             hidden=(taps, b.row_offsets, b.positions),
+            roll_forward=(
+                self._record_lookback
+                if "engram_lookback_history" in batch.extra
+                else None
+            ),
+        )
+
+    def _record_lookback(self, batch: BlockBatch) -> None:
+        """Records each row's lookback window for the next step to read.
+
+        Only that step reads it, so it may be recorded before this step's
+        draft runs. The window is read back out of the history the same way
+        the trunk read it; the compiler folds the two reads into one.
+        """
+        assert batch.num_accepted is not None
+        history = batch.extra["engram_lookback_history"].buffer
+        record_engram_lookback(
+            history,
+            read_engram_lookback(
+                batch.extra["engram_lookback_ids"].tensor,
+                batch.extra["engram_lookback_source"].tensor,
+                history,
+            ),
+            batch.tokens,
+            batch.input_row_offsets,
+            batch.draft_tokens,
+            batch.num_accepted,
         )
 
 
@@ -734,7 +765,9 @@ def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
     return target.ep_batch_manager.input_types()
 
 
-def trailing_input_types(target_config: Any) -> list[TensorType]:
+def trailing_input_types(
+    target_config: Any,
+) -> list[TensorType | BufferType]:
     """Returns the trunk's extras the graph takes past the canonical tail."""
     assert isinstance(target_config, DeepseekV41Config)
     return [dtype for _, dtype in target_config.dspark_trailing_inputs]

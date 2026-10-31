@@ -24,6 +24,7 @@
 #include "Mojo/Support/CompilerProfiling.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
+#include "ParserEvaluationContext.h"
 #include "Traits.h"
 
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -2160,24 +2161,10 @@ void DeclResolver::exportMain(DefASTDecl &funcDecl) {
 
   // Generate a reference to the main wrapper function, which expects the user
   // main to be provided via an parameter.
-  FuncType mainWrapperSig = mainWrapperSigGen.getBody();
-  FnMetaOriginDataAttr mainWrapperFnMeta =
-      cast<FnMetaOriginDataAttr>(mainWrapperSig.getMetadata());
-  auto strippedMainWrapperFnMeta = FnMetaOriginDataAttr::get(
-      getContext(), mainWrapperFnMeta.getNumImplicitOriginDecls(),
-      mainWrapperFnMeta.getCaptureOrigins(),
-      mainWrapperFnMeta.getIsNestedOriginsReadOnly(),
-      mainWrapperFnMeta.getDefinesInteriorOrigins());
-  auto strippedMainWrapperSig = FuncType::get(
-      mainWrapperSig.getValues(), mainWrapperSig.getArgConventions(),
-      mainWrapperSig.getFnEffects(), strippedMainWrapperFnMeta,
-      mainWrapperSig.getArgListAttrs());
-  SymbolConstantAttr wrapperFnRef = SymbolConstantAttr::get(
-      getFullyResolvedSymbolRef(mainWrapperFn),
-      GeneratorType::get(/*inputParamTypes=*/{}, strippedMainWrapperSig,
-                         /*metadata=*/PogListAttr::get(getContext())),
-      {SymbolConstantAttr::get(getFullyResolvedSymbolRef(userMainFn),
-                               userMainSignature)});
+  ParameterEvaluationContext &evalCtx = shared.getEvaluationContext();
+  TypedAttr userMainFnRef = userMainFn.getBoundSymbolRef(evalCtx);
+  FuncSymbolGenerator wrapperFnRef =
+      mainWrapperFn.getBoundSymbolRef(evalCtx, ArrayRef(userMainFnRef));
 
   auto shimBodyBuilder = ImplicitLocOpBuilder::atBlockBegin(
       shimMainFn->getLoc(), shimMainFn.getBody());

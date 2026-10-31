@@ -132,6 +132,12 @@ trait TensorLayout(DevicePassable, TrivialRegisterPassable):
     Parameters:
         i: The dimension index.
     """
+    comptime is_static_shape[i: Int]: Bool
+    """Returns whether the i-th shape dimension is known at compile time.
+
+    Parameters:
+        i: The dimension index.
+    """
 
     comptime static_product: Int
     """The compile-time product of all shape dimensions."""
@@ -370,6 +376,15 @@ struct Layout[
         i
     ].static_value
     """Returns the compile-time value of the i-th flattened stride dimension.
+
+    Parameters:
+        i: The dimension index.
+    """
+    comptime is_static_shape[i: Int]: Bool = Self._flat_shape_types[
+        i
+    ].is_static_value
+    """Returns whether the i-th flattened shape dimension is known at compile
+    time.
 
     Parameters:
         i: The dimension index.

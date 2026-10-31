@@ -1380,7 +1380,9 @@ def get_mma_shape[
 
 
 @inline(.always)
-def get_fragment_size[mma_shape: Coord]() -> DynamicCoord[.int, 3]:
+def get_fragment_size[
+    mma_shape: Tuple[Int, Int, Int]
+]() -> Tuple[Int, Int, Int]:
     """Calculates the fragment size per thread for a given MMA shape.
 
     For tensor core operations, each thread in a warp handles a portion of the
@@ -1388,17 +1390,17 @@ def get_fragment_size[mma_shape: Coord]() -> DynamicCoord[.int, 3]:
     process for the A, B, and C/D matrices based on the MMA shape.
 
     Parameters:
-        mma_shape: A `Coord` containing the MMA dimensions [M, N, K].
+        mma_shape: A tuple containing the MMA dimensions [M, N, K].
 
     Returns:
-        A `Coord` containing the fragment sizes per thread for matrices
+        A tuple containing the fragment sizes per thread for matrices
         A, B, and C/D respectively, calculated as:
         `[M*K/WARP_SIZE, N*K/WARP_SIZE, M*N/WARP_SIZE]`.
     """
     return (
-        Int(mma_shape[0]) * Int(mma_shape[2]) // WARP_SIZE,
-        Int(mma_shape[1]) * Int(mma_shape[2]) // WARP_SIZE,
-        Int(mma_shape[0]) * Int(mma_shape[1]) // WARP_SIZE,
+        mma_shape[0] * mma_shape[2] // WARP_SIZE,
+        mma_shape[1] * mma_shape[2] // WARP_SIZE,
+        mma_shape[0] * mma_shape[1] // WARP_SIZE,
     )
 
 

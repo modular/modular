@@ -22,15 +22,18 @@ result must equal stock's as sets keyed by (destination rank, local expert,
 source rank, source token): the receive buffer's messages, and the copy-out
 the grouped GEMM reads (FP4 codes, the 5D scale-factor tiles, src_info), plus
 the per (expert, source rank) row counts, which must also match the routing.
-Only the order of rows inside a segment may differ. Every checked run starts
-from a poisoned receive buffer and scale tiles, so a row a variant never
-writes cannot pass on the previous run's copy.
+Each (local expert, source rank) of the receive buffer must list exactly the
+source tokens the routing sends it, and each listed token's message must
+carry that token's index. Only the order of rows inside a segment may
+differ. Every checked run starts from a poisoned receive buffer and scale
+tiles, so a row a variant never writes cannot pass on the previous run's
+copy.
 
-Token counts: 0, 1, 13, 509 and 8168 a rank (4084 on eight GPUs), and with
-more than one GPU an empty rank 1 beside full ranks. Planted faults must fail
-the comparison: a changed input element, a corrupted copy-out byte, and row
-offsets that drop one expert's rows (what a monitor that loses a count would
-publish).
+Token counts: 0, 1, 13, 509 and 8168 a rank, and with more than one GPU an
+empty rank 1 beside full ranks. Planted faults must fail the comparison: a
+changed input element, a corrupted copy-out byte, row offsets that drop one
+expert's rows (what a monitor that loses a count would publish), and a
+receive-buffer token index pointing at another token.
 
 `EP_DISPATCH_AB=1` also times, with a stock control arm, arm order rotated
 over 3 rounds and 5 samples an arm a round: the variants at 8,168 tokens,
@@ -58,9 +61,12 @@ from linalg.fp4_utils import (
 )
 from shmem.ep import ep_fused_dispatch_kernel_api
 from shmem.ep_comm import (
+    EP_TOKEN_INDEX_BYTES,
     EP_WARP_TOKENS_MIN_TOKENS,
     EPLocalSyncCounters,
     NVBlockScaledTokenFormat,
+    ep_dispatch_recv_size,
+    ep_token_index_offset,
 )
 from std.testing import assert_equal, assert_true
 
@@ -77,6 +83,11 @@ comptime K_TILES = HIDDEN // (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
 comptime STOCK = -1
 comptime PER_CTA_SEND = 1 << 30
 comptime WARP_SEND = 0
+
+# Poisoned bytes past the receive buffer's end, which no dispatch may write.
+comptime RECV_GUARD = 4096
+# Int32 words in one receive-buffer token index sector.
+comptime INDEX_WORDS = EP_TOKEN_INDEX_BYTES // 4
 
 
 def _mut[
@@ -139,6 +150,21 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
         TOP_K,
     ]
     comptime msg = Self.Fmt.msg_size()
+    comptime recv_bytes = ep_dispatch_recv_size(
+        n_experts=Self.n_experts,
+        n_ranks=Self.n_ranks,
+        max_tokens_per_rank=Self.max_tokens,
+        msg_bytes=Self.msg,
+        token_recv=True,
+    )
+    # The receive buffer's (local expert, source rank, slot) source token
+    # indices follow its (source rank, source token) messages.
+    comptime index_offset = ep_token_index_offset(
+        n_ranks=Self.n_ranks,
+        max_tokens_per_rank=Self.max_tokens,
+        msg_bytes=Self.msg,
+    )
+    comptime n_index = N_LOCAL * Self.n_ranks * Self.max_tokens
     comptime n_counters = EPLocalSyncCounters[Self.n_experts].allocation_size()
 
     var ctxs: List[DeviceContext]
@@ -188,7 +214,7 @@ struct DispatchCase[n_ranks: Int, max_tokens: Int]:
             var ctx = self.ctxs[r]
             # fmt: off
             self.send.append(ctx.enqueue_create_buffer[.uint8](Self.max_tokens * Self.msg))
-            self.recv.append(ctx.enqueue_create_buffer[.uint8](Self.n_experts * Self.max_tokens * Self.msg))
+            self.recv.append(ctx.enqueue_create_buffer[.uint8](Self.recv_bytes + RECV_GUARD))
             self.recv_count.append(ctx.enqueue_create_buffer[.uint64](Self.n_experts))
             self.counters.append(ctx.enqueue_create_buffer[.int32](Self.n_counters))
             self.tokens.append(ctx.enqueue_create_buffer[.bfloat16](max(Self.max_tokens, 1) * HIDDEN))
@@ -392,9 +418,10 @@ struct Snapshot(Movable):
     var codes: List[UInt8]
     var scales: List[UInt8]
     var recv: List[UInt8]
-    """Each (expert, source rank) segment's used slots, back to back."""
-    var recv_starts: List[Int]
-    """Message index of each segment's first slot in `recv`."""
+    """The receive buffer's messages, by (source rank, source token)."""
+    var index: List[Int32]
+    """The receive buffer's token index sectors, by (local expert, source
+    rank, slot); a sector's first word is the source token."""
 
     def __init__(out self):
         self.row_offsets = []
@@ -403,7 +430,7 @@ struct Snapshot(Movable):
         self.codes = []
         self.scales = []
         self.recv = []
-        self.recv_starts = []
+        self.index = []
 
 
 def snapshot[
@@ -436,27 +463,26 @@ def snapshot[
         s.scales.unsafe_ptr(),
         dc.scales[r].create_sub_buffer[.uint8](0, n_scale_bytes),
     )
-    # Only the used slots: the whole receive buffer is GBs at prefill.
-    var n_msgs = 0
-    for e in range(N_LOCAL):
-        for src in range(n_ranks):
-            s.recv_starts.append(n_msgs)
-            n_msgs += host.expected[(r * N_LOCAL + e) * n_ranks + src]
-    s.recv_starts.append(n_msgs)
-    s.recv = List[UInt8](length=max(n_msgs, 1) * dc.msg, fill=0)
-    for e in range(N_LOCAL):
-        for src in range(n_ranks):
-            var i = e * n_ranks + src
-            var n = s.recv_starts[i + 1] - s.recv_starts[i]
-            if n == 0:
-                continue
-            ctx.enqueue_copy(
-                s.recv.unsafe_ptr().unsafe_offset(s.recv_starts[i] * dc.msg),
-                dc.recv[r].create_sub_buffer[.uint8](
-                    i * max_tokens * dc.msg, n * dc.msg
-                ),
-            )
+    s.recv = List[UInt8](length=dc.index_offset, fill=0)
+    s.index = List[Int32](length=dc.n_index * INDEX_WORDS, fill=0)
+    ctx.enqueue_copy(
+        s.recv.unsafe_ptr(),
+        dc.recv[r].create_sub_buffer[.uint8](0, dc.index_offset),
+    )
+    ctx.enqueue_copy(
+        s.index.unsafe_ptr().unsafe_bitcast[UInt8](),
+        dc.recv[r].create_sub_buffer[.uint8](
+            dc.index_offset, dc.n_index * EP_TOKEN_INDEX_BYTES
+        ),
+    )
+    var guard = List[UInt8](length=RECV_GUARD, fill=0)
+    ctx.enqueue_copy(
+        guard.unsafe_ptr(),
+        dc.recv[r].create_sub_buffer[.uint8](dc.recv_bytes, RECV_GUARD),
+    )
     ctx.synchronize()
+    for b in guard:
+        assert_equal(b, UInt8(0xFF), "a dispatch wrote past its receive buffer")
     return s^
 
 
@@ -558,45 +584,48 @@ def compare[
                     ):
                         bad += 1
                         break
-            # Receive segments: the same messages, keyed by the source token
-            # each message carries.
+            # Receive buffer: each (expert, source rank) lists exactly the
+            # tokens the routing sends it, and their messages are the same
+            # and name their own token.
+            var expert = Int32(d * N_LOCAL + e)
             for src in range(n_ranks):
-                var seg = e * n_ranks + src
-                var first = s0.recv_starts[seg]
-                var by_tok0 = List[Int](length=max(max_tokens, 1), fill=-1)
-                var by_tok1 = List[Int](length=max(max_tokens, 1), fill=-1)
-                for slot in range(counts[src]):
-                    var off = (first + slot) * msg_bytes + CODE_BYTES + N_SCALES
-                    var t0 = Int(
-                        Int32(s0.recv[off])
-                        | (Int32(s0.recv[off + 1]) << 8)
-                        | (Int32(s0.recv[off + 2]) << 16)
-                        | (Int32(s0.recv[off + 3]) << 24)
-                    )
-                    var t1 = Int(
+                var n_src = host.n_tokens[src]
+                var seg = (e * n_ranks + src) * max_tokens
+
+                def listed(s: Snapshot) {mut bad, imm} -> List[Bool]:
+                    var out = List[Bool](length=max(n_src, 1), fill=False)
+                    for slot in range(counts[src]):
+                        var t = Int(s.index[(seg + slot) * INDEX_WORDS])
+                        if t < 0 or t >= n_src or out[t]:
+                            bad += 1
+                        else:
+                            out[t] = True
+                    return out^
+
+                var listed0 = listed(s0)
+                var listed1 = listed(s1)
+                for t in range(n_src):
+                    var routed = False
+                    for k in range(TOP_K):
+                        if host.topk[src][t * TOP_K + k] == expert:
+                            routed = True
+                    if listed0[t] != routed or listed1[t] != routed:
+                        bad += 1
+                        continue
+                    if not routed:
+                        continue
+                    var row = (src * max_tokens + t) * msg_bytes
+                    var off = row + CODE_BYTES + N_SCALES
+                    var named = Int(
                         Int32(s1.recv[off])
                         | (Int32(s1.recv[off + 1]) << 8)
                         | (Int32(s1.recv[off + 2]) << 16)
                         | (Int32(s1.recv[off + 3]) << 24)
                     )
-                    if t0 < 0 or t0 >= max_tokens or t1 < 0 or t1 >= max_tokens:
+                    if named != t:
                         bad += 1
-                        continue
-                    by_tok0[t0] = first + slot
-                    by_tok1[t1] = first + slot
-                for t in range(max_tokens):
-                    var a = by_tok0[t]
-                    var b = by_tok1[t]
-                    if (a < 0) != (b < 0):
-                        bad += 1
-                        continue
-                    if a < 0:
-                        continue
                     for x in range(msg_bytes):
-                        if (
-                            s0.recv[a * msg_bytes + x]
-                            != s1.recv[b * msg_bytes + x]
-                        ):
+                        if s0.recv[row + x] != s1.recv[row + x]:
                             bad += 1
                             break
     return bad
@@ -683,6 +712,17 @@ def check_tokens[
     bad = compare[n_ranks, max_tokens](host, stock, snaps, dc.msg)
     print("    planted: dropped expert count mismatches", bad)
     assert_true(bad > 0, "a dropped expert count passed the check")
+    for i in range(e + 1, N_LOCAL + 1):
+        snaps[d].row_offsets[i] += dropped
+    # A receive-buffer token index pointing at another token of its source.
+    var src = 0
+    while host.expected[(d * N_LOCAL + e) * n_ranks + src] == 0:
+        src += 1
+    ref listed = snaps[d].index[(e * n_ranks + src) * max_tokens * INDEX_WORDS]
+    listed = Int32((Int(listed) + 1) % max(n_tokens[src], 2))
+    bad = compare[n_ranks, max_tokens](host, stock, snaps, dc.msg)
+    print("    planted: wrong receive token index mismatches", bad)
+    assert_true(bad > 0, "a wrong receive token index passed the check")
     # A changed input element changes that token's codes or scales.
     var r0 = 0
     while n_tokens[r0] == 0:
@@ -777,10 +817,7 @@ def sweep[
 
 
 def run_all[n_ranks: Int](ctxs: List[DeviceContext]) raises:
-    # A rank's receive buffer holds n_ranks x max_tokens messages a local
-    # expert, 8.5 GiB at four ranks and 8,168 tokens: eight ranks run the big
-    # case at half the tokens, and the small case is gone before it allocates.
-    comptime big = 8168 if n_ranks <= 4 else 4084
+    comptime big = 8168
     var small_case = DispatchCase[n_ranks, 512](ctxs)
     for n in [0, 1, 13, 509]:
         check_tokens(small_case, List[Int](length=n_ranks, fill=n))

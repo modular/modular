@@ -1376,7 +1376,7 @@ comptime _StateContextPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = OptionalPointer[_StateContextCpp, origin]
+] = Optional[Pointer[_StateContextCpp, origin]]
 
 # `StateContextRef` is the pointer representation passed across the FFI boundary;
 # Mojo never dereferences it directly.

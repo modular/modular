@@ -30,7 +30,7 @@ from typing import Any, Literal, Protocol
 
 from max import tree
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
@@ -81,6 +81,13 @@ DECODER_REPLAY_DEFAULT = False
 """Whether an export takes the decoder's host-planned kept rows when its text
 config says nothing, which is MAX's default for the same replay."""
 
+ENGRAM_LOOKBACK_HISTORY_DEFAULT = False
+"""Whether an export's Engram lookback reads a device-recorded history when
+its text config says nothing. The overlap scheduler needs the history: under
+it the host does not yet know a step's accepted drafts when it builds the
+next step's window. The default stays the host-built window, so the default
+export's input list is unchanged."""
+
 
 @dataclass(frozen=True)
 class V41Config:
@@ -115,6 +122,13 @@ class V41Config:
     """Whether the graph takes the host-planned kept rows of the decoder
     (the layers past the last KV source). Read off the export's text config
     so the interface, the trunk and the engine's contract cannot disagree."""
+
+    engram_lookback_history: bool = ENGRAM_LOOKBACK_HISTORY_DEFAULT
+    """Whether the graph's Engram lookback window is read from a device
+    history the previous step recorded, beside the host window and a
+    per-row source map (the V2 overlap mechanism). Read off the export's
+    text config like ``decoder_replay``, so the default export's inputs
+    stay the host-built window alone."""
 
     @classmethod
     def from_hf(cls, config: Mapping[str, Any]) -> V41Config:
@@ -157,6 +171,12 @@ class V41Config:
             has_vision="vision_config" in config,
             decoder_replay=bool(
                 text.get("decoder_replay", DECODER_REPLAY_DEFAULT)
+            ),
+            engram_lookback_history=bool(
+                text.get(
+                    "engram_lookback_history",
+                    ENGRAM_LOOKBACK_HISTORY_DEFAULT,
+                )
             ),
         )
 
@@ -849,7 +869,7 @@ def extra_inputs(
     data_parallel_degree: int = 1,
     *,
     verify_rows: bool = False,
-) -> list[tuple[str, TensorType]]:
+) -> list[tuple[str, TensorType | BufferType]]:
     """Returns the forward inputs after the KV leaves, in graph order.
 
     The four per-request fields name their rows _BATCH_SYMBOL under
@@ -882,6 +902,36 @@ def extra_inputs(
     batch_rows = (
         _BATCH_SYMBOL if data_parallel_degree == 1 else "global_batch_rows"
     )
+    # The V2 overlap mechanism replaces the host-built window with the
+    # window plus its device history: the host window arrives as int64
+    # ids, each row says where to read its real window from (a history
+    # row the previous step recorded, or -1 for the host window), and the
+    # history is a persistent device buffer. The dead companion stays with
+    # the host: it marks window slots, not the recorded ids.
+    if config.engram_lookback_history:
+        i64 = DType.int64
+        lookback: list[tuple[str, TensorType | BufferType]] = [
+            (
+                "engram_lookback_ids",
+                TensorType(i64, [batch_rows, _NUM_LAST_TOKEN_LOOKBACK], gpu0),
+            ),
+            ("engram_lookback_source", TensorType(i64, [batch_rows], gpu0)),
+            (
+                "engram_lookback_history",
+                BufferType(
+                    i64,
+                    ["engram_history_rows", _NUM_LAST_TOKEN_LOOKBACK],
+                    device=gpu0,
+                ),
+            ),
+        ]
+    else:
+        lookback = [
+            (
+                "engram_lookback",
+                TensorType(i32, [batch_rows, _NUM_LAST_TOKEN_LOOKBACK], gpu0),
+            )
+        ]
     extras = [
         ("swa_begin", TensorType(i32, [batch_rows], gpu0)),
         ("global_write_floor", TensorType(i32, [batch_rows], gpu0)),
@@ -893,10 +943,7 @@ def extra_inputs(
                 gpu0,
             ),
         ),
-        (
-            "engram_lookback",
-            TensorType(i32, [batch_rows, _NUM_LAST_TOKEN_LOOKBACK], gpu0),
-        ),
+        *lookback,
         (
             "engram_lookback_dead",
             TensorType(u8, [batch_rows, _NUM_LAST_TOKEN_LOOKBACK], gpu0),

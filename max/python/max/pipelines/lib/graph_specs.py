@@ -61,6 +61,18 @@ class GraphRole(str, Enum):
     VISION = "vision"
     """The vision encoder: image patches to soft-token embeddings."""
 
+    VISION_PREPROCESS = "vision_preprocess"
+    """One image's preprocessing, on the CPU: decoded pixels and the size to
+    resize them to, to the vision encoder's inputs for that image. Only
+    ``max export`` builds it, for a serving engine; MAX serve preprocesses in
+    its tokenizers."""
+
+    VISION_PREPROCESS_VIDEO = "vision_preprocess_video"
+    """One encoder attention segment of a video clip's preprocessing, on the
+    CPU: the segment's decoded frames and the sizes to resize them to, to the
+    vision encoder's inputs for that segment. Only ``max export`` builds it,
+    for a model whose segment is not a one-frame image."""
+
     ENCODER = "encoder"
     """The single forward pass of a model without a KV cache, such as an
     embedding model: inputs to embeddings or hidden states."""
@@ -288,19 +300,17 @@ def compile_and_init_graphs(
 
 
 def _check_inputs(role: str, in_tree: tree.TreeDef) -> None:
-    """Fails a load whose decoder names inputs a serving engine can't place.
+    """Fails a load whose graph names inputs a serving engine can't place.
 
-    A decoder that names its inputs, rather than passing them positionally,
+    A graph that names its inputs, rather than passing them positionally,
     has a serving engine find each one by its group's kind, so every input
     must sit inside a kinded group.
 
     Raises:
-        ValueError: If a named decoder input is outside every kinded group.
+        ValueError: If a named input is outside every kinded group.
     """
     args = in_tree.children[0]
-    if role != GraphRole.DECODER or all(
-        arg.kind == "leaf" for arg in args.children
-    ):
+    if all(arg.kind == "leaf" for arg in args.children):
         return
     unkinded = [
         path
@@ -311,7 +321,7 @@ def _check_inputs(role: str, in_tree: tree.TreeDef) -> None:
     ]
     if unkinded:
         raise ValueError(
-            "the decoder graph's inputs "
+            f"the {role} graph's inputs "
             + ", ".join(unkinded)
             + " are in no kinded group: build them with a"
             " max.nn.legacy.graph_groups group or a kinded KV cache input"

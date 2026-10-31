@@ -21,8 +21,9 @@ covers several kinds of memory. `OwnedGPUEngine` is the shared-memory engine,
 and `OwnedGPUTensor` names an `OwnedTensor` that uses it.
 """
 
-from layout import TensorLayout, row_major
+from layout import TensorLayout, TileTensor, row_major
 from layout.tensor_engine import DefaultEngine, TensorEngine
+from layout.tile_tensor import _IndexOrSlice, _IndexOrSliceLike
 from std.memory import stack_allocation
 from std.sys import align_of
 
@@ -146,6 +147,202 @@ struct OwnedTensor[
         comptime assert Self.LayoutType.all_dims_known
         self._storage = {}
         self.layout = layout
+
+    comptime _View[origin: Origin] = TileTensor[
+        Self.dtype,
+        Self.LayoutType,
+        origin,
+        address_space=Self.address_space,
+        Engine=Self.Engine.ViewEngine,
+    ]
+
+    @inline(.always)
+    def __getitem__(
+        ref self,
+        a0: _IndexOrSlice[...],
+    ) -> Self._View[origin_of(self)]._SubscriptViewType[
+        TypeList.of[Trait=_IndexOrSliceLike, type_of(a0)]()
+    ]:
+        """Fixes or narrows each dimension, returning a `TileTensor` view.
+
+        This is `TileTensor(self)[...]`: the view borrows from `self`, and
+        each argument is an index, which drops its dimension, or a slice,
+        which keeps it. Integer literals, `Idx` values and `:` are
+        compile-time, so `owned[0, 2:4, :]` keeps static extents. See
+        `TileTensor.__getitem__` for the argument forms.
+
+        Args:
+            a0: The index or slice for dimension 0.
+
+        Returns:
+            A view of the selected elements, borrowing from `self`.
+
+        Example:
+
+        ```mojo
+        from layout import row_major
+        from layout.owned_tensor import OwnedGPUTensor
+
+        def kernel():
+            var owned = OwnedGPUTensor[.float32, .SHARED](row_major[4, 8]())
+            var row = owned[1:2, :]
+            row[0, 3] = 7.0
+        ```
+        """
+        return TileTensor(self)._subscript(a0)
+
+    @inline(.always)
+    def __getitem__(
+        ref self,
+        a0: _IndexOrSlice[...],
+        a1: _IndexOrSlice[...],
+    ) -> Self._View[origin_of(self)]._SubscriptViewType[
+        TypeList.of[Trait=_IndexOrSliceLike, type_of(a0), type_of(a1)]()
+    ]:
+        """Fixes or narrows each of 2 dimensions, returning a `TileTensor`
+        view.
+
+        See the rank-1 overload.
+
+        Args:
+            a0: The index or slice for dimension 0.
+            a1: The index or slice for dimension 1.
+
+        Returns:
+            A view of the selected elements, borrowing from `self`.
+        """
+        return TileTensor(self)._subscript(a0, a1)
+
+    @inline(.always)
+    def __getitem__(
+        ref self,
+        a0: _IndexOrSlice[...],
+        a1: _IndexOrSlice[...],
+        a2: _IndexOrSlice[...],
+    ) -> Self._View[origin_of(self)]._SubscriptViewType[
+        TypeList.of[
+            Trait=_IndexOrSliceLike, type_of(a0), type_of(a1), type_of(a2)
+        ]()
+    ]:
+        """Fixes or narrows each of 3 dimensions, returning a `TileTensor`
+        view.
+
+        See the rank-1 overload.
+
+        Args:
+            a0: The index or slice for dimension 0.
+            a1: The index or slice for dimension 1.
+            a2: The index or slice for dimension 2.
+
+        Returns:
+            A view of the selected elements, borrowing from `self`.
+        """
+        return TileTensor(self)._subscript(a0, a1, a2)
+
+    @inline(.always)
+    def __getitem__(
+        ref self,
+        a0: _IndexOrSlice[...],
+        a1: _IndexOrSlice[...],
+        a2: _IndexOrSlice[...],
+        a3: _IndexOrSlice[...],
+    ) -> Self._View[origin_of(self)]._SubscriptViewType[
+        TypeList.of[
+            Trait=_IndexOrSliceLike,
+            type_of(a0),
+            type_of(a1),
+            type_of(a2),
+            type_of(a3),
+        ]()
+    ]:
+        """Fixes or narrows each of 4 dimensions, returning a `TileTensor`
+        view.
+
+        See the rank-1 overload.
+
+        Args:
+            a0: The index or slice for dimension 0.
+            a1: The index or slice for dimension 1.
+            a2: The index or slice for dimension 2.
+            a3: The index or slice for dimension 3.
+
+        Returns:
+            A view of the selected elements, borrowing from `self`.
+        """
+        return TileTensor(self)._subscript(a0, a1, a2, a3)
+
+    @inline(.always)
+    def __getitem__(
+        ref self,
+        a0: _IndexOrSlice[...],
+        a1: _IndexOrSlice[...],
+        a2: _IndexOrSlice[...],
+        a3: _IndexOrSlice[...],
+        a4: _IndexOrSlice[...],
+    ) -> Self._View[origin_of(self)]._SubscriptViewType[
+        TypeList.of[
+            Trait=_IndexOrSliceLike,
+            type_of(a0),
+            type_of(a1),
+            type_of(a2),
+            type_of(a3),
+            type_of(a4),
+        ]()
+    ]:
+        """Fixes or narrows each of 5 dimensions, returning a `TileTensor`
+        view.
+
+        See the rank-1 overload.
+
+        Args:
+            a0: The index or slice for dimension 0.
+            a1: The index or slice for dimension 1.
+            a2: The index or slice for dimension 2.
+            a3: The index or slice for dimension 3.
+            a4: The index or slice for dimension 4.
+
+        Returns:
+            A view of the selected elements, borrowing from `self`.
+        """
+        return TileTensor(self)._subscript(a0, a1, a2, a3, a4)
+
+    @inline(.always)
+    def __getitem__(
+        ref self,
+        a0: _IndexOrSlice[...],
+        a1: _IndexOrSlice[...],
+        a2: _IndexOrSlice[...],
+        a3: _IndexOrSlice[...],
+        a4: _IndexOrSlice[...],
+        a5: _IndexOrSlice[...],
+    ) -> Self._View[origin_of(self)]._SubscriptViewType[
+        TypeList.of[
+            Trait=_IndexOrSliceLike,
+            type_of(a0),
+            type_of(a1),
+            type_of(a2),
+            type_of(a3),
+            type_of(a4),
+            type_of(a5),
+        ]()
+    ]:
+        """Fixes or narrows each of 6 dimensions, returning a `TileTensor`
+        view.
+
+        See the rank-1 overload.
+
+        Args:
+            a0: The index or slice for dimension 0.
+            a1: The index or slice for dimension 1.
+            a2: The index or slice for dimension 2.
+            a3: The index or slice for dimension 3.
+            a4: The index or slice for dimension 4.
+            a5: The index or slice for dimension 5.
+
+        Returns:
+            A view of the selected elements, borrowing from `self`.
+        """
+        return TileTensor(self)._subscript(a0, a1, a2, a3, a4, a5)
 
 
 struct OwnedGPUStorage[

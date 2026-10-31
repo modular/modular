@@ -24,6 +24,7 @@
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/MojoDiags.h"
 #include "ParserEvaluationContext.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 #include <cstddef>
 
@@ -159,6 +160,42 @@ private:
   std::function<MojoInflightDiag &(std::optional<SMLoc>)> getDiagClosure;
 };
 
+/// A ParameterEvaluator paired with the param-ref depth of the values handed
+/// to it. Inference recurses past `ParameterScopeTypeInterface`s while matching
+/// signatures, which moves the depth at which index references point back to
+/// the inferred parameters, see PSTIAIRAID.
+class DepthAwareEvaluator : public ParameterEvaluator {
+public:
+  explicit DepthAwareEvaluator(ParameterEvaluator evaluator)
+      : ParameterEvaluator(std::move(evaluator)) {}
+
+  size_t getDepth() const { return depth; }
+
+  /// Enters one more signature scope for the lifetime of the returned object.
+  llvm::SaveAndRestore<size_t> enterSignatureScope() {
+    return llvm::SaveAndRestore<size_t>(depth, depth + 1);
+  }
+
+  /// Returns to the decl scope at depth 0 for the lifetime of the returned
+  /// object.
+  llvm::SaveAndRestore<size_t> enterDeclScope() {
+    return llvm::SaveAndRestore<size_t>(depth, 0);
+  }
+
+  /// Rebinds a value found at the current depth. These hide the base class
+  /// versions, which rebind at depth 0.
+  Type getReboundType(Type type) { return replaceAtDepth(type, depth); }
+  Attribute getReboundAttribute(Attribute attr) {
+    return replaceAtDepth(attr, depth);
+  }
+  TypedAttr getReboundAttribute(TypedAttr attr) {
+    return replaceAtDepth(attr, depth);
+  }
+
+private:
+  size_t depth = 0;
+};
+
 class InferenceState {
 public:
   InferenceState(ASTDecl &declScope, ArrayRef<Type> declaredParamTypes,
@@ -225,13 +262,13 @@ protected:
   /// which changes what param-ref depths we're watching for; the param-refs'
   /// depths would be greater (have to reach further outward so to speak, past
   /// more generator types) to reference param-decls in the
-  /// ParameterInferenceState's original scope. The input depth of
-  /// `evaluator` tracks that number, see PSTIAIRAID.
-  size_t getParamIndexRefDepth() const { return evaluator.getInputDepth(); }
+  /// ParameterInferenceState's original scope. The depth of `evaluator`
+  /// tracks that number, see PSTIAIRAID.
+  size_t getParamIndexRefDepth() const { return evaluator.getDepth(); }
 
   /// Enters one more signature scope for the lifetime of the returned object.
-  ScopedInputDepth enterSignatureScope() {
-    return ScopedInputDepth(evaluator, getParamIndexRefDepth() + 1);
+  llvm::SaveAndRestore<size_t> enterSignatureScope() {
+    return evaluator.enterSignatureScope();
   }
 
   /// Returns the index of the first reference to a parameter being inferred,
@@ -247,7 +284,7 @@ protected:
 
   ASTDecl &declScope;
   SharedState &shared;
-  ParameterEvaluator evaluator;
+  DepthAwareEvaluator evaluator;
   ArrayRef<Type> declaredParamTypes;
   PogListAttr declaredParamPogs;
 

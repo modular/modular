@@ -616,22 +616,6 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
   mlir::AttrTypeReplacer replacer;
   std::optional<ErrorTree> error;
   replacer.addReplacement(
-      [&](SymbolConstantAttr cst) -> std::pair<Attribute, WalkResult> {
-        // Ignore parametric constants.
-        if (!cst.getType().getInputParamTypes().empty())
-          return {cst, WalkResult::advance()};
-        ErrorTreeOr<FuncOp> func =
-            getConcreteFunction(parent, loc, extractFuncSymbolGenerator(cst));
-        if (func.isError()) {
-          error = func.takeError();
-          return {cst, WalkResult::interrupt()};
-        }
-        if (!*func)
-          return {cst, WalkResult::interrupt()};
-
-        return {SymbolConstantAttr::get(func.takeValue()), WalkResult::skip()};
-      });
-  replacer.addReplacement(
       [&](GeneratorAttr gen)
           -> std::optional<std::pair<Attribute, WalkResult>> {
         // Ignore parametric references and non-function generators.
@@ -2039,10 +2023,6 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
       // the symbol has nothing else to keep it alive -- but it does mean the
       // same callee linked differently depending on how it is referenced.
       mlir::AttrTypeWalker attrWalker;
-      attrWalker.addWalk([&](SymbolConstantAttr ref) {
-        exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
-                                         ExportKind::Exported);
-      });
       attrWalker.addWalk([&](FuncSymbolAttr ref) {
         exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
                                          ExportKind::Exported);
@@ -2054,14 +2034,6 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     // generator references are instantiated in the standalone module, they are
     // instantiated with the new target.
     mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement(
-        [&](SymbolConstantAttr ref)
-            -> std::optional<std::pair<Attribute, WalkResult>> {
-          if (ref.getSymbol() != symbol.getSymbol())
-            exportedSymbols.insert(
-                {ref.getSymbol().getRootReference(), ExportKind::NotExported});
-          return std::nullopt;
-        });
     replacer.addReplacement(
         [&](FuncSymbolAttr ref)
             -> std::optional<std::pair<Attribute, WalkResult>> {

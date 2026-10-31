@@ -57,6 +57,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel, launch_dependent_grids
 from max.gpu.primitives.warp import shuffle_xor
 from max.gpu.sync import barrier
 from max.algorithm import sync_parallelize
@@ -65,6 +66,7 @@ from std.memory import unsafe_stack_allocation
 from std.sys.info import align_of
 from std.utils.static_tuple import StaticTuple
 from layout import TensorLayout, TensorEngine, TileTensor
+from state_space.pdl_wait import wait_on_producers
 from state_space.selective_scan import softplus
 
 # exp(x) == exp2(x * LOG2E), and exp2 is the faster GPU instruction.
@@ -283,6 +285,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     dt_softplus: Bool = True,
     prefill: Bool = True,
     CH_PER_THREAD: Int = 1,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     ngroups: Int32,
     A: TileTensor[kernel_dtype, A_LT, ImmUntrackedOrigin, Engine=Engine],
@@ -362,6 +365,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
         CH_PER_THREAD: Number of head_dim channels each thread carries. The B/C
             vectors of a token depend only on the group and dstate slice, so
             each load feeds this many channels.
+        pdl_level: Programmatic dependent launch level. Every enabled level
+            waits on the predecessor grid before its first load, and the
+            kernel's loads all come after that wait.
 
     Args:
         ngroups: Number of `B`/`C` groups; `nheads // ngroups` heads share
@@ -417,6 +423,18 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     # need every lane of the warp. Only their loads and stores are guarded.
     var n_base = tx * L
     var group_id = _group_id(y, ngroups, h)
+
+    # Everything below reads the sequence table, the state pool, the
+    # activations or `A`, `D` and `dt_bias`, which the graph derives from the
+    # model parameters (cast, negate, exp) in kernels that can run right before
+    # this one, so all of it waits. Every CTA waits before any early exit so
+    # this grid cannot finish ahead of its predecessor. Releasing the
+    # dependents here is safe: their own wait still blocks until this grid
+    # completes.
+    comptime if pdl_level != PDLLevel.OFF:
+        wait_on_producers()
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
 
     var seq_start = Int(query_start_loc[b])
     var seq_end = Int(query_start_loc[b + 1])
@@ -599,6 +617,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                 ssm_pool.store[alignment=pool_align](
                     (slot, h, p0 + i * NY, n_base), state[i].cast[state_dtype]()
                 )
+
+    comptime if (
+        pdl_level != PDLLevel.OFF and pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
+        launch_dependent_grids()
 
 
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[

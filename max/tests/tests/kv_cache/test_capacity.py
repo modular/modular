@@ -338,22 +338,39 @@ def test_connector_config_defaults_disk_io_to_buffered() -> None:
     assert KVConnectorConfig(use_disk_direct_io=True).use_disk_direct_io is True
 
 
+class _StopAtGeometry(Exception):
+    """Raised in place of the host geometry, to end ``create`` there."""
+
+
 def _create_with_unaligned_direct_io(
     monkeypatch: pytest.MonkeyPatch, host_staging_mlock: bool = False
-) -> None:
+) -> Mapping[str, int]:
     """Drives ``TierConnector.create`` with registered staging on CUDA up to
-    its direct-I/O alignment check, which raises."""
+    the host geometry, and returns the per-leaf row sizes it was asked to
+    tile."""
     monkeypatch.setattr(tier_connector, "accelerator_api", lambda: "cuda")
     monkeypatch.setattr(
         tier_connector,
         "_native_connector_class",
         lambda: object,
     )
+    seen: dict[str, int] = {}
+
+    def stop(**kwargs: object) -> None:
+        seen.update(cast("Mapping[str, int]", kwargs["cache_sizes"]))
+        raise _StopAtGeometry
+
+    monkeypatch.setattr(tier_connector, "compute_jenga_ratios", stop)
     # A leaf of 4096+16 bytes: a token-scaled geometry can produce this with
-    # a small page size; the check must fire before the staging region.
+    # a small page size. DSv4.1's indexer-scale leaves are the real case.
     unaligned = SimpleNamespace(
         leaf_id="full",
         host_bytes_per_page=4096 + 16,
+        buffers=[SimpleNamespace(device=SimpleNamespace(is_host=False))],
+    )
+    aligned = SimpleNamespace(
+        leaf_id="swa",
+        host_bytes_per_page=2 * 4096,
         buffers=[SimpleNamespace(device=SimpleNamespace(is_host=False))],
     )
     cfg = SimpleNamespace(
@@ -366,26 +383,36 @@ def _create_with_unaligned_direct_io(
         disk_offload_dir=None,
         num_disk_workers=2,
     )
-    with pytest.raises(ValueError, match="offending leaves"):
+    with pytest.raises(_StopAtGeometry):
         tier_connector.TierConnector.create(
-            leaves={"full": KVCacheGroupId.full()},
+            leaves={
+                "full": KVCacheGroupId.full(),
+                "swa": KVCacheGroupId.full(),
+            },
             replica_kv_memory=cast(
                 "Sequence[Mapping[str, KVCacheMemory]]",
-                [{"full": unaligned}],
+                [{"full": unaligned, "swa": aligned}],
             ),
             params=SimpleNamespace(kv_connector_config=cfg),
             device_memory_bytes=0,
         )
+    return seen
 
 
-def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
+def test_create_pads_unaligned_host_rows_for_direct_io(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Every leaf whose block width is not a 4 KiB multiple must be named in
-    one error before anything is allocated, since no buffered fallback
-    exists and a single unaligned leaf makes every one of its blocks unable
-    to take the direct path."""
-    _create_with_unaligned_direct_io(monkeypatch)
+    """Direct I/O reads and writes each host row in place, so every row is
+    padded to a whole number of 4 KiB before the host geometry is laid out;
+    an already aligned row is left alone."""
+    rows = _create_with_unaligned_direct_io(monkeypatch)
+    assert rows == {"full": 2 * 4096, "swa": 2 * 4096}
+
+
+def test_host_rows_are_unpadded_without_direct_io() -> None:
+    assert tier_connector._host_row_bytes(4096 + 16, direct_io=False) == 4112
+    assert tier_connector._host_row_bytes(13056, direct_io=True) == 16384
+    assert tier_connector._host_row_bytes(8192, direct_io=True) == 8192
 
 
 @pytest.mark.parametrize(

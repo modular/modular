@@ -98,6 +98,7 @@ from algorithm.rowwise_types import (
     tile_alignment,
 )
 from algorithm.reduce_op import ReduceOp, Reducer
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.collections import Optional
 from max.gpu import (
     WARP_SIZE,
@@ -640,6 +641,7 @@ def launch[
     computationally_expensive: Bool = False,
     dtype_size: Int = 0,
     name: StaticString = "rowwise",
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](body: Body, shape: Coord, ctx: Optional[DeviceContext] = None) raises:
     """Top-level scaffolder. `num_phases` picks reduce-shaped
     (`num_phases == 1`, output collapses the reduced axis, terminal
@@ -670,6 +672,10 @@ def launch[
         name: Operation name propagated to the GPU tier kernels'
             `@__name` so a profile row identifies the op (defaults to
             `"rowwise"`). CPU ignores.
+        pdl_level: GPU programmatic dependent launch level of the tier
+            kernels (NVIDIA SM90+ only). `OVERLAP_AT_BEGINNING` releases
+            dependent kernels right after the predecessor wait instead of
+            at exit. CPU ignores.
 
     Args:
         body: The per-row computation. Receives a `Context` and the
@@ -712,6 +718,7 @@ def launch[
                 COOPERATIVE_BLOCK_SIZE=COOPERATIVE_BLOCK_SIZE,
                 WARP_BLOCK_WARPS=WARP_BLOCK_WARPS,
                 name=name,
+                pdl_level=pdl_level,
             ](body, shape, ctx.value())
     else:
         # Normalize-shaped: output keeps the input shape, per-element
@@ -742,6 +749,7 @@ def launch[
                 num_phases=num_phases,
                 dtype_size=dtype_size,
                 name=name,
+                pdl_level=pdl_level,
             ](body, shape, ctx.value())
 
 

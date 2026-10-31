@@ -24,7 +24,12 @@ _FILECHECK_TESTS = [
     "test_tensor_core_fp8_mma_sync.mojo",
 ]
 
-_EXTRA_COPTS = {}
+_EXTRA_COPTS = {
+    "test_pdl_launch_wait_check.mojo": [
+        "-D",
+        "MAX_CHECK_PDL_WAIT=True",
+    ],
+}
 
 _EXTRA_DEPS = {
     "test_fast_div.mojo": ["//max:max_mojo"],
@@ -52,6 +57,12 @@ _EXTRA_CONSTRAINTS = {
     "test_semaphore.mojo": ["//:nvidia_gpu"],
     "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_grid_dependence_control.mojo": ["//:h100_gpu"],
+    # PDL needs SM90+; `pdl_launch_attributes` is empty on older NVIDIA GPUs.
+    "test_pdl_launch_wait_check.mojo": select({
+        "//:b200_gpu": [],
+        "//:h100_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_kernel_with_list.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377 remove this
     "test_producer_consumer.mojo": ["//:h100_gpu"],
     "test_tbc_launch_config.mojo": ["//:h100_gpu"],
@@ -74,7 +85,37 @@ _EXTRA_CONSTRAINTS = {
     "test_simd_reduction.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
     "test_strided_load.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3878 — Metal IR does not contain @llvm.masked.gather
     "test_verify_buffers_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # Uses block.sum/block.max (llvm.ctlz issue)
+    # PDL needs SM90+, and the test sleeps with the NVIDIA nanosleep intrinsic.
+    "test_pdl_wait_readonly_loads.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_fast_div.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3587 — Metal compilation failure (originally wrong FastDiv remainder)
+    # Compiles PDL consumers for SM90 and SM100 and reads their SASS.
+    "test_pdl_wait_sass.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+}
+
+# The runtime's PTX compiler and the nvdisasm release that matches it
+# (13.4.92), so the SASS test reads what the runtime would run.
+_NVDISASM = "@modular_pip_lock_file_repo//deps:nvidia-cuda-nvdisasm@13.4.92"
+
+_EXTRA_DATA = {
+    "test_pdl_wait_sass.mojo": [
+        "//bazel/public-patches:NVPTX",
+        _NVDISASM,
+    ],
+}
+
+_EXTRA_ENV = {
+    "test_pdl_wait_sass.mojo": {
+        "NVDISASM": "$(rootpaths %s)" % _NVDISASM,
+        "NVPTX_LIBRARY": "$(rootpaths //bazel/public-patches:NVPTX)",
+    },
 }
 
 _GPU_MEMORY = {
@@ -118,6 +159,8 @@ _GPU_MEMORY = {
         name = src + ".test",
         srcs = [src],
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS + _EXTRA_COPTS.get(src, []),
+        data = _EXTRA_DATA.get(src, []),
+        env = _EXTRA_ENV.get(src, {}),
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, "0.8"),
         },
