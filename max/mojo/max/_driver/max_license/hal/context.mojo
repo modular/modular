@@ -577,18 +577,12 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         discriminator: UInt64,
         byte_length: Int,
         name: String,
-        attr_code: OptionalReg[Int32],
-        attr_value: Int32,
     ) -> String:
         """Builds a cache key from a code discriminator -- a content hash for
         `_function_cache`, the buffer address for `_function_alias` -- plus the
-        code length, the linkage name and the optional function attribute. The
-        length pairs with the hash so a 64-bit collision alone cannot alias two
-        different code images."""
-        var key = String(t"{discriminator}:{byte_length}:{name}")
-        if case .Some(attr_code) = attr_code:
-            key += String(t"#{attr_code}={attr_value}")
-        return key^
+        code length and the linkage name. The length pairs with the hash so a
+        64-bit collision alone cannot alias two different code images."""
+        return String(t"{discriminator}:{byte_length}:{name}")
 
     def _function_cache_find(
         mut self, key: String
@@ -671,8 +665,6 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         asm: StringSlice[origin=asm_origin],
         name: String,
         content_key: String,
-        attr_code: OptionalReg[Int32],
-        attr_value: Int32,
     ) raises HALError -> FunctionHandle:
         """Returns the cached function for `content_key`, loading `asm` on first
         use."""
@@ -683,8 +675,6 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         # Load outside the lock so concurrent first-launches don't serialize.
         var bundle = self.load_bundle(asm)
         var func = self.load_function(bundle, name.copy())
-        if case .Some(attr_code) = attr_code:
-            self.set_function_attribute(func, attr_code, attr_value)
 
         var raced = self._function_cache_insert(
             content_key.copy(),
@@ -700,8 +690,6 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         mut self,
         asm: StaticString,
         name: String,
-        attr_code: OptionalReg[Int32] = None,
-        attr_value: Int32 = 0,
     ) raises HALError -> FunctionHandle:
         """Returns the loaded function for `name`, loading `asm` on first use.
 
@@ -711,22 +699,16 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         `get_or_load_function_dynamic`.
         """
         var addr_key = Self._function_cache_key(
-            UInt64(Int(asm.unsafe_ptr())),
-            asm.byte_length(),
-            name,
-            attr_code,
-            attr_value,
+            UInt64(Int(asm.unsafe_ptr())), asm.byte_length(), name
         )
         var found = self._function_alias_find(addr_key)
         if case .Some(found) = found:
             return found
 
         var content_key = Self._function_cache_key(
-            _code_digest(asm), asm.byte_length(), name, attr_code, attr_value
+            _code_digest(asm), asm.byte_length(), name
         )
-        var func = self._get_or_load_function_keyed(
-            asm, name, content_key, attr_code, attr_value
-        )
+        var func = self._get_or_load_function_keyed(asm, name, content_key)
         self._function_alias_insert(addr_key^, content_key^)
         return func
 
@@ -736,8 +718,6 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         mut self,
         asm: StringSlice[origin=asm_origin],
         name: String,
-        attr_code: OptionalReg[Int32] = None,
-        attr_value: Int32 = 0,
     ) raises HALError -> FunctionHandle:
         """Returns the loaded function for `name`, loading `asm` on first use.
 
@@ -745,11 +725,9 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         no address alias and therefore hashes the code image on every call.
         """
         var content_key = Self._function_cache_key(
-            _code_digest(asm), asm.byte_length(), name, attr_code, attr_value
+            _code_digest(asm), asm.byte_length(), name
         )
-        return self._get_or_load_function_keyed(
-            asm, name, content_key, attr_code, attr_value
-        )
+        return self._get_or_load_function_keyed(asm, name, content_key)
 
     def compile_function_inline[
         func: Some[TrivialRegisterPassable]

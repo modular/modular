@@ -138,19 +138,12 @@ def test_cache_key_distinguishes[device_spec: DeviceSpec]() raises:
     """Every component of the key participates, so nothing aliases on a partial
     match."""
     comptime Ctx = Context[device_spec]
-    var base = Ctx._function_cache_key(1, 10, "kernel", None, 0)
+    var base = Ctx._function_cache_key(1, 10, "kernel")
 
-    assert_not_equal(base, Ctx._function_cache_key(2, 10, "kernel", None, 0))
-    assert_not_equal(base, Ctx._function_cache_key(1, 11, "kernel", None, 0))
-    assert_not_equal(base, Ctx._function_cache_key(1, 10, "other", None, 0))
-    assert_not_equal(
-        base, Ctx._function_cache_key(1, 10, "kernel", Int32(8), 0)
-    )
-    assert_not_equal(
-        Ctx._function_cache_key(1, 10, "kernel", Int32(8), 0),
-        Ctx._function_cache_key(1, 10, "kernel", Int32(8), 1),
-    )
-    assert_equal(base, Ctx._function_cache_key(1, 10, "kernel", None, 0))
+    assert_not_equal(base, Ctx._function_cache_key(2, 10, "kernel"))
+    assert_not_equal(base, Ctx._function_cache_key(1, 11, "kernel"))
+    assert_not_equal(base, Ctx._function_cache_key(1, 10, "other"))
+    assert_equal(base, Ctx._function_cache_key(1, 10, "kernel"))
 
 
 def main() raises:

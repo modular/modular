@@ -1330,9 +1330,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 block_dim, location=call_location()
             )
         var gpu_kernel = self.compile_function[func](
-            func_attribute=self._func_attribute_for_launch(
-                func_attribute, shared_mem_bytes
-            ),
+            func_attribute=func_attribute
         )
         gpu_kernel._call_with_pack_checked(
             self,
@@ -1396,10 +1394,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 block_dim, location=call_location()
             )
         var gpu_kernel = DeviceFunction[FuncType.__call__](
-            self.assert_default_target(),
-            func_attribute=self._func_attribute_for_launch(
-                func_attribute, shared_mem_bytes
-            ),
+            self.assert_default_target(), func_attribute=func_attribute
         )
         gpu_kernel._call_closure_checked(
             self,
@@ -2066,24 +2061,6 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         # The HAL plugin names are "CUDA"/"HIP"/"Metal"; AsyncRT exposes
         # them lowercased so dispatchers can match `ctx.api() == "cuda"`.
         return String(self._driver[].get_name()).lower()
-
-    @inline(.always)
-    def _func_attribute_for_launch(
-        self,
-        func_attribute: OptionalReg[FuncAttribute],
-        shared_mem_bytes: OptionalReg[Int],
-    ) -> OptionalReg[FuncAttribute]:
-        """Returns the function attribute to compile a launch with.
-
-        CUDA's default cap is 48KB minus the kernel's static shared memory, so
-        the cap is set for every request, not only past a threshold.
-        """
-        var requested_bytes = shared_mem_bytes.or_else(0)
-        if func_attribute or requested_bytes <= 0:
-            return func_attribute
-        return FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(requested_bytes)
-        )
 
     def enqueue_copy_no_cross_stream_sync[
         dtype: DType
@@ -2775,43 +2752,34 @@ struct DeviceFunction[
 
         Args:
             ctx: The device context to compile for.
-            func_attribute: Optional attribute to apply to the loaded function
-                (for example a raised dynamic shared-memory cap).
+            func_attribute: Optional attribute for the loaded function. Only
+                `MAX_DYNAMIC_SHARED_SIZE_BYTES` is accepted, and it has no
+                effect.
 
         Raises:
             If compilation or function loading fails, or if an unsupported
             function attribute is provided.
         """
-        var info = ctx._context[]._compile_inner[
-            type_of(Self._wrapped_func), Self._wrapped_func
-        ]()
-        var attr_code = OptionalReg[Int32](None)
-        var attr_value = Int32(0)
         if case .Some(func_attribute) = func_attribute:
+            # The CUDA plugin lifts the dynamic shared memory cap to the
+            # device's opt-in limit when it loads a function, and Metal and
+            # HIP have no cap, so a requested cap needs nothing more.
             if (
                 func_attribute.attribute
-                == Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+                != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             ):
-                # Metal and HIP have no per-function cap; their plugins
-                # reject it.
-                if ctx.api() == "cuda":
-                    attr_code = OptionalReg[Int32](
-                        func_attribute.attribute.code
-                    )
-                    attr_value = Int32(func_attribute.value)
-            else:
                 raise Error(
                     "the function attribute '",
                     func_attribute.attribute,
                     "' is not currently supported",
                 )
+        var info = ctx._context[]._compile_inner[
+            type_of(Self._wrapped_func), Self._wrapped_func
+        ]()
         # The context's function cache owns the loaded module: repeated
         # constructions of the same kernel reuse the cached module.
         var func_handle = ctx._context[].get_or_load_function(
-            info.asm,
-            info.function_name,
-            attr_code=attr_code,
-            attr_value=attr_value,
+            info.asm, info.function_name
         )
         self._ctx = ctx
         self._handle = None
