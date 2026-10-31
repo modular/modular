@@ -31,11 +31,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias
 
 from max.nn import Module
+from max.nn.legacy.layer import Module as GraphApiModule
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .interfaces.pipeline_model import PipelineModel
-from .module_registration import module_pipeline_model
 from .pipeline_executor import PipelineExecutor
+from .registration_graph_api import registered_pipeline_model
 from .tokenizer import TextTokenizer
 
 if TYPE_CHECKING:
@@ -161,16 +162,17 @@ class SupportedArchitecture:
     the framework builds it from the registration.
     """
 
-    modules: Mapping[str, type[Module[..., Any]]] = field(
+    modules: Mapping[str, type[Module[..., Any] | GraphApiModule]] = field(
         default_factory=dict, kw_only=True
     )
     """The module class of each role the architecture fills, keyed by
     :class:`~max.pipelines.lib.graph_specs.GraphRole`.
 
     The framework constructs each as ``module_cls(config)`` from the
-    finalized :attr:`config`, and its ``forward`` takes and returns the
-    role's contract from :mod:`max.pipelines.lib.role_contracts`. Only
-    ``DECODER`` is served so far.
+    finalized :attr:`config`, and its ``forward`` (``__call__`` for a
+    graph-API :class:`~max.nn.legacy.Module`) takes and returns the role's
+    contract from :mod:`max.pipelines.lib.role_contracts`. Only ``DECODER``
+    is served so far.
     """
 
     task: PipelineTask
@@ -542,8 +544,11 @@ class SupportedArchitecture:
         # A derived architecture, such as a speculative pairing, keeps the
         # pipeline model it sets.
         if self.modules and self.pipeline_model is None:
-            self.pipeline_model = module_pipeline_model(
-                self.config, tuple(self.modules.items()), self.batching
+            self.pipeline_model = registered_pipeline_model(
+                self.task,
+                self.config,
+                tuple(self.modules.items()),
+                self.batching,
             )
 
     def draft_architecture(self, method: str, checkpoint_name: str) -> str:

@@ -214,6 +214,7 @@ def test_decoder_inputs_take_the_canonical_order() -> None:
         "host_input_row_offsets",
         "return_n_logits",
         "data_parallel_splits",
+        "signals",
         "kv",
         "lora",
     ]

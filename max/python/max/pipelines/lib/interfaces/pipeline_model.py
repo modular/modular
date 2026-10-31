@@ -238,29 +238,33 @@ class ModelOutputs:
     """
 
 
+_OutputTensorT = TypeVar("_OutputTensorT", default=Tensor)
+
+
 @tree.dataclass
-class ModuleV3Outputs:
+class ModuleV3Outputs(Generic[_OutputTensorT]):
     """The outputs a ModuleV3 text model's ``forward`` returns.
 
     :class:`ModuleV3PipelineModelWithKVCache` maps each field to the
     :class:`ModelOutputs` field of the same name. A field left ``None`` is not
-    a graph output.
+    a graph output. A registered graph-API decoder returns the same fields as
+    :class:`~max.graph.TensorValue`.
     """
 
-    next_token_logits: Tensor
+    next_token_logits: _OutputTensorT
     """Last-token logits, shape ``[B, V]``."""
 
-    logits: Tensor | None = None
+    logits: _OutputTensorT | None = None
     """All or variable logits, shape ``[T, V]``, when the model returns them.
 
     When ``None``, :attr:`next_token_logits` also serves as
     :attr:`ModelOutputs.logits`.
     """
 
-    logit_offsets: Tensor | None = None
+    logit_offsets: _OutputTensorT | None = None
     """Row offsets into :attr:`logits`, shape ``[B + 1]``; set with it."""
 
-    hidden_states: Tensor | None = None
+    hidden_states: _OutputTensorT | None = None
     """Hidden states, when the model returns them."""
 
 

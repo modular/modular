@@ -64,7 +64,6 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV4.deepseekV4 import DeepseekV4
-from max.pipelines.architectures.gemma3.gemma3 import Gemma3
 from max.pipelines.architectures.gemma4.batch_processor import (
     Gemma4BatchProcessor,
 )
@@ -96,6 +95,9 @@ from max.pipelines.lib.interfaces import (
     BatchProcessorRuntime,
     PipelineModel,
     modulev3_ragged_kv_symbolic_input_tree,
+)
+from max.pipelines.lib.registration_graph_api import (
+    graph_api_decoder_input_types,
 )
 from max.tensor.tensor_spec_serialization import (
     layout_to_json,
@@ -296,6 +298,17 @@ def _per_device_offsets(
     return _text_model(cls, **attrs)
 
 
+def _graph_api_decoder() -> tuple[_InputTree, _InputTypes]:
+    """A registered graph-API decoder with signals, as Gemma 3 registers."""
+    devices = _gpus(2)
+    input_tree = _InputTree(
+        graph_api_decoder_input_types(
+            _kv_params(devices), devices, signals=True
+        )
+    )
+    return input_tree, tuple(tree.leaves(input_tree))
+
+
 def _deepseekV4(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
     config = _fake(devices=devices, kv_params=_kv_params(devices))
     return _text_model(DeepseekV4, config=config)
@@ -322,7 +335,7 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "deepseekV3_2_ep_eplb_profile": lambda: _deepseek(
         DeepseekV3_2, ep=True, eplb=True, profile=True
     ),
-    "gemma3": lambda: _per_device_offsets(Gemma3, nested=True),
+    "gemma3": _graph_api_decoder,
     "gpt_oss": lambda: _per_device_offsets(GptOss, nested=True),
     "mimo_v2": lambda: _per_device_offsets(MiMoV2, two_caches=True),
     "deepseekV4_single_device": lambda: _deepseekV4(_gpus(1)),
