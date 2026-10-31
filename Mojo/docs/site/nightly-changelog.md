@@ -161,6 +161,17 @@ This version is still a work in progress.
   `close()` consumes it, and `Optional[NamedTemporaryFile]` is the same size
   as `NamedTemporaryFile`.
 
+- `List` and `Array` now conform to `ConvertibleToPython` when their element
+  type does, so they convert to a Python `list` implicitly, including nested
+  containers such as `List[List[Int]]`. The conversion raises the element
+  type's `ConversionToPythonErrorType`, so converting a `List[Int]` doesn't
+  raise, and converting a `List[String]` raises `Error`.
+
+  ```mojo
+  var values: List = [1, 2, 3]
+  var result = PythonObject(values^)  # [1, 2, 3]
+  ```
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and

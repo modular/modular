@@ -50,6 +50,8 @@ from std.memory import (
     unsafe_uninit_move_n,
     unsafe_uninit_copy_n,
 )
+from std.os import abort
+from std.python import ConvertibleToPython, Python, PythonObject
 from std.traits import (
     IsTriviallyCopyable,
     IsTriviallyDeinitable,
@@ -213,6 +215,7 @@ struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
 @stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Comparable where conforms_to(T, Comparable),
+    ConvertibleToPython where conforms_to(T, ConvertibleToPython & Movable),
     Copyable where conforms_to(T, Copyable),
     Defaultable where conforms_to(T, Defaultable),
     Deinitable where conforms_to(T, Deinitable) else (
@@ -1165,6 +1168,61 @@ struct Array[T: AnyType, length: Int](
             fmt.TypeNames[Self.T](),
             Self.length,
         ).fields(write_fields)
+
+    comptime ConversionToPythonErrorType: Movable & Deinitable = downcast[
+        Self.T, ConvertibleToPython
+    ].ConversionToPythonErrorType
+    """The error type raised if conversion to a `PythonObject` fails.
+
+    This is the element type's `ConversionToPythonErrorType`, so converting an
+    array whose elements can't fail to convert, such as `Array[Int, 3]`,
+    doesn't raise.
+    """
+
+    def to_python_object(
+        var self,
+    ) raises (
+        Self.ConversionToPythonErrorType
+    ) -> PythonObject where conforms_to(Self.T, ConvertibleToPython & Movable):
+        """Converts this array to a Python `list`, converting each element with
+        its own `to_python_object()`.
+
+        Elements are moved out of the array, not copied. Nested containers
+        convert to nested Python lists.
+
+        Returns:
+            A `PythonObject` holding a Python `list` with the converted
+            elements.
+
+        Raises:
+            The element type's `ConversionToPythonErrorType` if converting an
+            element fails. Elements converted so far are released, and elements
+            not yet converted are destroyed.
+
+        Examples:
+
+        ```mojo
+        from std.python import Python, PythonObject
+
+        var values = [1, 2, 3]
+        var py_values = PythonObject(values^)
+        print(py_values)  # => [1, 2, 3]
+        ```
+        """
+        ref cpy = Python().cpython()
+        var list_ptr = cpy.PyList_New(Self.length)
+        if not list_ptr:
+            abort("failed to allocate a Python list")
+        # Own the new list right away so a failed element conversion below
+        # releases it, along with every item already stored in it.
+        var py_list = PythonObject(from_owned=list_ptr)
+        var index = 0
+        for var element in self^:
+            var item = element^.to_python_object()
+            # `PyList_SetItem` steals the reference to `item`.
+            _ = cpy.PyList_SetItem(list_ptr, index, item^.steal_data())
+            index += 1
+        return py_list^
 
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     def __iter__(
