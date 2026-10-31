@@ -127,7 +127,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
                                       parserContext->getCompilationOptions(),
                                       frontendOptions);
       if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
-        if (getPublicDeclKind(module))
+        if (!getPublicDeclKindName(*module).empty())
           results.back().documentation =
               getPublicDeclFullMarkdownString(*module, *parserContext);
       }
@@ -330,7 +330,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
     if (auto *function = dyn_cast<DefASTDecl>(decl))
       result.documentation =
           getFunctionFullMarkdownString(*function, *parserContext);
-    else if (getPublicDeclKind(decl))
+    else if (!getPublicDeclKindName(*decl).empty())
       result.documentation =
           getPublicDeclFullMarkdownString(*decl, *parserContext);
     results.emplace_back(result);

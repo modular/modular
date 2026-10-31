@@ -1059,7 +1059,7 @@ ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
             child->getParentDecl() != &nestedFnDecl)
           continue;
         if (auto irDecl = dyn_cast<IRASTDecl>(child);
-            irDecl && irDecl->getArgNumber() >= 0)
+            irDecl && irDecl->isArgumentDecl())
           irDecl->setArgOrParamNumber(irDecl->getArgNumber() + 1,
                                       /*isParameter=*/false);
         if (auto varDecl = dyn_cast<VarASTDecl>(child);

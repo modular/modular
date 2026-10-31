@@ -113,6 +113,16 @@ public:
   /// Returns this parameter's number, or -1 for a non-parameter.
   virtual ssize_t getParamNumber() const { return -1; }
 
+  /// Return true if this declaration represents a function argument.
+  bool isArgumentDecl() const;
+
+  /// Return true if this declaration represents a compile-time parameter
+  /// declaration on a function or struct.
+  bool isParameterDecl() const;
+
+  /// Return true if this declaration represents a variable.
+  bool isVariableDecl() const;
+
   /// Returns this argument's ABI convention. Asserts if this is not an
   /// argument declaration.
   ArgConvention getArgConvention() const;

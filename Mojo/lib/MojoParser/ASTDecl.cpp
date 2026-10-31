@@ -465,6 +465,26 @@ LogicalResult ASTDecl::resolveSyntheticBody() {
   llvm_unreachable("do not know how to resolve this synthetic decl body");
 }
 
+bool ASTDecl::isArgumentDecl() const {
+  if (auto *variable = dyn_cast<VarASTDecl>(this))
+    return variable->isArgument();
+  return getArgNumber() >= 0;
+}
+
+bool ASTDecl::isParameterDecl() const { return getParamNumber() >= 0; }
+
+bool ASTDecl::isVariableDecl() const {
+  if (auto *variable = dyn_cast<VarASTDecl>(this))
+    return !variable->isArgument();
+  if (isa<AliasASTDecl, ModuleASTDecl, ImportASTDecl, StructASTDecl,
+          StructFieldASTDecl, TraitASTDecl>(this) ||
+      isArgumentDecl() || isParameterDecl())
+    return false;
+  if (auto *irDecl = dyn_cast<IRASTDecl>(this))
+    return static_cast<bool>(irDecl->getCapturedName());
+  return false;
+}
+
 bool ASTDecl::isCallableDecl() const {
   if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);

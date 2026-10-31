@@ -19,8 +19,6 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Types.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/JSON.h"
@@ -60,11 +58,7 @@ static constexpr size_t kTypicalParameterCount = 2;
 /// Currently about 95% of functions use ≤2 arguments.
 static constexpr size_t kTypicalArgumentCount = 2;
 } // namespace
-enum class PublicDeclKind;
-
-std::optional<PublicDeclKind> getPublicDeclKind(ASTDecl *decl);
-std::optional<PublicDeclKind> getApproximatePublicDeclKind(ASTDecl *decl);
-StringRef getPublicDeclKindAsString(PublicDeclKind kind);
+StringRef getPublicDeclKindName(ASTDecl &decl);
 std::string getPublicDeclDeclarationSnippet(ASTDecl &decl,
                                             MojoParserContext &ctx);
 std::string getPublicDeclMarkdownDocString(ASTDecl &decl);
@@ -84,43 +78,12 @@ std::string getStructDeclarationSnippet(
     StructASTDecl &decl, MojoParserContext &ctx,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets = nullptr);
 
-/// Rendered `where` conditions of a decl's conditional trait conformances,
-/// keyed by the conformed trait's symbol. Unconditional conformances are
-/// absent. The key is the symbol rather than the trait's short name because
-/// distinct symbols can share one name.
-using ConformanceConditionMap =
-    llvm::DenseMap<KGEN::TraitSymbolAttr, std::string>;
-
 //===----------------------------------------------------------------------===//
 // Public declaration rendering
 //
 // These helpers provide structured documentation and code snippets for the
 // most common Mojo AST declarations.
 //===----------------------------------------------------------------------===//
-
-/// Stability information extracted from the @stable decorator on a decl.
-/// isStable=false means no @stable decorator. sinceVersion is empty when
-/// the decorator was bare (@stable with no arguments).
-/// isStabilityTracked=true means the symbol is in a package that has opted
-/// into stability tracking (currently only "std").
-struct StableInfo {
-  bool isStable = false;
-  bool isStabilityTracked = false;
-  std::string sinceVersion;
-};
-
-/// The different kinds of public decls.
-enum class PublicDeclKind {
-  DK_PublicAliasDecl,
-  DK_PublicArgumentDecl,
-  DK_PublicModuleDecl,
-  DK_PublicPackageDecl,
-  DK_PublicParameterDecl,
-  DK_PublicStructDecl,
-  DK_PublicStructFieldDecl,
-  DK_PublicTraitDecl,
-  DK_PublicVariableDecl,
-};
 
 /// Function tooling helpers operate on function signatures.
 SmallVector<KGEN::ParameterInfo, kTypicalParameterCount>
@@ -140,45 +103,6 @@ std::string getFunctionFullMarkdownString(DefASTDecl &decl,
 llvm::json::Object serializeFunctionDecl(DefASTDecl &decl,
                                          MojoParserContext &ctx);
 
-/// A collection of overloaded functions in the same scope.
-class FunctionDeclOverloadSet {
-public:
-  /// Create a list of function overload sets by grouping the given functions by
-  /// their name. It's assumed that the input list is sorted by name.
-  static SmallVector<FunctionDeclOverloadSet, 2>
-  fromSortedFunctions(SmallVector<DefASTDecl *, 2> &&functions);
-
-  /// Get the common name of the functions in this overload set.
-  StringRef getBaseName() const { return baseName; }
-
-  /// Get the functions in this overload set.
-  ArrayRef<DefASTDecl *> getFunctions() const { return functions; }
-
-  /// The output of the generation is defined in the following schema:
-  ///
-  /// {
-  ///   "kind": "function",
-  ///   "name": string,
-  ///   "overloads": function declarations
-  /// }
-  llvm::json::Object toJSON(MojoParserContext &ctx) const;
-
-private:
-  FunctionDeclOverloadSet(StringRef baseName) : baseName(baseName) {}
-
-  void append(DefASTDecl *function) { functions.push_back(function); }
-
-  std::string baseName;
-  SmallVector<DefASTDecl *, 2> functions;
-};
-
 } // namespace M::KGEN::LIT
-
-namespace M {
-using KGEN::LIT::ConformanceConditionMap;
-using KGEN::LIT::FunctionDeclOverloadSet;
-using KGEN::LIT::PublicDeclKind;
-using KGEN::LIT::StableInfo;
-} // namespace M
 
 #endif // KGEN_MOJOTOOLING_PublicASTDecl_H

@@ -340,6 +340,13 @@ StringRef DocString::CodeBlock::getRawCode() const {
 // Verification
 //===----------------------------------------------------------------------===//
 
+/// Return whether the given function has a `self` argument.
+static bool hasSelfArgument(FnOp funcOp) {
+  return isa<StructDeclOp, TraitDeclOp, ExtensionDeclOp>(
+             funcOp->getParentOp()) &&
+         !funcOp.getIsStatic();
+}
+
 /// Return the names of the arguments to the given function.
 static SmallVector<StringAttr> getFunctionArgumentNames(FnOp funcOp) {
   // In general, each function argument must be documented, but exceptions are
@@ -354,12 +361,8 @@ static SmallVector<StringAttr> getFunctionArgumentNames(FnOp funcOp) {
       sig.getNumArguments() - sig.hasMemoryOnlyResult() - sig.isThrows();
   // Methods take `self` as an explicit first argument, for which
   // documentation isn't required.
-  bool hasSelf =
-      isa<StructDeclOp, TraitDeclOp, ExtensionDeclOp>(funcOp->getParentOp()) &&
-      !funcOp.getIsStatic();
-
   SmallVector<StringAttr> argNames;
-  for (size_t idx = hasSelf; idx < end; ++idx)
+  for (size_t idx = hasSelfArgument(funcOp); idx < end; ++idx)
     argNames.emplace_back(sig.getArgName(idx));
 
   return argNames;
@@ -584,16 +587,22 @@ private:
   /// \p optionalElements is a subset of element names that are valid to
   /// document but not required — no "not documented" warning is emitted for
   /// them when absent. Used for inferred parameters.
+  /// \p ignoredElement is accepted but omitted from validation. Methods use
+  /// this for `self`, whose documentation is optional.
   void processParamOrArgs(const char *loc, StringRef tag,
                           llvm::MapVector<StringRef, const char *> &elements,
                           ArrayRef<StringRef> &lines, ValidationKind validation,
-                          ArrayRef<StringRef> optionalElements = {}) {
+                          ArrayRef<StringRef> optionalElements = {},
+                          std::optional<StringRef> ignoredElement = {}) {
     StringRef sectionLine = lines[0];
     bool emittedUnexpectedOrderWarning = false;
     ptrdiff_t nextEltIndex = 0;
     SmallVector<const char *> elementDocEndLocs(elements.size());
     process2ColumnDocSection(lines, [&](StringRef paramName,
                                         StringRef paramBody) {
+      if (ignoredElement && paramName == *ignoredElement)
+        return;
+
       const char *paramLoc = paramName.data();
       size_t currentEltIndex = nextEltIndex++;
 
@@ -678,8 +687,10 @@ private:
   }
   void processArguments(const char *loc,
                         llvm::MapVector<StringRef, const char *> &elements,
-                        ArrayRef<StringRef> &lines, ValidationKind validation) {
-    processParamOrArgs(loc, "argument", elements, lines, validation);
+                        ArrayRef<StringRef> &lines, ValidationKind validation,
+                        std::optional<StringRef> ignoredElement = {}) {
+    processParamOrArgs(loc, "argument", elements, lines, validation,
+                       /*optionalElements=*/{}, ignoredElement);
   }
   void processParameters(const char *loc,
                          llvm::MapVector<StringRef, const char *> &elements,
@@ -746,6 +757,9 @@ private:
     llvm::MapVector<StringRef, const char *> seenArguments;
     for (StringAttr argName : getFunctionArgumentNames(funcOp))
       seenArguments.insert({argName, nullptr});
+    std::optional<StringRef> ignoredArgument;
+    if (hasSelfArgument(funcOp))
+      ignoredArgument = funcOp.getFuncTypeGenerator().getArgName(0);
 
     // Grab the parameters to the function. Inferred parameters (before //) are
     // valid to document but not required, so track them separately.
@@ -768,7 +782,8 @@ private:
 
     auto processFn = [&](StringRef section, const char *loc) mutable {
       if (section == DocString::kSectionArgs)
-        return processArguments(loc, seenArguments, description, validation);
+        return processArguments(loc, seenArguments, description, validation,
+                                ignoredArgument);
 
       if (section == DocString::kSectionParameters)
         return processParameters(loc, seenParameters, description, validation,
