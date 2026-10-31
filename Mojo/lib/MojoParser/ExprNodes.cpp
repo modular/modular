@@ -3747,6 +3747,23 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
         res = ParamOperatorAttr::getNot(res);
       return emitter.emitBool({res, callExpr}, dest);
     }
+
+    // An `EnumLike` value is a parameter expression that cannot be reduced to a
+    // simple constant: constructing a case calls a non-builtin initializer.
+    // Two such values are equal exactly when they denote the same case (and
+    // payload), which is parameter identity, so compare them structurally
+    // instead of emitting an `__eq__` call that the evaluator cannot fold.
+    if (lhsPV && rhsPV) {
+      ASTType lhsType = lhsPV.getType();
+      if (lhsType.isEqualCanon(rhsPV.getType()) &&
+          lhsType.provenConformsToBuiltinTrait("EnumLike", callExpr->getLoc(),
+                                               emitter.shared, {})) {
+        PValue res = ParamIdenticalAttr::get(lhsPV.get(), rhsPV.get());
+        if (kind == ExprNode::Kind::kCmpNE)
+          res = ParamOperatorAttr::getNot(res);
+        return emitter.emitBool({res, callExpr}, dest);
+      }
+    }
   }
 
   // If this is a 'not in' emit the 'in' expression and then invert the result.
