@@ -75,6 +75,8 @@ from max.gpu import (
 )
 from max.gpu.primitives.grid_controls import (
     PDL,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
 )
 from max.gpu.sync import barrier, named_barrier, s_waitcnt
 from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
@@ -161,6 +163,44 @@ comptime InputScalesFn = (
 Kernels receive it as a trailing host-layout argument (`host_args`), so it
 runs on the device and must copy (`{var}`) what it captures.
 """
+
+
+comptime EP_PDL_MAX_RANKS = 2
+"""Largest world size at which the split EP kernels use PDL.
+
+PDL on `dispatch_async`, `combine_async` and `combine_wait` is verified on two
+GPUs only. Wider launches compile the wait and the release out of the kernels
+and are launched without the PDL attribute.
+"""
+
+
+struct _SplitEpPDL[n_ranks: Int, overlap_at_beginning: Bool = False](
+    Defaultable
+):
+    """`PDL` for the split EP kernels, a no-op above `EP_PDL_MAX_RANKS` ranks.
+
+    Parameters:
+        n_ranks: World size of the launch.
+        overlap_at_beginning: Release the dependent grids on entry rather than
+            on exit.
+    """
+
+    @inline(.always)
+    def __init__(out self):
+        pass
+
+    @inline(.always)
+    def __enter__(self):
+        comptime if Self.n_ranks <= EP_PDL_MAX_RANKS:
+            wait_on_dependent_grids()
+            comptime if Self.overlap_at_beginning:
+                launch_dependent_grids()
+
+    @inline(.always)
+    def __exit__(self):
+        comptime if Self.n_ranks <= EP_PDL_MAX_RANKS:
+            comptime if not Self.overlap_at_beginning:
+                launch_dependent_grids()
 
 
 @inline(.always)
@@ -5366,34 +5406,37 @@ def dispatch_async_kernel[
     # Per-rank completion counter for same-node signaling.
     var rank_completion_counter = atomic_counter.unsafe_offset(2 * n_experts)
 
-    # The auxiliary SMs are used for counting the number of tokens that need to
-    # be sent to each expert. It also monitors the completion of
-    # the communication for each expert.
-    if block_idx.x < dispatch_impl.n_signal_sms:
-        dispatch_impl.monitor_and_signal_completion(
-            topk_ids,
-            recv_count_ptrs,
-            expert_reserved_counter,
-            expert_finished_counter,
-            rank_completion_counter,
-            my_rank,
-            block_idx.x,
-        )
+    # `topk_ids` and `input_tokens` are the router's outputs, so the PDL wait
+    # sits at entry.
+    with _SplitEpPDL[n_ranks]():
+        # The auxiliary SMs are used for counting the number of tokens that need
+        # to be sent to each expert. It also monitors the completion of
+        # the communication for each expert.
+        if block_idx.x < dispatch_impl.n_signal_sms:
+            dispatch_impl.monitor_and_signal_completion(
+                topk_ids,
+                recv_count_ptrs,
+                expert_reserved_counter,
+                expert_finished_counter,
+                rank_completion_counter,
+                my_rank,
+                block_idx.x,
+            )
 
-    # All the other SMs are used for sending the tokens to the experts.
-    else:
-        dispatch_impl.copy_and_send_tokens[has_input_scales](
-            input_tokens,
-            topk_ids,
-            send_buf_p,
-            recv_buf_ptrs,
-            expert_reserved_counter,
-            expert_finished_counter,
-            my_rank,
-            block_idx.x,
-            grid_dim.x - dispatch_impl.n_signal_sms,
-            input_scales_fn,
-        )
+        # All the other SMs are used for sending the tokens to the experts.
+        else:
+            dispatch_impl.copy_and_send_tokens[has_input_scales](
+                input_tokens,
+                topk_ids,
+                send_buf_p,
+                recv_buf_ptrs,
+                expert_reserved_counter,
+                expert_finished_counter,
+                my_rank,
+                block_idx.x,
+                grid_dim.x - dispatch_impl.n_signal_sms,
+                input_scales_fn,
+            )
 
 
 @__llvm_metadata(
@@ -6635,18 +6678,23 @@ def combine_async_kernel[
     # Per-rank completion counter for same-node signaling.
     var rank_completion_counter = atomic_counter.unsafe_offset(2 * n_experts)
 
-    combine_impl.send_tokens_back(
-        input_tokens,
-        src_info,
-        send_buf_p,
-        recv_buf_ptrs,
-        recv_count_ptrs,
-        atomic_counter,
-        rank_completion_counter,
-        my_rank,
-        block_idx.x,
-        grid_dim.x,
-    )
+    # `input_tokens` is the grouped matmul's output and `src_info` comes from
+    # dispatch_wait, so the PDL wait sits at entry. The release stays at exit:
+    # an early release lets the full-grid combine_wait launch ahead of side
+    # stream work and measured no faster where the combine runs alone.
+    with _SplitEpPDL[n_ranks]():
+        combine_impl.send_tokens_back(
+            input_tokens,
+            src_info,
+            send_buf_p,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            atomic_counter,
+            rank_completion_counter,
+            my_rank,
+            block_idx.x,
+            grid_dim.x,
+        )
 
 
 @__llvm_metadata(
@@ -6728,27 +6776,34 @@ def combine_wait_kernel[
     var atomic_counter = ep_counters.get_combine_wait_ptr()
     var sm_id = block_idx.x
 
-    # The first SM is used for checking if we have received tokens from all the
-    # remote ranks.
-    if sm_id < combine_impl.n_wait_sms:
-        combine_impl.wait_for_all_arrivals(
-            recv_count_p,
-            atomic_counter,
-            grid_dim.x - combine_impl.n_wait_sms,
-        )
+    # Both roles write memory the predecessor may still use (the consumed
+    # counters, and an output tensor the planner may alias), so the PDL wait
+    # sits at entry.
+    with _SplitEpPDL[n_ranks]():
+        # The first SM is used for checking if we have received tokens from all
+        # the remote ranks.
+        if sm_id < combine_impl.n_wait_sms:
+            combine_impl.wait_for_all_arrivals(
+                recv_count_p,
+                atomic_counter,
+                grid_dim.x - combine_impl.n_wait_sms,
+            )
 
-    # All the other SMs are used for copying the tokens to the output tensor.
-    else:
-        combine_impl.reduce_and_copy_to_output[output_type, has_router_weights](
-            Int(num_tokens),
-            recv_buf_p,
-            atomic_counter,
-            my_rank,
-            block_idx.x,
-            grid_dim.x - combine_impl.n_wait_sms,
-            store_fn,
-            router_weights_fn,
-        )
+        # All the other SMs are used for copying the tokens to the output
+        # tensor.
+        else:
+            combine_impl.reduce_and_copy_to_output[
+                output_type, has_router_weights
+            ](
+                Int(num_tokens),
+                recv_buf_p,
+                atomic_counter,
+                my_rank,
+                block_idx.x,
+                grid_dim.x - combine_impl.n_wait_sms,
+                store_fn,
+                router_weights_fn,
+            )
 
 
 # ===-----------------------------------------------------------------------===#

@@ -27,6 +27,7 @@ from std.ffi import external_call, _get_global_or_null
 
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (
+    EP_PDL_MAX_RANKS,
     EPLocalSyncCounters,
     TokenFormat,
     dispatch_async_kernel,
@@ -427,6 +428,9 @@ def ep_dispatch_async_kernel_api[
             host_args=(input_scales_fn,),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(
+                PDLLevel.ON if n_ranks <= EP_PDL_MAX_RANKS else PDLLevel.OFF
+            ),
         )
 
 
@@ -1136,6 +1140,9 @@ def ep_combine_async_kernel_api[
             my_rank,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(
+                PDLLevel.ON if n_ranks <= EP_PDL_MAX_RANKS else PDLLevel.OFF
+            ),
         )
 
 
@@ -1384,6 +1391,9 @@ def ep_combine_wait_kernel_api[
             host_args=(store_fn, router_weights_fn),
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(
+                PDLLevel.ON if n_ranks <= EP_PDL_MAX_RANKS else PDLLevel.OFF
+            ),
         )
 
 
