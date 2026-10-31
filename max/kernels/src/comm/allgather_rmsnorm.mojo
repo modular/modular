@@ -40,6 +40,12 @@ from max.gpu import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from layout import Coord, TensorLayout, TileTensor
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
@@ -91,6 +97,7 @@ def _allgather_rmsnorm_kernel[
     & RegisterPassable
     & def[width: Int](row: Int, col: Int, val: SIMD[in_dtype, width]) -> None,
     domain_id: Int = 0,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     in_lengths: StaticTuple[Int32, ngpus],
@@ -125,7 +132,27 @@ def _allgather_rmsnorm_kernel[
     var is_valid = col_idx < cols
     var num_blocks = grid_dim.x
 
-    # Preload gamma in f32 before the barrier (local data, latency-hidden).
+    # Shard row counts -> global row starts (natural peer/concat order).
+    var row_starts = StaticTuple[Int, ngpus](0)
+    var rows = 0
+    comptime for g in range(ngpus):
+        row_starts[g] = rows
+        rows += Int(in_lengths[g])
+
+    # Only host-provided values are read above. The wait precedes the start
+    # barrier, not just the first shard read: the barrier writes this rank's
+    # `Signal`, which a predecessor collective may still be using, and its
+    # arrival is what tells peers our shard (the predecessor's output) is final.
+    # A dependent's wait covers this grid's full completion, so releasing it
+    # right after our wait cannot expose unwritten `normed_out`/`sum_out`.
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
+
+    # Gamma is not read until after the wait: callers may build it in the graph
+    # each step (a dtype cast of the checkpoint weight), so a predecessor can
+    # still be writing it. The load still overlaps the start barrier below.
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
@@ -134,13 +161,6 @@ def _allgather_rmsnorm_kernel[
             ]()
             + weight_offset.cast[accum_type]()
         )
-
-    # Shard row counts -> global row starts (natural peer/concat order).
-    var row_starts = StaticTuple[Int, ngpus](0)
-    var rows = 0
-    comptime for g in range(ngpus):
-        row_starts[g] = rows
-        rows += Int(in_lengths[g])
 
     # Start barrier: we P2P-read peers' shards, so all ranks must be ready.
     _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
@@ -192,10 +212,19 @@ def _allgather_rmsnorm_kernel[
 
     # End barrier: peers P2P-read this rank's shard, so it must not be reused
     # until every peer is done. Deferring to the next collective's start barrier
-    # breaks once a second grouped op shares the domain (`domain_id`).
-    _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-        rank_sigs, rank_sigs[my_rank], my_rank
-    )
+    # breaks once a second grouped op shares the domain (`domain_id`). Only the
+    # first warp waits on the peers, so the block syncs after the wait. It is
+    # applied at every level for consistency with the other collectives, and is
+    # required at `ON`: a dependent released before it could overwrite this
+    # rank's shard while a peer is still reading it.
+    _multi_gpu_barrier[
+        ngpus, is_start=False, sync_after_wait=True, domain_id=domain_id
+    ](rank_sigs, rank_sigs[my_rank], my_rank)
+
+    comptime if pdl_level > PDLLevel.OFF and (
+        pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
+        launch_dependent_grids()
 
 
 # --- Launcher ---
@@ -211,6 +240,7 @@ def _allgather_rmsnorm_launch[
     & RegisterPassable
     & def[width: Int](row: Int, col: Int, val: SIMD[in_dtype, width]) -> None,
     domain_id: Int = 0,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
@@ -248,6 +278,9 @@ def _allgather_rmsnorm_launch[
 
     comptime assert normed_out.flat_rank >= 2
     comptime assert sum_out.flat_rank >= 2
+    comptime assert (
+        pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+    ), "the fused all-gather reads the predecessor's output, so it must wait"
 
     comptime kernel = _allgather_rmsnorm_kernel[
         mut=gamma.mut,
@@ -264,6 +297,7 @@ def _allgather_rmsnorm_launch[
         has_quant_epilogue=has_quant_epilogue,
         QuantEpilogueType=QuantEpilogueType,
         domain_id=domain_id,
+        pdl_level=pdl_level,
     ]
     var in_lengths_dev = StaticTuple[Int32, ngpus](0)
     comptime for i in range(ngpus):
@@ -282,6 +316,7 @@ def _allgather_rmsnorm_launch[
         host_args=(quant_epilogue,),
         grid_dim=grid_size,
         block_dim=block_dim,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -295,6 +330,7 @@ def allgather_rmsnorm[
     in_origin: Origin,
     //,
     group_size: Int = ngpus,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -318,6 +354,14 @@ def allgather_rmsnorm[
         in_origin: Origin of the input shard TileTensors.
         group_size: Number of devices per independent all-gather group; see
             `_allgather_rmsnorm_impl`.
+        pdl_level: Programmatic dependent launch level. Above `OFF` the grid
+            waits on its predecessor before it reads any input, including
+            gamma, and releases its dependents after the end barrier that
+            retires the peers' reads (`ON`) or right after that wait
+            (`OVERLAP_AT_BEGINNING`). That level requires the next kernel not
+            to write this kernel's inputs before its own PDL wait, because
+            peers may still be reading them. `ON` is the level that is safe
+            against a dependent that does.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors,
@@ -340,7 +384,9 @@ def allgather_rmsnorm[
     ](row: Int, col: Int, val: SIMD[in_dtype, width]):
         pass
 
-    _allgather_rmsnorm_impl[has_quant_epilogue=False, group_size=group_size](
+    _allgather_rmsnorm_impl[
+        has_quant_epilogue=False, group_size=group_size, pdl_level=pdl_level
+    ](
         input_buffers,
         normed_out,
         sum_out,
@@ -365,6 +411,7 @@ def _allgather_rmsnorm_impl[
     //,
     has_quant_epilogue: Bool,
     group_size: Int = ngpus,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -404,6 +451,14 @@ def _allgather_rmsnorm_impl[
             elides it entirely.
         group_size: Number of devices per independent all-gather group. Must
             evenly divide `ngpus`. Defaults to `ngpus`.
+        pdl_level: Programmatic dependent launch level. Above `OFF` the grid
+            waits on its predecessor before it reads any input, including
+            gamma, and releases its dependents after the end barrier that
+            retires the peers' reads (`ON`) or right after that wait
+            (`OVERLAP_AT_BEGINNING`). That level requires the next kernel not
+            to write this kernel's inputs before its own PDL wait, because
+            peers may still be reading them. `ON` is the level that is safe
+            against a dependent that does.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors
@@ -562,6 +617,7 @@ def _allgather_rmsnorm_impl[
         threads_per_block,
         has_quant_epilogue=has_quant_epilogue,
         domain_id=domain_id,
+        pdl_level=pdl_level,
     ](
         rows,
         cols,
@@ -589,6 +645,7 @@ def allgather_rmsnorm_quant[
     & def[width: Int](row: Int, col: Int, val: SIMD[in_dtype, width]) -> None,
     //,
     group_size: Int = ngpus,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -615,6 +672,14 @@ def allgather_rmsnorm_quant[
         QuantEpilogueType: The type of `quant_epilogue` (inferred).
         group_size: Number of devices per independent all-gather group; see
             `_allgather_rmsnorm_impl`.
+        pdl_level: Programmatic dependent launch level. Above `OFF` the grid
+            waits on its predecessor before it reads any input, including
+            gamma, and releases its dependents after the end barrier that
+            retires the peers' reads (`ON`) or right after that wait
+            (`OVERLAP_AT_BEGINNING`). That level requires the next kernel not
+            to write this kernel's inputs before its own PDL wait, because
+            peers may still be reading them. `ON` is the level that is safe
+            against a dependent that does.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors,
@@ -630,7 +695,9 @@ def allgather_rmsnorm_quant[
         quant_epilogue: Normed-value epilogue; see `_allgather_rmsnorm_impl`.
         my_rank: Optional GLOBAL rank of THIS GPU in `[0, ngpus)`.
     """
-    _allgather_rmsnorm_impl[has_quant_epilogue=True, group_size=group_size](
+    _allgather_rmsnorm_impl[
+        has_quant_epilogue=True, group_size=group_size, pdl_level=pdl_level
+    ](
         input_buffers,
         normed_out,
         sum_out,
@@ -655,6 +722,7 @@ def _dispatch_ag_norm[
     TwoLaunchFnType: def() raises -> None,
     //,
     group_size: Int = ngpus,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -691,6 +759,14 @@ def _dispatch_ag_norm[
         group_size: Number of devices per independent all-gather group. Must
             evenly divide `ngpus`. Defaults to `ngpus` (one full-world group,
             byte-identical to the pre-grouping behavior).
+        pdl_level: Programmatic dependent launch level. Above `OFF` the grid
+            waits on its predecessor before it reads any input, including
+            gamma, and releases its dependents after the end barrier that
+            retires the peers' reads (`ON`) or right after that wait
+            (`OVERLAP_AT_BEGINNING`). That level requires the next kernel not
+            to write this kernel's inputs before its own PDL wait, because
+            peers may still be reading them. `ON` is the level that is safe
+            against a dependent that does.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors,
@@ -760,7 +836,7 @@ def _dispatch_ag_norm[
         # Hand the fused kernel the whole world plus the group width, and
         # let it derive the group-local slice, rank, and barrier domain
         # itself.
-        allgather_rmsnorm[group_size=group_size](
+        allgather_rmsnorm[group_size=group_size, pdl_level=pdl_level](
             input_buffers,
             normed_out,
             sum_out,
@@ -786,6 +862,7 @@ def _dispatch_ag_norm_quant[
     & def[width: Int](row: Int, col: Int, val: SIMD[in_dtype, width]) -> None,
     //,
     group_size: Int = ngpus,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -819,6 +896,14 @@ def _dispatch_ag_norm_quant[
         group_size: Number of devices per independent all-gather group. Must
             evenly divide `ngpus`. Defaults to `ngpus` (one full-world group,
             byte-identical to the pre-grouping behavior).
+        pdl_level: Programmatic dependent launch level. Above `OFF` the grid
+            waits on its predecessor before it reads any input, including
+            gamma, and releases its dependents after the end barrier that
+            retires the peers' reads (`ON`) or right after that wait
+            (`OVERLAP_AT_BEGINNING`). That level requires the next kernel not
+            to write this kernel's inputs before its own PDL wait, because
+            peers may still be reading them. `ON` is the level that is safe
+            against a dependent that does.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors,
@@ -889,7 +974,7 @@ def _dispatch_ag_norm_quant[
         # Hand the fused kernel the whole world plus the group width, and
         # let it derive the group-local slice, rank, and barrier domain
         # itself.
-        allgather_rmsnorm_quant[group_size=group_size](
+        allgather_rmsnorm_quant[group_size=group_size, pdl_level=pdl_level](
             input_buffers,
             normed_out,
             sum_out,

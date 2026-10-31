@@ -89,6 +89,13 @@ _GPU_MEMORY = {
 # Platform constraints for tests that do not run on every multi-GPU host; the
 # rest take the glob's default.
 _TARGET_COMPATIBLE_WITH = {
+    # PDL is NVIDIA-only (SM90+), and the producer's delay is an NVIDIA
+    # intrinsic.
+    "test_allgather_rmsnorm_pdl.mojo": select({
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//:h100_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # The warp-per-token dispatch it tests is NVIDIA-only, and its NVFP4
     # quantize needs SM100.
     "test_ep_dispatch_prefill_send.mojo": select({

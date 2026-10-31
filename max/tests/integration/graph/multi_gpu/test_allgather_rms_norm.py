@@ -220,6 +220,8 @@ def _check(
 @pytest.mark.parametrize(
     "num_gpus, shard_rows, regime",
     [
+        # 2 GPUs is the only world size where the graph op enables PDL.
+        (2, 2, "fused"),  # 4 gathered rows -> below threshold -> fused kernel
         (4, 2, "fused"),  # 8 gathered rows -> below threshold -> fused kernel
         (4, 128, "two_launch"),  # 512 gathered rows -> above -> two-launch
     ],

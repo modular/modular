@@ -43,6 +43,7 @@ from std.sys import size_of
 
 from comm import Signal, group_end, group_start
 from comm.allgather import allgather
+from comm.allgather_rmsnorm import allgather_rmsnorm
 from comm.allreduce import allreduce
 from comm.broadcast import broadcast
 from comm.reducescatter import reducescatter
@@ -81,9 +82,11 @@ comptime KIND_SCATTER = 3
 comptime KIND_REDUCESCATTER = 4
 comptime KIND_REDUCESCATTER_RMSNORM = 5
 comptime KIND_ALLGATHER_P2P = 6
+comptime KIND_ALLGATHER_RMSNORM = 7
 
-# Output buffers a rank owns: the allgather writes one per peer and the fused
-# reduce-scatter its normed and summed shards; the rest use one.
+# Output buffers a rank owns: the allgather writes one per peer, and the fused
+# reduce-scatter and all-gather norms their normed and summed outputs; the rest
+# use one.
 comptime NUM_OUTS = 2
 
 comptime InFlat = TileTensor[dtype, type_of(row_major(LENGTH)), ImmutAnyOrigin]
@@ -212,6 +215,43 @@ def _launch_collective[
                 row_major(ODD),
             )
         allgather(odd_in, odd_out, rank_sigs, ctxs[rank], rank)
+    elif kind == KIND_ALLGATHER_RMSNORM:
+        # Every rank gathers the ROWS // ngpus-row shards at the head of the
+        # inputs into a full ROWS-row normed and summed output.
+        comptime shard_rows = ROWS // ngpus
+        var shards = Array[In2D, ngpus](
+            fill_with=lambda (j: Int) -> In2D: In2D(
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                    ins[j].unsafe_ptr()
+                ),
+                row_major(Coord(Index(shard_rows, COLS))),
+            )
+        )
+        var normed_view = Shard2D(
+            outs[rank * NUM_OUTS].unsafe_ptr().as_unsafe_any_origin(),
+            row_major(Coord(Index(ROWS, COLS))),
+        )
+        var gathered_view = Shard2D(
+            outs[rank * NUM_OUTS + 1].unsafe_ptr().as_unsafe_any_origin(),
+            row_major(Coord(Index(ROWS, COLS))),
+        )
+        var gamma_view = Gamma1D(
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                gammas[rank].unsafe_ptr()
+            ),
+            row_major(Coord(Index(COLS))),
+        )
+        allgather_rmsnorm[pdl_level=pdl_level](
+            shards,
+            normed_view,
+            gathered_view,
+            gamma_view,
+            Float32(1e-6),
+            Scalar[dtype](0),
+            rank_sigs,
+            ctxs[rank],
+            my_rank=rank,
+        )
     elif kind == KIND_BROADCAST:
         # Every rank pulls from the root's input.
         broadcast[ngpus, pdl_level=pdl_level](
@@ -517,6 +557,9 @@ def main() raises:
             failed += bad
             bad = _probe[KIND_REDUCESCATTER_RMSNORM, ngpus, pdl](ctxs)
             print(t"reducescatter_rmsnorm ({tag}): corrupted {bad} of {ITERS}")
+            failed += bad
+            bad = _probe[KIND_ALLGATHER_RMSNORM, ngpus, pdl](ctxs)
+            print(t"allgather_rmsnorm ({tag}): corrupted {bad} of {ITERS}")
             failed += bad
 
         assert_true(
