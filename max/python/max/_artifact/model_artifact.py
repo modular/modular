@@ -29,6 +29,7 @@ from .format_spec import FormatSpec
 from .kv_cache import KVCacheLayout
 from .pipeline_modules import PipelineModules
 from .value_types import ArtifactComponent, ArtifactError, HuggingFaceRef
+from .vision import VisionMetadata
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class ModelArtifact:
     engine_config: EngineConfig | None = None
     kv_cache: KVCacheLayout | None = None
     batch_processor: BatchProcessorDims | None = None
+    vision: VisionMetadata | None = None
     weight_loader: WeightNaming | None = None
 
     @classmethod

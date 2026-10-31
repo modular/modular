@@ -38,6 +38,13 @@ from max.graph import (
 from max.graph import Module as GraphModule
 from max.nn.legacy.comm import Allreduce, Signals
 from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.graph_groups import (
+    TPSignals,
+    VisionHostMax,
+    VisionRows,
+    VisionSegments,
+    group_fields,
+)
 from max.nn.legacy.kernels import spatial_merge
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import Linear
@@ -828,9 +835,11 @@ class VisionTransformer(Module):
         self.merger_allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def input_tree(self) -> OrderedDict[str, object]:
-        """Names the vision graph's inputs, keyed by :meth:`__call__`'s arguments.
+        """Groups the vision graph's inputs as a serving engine packs them.
 
-        Each argument takes one input per device. ``vision_seq_len`` is the
+        The groups' fields are :meth:`__call__`'s argument names.
+
+        Each field takes one input per device. ``vision_seq_len`` is the
         number of patches in the batch.
 
         Returns:
@@ -850,21 +859,33 @@ class VisionTransformer(Module):
             )
 
         return OrderedDict(
-            pixel_values=per_device(
-                DType.float32, ["vision_seq_len", self.patch_embed.patch_dim]
+            patches=VisionRows(
+                pixel_values=per_device(
+                    DType.float32,
+                    ["vision_seq_len", self.patch_embed.patch_dim],
+                ),
+                # Own dimension, not `vision_seq_len`: the bilinear position
+                # grid is interpolated once per FRAME while the pixels and
+                # rotary ids carry one row per temporal PATCH. The two
+                # coincide only for still images, and the tokenizer also
+                # emits clips.
+                weights=per_device(DType.float32, [4, "vision_pos_len", 1]),
+                idxs=per_device(DType.int64, [4, "vision_pos_len"]),
+                rot_pos_ids=per_device(DType.int32, ["vision_seq_len", 2]),
             ),
-            # Own dimension, not `vision_seq_len`: the bilinear position grid
-            # is interpolated once per FRAME while the pixels and rotary ids
-            # carry one row per temporal PATCH. The two coincide only for
-            # still images, and the tokenizer also emits clips.
-            weights=per_device(DType.float32, [4, "vision_pos_len", 1]),
-            idxs=per_device(DType.int64, [4, "vision_pos_len"]),
-            rot_pos_ids=per_device(DType.int32, ["vision_seq_len", 2]),
-            max_grid_size=per_device(DType.int32, [], on_host=True),
-            grid_thw=per_device(DType.int64, ["n_images", 3]),
-            cu_seqlens=per_device(DType.uint32, ["n_seqlens"]),
-            max_seqlen=per_device(DType.uint32, [1], on_host=True),
-            signal_buffers=tuple(Signals(devices=self.devices).input_types()),
+            grid_bound=VisionHostMax(
+                max_grid_size=per_device(DType.int32, [], on_host=True)
+            ),
+            grids=VisionRows(grid_thw=per_device(DType.int64, ["n_images", 3])),
+            segments=VisionSegments(
+                cu_seqlens=per_device(DType.uint32, ["n_seqlens"])
+            ),
+            segment_bound=VisionHostMax(
+                max_seqlen=per_device(DType.uint32, [1], on_host=True)
+            ),
+            signals=TPSignals(
+                signal=tuple(Signals(devices=self.devices).input_types())
+            ),
         )
 
     def trace(
@@ -899,14 +920,15 @@ class VisionTransformer(Module):
         def forward(*inputs: Value[Any]) -> list[TensorValue]:
             named = tree.unflatten(treedef, iter(inputs))
             assert isinstance(named, OrderedDict)
+            fields = group_fields(named)
             tensors = {
                 key: [v.tensor for v in values]
-                for key, values in named.items()
-                if key != "signal_buffers"
+                for key, values in fields.items()
+                if key != "signal"
             }
             image_embeddings, deepstack_embeddings = self(
                 **tensors,
-                signal_buffers=[v.buffer for v in named["signal_buffers"]],
+                signal_buffers=[v.buffer for v in fields["signal"]],
             )
             return [
                 *image_embeddings,

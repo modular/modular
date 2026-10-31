@@ -22,7 +22,7 @@ group once, by its :attr:`GraphGroup.kind`, rather than once per model.
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import ClassVar, Literal, TypeVar
 
 from max import tree
@@ -37,13 +37,22 @@ __all__ = [
     "EPPayload",
     "GraphGroup",
     "HiddenStates",
+    "ItemPositions",
     "Logits",
     "LogitsName",
     "MRoPEPositions",
     "RaggedBatch",
     "SparseIndices",
     "TPSignals",
+    "VisionEmbeddings",
+    "VisionHostMax",
     "VisionMerge",
+    "VisionRowIndex",
+    "VisionRows",
+    "VisionSegments",
+    "VisionSelfIndex",
+    "group_fields",
+    "vision_outputs",
 ]
 
 _K = TypeVar("_K", bound=str)
@@ -116,10 +125,104 @@ class VisionMerge(
     kind = "vision_merge"
 
 
+_VisionInput = TensorType | tuple[TensorType, ...]
+
+
+class VisionRows(GraphGroup[str, _VisionInput]):
+    """Vision encoder inputs with a row per patch, grid, or position.
+
+    A serving engine packs several media items into one launch by
+    concatenating each field along its first symbolic dim.
+    """
+
+    kind = "vision_rows"
+
+
+class VisionSegments(GraphGroup[str, _VisionInput]):
+    """Vision encoder attention segment boundaries, as ``cu_seqlens``.
+
+    Packing concatenates each item's boundaries after the first, offset by
+    the rows packed before it.
+    """
+
+    kind = "vision_segments"
+
+
+class VisionRowIndex(GraphGroup[str, _VisionInput]):
+    """Vision encoder indices into its own rows, such as a pooling gather.
+
+    Packing concatenates each item's indices offset by the rows packed
+    before it.
+    """
+
+    kind = "vision_row_index"
+
+
+class VisionSelfIndex(GraphGroup[str, _VisionInput]):
+    """Vision encoder indices into the field's own entries.
+
+    For example, a permutation of merged tokens.
+
+    Packing concatenates each item's indices offset by the entries packed
+    before it.
+    """
+
+    kind = "vision_self_index"
+
+
+class VisionHostMax(GraphGroup[str, _VisionInput]):
+    """Vision encoder host scalars that bound the launch.
+
+    For example, the longest segment.
+
+    Packing takes the maximum over the items.
+    """
+
+    kind = "vision_host_max"
+
+
+class VisionEmbeddings(GraphGroup[str, tuple[TensorValue, ...]]):
+    """A vision encoder's ``image_embeddings``, one per device.
+
+    They feed the decoder's :class:`VisionMerge` group.
+    """
+
+    kind = "vision_embeddings"
+
+
+def vision_outputs(
+    image_embeddings: Sequence[TensorValue],
+) -> OrderedDict[str, VisionEmbeddings]:
+    """Returns a vision encoder graph's named outputs.
+
+    The kinded group sits under a plain root, as a decoder's do, since a
+    serving engine reads a group's kind only below the root.
+
+    Args:
+        image_embeddings: The embeddings, one per device.
+    """
+    return OrderedDict(
+        embeddings=VisionEmbeddings(image_embeddings=tuple(image_embeddings))
+    )
+
+
 class MRoPEPositions(GraphGroup[str, TensorType]):
     """The 3D position ids of an M-RoPE model."""
 
     kind = "mrope_positions"
+
+
+class ItemPositions(GraphGroup[str, TensorValue]):
+    """One media item's decoder positions, which its preprocessing graph returns.
+
+    ``position_ids`` holds one column per placeholder token of the item,
+    relative to the position its first one starts at, and
+    ``position_advance`` how far the item moves the running text position.
+    A serving engine offsets each item's positions by the running position
+    where it sits in the prompt.
+    """
+
+    kind = "item_positions"
 
 
 class BatchContext(GraphGroup[str, tuple[TensorType, ...]]):
@@ -224,3 +327,15 @@ class DecoderOutputs(
     def hidden_states(self) -> HiddenStates:
         """The decoder's hidden states."""
         return self.group("hidden_states", HiddenStates)
+
+
+def group_fields(groups: Mapping[str, Mapping[str, _V]]) -> dict[str, _V]:
+    """Returns the fields of a tree of groups under their own names.
+
+    A graph whose inputs are grouped by kind takes them as arguments named
+    by field, so its ``forward`` looks each one up here.
+    """
+    fields: dict[str, _V] = {}
+    for group in groups.values():
+        fields.update(group)
+    return fields

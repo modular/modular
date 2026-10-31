@@ -116,6 +116,14 @@ def _resolve_head_dims(huggingface_config: PretrainedConfig) -> tuple[int, int]:
     return local, widths.get("full", local)
 
 
+def video_token_id(huggingface_config: AutoConfig) -> int:
+    """Returns the video placeholder id a Gemma 4 config states.
+
+    Returns 262144 for a config that predates the field.
+    """
+    return getattr(huggingface_config, "video_token_id", 262_144)
+
+
 @dataclass(kw_only=True)
 class Gemma4TextConfig(Gemma3Config):
     """Text configuration for Gemma 4 models.
@@ -763,9 +771,7 @@ class Gemma4ForConditionalGenerationConfig(
             vision_config=vision_config,
             text_config=text_config,
             image_token_index=huggingface_config.image_token_id,
-            video_token_index=getattr(
-                huggingface_config, "video_token_id", 262_144
-            ),
+            video_token_index=video_token_id(huggingface_config),
             # Checkpoints name the audio placeholder ``audio_token_id`` (the
             # processor's spelling) or ``audio_token_index``; a checkpoint
             # without an audio tower declares neither, which leaves the field

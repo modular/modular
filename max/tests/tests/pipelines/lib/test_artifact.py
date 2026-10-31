@@ -54,6 +54,7 @@ from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.serialization import deserialize, serialize
 from max._artifact.value_types import sha256_file
+from max._artifact.vision import VisionMetadata
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.pipelines.lib import (
@@ -488,6 +489,7 @@ def test_component_types() -> None:
         "engine_config": EngineConfig,
         "kv_cache": KVCacheLayout,
         "weight_loader": WeightNaming,
+        "vision": VisionMetadata,
     }
     assert FakeArtifact.component_types() == {
         **dict.fromkeys(ModelArtifact.component_slots()),
@@ -497,6 +499,7 @@ def test_component_types() -> None:
         "engine_config": EngineConfig,
         "kv_cache": KVCacheLayout,
         "weight_loader": WeightNaming,
+        "vision": VisionMetadata,
         "scratch": FakeComponent,
         "tokenizer": FakeComponent,
     }

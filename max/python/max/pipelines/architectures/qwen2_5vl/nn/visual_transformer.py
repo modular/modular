@@ -38,6 +38,14 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.nn.legacy.comm import Allreduce, Signals
+from max.nn.legacy.graph_groups import (
+    TPSignals,
+    VisionHostMax,
+    VisionRows,
+    VisionSegments,
+    VisionSelfIndex,
+    group_fields,
+)
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.norm import RMSNorm
@@ -634,9 +642,11 @@ class VisionTransformer(Module):
         self.merger_allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def input_tree(self) -> OrderedDict[str, object]:
-        """Names the vision graph's inputs, keyed by :meth:`__call__`'s arguments.
+        """Groups the vision graph's inputs as a serving engine packs them.
 
-        Each argument takes one input per device. ``vision_seq_len`` is the
+        The groups' fields are :meth:`__call__`'s argument names.
+
+        Each field takes one input per device. ``vision_seq_len`` is the
         number of patches in all images and videos in the batch.
 
         Returns:
@@ -656,17 +666,30 @@ class VisionTransformer(Module):
             )
 
         return OrderedDict(
-            pixel_values=per_device(
-                DType.bfloat16, ["vision_seq_len", self.patch_embed.patch_dim]
+            patches=VisionRows(
+                pixel_values=per_device(
+                    DType.bfloat16,
+                    ["vision_seq_len", self.patch_embed.patch_dim],
+                ),
+                rot_pos_ids=per_device(DType.int64, ["vision_seq_len", 2]),
             ),
-            rot_pos_ids=per_device(DType.int64, ["vision_seq_len", 2]),
-            window_index=per_device(DType.int64, ["window_seq_len"]),
-            cu_seqlens=per_device(DType.uint32, ["n_seqlens"]),
-            cu_window_seqlens=per_device(DType.uint32, ["n_window_seqlens"]),
-            max_seqlen=per_device(DType.uint32, [1], on_host=True),
-            max_window_seqlen=per_device(DType.uint32, [1], on_host=True),
-            max_grid_size=per_device(DType.int32, [], on_host=True),
-            signal_buffers=tuple(Signals(devices=self.devices).input_types()),
+            windows=VisionSelfIndex(
+                window_index=per_device(DType.int64, ["window_seq_len"])
+            ),
+            segments=VisionSegments(
+                cu_seqlens=per_device(DType.uint32, ["n_seqlens"]),
+                cu_window_seqlens=per_device(
+                    DType.uint32, ["n_window_seqlens"]
+                ),
+            ),
+            bounds=VisionHostMax(
+                max_seqlen=per_device(DType.uint32, [1], on_host=True),
+                max_window_seqlen=per_device(DType.uint32, [1], on_host=True),
+                max_grid_size=per_device(DType.int32, [], on_host=True),
+            ),
+            signals=TPSignals(
+                signal=tuple(Signals(devices=self.devices).input_types())
+            ),
         )
 
     def trace(
@@ -698,14 +721,15 @@ class VisionTransformer(Module):
         def forward(*inputs: Value[Any]) -> Sequence[TensorValue]:
             named = tree.unflatten(treedef, iter(inputs))
             assert isinstance(named, OrderedDict)
+            fields = group_fields(named)
             tensors = {
                 key: [v.tensor for v in values]
-                for key, values in named.items()
-                if key != "signal_buffers"
+                for key, values in fields.items()
+                if key != "signal"
             }
             return self(
                 **tensors,
-                signal_buffers=[v.buffer for v in named["signal_buffers"]],
+                signal_buffers=[v.buffer for v in fields["signal"]],
             )
 
         return Graph(

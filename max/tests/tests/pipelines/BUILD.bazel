@@ -61,6 +61,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/olmo2_modulev3",
         "//max/python/max/pipelines/architectures/olmo3",
         "//max/python/max/pipelines/architectures/phi3_modulev3",
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
         "//max/python/max/pipelines/architectures/step3p5",

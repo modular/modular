@@ -164,6 +164,25 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "vision_preprocess_parity",
+    testonly = True,
+    srcs = ["vision_preprocess_parity.py"],
+    imports = [".."],
+    # Also the MiniMax-M3 parity test, which lives with its model.
+    visibility = [
+        "//max/tests:__subpackages__",
+        "//max_private/minimax_m3:__pkg__",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_library(
     name = "mef_precompile",
     testonly = True,
     srcs = ["mef_precompile.py"],

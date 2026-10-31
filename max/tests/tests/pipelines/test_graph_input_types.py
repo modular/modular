@@ -13,11 +13,12 @@
 """CPU-only snapshot of each model's graph input tree.
 
 The compiled graphs, max serve, and Mach's BatchProcessor depend on the exact
-order, names, kinds and types of the inputs each model declares. The snapshot
-in ``testdata/graph_input_trees.json`` records each tree as a role's
-``in_layouts`` and ``in_tree`` in ``artifact.json``, and
+order, names, kinds and types of the inputs each model declares. The snapshots
+in ``testdata/graph_input_trees.json`` (decoders) and
+``testdata/vision_input_trees.json`` (vision encoders) record each tree as a
+role's ``in_layouts`` and ``in_tree`` in ``artifact.json``, and
 ``testdata/graph_group_kinds.json`` every group kind; Mach's planner tests
-read both. A change to any model's inputs fails here until the snapshot is
+read them. A change to any model's inputs fails here until the snapshot is
 regenerated deliberately with::
 
     UPDATE_GRAPH_INPUT_SNAPSHOT=1 ./bazelw test \
@@ -68,6 +69,9 @@ from max.pipelines.architectures.gemma4.batch_processor import (
     Gemma4BatchProcessor,
 )
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
+from max.pipelines.architectures.gemma4.vision_model.vision_model import (
+    Gemma4VisionModel,
+)
 from max.pipelines.architectures.gpt_oss.gpt_oss import GptOss
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
@@ -77,8 +81,14 @@ from max.pipelines.architectures.llama3.distributed_llama import (
 )
 from max.pipelines.architectures.llama3.llama3 import Llama3
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
+from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
+    VisionTransformer as Qwen2_5VLVisionTransformer,
+)
 from max.pipelines.architectures.qwen3_5.batch_processor import (
     Qwen3_5BatchProcessor,
+)
+from max.pipelines.architectures.qwen3_5.layers.visual_transformer import (
+    Qwen3_5VisionTransformer,
 )
 from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
 from max.pipelines.architectures.qwen3_5.state_cache import (
@@ -105,6 +115,9 @@ from max.tensor.tensor_spec_serialization import (
 )
 
 _SNAPSHOT = Path(__file__).parent / "testdata" / "graph_input_trees.json"
+_VISION_SNAPSHOT = (
+    Path(__file__).parent / "testdata" / "vision_input_trees.json"
+)
 _KINDS = Path(__file__).parent / "testdata" / "graph_group_kinds.json"
 _HIDDEN = 64
 
@@ -343,6 +356,40 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
 }
 
 
+def _gemma4_vision() -> _InputTree:
+    config = _fake(
+        vision_config=_fake(patch_size=16),
+        devices=_gpus(2),
+        unquantized_dtype=DType.bfloat16,
+    )
+    return Gemma4VisionModel.input_tree(_fake(config=config))
+
+
+def _qwen_vl_vision(cls: Any, patch_dim: int) -> _InputTree:
+    return cls.input_tree(
+        _fake(devices=_gpus(2), patch_embed=_fake(patch_dim=patch_dim))
+    )
+
+
+_VISION_CASES: dict[str, Callable[[], _InputTree]] = {
+    "gemma4": _gemma4_vision,
+    "qwen3_5": lambda: _qwen_vl_vision(Qwen3_5VisionTransformer, 1536),
+    "qwen2_5vl": lambda: _qwen_vl_vision(Qwen2_5VLVisionTransformer, 1176),
+}
+
+
+def _decoder_tree(
+    build: Callable[[], tuple[_InputTree, _InputTypes]],
+) -> Callable[[], _InputTree]:
+    return lambda: build()[0]
+
+
+_ALL_TREES: dict[str, Callable[[], _InputTree]] = {
+    **{name: _decoder_tree(build) for name, build in _CASES.items()},
+    **{f"vision_{name}": build for name, build in _VISION_CASES.items()},
+}
+
+
 @pytest.fixture(scope="module", autouse=True)
 def virtual_gpus() -> Iterator[None]:
     """Lets a layout name a GPU on the CPU-only workers."""
@@ -360,7 +407,7 @@ def _leaf_paths(input_tree: object) -> list[str]:
 
 
 def _encode(input_tree: _InputTree) -> dict[str, Any]:
-    """Returns a decoder role's inputs as ``artifact.json`` records them."""
+    """Returns a role's inputs as ``artifact.json`` records them."""
     layouts, treedef = _input_signature(input_tree)
     return {
         "in_layouts": [layout_to_json(layout) for layout in layouts],
@@ -396,6 +443,10 @@ def _dumps(value: object, indent: int = 0) -> str:
 
 
 def _snapshot(name: str) -> dict[str, Any]:
+    if name.startswith("vision_"):
+        return json.loads(_VISION_SNAPSHOT.read_text())[
+            name.removeprefix("vision_")
+        ]
     return json.loads(_SNAPSHOT.read_text())[name]
 
 
@@ -404,6 +455,15 @@ def test_snapshot_covers_every_case() -> None:
         trees = {name: _encode(build()[0]) for name, build in _CASES.items()}
         _SNAPSHOT.resolve().write_text(_dumps(trees) + "\n")
     assert set(json.loads(_SNAPSHOT.read_text())) == set(_CASES)
+
+
+def test_vision_snapshot_covers_every_case() -> None:
+    if os.environ.get("UPDATE_GRAPH_INPUT_SNAPSHOT"):
+        trees = {
+            name: _encode(build()) for name, build in _VISION_CASES.items()
+        }
+        _VISION_SNAPSHOT.resolve().write_text(_dumps(trees) + "\n")
+    assert set(json.loads(_VISION_SNAPSHOT.read_text())) == set(_VISION_CASES)
 
 
 def test_graph_group_kinds_match_snapshot() -> None:
@@ -422,9 +482,9 @@ def test_graph_group_kinds_match_snapshot() -> None:
     assert json.loads(_KINDS.read_text()) == kinds
 
 
-@pytest.mark.parametrize("name", list(_CASES))
+@pytest.mark.parametrize("name", list(_ALL_TREES))
 def test_graph_input_tree_matches_snapshot(name: str) -> None:
-    assert _encode(_CASES[name]()[0]) == _snapshot(name), (
+    assert _encode(_ALL_TREES[name]()) == _snapshot(name), (
         "A graph input was renamed, reordered or retyped. If that is "
         "intended, regenerate with UPDATE_GRAPH_INPUT_SNAPSHOT=1 ./bazelw test "
         "//max/tests/tests/pipelines:test_graph_input_types "
@@ -438,9 +498,10 @@ def test_input_types_are_the_input_tree_leaves(name: str) -> None:
     assert tuple(tree.leaves(input_tree)) == input_types
 
 
-@pytest.mark.parametrize("name", list(_CASES))
-def test_every_decoder_input_is_in_a_kinded_group(name: str) -> None:
-    _check_inputs(GraphRole.DECODER, _input_signature(_CASES[name]()[0])[1])
+@pytest.mark.parametrize("name", list(_ALL_TREES))
+def test_every_input_is_in_a_kinded_group(name: str) -> None:
+    role = GraphRole.VISION if name.startswith("vision_") else GraphRole.DECODER
+    _check_inputs(role, _input_signature(_ALL_TREES[name]())[1])
 
 
 def test_a_decoder_input_outside_a_kinded_group_fails_the_load() -> None:
@@ -451,8 +512,6 @@ def test_a_decoder_input_outside_a_kinded_group_fails_the_load() -> None:
     in_tree = _input_signature(input_tree)[1]
     with pytest.raises(ValueError, match=r"0\.position_ids"):
         _check_inputs(GraphRole.DECODER, in_tree)
-    # Only the decoder is planned by kind.
-    _check_inputs(GraphRole.VISION, in_tree)
 
 
 def test_a_positional_decoder_needs_no_kinds() -> None:
@@ -460,9 +519,9 @@ def test_a_positional_decoder_needs_no_kinds() -> None:
     _check_inputs(GraphRole.DECODER, _input_signature(input_types)[1])
 
 
-@pytest.mark.parametrize("name", list(_CASES))
+@pytest.mark.parametrize("name", list(_ALL_TREES))
 def test_graph_input_tree_round_trips(name: str) -> None:
-    layouts, treedef = _input_signature(_CASES[name]()[0])
+    layouts, treedef = _input_signature(_ALL_TREES[name]())
     encoded = _snapshot(name)
     assert treedef_from_json(encoded["in_tree"]) == treedef
     assert layouts_from_json(encoded["in_layouts"], "in_layouts") == layouts
