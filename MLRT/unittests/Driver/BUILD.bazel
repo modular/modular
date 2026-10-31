@@ -1175,6 +1175,9 @@ modular_cc_test(
     ],
     env = {
         # Set up consistent memory manager environment for testing
+        # Only the stub device supports VMM; use small granules for its test.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "1",
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "25",
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "25",
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",

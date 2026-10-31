@@ -1560,6 +1560,12 @@ DeviceContext::getMemoryInfo() const {
   return getDeviceMemoryInfo();
 }
 
+MODULAR_CXX_EXPORT ErrorOr<size_t> DeviceContext::releaseUnusedMemory() {
+  if (isGraphCapturing() || isBaseStreamCapturing())
+    return Error("cannot release unused memory during graph capture");
+  return device().memoryManager().releaseUnusedMemory();
+}
+
 void DeviceContext::setPendingError(Error err) {
   {
     std::lock_guard<std::mutex> lock(pendingErrorMutex_);

@@ -745,6 +745,8 @@ public:
   // ===-- Device info --------------------------------------------------=== //
 
   ErrorOr<Device::MemInfo> getMemoryInfo() const;
+  // HAL does not use the legacy VMM memory manager.
+  ErrorOr<size_t> releaseUnusedMemory() { return size_t{0}; }
   ErrorOr<const char *> getArchName() const;
   ErrorOrSuccess isCompatible() const;
 
