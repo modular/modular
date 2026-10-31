@@ -63,8 +63,6 @@ public:
                                        evaluator.getIndexBindings());
   }
 
-  const ParameterEvaluator &getEvaluator() const { return evaluator; }
-
   /// Pre-seed an inferred parameter value by index.
   void setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
     setInferredValue(paramIdx, paramVal);
