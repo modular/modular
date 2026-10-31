@@ -134,6 +134,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
     if (!foundExisting)
       indexReplacer.getNewOriginParamDecls().push_back(decl);
   }
+  Type adjustedResultType = indexReplacer.replace(resultType);
   size_t numImplicitOriginDecls = indexReplacer.getNewOriginParamDecls().size();
 
   auto metadata = FnMetaOriginDataAttr::get(
@@ -142,7 +143,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
                                    /*captureOrigins=*/nullptr),
       isNestedOriginsReadOnly, /*definesInteriorOrigins=*/false);
   FunctionType functionType =
-      builder.getFunctionType(adjustedArgTypes, {resultType});
+      builder.getFunctionType(adjustedArgTypes, {adjustedResultType});
   Location location = shared.translateLocation(loc);
   FnTypeGeneratorType sigGen = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, fnEffects, metadata, paramListAttrs,

@@ -1960,18 +1960,13 @@ LogicalResult RefUpcastOp::verify() {
 
   // The destination origin must be an upcast of the source, which happens with
   // subtree origins, conversions to unions with other origins, and upcast
-  // symbolic mutabilities, e.g. "x" -> "x&y" is less mutable than "x".  We can
-  // check this by forming union(dst, src): it will collapse to dst when src is
-  // already covered by dst.
-  auto srcOrigin = getCanonicalAttr(srcType.getOrigin());
-  auto dstOrigin = getCanonicalAttr(dstType.getOrigin());
-  auto dstOriginType = cast<OriginType>(dstOrigin.getType());
-  auto originUnion = OriginUnionAttr::get(
-      {dstOrigin, OriginMutCastAttr::get(srcOrigin, dstOriginType)},
-      dstOriginType);
-  if (dstOrigin != originUnion)
+  // symbolic mutabilities, e.g. "x" -> "x&y" is less mutable than "x".
+  if (!OriginType::covers(dstType.getOrigin(), srcType.getOrigin())) {
+    auto srcOrigin = getCanonicalAttr(srcType.getOrigin());
+    auto dstOrigin = getCanonicalAttr(dstType.getOrigin());
     return emitOpError("result origin is not an upcast of the source origin: ")
            << srcOrigin << " is not covered by " << dstOrigin;
+  }
 
   return success();
 }
