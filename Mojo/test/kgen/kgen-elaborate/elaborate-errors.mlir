@@ -589,3 +589,18 @@ kgen.generator @shift_out_of_range_shr() {
   %0 = kgen.param.constant: !kgen.scalar<ui8> = <shr(1, 9)>
   hlcf.return
 }
+
+// -----
+
+// Test that the shift diagnostic uses the target's index bit width for
+// scalar<index> operands. With a 32-bit index target, shifting by 32 is out of
+// range.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+// expected-error @below {{function instantiation failed}}
+kgen.generator @shift_out_of_range_shr_index_32bit() {
+  // expected-note @below {{shift amount 32 is outside the valid range 0..31 for scalar<index>}}
+  %0 = kgen.param.constant: !kgen.scalar<index> = <shr(1, 32)>
+  hlcf.return
+}
+}

@@ -902,7 +902,7 @@ ParametricIREvaluator::concretizeParameterExpr(PImplNode *parent, Location loc,
         // what is going on.
         if (allSimple) {
           if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
-            auto errorMessage = itf.validateForElaborator();
+            auto errorMessage = itf.validateForElaborator(getTargetInfo());
             if (errorMessage.isError()) {
               emitError(ErrorTree(loc, errorMessage.takeError()));
               return WalkResult::interrupt();
