@@ -64,6 +64,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/architectures/llama4",
         "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mistral",
         "//max/python/max/pipelines/architectures/mistral3",

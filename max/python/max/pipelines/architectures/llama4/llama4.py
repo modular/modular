@@ -15,34 +15,16 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Iterable
-from pathlib import Path
-from typing import Any
 
-from max import tree
 from max.dtype import DType
-from max.graph import (
-    BufferType,
-    DeviceRef,
-    Graph,
-    TensorType,
-    Type,
-    Value,
-)
-from max.graph import Module as GraphModule
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.moe import StackedMoE
 from max.nn.legacy.moe.stacked_moe import GateUpFormat
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    Transformer,
-    TransformerBlock,
-)
+from max.nn.legacy.transformer import Transformer, TransformerBlock
 
 from .layers import Llama4TextAttention, Llama4TextMoEGate
 from .model_config import Llama4Config
@@ -186,76 +168,4 @@ class Llama4(Transformer):
             rope=rope,
             return_logits=config.return_logits,
             return_hidden_states=config.return_hidden_states,
-        )
-
-    def input_types(
-        self, kv_params: KVCacheParamInterface
-    ) -> tuple[TensorType | BufferType, ...]:
-        """The graph's input types, in :meth:`forward`'s order."""
-        device_ref = self.config.devices[0]
-        return (
-            TensorType(DType.int64, shape=["total_seq_len"], device=device_ref),
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=device_ref,
-            ),
-            TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            ),
-            *kv_params.flattened_kv_inputs(),
-        )
-
-    def trace(
-        self,
-        *input_types: Type[Any],
-        name: str | None = None,
-        module: GraphModule | None = None,
-        custom_extensions: Iterable[Path] = (),
-        is_device_graph: bool = False,
-    ) -> Graph:
-        """Traces the graph, whose inputs are :meth:`input_types`.
-
-        Adapts the flat graph inputs to :meth:`__call__`: unflattens the KV
-        cache inputs into the device's KV collection.
-
-        Args:
-            *input_types: The graph's input types, as :meth:`input_types`
-                returns them.
-            name: The name of the graph. Defaults to the class's qualified
-                name.
-            module: The MLIR module to add the graph to. Defaults to a new
-                module.
-            custom_extensions: Paths to custom kernel libraries the graph
-                uses.
-            is_device_graph: Whether to build a device graph.
-
-        Returns:
-            The traced :class:`~max.graph.Graph`.
-        """
-
-        def forward(
-            tokens: Value[Any],
-            input_row_offsets: Value[Any],
-            return_n_logits: Value[Any],
-            *kv_inputs: Value[Any],
-        ) -> DecoderOutputs:
-            kv_collections = tree.leaves(
-                self.kv_params.unflatten_kv_inputs(iter(kv_inputs)),
-                leaf=KVCacheInputsPerDevice,
-            )
-            return self(
-                tokens.tensor,
-                kv_collections[0],
-                return_n_logits.tensor,
-                input_row_offsets.tensor,
-            )
-
-        return Graph(
-            type(self).__qualname__ if name is None else name,
-            forward,
-            input_types=input_types,
-            custom_extensions=list(custom_extensions),
-            module=module,
-            is_device_graph=is_device_graph,
         )

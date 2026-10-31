@@ -15,13 +15,14 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
+    GraphRole,
     SupportedArchitecture,
     TextTokenizer,
 )
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .model import Llama4Model
+from .decoder import Llama4Decoder
 from .model_config import Llama4Config
 
 # Text-only Llama 4 Scout. The released Scout checkpoint declares
@@ -37,7 +38,7 @@ llama4_arch = SupportedArchitecture(
     example_repo_ids=_EXAMPLE_REPO_IDS,
     default_encoding=Llama4Config.DEFAULT_ENCODING,
     supported_encodings=Llama4Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Llama4Model,
+    modules={GraphRole.DECODER: Llama4Decoder},
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
     context_type=TextContext,
@@ -60,7 +61,7 @@ llama4_conditional_arch = SupportedArchitecture(
     example_repo_ids=_EXAMPLE_REPO_IDS,
     default_encoding=Llama4Config.DEFAULT_ENCODING,
     supported_encodings=Llama4Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Llama4Model,
+    modules={GraphRole.DECODER: Llama4Decoder},
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
     context_type=TextContext,

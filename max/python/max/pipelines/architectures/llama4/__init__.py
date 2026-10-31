@@ -13,12 +13,12 @@
 """Llama 4 (text-only) transformer architecture for text generation."""
 
 from .arch import llama4_arch, llama4_conditional_arch
-from .model import Llama4Model
+from .decoder import Llama4Decoder
 from .model_config import Llama4Config
 
 __all__ = [
     "Llama4Config",
-    "Llama4Model",
+    "Llama4Decoder",
     "llama4_arch",
     "llama4_conditional_arch",
 ]
