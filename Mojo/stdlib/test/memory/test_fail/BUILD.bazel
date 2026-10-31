@@ -1,11 +1,42 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
 
+# Runtime abort cases converted to `_assert_aborts` (see modular/modular#6920).
+_MOJO_TESTS = [
+    "alloc_zst_fail_tests.mojo",
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        # These directories were already ASAN/TSAN-excluded as lit tests.
+        # Keep that exclusion: `_assert_aborts` early-returns under ASAN.
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//:tsan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in _MOJO_TESTS
+]
+
+# Remaining files are compile-time constraint / diagnostic lit tests.
 lit_tests(
     name = "lit_tests",
     size = "large",
-    srcs = glob(["*.mojo"]),
+    srcs = glob(
+        ["*.mojo"],
+        exclude = _MOJO_TESTS,
+    ),
     mojo_deps = [
         "@mojo//:std",
     ],
