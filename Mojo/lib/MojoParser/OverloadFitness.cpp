@@ -252,6 +252,7 @@ OverloadFitness::evaluateDirectCall(ASTDecl *candidate,
       candidate->getDeclFullSignature(callable.getContextualType(candidate));
 
   ParamBindings paramBindings = callable.getParamBindings(candidate);
+  // TODO(MOCO-5244): Speculative trials install no DeferredTypingContext.
   ParamInf inference(paramBindings, signature.getInputParamTypes(),
                      signature.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, candidate,
