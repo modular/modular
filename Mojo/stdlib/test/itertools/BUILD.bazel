@@ -1,31 +1,18 @@
-load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+load("//bazel:api.bzl", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
 
-# FileCheck tests that exercise assertion crashes (e.g. negative-count
-# arguments). Each one is expected to abort, so they all run under
-# `expect_crash = True`.
-_FILECHECK_TESTS = [
-    "test_take_negative_count.mojo",
-    "test_drop_negative_count.mojo",
+_NO_ASAN = [
+    "test_negative_count_abort.mojo",  # _assert_aborts is a no-op under ASAN
 ]
 
-[
-    mojo_filecheck_test(
-        name = src + ".test",
-        srcs = [src],
-        copts = [
-            "--debug-level",
-            "full",
-        ],
-        expect_crash = True,
-        deps = [
-            "@mojo//:std",
-            "@mojo//:test_utils",
-        ],
-    )
-    for src in _FILECHECK_TESTS
-]
+_PLATFORM_CONSTRAINTS = {
+    src: select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+    for src in _NO_ASAN
+}
 
 [
     mojo_test(
@@ -35,13 +22,11 @@ _FILECHECK_TESTS = [
             "--debug-level",
             "full",
         ],
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
-    for src in glob(
-        ["*.mojo"],
-        exclude = _FILECHECK_TESTS,
-    )
+    for src in glob(["*.mojo"])
 ]
