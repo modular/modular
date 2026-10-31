@@ -2570,6 +2570,9 @@ void StmtParser::emitCases(ArrayRef<MatchCaseEntry> caseEntries,
       if (!emitter.emitCResult(bindingValue, &nameNode, storeDest))
         return failure();
     }
+    // The bindings have been moved out, so every recorded aggregate is fully
+    // consumed and none of its fields may still be destroyed.
+    emissionState.markConsumedRoots(emitter, emissionState.matchLocation);
     return success();
   };
 
@@ -4117,6 +4120,9 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
         if (!emitter.emitCResult(bindingValue, &nameNode, storeDest))
           return failure();
       }
+      // The bindings have been moved out, so every recorded aggregate is fully
+      // consumed and none of its fields may still be destroyed.
+      emissionState.markConsumedRoots(emitter, emissionState.matchLocation);
       return success();
     };
 
