@@ -13,11 +13,9 @@
 """Qwen2 transformer architecture for text generation."""
 
 from .arch import qwen2_arch
-from .model import Qwen2Model
 from .model_config import Qwen2Config
 
 __all__ = [
     "Qwen2Config",
-    "Qwen2Model",
     "qwen2_arch",
 ]

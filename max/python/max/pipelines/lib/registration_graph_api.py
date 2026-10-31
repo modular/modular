@@ -23,13 +23,23 @@ returns :class:`~max.pipelines.lib.role_contracts.DecoderOutputs`.
 
 A registered graph-API decoder class can also set:
 
-- ``graph_name``, the name its graph compiles under (:func:`graph_name`);
+- ``graph_name``, the name its graph compiles under (:func:`graph_name`),
+  which an instance may also set from its config;
+- ``supports_data_parallel``, when it runs one replica per device and reads
+  :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.data_parallel_splits`;
+- ``data_parallel_batch_inputs``, the
+  :class:`~max.pipelines.lib.role_contracts.DecoderInputs` batch fields its
+  data-parallel graph takes, in that graph's order, when they differ from
+  the canonical ones (:func:`graph_api_decoder_input_types`);
 - ``always_signal_buffers``, when it takes allreduce signal buffers even on
   one device;
 - ``strict_state_dict_loading``, ``False`` when the checkpoint may hold
   weights the decoder doesn't read;
 - ``override_quantization_encoding``, when the checkpoint's quantization
-  encoding overrides the one a weight declares.
+  encoding overrides the one a weight declares;
+- ``build_module(context, config_cls)``, a classmethod that builds the
+  module a speculative-decoding graph calls as its target. The pipeline
+  model then exposes it as its own ``build_module``.
 """
 
 from __future__ import annotations
@@ -79,6 +89,7 @@ from .interfaces.batch_processor import (
 from .interfaces.pipeline_model import (
     AlwaysSignalBuffersMixin,
     ModelInputs,
+    ModelLoadContext,
     ModelOutputs,
     PipelineModelWithKVCache,
 )
@@ -112,8 +123,14 @@ __all__ = [
 _BATCH_FIELDS = {
     "tokens": "tokens",
     "row_offsets": "input_row_offsets",
+    "host_row_offsets": "host_input_row_offsets",
     "return_n_logits": "return_n_logits",
+    "data_parallel_splits": "data_parallel_splits",
 }
+_BATCH_INPUTS = {field: name for name, field in _BATCH_FIELDS.items()}
+
+_BATCH = ("tokens", "input_row_offsets", "return_n_logits")
+_DATA_PARALLEL_BATCH = (*_BATCH, "data_parallel_splits")
 
 
 def is_graph_api_module(module_cls: object) -> bool:
@@ -123,19 +140,36 @@ def is_graph_api_module(module_cls: object) -> bool:
     )
 
 
-def graph_name(module_cls: type[GraphApiModule]) -> str:
+def graph_name(module: type[GraphApiModule] | GraphApiModule) -> str:
     """Returns the name a registered graph-API module's graph compiles under.
 
     The name is part of the precompiled MEF key, so a module whose graph
-    predates registration sets ``graph_name`` to keep it.
+    predates registration sets ``graph_name`` to keep it. A module whose old
+    name depended on the deployment sets it on the instance.
     """
-    return getattr(module_cls, "graph_name", module_cls.__qualname__)
+    module_cls = module if isinstance(module, type) else type(module)
+    return getattr(module, "graph_name", module_cls.__qualname__)
+
+
+def supports_data_parallel(module_cls: type[GraphApiModule]) -> bool:
+    """Returns whether a registered graph-API module runs data-parallel.
+
+    A module that sets ``supports_data_parallel`` reads
+    :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.data_parallel_splits`
+    and runs one replica per device.
+    """
+    return bool(getattr(module_cls, "supports_data_parallel", False))
 
 
 def _takes_signals(
-    module_cls: type[GraphApiModule], devices: Sequence[object]
+    module_cls: type[GraphApiModule],
+    devices: Sequence[object],
+    data_parallel_degree: int,
 ) -> bool:
-    return len(devices) > 1 or bool(
+    # Data-parallel replicas don't communicate, so only tensor parallelism
+    # needs the buffers.
+    tensor_parallel = len(devices) > 1 and data_parallel_degree == 1
+    return tensor_parallel or bool(
         getattr(module_cls, "always_signal_buffers", False)
     )
 
@@ -150,13 +184,16 @@ def graph_api_decoder_input_types(
     device_refs: Sequence[DeviceRef],
     *,
     signals: bool = False,
+    data_parallel_degree: int = 1,
+    data_parallel_batch: Sequence[str] = _DATA_PARALLEL_BATCH,
 ) -> OrderedDict[str, _DecoderInputTypes]:
     """Returns a graph-API ``DECODER`` graph's input types.
 
     A serving engine places a named decoder input by the kind of the group
     that holds it, so the inputs sit in kinded groups: ``batch`` (tokens, row
-    offsets and the logit count), then ``signals``, then ``kv``. Their leaves
-    are the graph's inputs, in the canonical order of
+    offsets, the logit count and, under data parallelism, each replica's
+    first sequence), then ``signals``, then ``kv``. Their leaves are the
+    graph's inputs, in the canonical order of
     :class:`~max.pipelines.lib.role_contracts.DecoderInputs`. The row offsets
     are one input on the first device, as for a ModuleV3 decoder; a decoder
     that needs them on every device copies them inside its graph.
@@ -167,9 +204,27 @@ def graph_api_decoder_input_types(
             tokens.
         signals: Whether the graph takes one allreduce signal buffer per
             device.
+        data_parallel_degree: The number of replicas. Above one, the batch
+            takes ``data_parallel_batch``.
+        data_parallel_batch: The
+            :class:`~max.pipelines.lib.role_contracts.DecoderInputs` fields
+            the batch takes under data parallelism, in graph order. By
+            default the canonical ones, ending with
+            ``data_parallel_splits``; a graph that predates the contract may
+            also take ``host_input_row_offsets`` or another order.
     """
+    fields = [
+        _BATCH_INPUTS[field]
+        for field in (
+            data_parallel_batch if data_parallel_degree > 1 else _BATCH
+        )
+    ]
     types: OrderedDict[str, _DecoderInputTypes] = OrderedDict(
-        batch=ragged_batch_inputs(device_refs[0], tuple(_BATCH_FIELDS))
+        batch=ragged_batch_inputs(
+            device_refs[0],
+            fields,
+            data_parallel_degree=data_parallel_degree,
+        )
     )
     if signals:
         types["signals"] = signal_inputs(list(device_refs))
@@ -318,7 +373,7 @@ class _DecoderGraph(GraphApiModule):
             The traced graph.
         """
         return Graph(
-            graph_name(type(self.decoder)) if name is None else name,
+            graph_name(self.decoder) if name is None else name,
             self,
             input_types=input_types,
             custom_extensions=list(custom_extensions),
@@ -334,13 +389,19 @@ class GraphApiDecoderModelInputs(DecoderModelInputs):
     signal_buffers: tuple[Buffer, ...] = ()
     """The allreduce signal buffers, when the graph takes them."""
 
+    batch_fields: tuple[str, ...] = _BATCH
+    """The batch fields the graph takes, in its order."""
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """The step's buffers, in the graph's input order."""
+        batch: list[Buffer] = []
+        for field in self.batch_fields:
+            value = getattr(self, field)
+            assert isinstance(value, Buffer), f"no {field} for the graph"
+            batch.append(value)
         return (
-            self.tokens,
-            self.input_row_offsets,
-            self.return_n_logits,
+            *batch,
             *self.signal_buffers,
             *(
                 tree.leaves(self.kv_cache_inputs)
@@ -374,28 +435,25 @@ class GraphApiDecoderBatchProcessor(DecoderBatchProcessor):
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> GraphApiDecoderModelInputs:
-        """Packs the contexts into one ragged batch.
-
-        Raises:
-            NotImplementedError: Under data parallelism.
-        """
-        if self.runtime.data_parallel_degree > 1:
-            raise NotImplementedError(
-                "graph-API decoders don't support data parallelism yet"
-            )
+        """Packs the replicas' contexts into one ragged batch."""
         inputs = super().prepare_initial_token_inputs(
             replica_batches, kv_cache_inputs, return_n_logits
         )
         input_tree = self.input_tree
         assert input_tree is not None, "bind the graph's input tree first"
+        batch = input_tree["batch"]
+        assert isinstance(batch, Mapping)
         signals: tuple[Buffer, ...] = ()
         if "signals" in input_tree:
             signals = tuple(self.runtime.signal_buffers)
         return GraphApiDecoderModelInputs(
             tokens=inputs.tokens,
             input_row_offsets=inputs.input_row_offsets,
+            host_input_row_offsets=inputs.host_input_row_offsets,
             return_n_logits=inputs.return_n_logits,
+            data_parallel_splits=inputs.data_parallel_splits,
             signal_buffers=signals,
+            batch_fields=tuple(_BATCH_FIELDS[name] for name in batch),
             kv_cache_inputs=inputs.kv_cache_inputs,
         )
 
@@ -457,13 +515,23 @@ class GraphApiDecoderPipelineModel(
         """Builds, compiles and initializes the decoder graph.
 
         Raises:
-            NotImplementedError: If data parallelism is on.
+            ValueError: If data parallelism is on and the decoder doesn't
+                support it, or doesn't give each device its own replica.
         """
-        if pipeline_config.model.data_parallel_degree > 1:
-            raise NotImplementedError(
-                f"{type(self).decoder_cls.__qualname__} doesn't support data "
-                "parallelism"
-            )
+        decoder_cls = type(self).decoder_cls
+        data_parallel_degree = pipeline_config.model.data_parallel_degree
+        if data_parallel_degree > 1:
+            if not supports_data_parallel(decoder_cls):
+                raise ValueError(
+                    f"{decoder_cls.__qualname__} doesn't support data "
+                    "parallelism"
+                )
+            if data_parallel_degree != len(devices):
+                raise ValueError(
+                    "data parallelism needs one replica per device, got "
+                    f"{data_parallel_degree} replicas over {len(devices)} "
+                    "devices"
+                )
         super().__init__(
             pipeline_config,
             session,
@@ -516,19 +584,28 @@ class GraphApiDecoderPipelineModel(
         )
         # The graph's weights registry holds what it binds; drop the rest.
         self._checkpoint = {}
+        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
         input_types = self._bind_graph_inputs(
             OrderedDict[str, object](
                 graph_api_decoder_input_types(
                     self.kv_params,
                     self.device_refs,
-                    signals=_takes_signals(decoder_cls, self.device_refs),
+                    signals=_takes_signals(
+                        decoder_cls, self.device_refs, data_parallel_degree
+                    ),
+                    data_parallel_degree=data_parallel_degree,
+                    data_parallel_batch=getattr(
+                        decoder_cls,
+                        "data_parallel_batch_inputs",
+                        _DATA_PARALLEL_BATCH,
+                    ),
                 )
             )
         )
         return {
             GraphRole.DECODER: GraphSpec(
                 _DecoderGraph(decoder, input_types, self.return_hidden_states),
-                graph_name(decoder_cls),
+                graph_name(decoder),
                 input_types,
                 weights=decoder.state_dict(auto_initialize=False),
             )
@@ -541,6 +618,15 @@ class GraphApiDecoderPipelineModel(
         return self.batch_processor.process_outputs(
             self.model.execute(*model_inputs.buffers)
         )
+
+
+def _build_target_module(
+    cls: type[GraphApiDecoderPipelineModel], context: ModelLoadContext
+) -> tuple[Any, Any]:
+    # TODO(kathywu): Remove once speculative decoding composes the
+    # registered decoder itself (stage 5 of the PipelineModel removal).
+    decoder_cls: Any = cls.decoder_cls
+    return decoder_cls.build_module(context, cls.model_config_cls)
 
 
 _PIPELINE_MODELS: dict[
@@ -588,18 +674,19 @@ def graph_api_pipeline_model(
     if getattr(decoder_cls, "always_signal_buffers", False):
         bases = (AlwaysSignalBuffersMixin, *bases)
     name = f"{decoder_cls.__name__}PipelineModel"
-    model = _GraphApiPipelineModelMeta(
-        name,
-        bases,
-        {
-            "__module__": __name__,
-            "__qualname__": name,
-            "_registration": registration,
-            "decoder_cls": decoder_cls,
-            "model_config_cls": config,
-            "batch_processor_cls": batching or GraphApiDecoderBatchProcessor,
-        },
-    )
+    namespace: dict[str, Any] = {
+        "__module__": __name__,
+        "__qualname__": name,
+        "_registration": registration,
+        "decoder_cls": decoder_cls,
+        "model_config_cls": config,
+        "batch_processor_cls": batching or GraphApiDecoderBatchProcessor,
+    }
+    # Only a decoder class that defines the builder itself, so a subclass
+    # registered by another architecture doesn't become a target too.
+    if "build_module" in vars(decoder_cls):
+        namespace["build_module"] = classmethod(_build_target_module)
+    model = _GraphApiPipelineModelMeta(name, bases, namespace)
     assert issubclass(model, GraphApiDecoderPipelineModel)
     _PIPELINE_MODELS[registration] = model
     return model

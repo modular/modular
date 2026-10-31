@@ -51,6 +51,7 @@ from max.pipelines.lib.registration_graph_api import (
     graph_api_pipeline_model,
     graph_name,
     registered_pipeline_model,
+    supports_data_parallel,
 )
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.pipelines.modeling.types import PipelineTask
@@ -113,6 +114,8 @@ def _toy_logits(
         + inputs.kv["a"].tensor * 1000
         - inputs.kv["b"].tensor
     )
+    if inputs.data_parallel_splits is not None:
+        logits = logits + inputs.data_parallel_splits * 100000
     return logits
 
 
@@ -146,10 +149,17 @@ class SignalDecoder(ToyDecoder):
     always_signal_buffers = True
 
 
-def _types(*, signals: int = 0) -> dict[str, object]:
-    types: dict[str, object] = {
-        "batch": RaggedBatch(tokens=X, row_offsets=X, return_n_logits=X)
-    }
+class DataParallelDecoder(ToyDecoder):
+    supports_data_parallel = True
+
+
+def _types(
+    *, signals: int = 0, data_parallel: bool = False
+) -> dict[str, object]:
+    batch = RaggedBatch(tokens=X, row_offsets=X, return_n_logits=X)
+    if data_parallel:
+        batch["data_parallel_splits"] = X
+    types: dict[str, object] = {"batch": batch}
     if signals:
         types["signals"] = TPSignals(signal=(X,) * signals)
     types["kv"] = {"a": X, "b": X}
@@ -183,6 +193,30 @@ def test_the_graph_feeds_each_field_and_keeps_weight_names() -> None:
     assert graph_name(ToyDecoder) == "toy"
 
 
+def test_the_graph_feeds_data_parallel_splits_after_the_logit_count() -> None:
+    np.testing.assert_array_equal(
+        _run(ToyDecoder(ToyConfig()), _types(data_parallel=True)),
+        np.full(
+            2,
+            1 * 2 + 2 * 10 + 3 * 100 + 4 * 100000 + 5 * 1000 - 6,
+            np.float32,
+        ),
+    )
+
+
+def test_an_instance_can_name_its_graph() -> None:
+    decoder = ToyDecoder(ToyConfig())
+    decoder.graph_name = "toy_tp"
+    assert graph_name(decoder) == "toy_tp"
+    assert graph_name(ToyDecoder) == "toy"
+    assert graph_name(TupleOutputsDecoder) == "TupleOutputsDecoder"
+
+
+def test_a_decoder_opts_into_data_parallelism() -> None:
+    assert supports_data_parallel(DataParallelDecoder)
+    assert not supports_data_parallel(ToyDecoder)
+
+
 def test_the_graph_rejects_outputs_outside_the_contract() -> None:
     with pytest.raises(TypeError, match="returns DecoderOutputs"):
         _run(TupleOutputsDecoder(ToyConfig()), _types())
@@ -212,6 +246,53 @@ def test_input_types_take_the_canonical_order(
     assert not isinstance(batch["row_offsets"], tuple)
 
 
+def test_data_parallel_input_types_take_the_splits() -> None:
+    types = graph_api_decoder_input_types(
+        _kv_params(), [CPU_REF, CPU_REF], data_parallel_degree=2
+    )
+    assert list(types) == ["batch", "kv"]
+    batch = types["batch"]
+    assert isinstance(batch, RaggedBatch)
+    assert list(batch) == [
+        "tokens",
+        "row_offsets",
+        "return_n_logits",
+        "data_parallel_splits",
+    ]
+    splits = batch["data_parallel_splits"]
+    assert isinstance(splits, TensorType)
+    assert splits.dtype == DType.int64
+    assert list(splits.shape) == [3]
+    assert splits.device == CPU_REF
+
+
+def test_a_legacy_data_parallel_batch_keeps_its_order() -> None:
+    types = graph_api_decoder_input_types(
+        _kv_params(),
+        [CPU_REF, CPU_REF],
+        data_parallel_degree=2,
+        data_parallel_batch=(
+            "tokens",
+            "input_row_offsets",
+            "return_n_logits",
+            "host_input_row_offsets",
+            "data_parallel_splits",
+        ),
+    )
+    batch = types["batch"]
+    assert isinstance(batch, RaggedBatch)
+    assert list(batch) == [
+        "tokens",
+        "row_offsets",
+        "return_n_logits",
+        "host_row_offsets",
+        "data_parallel_splits",
+    ]
+    host = batch["host_row_offsets"]
+    assert isinstance(host, TensorType)
+    assert host.device == CPU_REF
+
+
 def _context(*tokens: int) -> TextContext:
     active = np.array(tokens, dtype=np.int64)
     return NonCallableMock(
@@ -221,7 +302,9 @@ def _context(*tokens: int) -> TextContext:
 
 
 def _batch_processor(
-    input_types: dict[str, object], signal_buffers: list[Buffer]
+    input_types: dict[str, object],
+    signal_buffers: list[Buffer],
+    data_parallel_degree: int = 1,
 ) -> GraphApiDecoderBatchProcessor:
     processor = GraphApiDecoderBatchProcessor(
         ToyConfig(),
@@ -232,6 +315,7 @@ def _batch_processor(
             max_batch_size=4,
             max_seq_len=16,
             max_batch_input_tokens=16,
+            data_parallel_degree=data_parallel_degree,
             signal_buffers=signal_buffers,
         ),
     )
@@ -273,6 +357,60 @@ def test_the_batch_processor_omits_fields_the_graph_does_not_take() -> None:
         inputs.tokens,
         inputs.input_row_offsets,
         inputs.return_n_logits,
+        kv,
+    )
+
+
+def test_the_batch_processor_feeds_each_replicas_first_sequence() -> None:
+    kv = NonCallableMock(spec=KVCacheInputsPerDevice)
+    processor = _batch_processor(
+        _types(data_parallel=True), [], data_parallel_degree=2
+    )
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1, 2), _context(3)], [_context(4)]], kv_cache_inputs=kv
+    )
+
+    splits = inputs.data_parallel_splits
+    assert splits is not None
+    np.testing.assert_array_equal(splits.to_numpy(), [0, 2, 3])
+    np.testing.assert_array_equal(
+        inputs.input_row_offsets.to_numpy(), [0, 2, 3, 4]
+    )
+    assert inputs.buffers == (
+        inputs.tokens,
+        inputs.input_row_offsets,
+        inputs.return_n_logits,
+        splits,
+        kv,
+    )
+
+
+def test_the_batch_processor_feeds_a_legacy_batch_in_its_order() -> None:
+    kv = NonCallableMock(spec=KVCacheInputsPerDevice)
+    batch = RaggedBatch(
+        tokens=X,
+        row_offsets=X,
+        return_n_logits=X,
+        host_row_offsets=X,
+        data_parallel_splits=X,
+    )
+    processor = _batch_processor(
+        {"batch": batch, "kv": {"a": X, "b": X}}, [], data_parallel_degree=2
+    )
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1, 2)], [_context(3)]], kv_cache_inputs=kv
+    )
+
+    host = inputs.host_input_row_offsets
+    splits = inputs.data_parallel_splits
+    assert host is not None and splits is not None
+    np.testing.assert_array_equal(host.to_numpy(), [0, 2, 3])
+    assert inputs.buffers == (
+        inputs.tokens,
+        inputs.input_row_offsets,
+        inputs.return_n_logits,
+        host,
+        splits,
         kv,
     )
 

@@ -12,9 +12,7 @@ modular_py_library(
     deps = [
         requirement("transformers"),
         requirement("typing-extensions"),
-        "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         # Hooks added for convenience for when we want to print the model layers

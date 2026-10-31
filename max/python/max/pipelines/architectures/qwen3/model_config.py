@@ -26,11 +26,12 @@ from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from ..llama3.decoder import Llama3DecoderConfig
 from ..llama3.model_config import Llama3Config
 
 
 @dataclass(kw_only=True)
-class Qwen3Config(Llama3Config):
+class Qwen3Config(Llama3DecoderConfig):
     """Qwen3 configuration."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
