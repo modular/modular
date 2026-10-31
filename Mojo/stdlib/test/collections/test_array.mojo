@@ -1008,6 +1008,36 @@ def test_array_repeat_runs_destructors_once() raises:
     assert_equal(destructor_recorder, [0, 1, 0, 1, 0, 1])
 
 
+def _array_alias_checksum(seed: Int) -> Int:
+    # More than 256 distinct element addresses exercise pointer-cache collisions.
+    var values = Array[Int, 512](fill=seed)
+    var ptr = values.unsafe_ptr()
+    # The same numeric address with a different pointer type must stay distinct.
+    var unsigned = ptr.unsafe_bitcast[UInt]()
+    unsigned[] = UInt(seed + 1)
+    if values[0] != seed + 1:
+        return -1
+    for i in range(512):
+        values[i] = seed + i
+        var before = values[i]
+        ptr[unsafe_offset=i] += 1
+        if values.unsafe_get(i) != before + 1:
+            return -1
+    var result = 0
+    for i in range(512):
+        result += values[i]
+    return result
+
+
+def test_comptime_array_aliases() raises:
+    # Caching a pointer value must never cache the mutable pointee or its data.
+    comptime first = _array_alias_checksum(7)
+    comptime second = _array_alias_checksum(11)
+    assert_equal(first, 512 * 7 + 512 * 513 // 2)
+    assert_equal(second, 512 * 11 + 512 * 513 // 2)
+    assert_equal(_array_alias_checksum(7), first)
+
+
 def main() raises:
     var suite = TestSuite.discover_tests[__functions_in_module()]()
     suite^.run()

@@ -76,6 +76,16 @@ InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
 
+InterpreterState::TypeLayout InterpreterState::getTypeLayout(Type type) {
+  auto [it, inserted] = typeLayouts.try_emplace(type);
+  if (inserted) {
+    auto layout = dyn_cast<DataLayoutInterface>(type);
+    if (layout)
+      it->second = {layout.getTypeSize(target), layout.getTypeAlign(target)};
+  }
+  return it->second;
+}
+
 InterpreterState::MemoryBlob::MemoryBlob(llvm::BumpPtrAllocator &allocator,
                                          int64_t baseAddr, size_t size,
                                          size_t align, unsigned addressSpace,
