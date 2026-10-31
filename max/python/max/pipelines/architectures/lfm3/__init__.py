@@ -13,5 +13,7 @@
 """LiquidAI LFM3 models on ModuleV3."""
 
 from .arch import lfm3_arch
+from .lfm3 import Lfm3
+from .model_config import Lfm3Config
 
-__all__ = ["lfm3_arch"]
+__all__ = ["Lfm3", "Lfm3Config", "lfm3_arch"]

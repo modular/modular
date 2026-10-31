@@ -19,10 +19,10 @@ from pathlib import Path
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from .model import Lfm3Model
+from .lfm3 import Lfm3
 from .model_config import Lfm3Config
 
 lfm3_arch = SupportedArchitecture(
@@ -32,11 +32,10 @@ lfm3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Lfm3Config.DEFAULT_ENCODING,
     supported_encodings=Lfm3Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Lfm3Model,
+    modules={GraphRole.DECODER: Lfm3},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     config=Lfm3Config,
-    batching=Lfm3Model.batch_processor_cls,
     memory_planner=PagedMemoryPlanner,
     checkpoints_recurrent_state=True,
     format_spec=Path(__file__).parent / "formatspec.json",

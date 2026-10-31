@@ -14,11 +14,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -32,6 +34,7 @@ from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -195,3 +198,22 @@ class Lfm3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             max_seq_len=max_seq_len,
             kv_params=kv_params,
         )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns the config completed with the pipeline's output requirements.
+
+        Args:
+            huggingface_config: The checkpoint's model configuration.
+            state_dict: The adapted checkpoint weights.
+            outputs: The outputs the pipeline requires.
+
+        Returns:
+            A copy of this config that returns the logits ``outputs`` asks for.
+        """
+        del huggingface_config, state_dict
+        return replace(self, return_logits=outputs.return_logits)

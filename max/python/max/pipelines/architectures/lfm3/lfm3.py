@@ -35,6 +35,7 @@ from max.nn.legacy.kv_cache import (
 from max.nn.legacy.transformer import ReturnLogits
 from max.nn.norm import RMSNorm
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
 
@@ -202,8 +203,12 @@ class Lfm3TextModel(Module[..., Tensor]):
         return h
 
 
-class Lfm3(Module[..., ModuleV3Outputs]):
-    """LFM3 for causal language modeling, with tied embeddings."""
+class Lfm3Base(Module[..., ModuleV3Outputs]):
+    """The LFM3 decoder stack and tied logits, without a graph signature.
+
+    :class:`Lfm3` serves text; the multimodal language models subclass this
+    to take their media inputs ahead of the cache.
+    """
 
     returns_hidden_states: ClassVar[bool] = False
     """Whether :meth:`decode` also returns each sequence's normed last hidden
@@ -246,19 +251,6 @@ class Lfm3(Module[..., ModuleV3Outputs]):
             Tensor.from_shard_values([conv.live_row_ids]),
         )
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *kv_inputs: Tensor,
-    ) -> ModuleV3Outputs:
-        """Runs the decoder over the tokens and returns the logits."""
-        del return_n_logits
-        return self.decode(
-            self.model.embed_tokens(tokens), input_row_offsets, kv_inputs
-        )
-
     def decode(
         self,
         embeds: Tensor,
@@ -286,4 +278,16 @@ class Lfm3(Module[..., ModuleV3Outputs]):
             )
         return ModuleV3Outputs(
             next_token_logits=self._logits(last), hidden_states=hidden_states
+        )
+
+
+class Lfm3(Lfm3Base):
+    """LFM3 for causal language modeling, as the ``DECODER`` role."""
+
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Runs the decoder over the tokens and returns the logits."""
+        return self.decode(
+            self.model.embed_tokens(inputs.tokens),
+            inputs.input_row_offsets,
+            tuple(tree.leaves(inputs.kv)),
         )
