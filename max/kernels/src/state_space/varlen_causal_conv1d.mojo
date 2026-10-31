@@ -47,12 +47,17 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.host import DeviceContext
-
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+)
 
 from layout import TensorLayout, TileTensor
 from layout.tensor_engine import TensorEngine
 
 from nn.activations import silu
+from state_space.pdl_wait import wait_on_producers
 
 
 # ============================================================================
@@ -561,6 +566,7 @@ def _causal_conv1d_varlen_fwd_kernel[
     silu_activation: Bool,
     use_residual: Bool,
     channels_last: Bool,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     weight: TileTensor[dtype, weight_LT, MutUntrackedOrigin, Engine=Engine],
     bias: TileTensor[dtype, bias_LT, MutUntrackedOrigin, Engine=Engine],
@@ -623,6 +629,13 @@ def _causal_conv1d_varlen_fwd_kernel[
             the activation.
         channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
             rather than `(dim, total_seqlen)`.
+        pdl_level: Programmatic dependent launch level. Every enabled level
+            waits on the predecessor grid before its first load.
+            Only `OVERLAP_AT_BEGINNING` releases dependents explicitly; the
+            other enabled levels leave it to the implicit release when the
+            grid exits. An explicit release at the end of every CTA slowed
+            the 4864-CTA decode grid at batch 128 by 3.6% on B200, and this
+            kernel's CTAs are too short to repay it.
 
     Args:
         weight: Weight tensor of shape `(dim, width)`.
@@ -644,6 +657,17 @@ def _causal_conv1d_varlen_fwd_kernel[
     comptime TILE_SEQ = _FWD_TILE_SEQ
     comptime Vec = SIMD[dtype, VEC]
     comptime AccVec = SIMD[accum_dtype, VEC]
+
+    # Everything below reads `x`, the sequence table, the state pool or the
+    # conv weights and bias, which an earlier grid can produce (the graph
+    # slices the weights per device and derives them per call). Every CTA
+    # waits before any early exit so this grid cannot finish ahead of its
+    # predecessor. Releasing the dependents here is safe: their own wait
+    # still blocks until this grid completes.
+    comptime if pdl_level != PDLLevel.OFF:
+        wait_on_producers()
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
 
     var batch = Int(query_start_loc.dim[0]()) - 1
     var row = block_idx.y
@@ -809,6 +833,7 @@ def causal_conv1d_varlen_fwd_gpu[
     silu_activation: Bool = False,
     use_residual: Bool = False,
     channels_last: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     weight: TileTensor[dtype, weight_LT, _, Engine=Engine],
     bias: TileTensor[dtype, bias_LT, _, Engine=Engine],
@@ -865,6 +890,8 @@ def causal_conv1d_varlen_fwd_gpu[
             the activation.
         channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
             rather than `(dim, total_seqlen)`.
+        pdl_level: Programmatic dependent launch level. Every enabled level
+            waits on the predecessor grid, including `NO_WAIT_OVERLAP_AT_END`.
 
     Args:
         weight: Weight tensor of shape `(dim, width)`.
@@ -895,7 +922,9 @@ def causal_conv1d_varlen_fwd_gpu[
     var batch = Int(query_start_loc.dim[0]()) - 1
 
     @inline(.always)
-    def launch[VEC: Int, SEQ_PER_ROW: Bool]() raises {imm}:
+    def launch[
+        VEC: Int, SEQ_PER_ROW: Bool, level: PDLLevel = PDLLevel()
+    ]() raises {imm}:
         comptime kernel = _causal_conv1d_varlen_fwd_kernel[
             dtype,
             conv_states_dtype,
@@ -915,6 +944,7 @@ def causal_conv1d_varlen_fwd_gpu[
             silu_activation,
             use_residual,
             channels_last,
+            level,
         ]
         ctx.enqueue_function[kernel](
             weight,
@@ -931,10 +961,15 @@ def causal_conv1d_varlen_fwd_gpu[
                 + batch,
             ),
             block_dim=_FWD_BLOCK_DIM,
+            attributes=pdl_launch_attributes(level),
         )
 
     if total_seqlen <= batch:
-        launch[1, True]()
+        # Only the decode launch takes part in PDL. Behind a long prefill GEMM
+        # (256 to 1024 tokens measured on B200) the early-resident tile grid
+        # cost 8 to 10 us per layer, and at that size the launch gap PDL
+        # hides is a rounding error anyway.
+        launch[1, True, pdl_level]()
         return
 
     comptime if channels_last:

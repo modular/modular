@@ -198,6 +198,15 @@ from nn.tpool_patch_merger import (
     tpool_patch_merger as nn_tpool_patch_merger,
 )
 
+# Programmatic dependent launch levels of the Mamba-2 mixer chain kernels. The
+# norm releases its dependent GEMM right after its own wait: that GEMM only
+# launches once every norm CTA is resident, so it cannot starve the norm, and
+# it measured faster than releasing at the end on B200 decode (0.3 to 2.8 us per
+# layer at batch 2 to 128, 0.4 us slower at batch 1).
+comptime _MAMBA2_CONV_PDL = PDLLevel.ON
+comptime _MAMBA2_SCAN_PDL = PDLLevel.ON
+comptime _MAMBA2_NORM_PDL = PDLLevel.OVERLAP_AT_BEGINNING
+
 # ===-----------------------------------------------------------------------===#
 # Helpers
 # ===-----------------------------------------------------------------------===#
@@ -5189,6 +5198,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                         Self.dt_softplus,
                         prefill,
                         CH_PER_THREAD=CH_PER_THREAD,
+                        pdl_level=_MAMBA2_SCAN_PDL,
                     ]
                     if has_prefill == prefill:
                         ctx.enqueue_function[kernel](
@@ -5208,6 +5218,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                                 batch,
                             ),
                             block_dim=(DSTATE_SPLIT, ROWS, 1),
+                            attributes=pdl_launch_attributes(_MAMBA2_SCAN_PDL),
                         )
 
         var dstate = B.dim_size(2)
@@ -5610,6 +5621,7 @@ struct CausalConv1DVarlenFwd[
                     silu_activation,
                     Self.use_residual,
                     Self.channels_last,
+                    _MAMBA2_CONV_PDL,
                 ](
                     weight_tt,
                     bias_tt,
@@ -5797,7 +5809,9 @@ struct GatedGroupRMSNorm[group_size: Int]:
                 eps,
             )
         elif is_gpu[target]():
-            gated_group_rmsnorm_gpu[dtype, gate_dtype, gs, type_of(gate_fn)](
+            gated_group_rmsnorm_gpu[
+                dtype, gate_dtype, gs, type_of(gate_fn), _MAMBA2_NORM_PDL
+            ](
                 output_tt,
                 y_tt,
                 gate_fn,
