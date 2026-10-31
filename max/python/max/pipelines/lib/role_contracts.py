@@ -136,6 +136,13 @@ class DecoderInputs(Generic[TensorT]):
     the decoder, so a decoder doesn't read them.
     """
 
+    state: tuple[Any, ...] | None = None
+    """The decoder's per-request state, in the order its
+    :class:`~max.pipelines.lib.request_state.RequestStateStore` declares:
+    tensors, or buffers for state the graph updates in place. The
+    architecture defines what each one holds.
+    """
+
 
 DecoderOutputs = ModuleV3Outputs
 """The outputs of a ``DECODER`` module's ``forward``.

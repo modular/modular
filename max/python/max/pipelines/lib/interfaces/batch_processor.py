@@ -279,6 +279,19 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT, ArchConfigT_co]):
         """
         self.input_tree = input_tree
 
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Returns the largest size each per-step input dim can take.
+
+        Defaults to :meth:`BatchProcessorRuntime.max_dims`; a processor that
+        feeds inputs of its own bounds their dims too.
+
+        Raises:
+            ValueError: If no maximum is known for a dim.
+        """
+        return self.runtime.max_dims(dims, kv_params)
+
     @abstractmethod
     def prepare_initial_token_inputs(
         self,

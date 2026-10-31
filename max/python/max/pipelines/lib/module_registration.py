@@ -28,7 +28,11 @@ A registered module class can also set:
   (:func:`supports_data_parallel`);
 - ``consumes_vision``, when it reads
   :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.vision`
-  (:func:`consumes_vision`).
+  (:func:`consumes_vision`);
+- ``state_store(config, *, max_batch_size, devices)``, a classmethod that
+  returns the store of the per-request state it carries between steps (see
+  :mod:`~max.pipelines.lib.request_state`). Its batch processor must be a
+  :class:`DecoderBatchProcessor`, which feeds the state.
 
 A registration can add a ``VISION`` module beside the ``DECODER``. The
 pipeline model then compiles the vision graph with the decoder's, and the
@@ -57,14 +61,14 @@ import dataclasses
 import itertools
 from abc import ABCMeta
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, cast, runtime_checkable
 
 import numpy as np
 from max import functional as F
 from max import tree
-from max.driver import Buffer
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, TensorType
@@ -75,6 +79,7 @@ from max.nn.legacy.graph_groups import EPPayload
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
+from max.pipelines.modeling.types import RequestID
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import (
@@ -112,6 +117,11 @@ from .registration_runtime import (
     initialize_ep_comm_buffers,
     role_weights,
 )
+from .request_state import (
+    RequestStateMixin,
+    RequestStateStore,
+    build_state_store,
+)
 from .role_contracts import DecoderInputs, DecoderOutputs, VisionInputs
 from .utils import compute_data_parallel_splits
 from .vision_encoder_cache import SupportsVisionEncoding
@@ -121,6 +131,7 @@ __all__ = [
     "DecoderModelInputs",
     "ModuleV3DecoderPipelineModel",
     "VisionBatchProcessor",
+    "bind_state_store",
     "decoder_input_types",
     "decoder_vision_input_types",
     "graph_name",
@@ -201,6 +212,7 @@ def decoder_input_types(
     batch_context_lengths: Sequence[TensorType] | None = None,
     ep: EPPayload | None = None,
     lora: Sequence[TensorType] = (),
+    state: Sequence[Any] = (),
 ) -> OrderedDict[str, object]:
     """Returns a ``DECODER`` graph's input types, keyed by field.
 
@@ -222,6 +234,7 @@ def decoder_input_types(
         ep: The expert-parallel input types, when serving with expert
             parallelism.
         lora: The LoRA input types, when serving LoRA adapters.
+        state: The input types of the decoder's per-request state.
     """
     data_parallel = data_parallel_degree > 1
     fields = [
@@ -247,6 +260,8 @@ def decoder_input_types(
         types["ep"] = ep
     if lora:
         types["lora"] = tuple(lora)
+    if state:
+        types["state"] = tuple(state)
     return OrderedDict(
         (name, types[name]) for name in _FIELD_ORDER if name in types
     )
@@ -310,6 +325,13 @@ class DecoderModelInputs(ModelInputs):
     ep_inputs: tuple[Buffer, ...] = ()
     """The expert-parallel communication buffers, under expert parallelism."""
 
+    state: tuple[Buffer, ...] = ()
+    """The decoder's per-request state inputs, when it declares any."""
+
+    request_ids: tuple[RequestID, ...] = ()
+    """The step's requests in batch order, when the decoder keeps state for
+    them."""
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """The step's buffers, in the graph's input order."""
@@ -339,6 +361,7 @@ class DecoderModelInputs(ModelInputs):
             *(self.batch_context_lengths or ()),
             *self.ep_inputs,
             *self.lora_buffers,
+            *self.state,
         )
 
 
@@ -372,6 +395,33 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
         """Binds the expert-parallel buffers each batch passes the graph."""
         self._ep_comm_initializer = initializer
 
+    state_store: RequestStateStore | None = None
+    """The decoder's per-request state store, which fills the batch's state
+    inputs. The pipeline model sets it once it builds the store."""
+
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Returns the largest size each per-step input dim can take.
+
+        The state store bounds the dims its inputs introduce, and the runtime
+        the rest.
+
+        Raises:
+            ValueError: If neither bounds a dim.
+        """
+        dims = list(dims)
+        state_bounds = (
+            self.state_store.max_dims() if self.state_store is not None else {}
+        )
+        bounds = self.runtime.max_dims(
+            [dim for dim in dims if dim not in state_bounds], kv_params
+        )
+        return {
+            dim: state_bounds[dim] if dim in state_bounds else bounds[dim]
+            for dim in dims
+        }
+
     def get_symbolic_inputs(
         self,
         *,
@@ -384,6 +434,11 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
                 kv_params,
                 device_refs[0],
                 data_parallel_degree=self.runtime.data_parallel_degree,
+                state=(
+                    self.state_store.input_types()
+                    if self.state_store is not None
+                    else ()
+                ),
             )
         )
 
@@ -448,6 +503,9 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
             inputs.lora_buffers = self.runtime.lora_manager.input_buffers(
                 context_batch, input_row_offsets, device
             )
+        if self.state_store is not None:
+            inputs.state = self.state_store.prepare(context_batch)
+            inputs.request_ids = tuple(ctx.request_id for ctx in context_batch)
         return inputs
 
     def process_outputs(
@@ -575,6 +633,8 @@ class ModuleV3DecoderPipelineModel(
     batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]] | None] = (
         DecoderBatchProcessor
     )
+
+    _state_store: RequestStateStore | None = None
 
     @property
     def _data_parallel_degree(self) -> int:
@@ -742,6 +802,13 @@ class ModuleV3DecoderPipelineModel(
             GraphRole.DECODER,
         )
         self._init_distributed_runtime(model_config)
+        self._state_store = bind_state_store(
+            type(self).decoder_cls,
+            model_config,
+            self.batch_processor,
+            max_batch_size=self.max_batch_size,
+            devices=self.devices,
+        )
         module_default_dtype = self._module_default_dtype(
             state_dict, model_config
         )
@@ -772,6 +839,11 @@ class ModuleV3DecoderPipelineModel(
                     else ep_input_tree(self._runtime.ep)
                 ),
                 lora=lora_types,
+                state=(
+                    self._state_store.input_types()
+                    if self._state_store is not None
+                    else ()
+                ),
             )
         )
         graph = _DecoderGraph(decoder, input_types, lora_manager)
@@ -797,21 +869,67 @@ class ModuleV3DecoderPipelineModel(
         assert isinstance(model_inputs, DecoderModelInputs)
         compiled = self.model
         assert isinstance(compiled, CompiledCallable)
-        outputs = iter(compiled.execute_raw(*model_inputs.buffers))
-        return self._to_model_outputs(
-            tree.unflatten(
-                compiled.out_tree,
-                [
-                    Tensor._from_shards(
-                        tuple(
-                            itertools.islice(outputs, layout.mesh.num_devices)
-                        ),
-                        layout.mapping,
-                    )
-                    for layout in compiled.out_layouts
-                ],
-            )
+        raw_outputs = iter(compiled.execute_raw(*model_inputs.buffers))
+        outputs = tree.unflatten(
+            compiled.out_tree,
+            [
+                Tensor._from_shards(
+                    tuple(
+                        itertools.islice(raw_outputs, layout.mesh.num_devices)
+                    ),
+                    layout.mapping,
+                )
+                for layout in compiled.out_layouts
+            ],
         )
+        if self._state_store is not None:
+            self._state_store.update(
+                model_inputs.request_ids,
+                [state.driver_tensor for state in outputs.state or ()],
+            )
+        return self._to_model_outputs(outputs)
+
+
+def bind_state_store(
+    decoder_cls: type[Any],
+    model_config: Any,
+    batch_processor: object,
+    *,
+    max_batch_size: int,
+    devices: Sequence[Device],
+) -> RequestStateStore | None:
+    """Builds a registered decoder's state store and gives it to the batcher.
+
+    Args:
+        decoder_cls: The registered ``DECODER`` class.
+        model_config: The finalized config the decoder is built from.
+        batch_processor: The pipeline model's batch processor.
+        max_batch_size: The most requests a step holds.
+        devices: The devices the decoder runs on.
+
+    Returns:
+        The store, or ``None`` when the decoder declares no state.
+
+    Raises:
+        TypeError: If the decoder declares state and the batch processor
+            isn't a :class:`DecoderBatchProcessor`, which feeds it.
+    """
+    store = build_state_store(
+        decoder_cls,
+        model_config,
+        max_batch_size=max_batch_size,
+        devices=devices,
+    )
+    if store is None:
+        return None
+    if not isinstance(batch_processor, DecoderBatchProcessor):
+        raise TypeError(
+            f"{decoder_cls.__qualname__} declares per-request state, which "
+            f"only a DecoderBatchProcessor feeds, not "
+            f"{type(batch_processor).__qualname__}"
+        )
+    batch_processor.state_store = store
+    return store
 
 
 _PIPELINE_MODELS: dict[
@@ -914,9 +1032,14 @@ def module_pipeline_model(
     exporter_attrs = (
         {} if layout is None else {"ep_dispatch_token_layout": layout}
     )
+    # Only a decoder with state gets the release hooks, which serving
+    # detects by their presence.
+    bases: tuple[type, ...] = (ModuleV3DecoderPipelineModel,)
+    if hasattr(decoder_cls, "state_store"):
+        bases = (RequestStateMixin, *bases)
     model = _ModulePipelineModelMeta(
         name,
-        (ModuleV3DecoderPipelineModel,),
+        bases,
         {
             "__module__": __name__,
             "__qualname__": name,

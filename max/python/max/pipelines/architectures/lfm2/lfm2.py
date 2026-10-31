@@ -15,39 +15,24 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Iterable
-from pathlib import Path
-from typing import Any
+from collections.abc import Sequence
 
 from max import tree
+from max.driver import Device
 from max.dtype import DType
-from max.graph import (
-    BufferType,
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-    Type,
-    Value,
-    Weight,
-    ops,
-)
-from max.graph import Module as GraphModule
+from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.graph_groups import ConvStates
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    PagedCacheValues,
-)
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.legacy.transformer.transformer import logits_postprocess
+from max.pipelines.lib.registration_graph_api import decoder_outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 
 from ..llama3.model_config import create_rope_embedding
+from .conv_state import ConvStateStore
 from .full_attention import LFM2FullAttention
 from .model_config import LFM2Config
 
@@ -315,15 +300,22 @@ class LFM2DecoderLayer(Module):
 
 
 class LFM2(Module):
-    """The LFM2 model."""
+    """The LFM2 model, registered for the ``DECODER`` role.
+
+    Its convolution layers carry each request's state from one step to the
+    next (:meth:`state_store`).
+    """
+
+    graph_name = "lfm2"
+    """The name the graph compiled under before registration, which keys
+    precompiled MEFs."""
+
+    override_quantization_encoding = True
 
     def __init__(self, config: LFM2Config):
         super().__init__()
         assert len(config.devices) == 1
         self.config = config
-        self.num_conv_layers = sum(
-            1 for t in config.layer_types if t != "full_attention"
-        )
         rope = create_rope_embedding(
             hidden_size=config.hidden_size,
             num_attention_heads=config.num_attention_heads,
@@ -367,108 +359,45 @@ class LFM2(Module):
         if config.tie_word_embeddings:
             self.lm_head.set_shared_weight("weight", self.embed_tokens.weight)
 
-    def input_types(
-        self, kv_params: KVCacheParamInterface
-    ) -> tuple[TensorType | BufferType, ...]:
-        """The graph's input types, in :meth:`__call__`'s order."""
-        device_ref = self.config.devices[0]
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        kv_inputs = kv_params.flattened_kv_inputs()
-        conv_state_types = [
-            TensorType(
-                self.config.dtype,
-                [
-                    "conv_batch",
-                    self.config.hidden_size,
-                    self.config.conv_L_cache,
-                ],
-                device=device_ref,
-            )
-            for _ in range(self.num_conv_layers)
-        ]
-        return (
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            *kv_inputs,
-            *conv_state_types,
-        )
-
-    def trace(
-        self,
-        *input_types: Type[Any],
-        name: str | None = None,
-        module: GraphModule | None = None,
-        custom_extensions: Iterable[Path] = (),
-        is_device_graph: bool = False,
-    ) -> Graph:
-        """Traces the graph, whose inputs are :meth:`input_types`.
-
-        Adapts the flat graph inputs to :meth:`__call__`: splits them into
-        the batch, the device's KV collection and the conv states.
-
-        Args:
-            *input_types: The graph's input types, as :meth:`input_types`
-                returns them.
-            name: The name of the graph. Defaults to the class's qualified
-                name.
-            module: The MLIR module to add the graph to. Defaults to a new
-                module.
-            custom_extensions: Paths to custom kernel libraries the graph
-                uses.
-            is_device_graph: Whether to build a device graph.
-
-        Returns:
-            The traced :class:`~max.graph.Graph`.
-        """
-        kv_params = self.config.kv_params
-        num_kv_inputs = len(kv_params.flattened_kv_inputs())
-
-        def forward(
-            tokens: Value[Any],
-            input_row_offsets: Value[Any],
-            return_n_logits: Value[Any],
-            *variadic: Value[Any],
-        ) -> DecoderOutputs:
-            kv_collections = tree.leaves(
-                kv_params.unflatten_kv_inputs(iter(variadic[:num_kv_inputs])),
-                leaf=KVCacheInputsPerDevice,
-            )
-            return self(
-                tokens=tokens.tensor,
-                kv_collection=kv_collections[0],
-                return_n_logits=return_n_logits.tensor,
-                input_row_offsets=input_row_offsets.tensor,
-                conv_states=[v.tensor for v in variadic[num_kv_inputs:]],
-            )
-
-        return Graph(
-            type(self).__qualname__ if name is None else name,
-            forward,
-            input_types=input_types,
-            custom_extensions=list(custom_extensions),
-            module=module,
-            is_device_graph=is_device_graph,
+    @classmethod
+    def state_store(
+        cls,
+        config: LFM2Config,
+        *,
+        max_batch_size: int,
+        devices: Sequence[Device],
+    ) -> ConvStateStore:
+        """Returns the per-request convolution states, one slot per request."""
+        return ConvStateStore(
+            num_conv_layers=sum(
+                1 for t in config.layer_types if t != "full_attention"
+            ),
+            hidden_size=config.hidden_size,
+            conv_kernel=config.conv_L_cache,
+            dtype=config.dtype,
+            max_slots=max_batch_size,
+            device=devices[0],
         )
 
     def __call__(
-        self,
-        tokens: TensorValue,
-        kv_collection: PagedCacheValues,
-        return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
-        conv_states: list[TensorValue],
-    ) -> DecoderOutputs:
-        """Runs the model over the graph inputs."""
-        h = self.embed_tokens(tokens)
+        self, inputs: DecoderInputs[TensorValue]
+    ) -> DecoderOutputs[TensorValue]:
+        """Runs the model over the batch and its convolution states.
+
+        Returns:
+            The logits, with each convolution layer's updated state as the
+            ``state``.
+        """
+        assert inputs.state is not None
+        conv_states = inputs.state
+        (kv_collection,) = tree.leaves(
+            self.config.kv_params.unflatten_kv_inputs(
+                iter(tree.leaves(inputs.kv))
+            ),
+            leaf=KVCacheInputsPerDevice,
+        )
+        input_row_offsets = inputs.input_row_offsets
+        h = self.embed_tokens(inputs.tokens)
         freqs_cis = self.rope.freqs_cis.to(h.device)
         conv_idx = 0
         new_states = []
@@ -490,12 +419,11 @@ class LFM2(Module):
         outputs = logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets,
-            return_n_logits=return_n_logits,
+            return_n_logits=inputs.return_n_logits,
             norm=self.norm,
             lm_head=self.lm_head,
             return_logits=self.config.return_logits,
             return_hidden_states=self.config.return_hidden_states,
             logits_scaling=self.config.logits_scaling,
         )
-        outputs["conv_states"] = ConvStates(states=tuple(new_states))
-        return outputs
+        return decoder_outputs(outputs, state=new_states)

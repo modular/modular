@@ -93,6 +93,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.graph_specs import compile_roles_separately
 from max.pipelines.lib.interfaces import BatchProcessorRuntime
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.module_registration import DecoderBatchProcessor
 from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative import SpeculativeConfig
 from max.tensor.compilation import CompiledCallable
@@ -364,7 +365,8 @@ def test_batch_processor_dims_bound_a_bound_decoders_per_step_dims() -> None:
         max_seq_len=256,
         max_batch_input_tokens=64,
     )
-    processor = _fake(input_tree=OrderedDict(), runtime=runtime)
+    processor = DecoderBatchProcessor(_fake(), runtime)
+    processor.bind_input_tree(OrderedDict())
     model = _fake(
         batch_processor=processor,
         kv_params=_fake(page_size=128, num_draft_tokens=0),

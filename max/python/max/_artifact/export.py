@@ -251,9 +251,7 @@ def batch_processor_dims(
     if processor is None or processor.input_tree is None:
         return None
     return BatchProcessorDims(
-        processor.runtime.max_dims(
-            per_step_dims(decoder.in_layouts), model.kv_params
-        )
+        processor.max_dims(per_step_dims(decoder.in_layouts), model.kv_params)
     )
 
 

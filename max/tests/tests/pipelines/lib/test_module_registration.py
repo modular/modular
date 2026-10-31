@@ -257,6 +257,7 @@ def test_decoder_inputs_take_the_canonical_order() -> None:
         "batch_context_lengths",
         "ep",
         "lora",
+        "state",
     ]
 
 
@@ -269,6 +270,7 @@ def test_optional_decoder_inputs_take_their_canonical_place() -> None:
         batch_context_lengths=(X,),
         ep=NonCallableMock(),
         lora=(X,),
+        state=(X,),
     )
     assert list(types) == [
         "tokens",
@@ -279,6 +281,7 @@ def test_optional_decoder_inputs_take_their_canonical_place() -> None:
         "batch_context_lengths",
         "ep",
         "lora",
+        "state",
     ]
 
 

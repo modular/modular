@@ -10,34 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The LFM2 pipeline model."""
+"""LFM2's per-request short-convolution states."""
 
 from __future__ import annotations
 
-import dataclasses
-from dataclasses import dataclass
-from typing import Any, ClassVar
+from collections.abc import Mapping, Sequence
 
+import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import (
-    KVCacheConfig,
-    ModelInputs,
-    ModelOutputs,
-    PipelineConfig,
-)
-from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.graph import BufferType, DeviceRef, TensorType
+from max.pipelines.context import TextContext
+from max.pipelines.lib.request_state import RequestStateStore
 from max.pipelines.modeling.types import RequestID
-from typing_extensions import override
 
-from ..llama3.model import Llama3Inputs, LlamaModelBase
-from .batch_processor import LFM2BatchProcessor
-from .lfm2 import LFM2
-from .model_config import LFM2Config
+_BATCH_DIM = "conv_batch"
 
 
 def _cat_buffers(buffers: list[Buffer], device: Device) -> Buffer:
@@ -51,8 +38,6 @@ def _cat_buffers(buffers: list[Buffer], device: Device) -> Buffer:
     reinterpret bfloat16 as uint16 (same byte width) for the round-trip
     and view the result back to the source dtype.
     """
-    import numpy as np
-
     src_dtype = buffers[0].dtype
     if src_dtype == DType.bfloat16:
         viewed = [b.view(DType.uint16) for b in buffers]
@@ -89,21 +74,14 @@ def _split_buffer_dim0(buf: Buffer, device: Device) -> list[Buffer]:
     ]
 
 
-@dataclass
-class LFM2Inputs(Llama3Inputs):
-    """The graph inputs of one LFM2 step."""
+class ConvStateStore(RequestStateStore):
+    """Per-request slots for the convolution states.
 
-    conv_states: list[Buffer] = dataclasses.field(default_factory=list)
-    request_ids: list[RequestID] = dataclasses.field(default_factory=list)
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        """The step's buffers, in the graph's input order."""
-        return super().buffers + tuple(self.conv_states)
-
-
-class ConvStateCache:
-    """Per-request slots for the convolution states."""
+    The decoder graph takes each convolution layer's states for the batch,
+    ``[batch, hidden, kernel]``, after its KV cache inputs, and returns the
+    updated ones after its logits, which the store writes back into each
+    request's slot.
+    """
 
     def __init__(
         self,
@@ -119,6 +97,7 @@ class ConvStateCache:
         self._conv_kernel = conv_kernel
         self._dtype = dtype
         self._device = device
+        self._max_slots = max_slots
         self._slots = [self._make_slot() for _ in range(max_slots)]
         self._free = set(range(max_slots))
         self._request_to_slot: dict[RequestID, int] = {}
@@ -132,6 +111,52 @@ class ConvStateCache:
             )
             for _ in range(self._num_conv_layers)
         ]
+
+    def input_types(self) -> tuple[TensorType | BufferType, ...]:
+        """Returns one ``[batch, hidden, kernel]`` state per conv layer."""
+        device_ref = DeviceRef.from_device(self._device)
+        return tuple(
+            TensorType(
+                self._dtype,
+                [_BATCH_DIM, self._hidden_size, self._conv_kernel],
+                device=device_ref,
+            )
+            for _ in range(self._num_conv_layers)
+        )
+
+    def max_dims(self) -> Mapping[str, int]:
+        """Bounds the batch dim by the slots, one per request in flight."""
+        return {_BATCH_DIM: self._max_slots}
+
+    def prepare(self, batch: Sequence[TextContext]) -> tuple[Buffer, ...]:
+        """Returns the batch's states, claiming a slot for a new request."""
+        request_ids = [ctx.request_id for ctx in batch]
+        for request_id in request_ids:
+            self.claim(request_id)
+        return tuple(self.get_states(request_ids))
+
+    def update(
+        self, request_ids: Sequence[RequestID], outputs: Sequence[Buffer]
+    ) -> None:
+        """Writes the step's updated states back into the requests' slots.
+
+        Raises:
+            ValueError: If the outputs aren't one ``[batch, hidden, kernel]``
+                state per conv layer for these requests.
+        """
+        expected = (len(request_ids), self._hidden_size, self._conv_kernel)
+        if not request_ids or len(outputs) != self._num_conv_layers:
+            raise ValueError(
+                f"expected {self._num_conv_layers} conv states for "
+                f"{len(request_ids)} requests, got {len(outputs)}"
+            )
+        for output in outputs:
+            if tuple(output.shape) != expected:
+                raise ValueError(
+                    f"expected conv states of shape {list(expected)}, got "
+                    f"{list(output.shape)}"
+                )
+        self.update_states(list(request_ids), list(outputs))
 
     def claim(self, request_id: RequestID) -> None:
         """Returns the slot a request writes its convolution state to."""
@@ -202,138 +227,3 @@ class ConvStateCache:
             for batch_idx, rid in enumerate(request_ids):
                 slot = self._request_to_slot[rid]
                 self._slots[slot][layer_idx] = pieces[batch_idx]
-
-
-class LFM2Model(LlamaModelBase):
-    """LFM2 hybrid (full-attention + conv) pipeline model."""
-
-    model_config_cls: ClassVar[type[Any]] = LFM2Config
-    batch_processor_cls: ClassVar[type[LFM2BatchProcessor]] = LFM2BatchProcessor
-
-    norm_method = "rms_norm"
-    attention_bias = False
-
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        *,
-        memory_plan: MemoryPlan,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        max_batch_size: int = 1,
-    ) -> None:
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter=adapter,
-            return_logits=return_logits,
-            return_hidden_states=return_hidden_states,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
-        )
-        num_conv_layers = sum(
-            1 for t in self._model_config.layer_types if t != "full_attention"
-        )
-        self._conv_cache = ConvStateCache(
-            num_conv_layers=num_conv_layers,
-            hidden_size=self._model_config.hidden_size,
-            conv_kernel=self._model_config.conv_L_cache,
-            dtype=self._model_config.dtype,
-            max_slots=self.max_batch_size,
-            device=self.devices[0],
-        )
-        if self._batch_processor is not None:
-            bind = getattr(self._batch_processor, "bind_conv_cache", None)
-            if bind is not None:
-                bind(self._conv_cache)
-
-    @override
-    def _create_model_config(self, state_dict: dict[str, Any]) -> LFM2Config:
-        model_config = LFM2Config.initialize(
-            self.pipeline_config, max_seq_len=self.max_seq_len
-        )
-        model_config.finalize(
-            huggingface_config=self.huggingface_config,
-            state_dict=state_dict,
-            return_logits=self.return_logits,
-            return_hidden_states=self.return_hidden_states,
-        )
-        self._model_config = model_config
-        return model_config
-
-    @override
-    def graph_specs(self, model_config: LFM2Config) -> dict[str, GraphSpec]:
-        """Returns the single-device decoder."""
-        model = LFM2(model_config)
-        model.load_state_dict(
-            self.state_dict,
-            override_quantization_encoding=True,
-            weight_alignment=1,
-            strict=True,
-        )
-        return {
-            GraphRole.DECODER: GraphSpec(
-                model,
-                "lfm2",
-                model.input_types(self.kv_params),
-                weights=model.state_dict(),
-            )
-        }
-
-    def _num_logit_outputs(self) -> int:
-        has_offsets = self.return_logits in (
-            ReturnLogits.VARIABLE,
-            ReturnLogits.ALL,
-        )
-        has_hidden = self.return_hidden_states != ReturnHiddenStates.NONE
-        return 1 + 2 * int(has_offsets) + int(has_hidden)
-
-    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        """Runs the model and returns its outputs."""
-        assert isinstance(model_inputs, LFM2Inputs)
-        all_outputs = self.model.execute(*model_inputs.buffers)
-        n_logit = self._num_logit_outputs()
-        logit_outputs = tuple(all_outputs[:n_logit])
-        new_states = list(all_outputs[n_logit:])
-        if model_inputs.request_ids and new_states:
-            self._conv_cache.update_states(model_inputs.request_ids, new_states)
-
-        has_offsets = self.return_logits in (
-            ReturnLogits.VARIABLE,
-            ReturnLogits.ALL,
-        )
-        has_hidden = self.return_hidden_states != ReturnHiddenStates.NONE
-        if has_offsets and has_hidden:
-            return ModelOutputs(
-                next_token_logits=logit_outputs[0],
-                logits=logit_outputs[1],
-                logit_offsets=logit_outputs[2],
-                hidden_states=logit_outputs[3],
-            )
-        if has_offsets:
-            return ModelOutputs(
-                next_token_logits=logit_outputs[0],
-                logits=logit_outputs[1],
-                logit_offsets=logit_outputs[2],
-            )
-        if has_hidden:
-            return ModelOutputs(
-                logits=logit_outputs[0],
-                next_token_logits=logit_outputs[0],
-                hidden_states=logit_outputs[1],
-            )
-        return ModelOutputs(
-            logits=logit_outputs[0], next_token_logits=logit_outputs[0]
-        )
-
-    def release(self, request_id: RequestID) -> None:
-        """Frees the request's convolution state slot."""
-        self._conv_cache.release(request_id)

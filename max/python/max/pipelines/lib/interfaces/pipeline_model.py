@@ -268,6 +268,12 @@ class ModuleV3Outputs(Generic[_OutputTensorT]):
     hidden_states: _OutputTensorT | None = None
     """Hidden states, when the model returns them."""
 
+    state: tuple[_OutputTensorT, ...] | None = None
+    """The per-request state a registered decoder returns for its next step,
+    in the order its store declares (see
+    :mod:`~max.pipelines.lib.request_state`). A decoder whose state the graph
+    updates in place returns none."""
+
 
 @dataclass(kw_only=True)
 class ModelInputs:
