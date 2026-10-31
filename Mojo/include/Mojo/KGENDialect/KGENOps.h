@@ -75,7 +75,7 @@ private:
 /// public identity (linkage name, LLVM metadata) to that function. The
 /// attribute value is a parametric expression — e.g. a `GetWitnessAttr` for
 /// closure `__call__` thunks — that resolves to a fully-bound
-/// `SymbolConstantAttr` once the thunk's paramDecls are substituted with the
+/// `FuncSymbolGenerator` once the thunk's paramDecls are substituted with the
 /// callsite's paramValues. When `compile_offload` targets such a thunk the
 /// elaborator must:
 ///   1. Substitute the thunk's paramDecls with the callsite's paramValues.

@@ -637,7 +637,7 @@ lit.file_module @struct_alignment {
   // result in a flattened struct.
   lit.struct.decl @AlignedStruct64<my_int: !MyInt> attributes {
       minAlignment = #kgen.param.expr<apply,
-                                      #kgen.symbol.constant<@struct_alignment::@calculate_alignment> : !lit.generator<("my_int": !MyInt) -> index>,
+                                      #kgen.gen<#kgen.func.symbol<@struct_alignment::@calculate_alignment>> : !lit.generator<("my_int": !MyInt) -> index>,
                                       #kgen.param.decl.ref<"my_int">: !MyInt> : index
   } {
     lit.struct.field value : index
@@ -645,8 +645,8 @@ lit.file_module @struct_alignment {
 
   // CHECK-LABEL: kgen.generator @"struct_alignment::varDeclAligned64"
   lit.fn @varDeclAligned64() {
-    // CHECK-NEXT: pop.stack_allocation 1 x struct<(index) memoryOnly align(apply(:(!kgen.struct<(index) memoryOnly>) -> index #kgen.symbol.constant<@"struct_alignment::calculate_alignment">, { 32 }))>
-    // CHECK-SAME: align apply(:(!kgen.struct<(index) memoryOnly>) -> index #kgen.symbol.constant<@"struct_alignment::calculate_alignment">, { 32 }) marked
+    // CHECK-NEXT: pop.stack_allocation 1 x struct<(index) memoryOnly align(apply(:(!kgen.struct<(index) memoryOnly>) -> index @"struct_alignment::calculate_alignment", { 32 }))>
+    // CHECK-SAME: align apply(:(!kgen.struct<(index) memoryOnly>) -> index @"struct_alignment::calculate_alignment", { 32 }) marked
     %a = lit.var.decl "a" var : !lit.ref<!lit.struct<@struct_alignment::@AlignedStruct64<:!MyInt {value = 32}>>, mut *"life">
     hlcf.return
   }

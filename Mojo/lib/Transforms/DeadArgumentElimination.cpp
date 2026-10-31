@@ -633,8 +633,6 @@ void DeadArgumentElimination::markLiveMaybeIndirectCalled() {
   };
   mlir::AttrTypeWalker walker;
   walker.addWalk(
-      [&](SymbolConstantAttr attr) { markLiveSymbol(attr.getSymbol()); });
-  walker.addWalk(
       [&](FuncSymbolAttr attr) { markLiveSymbol(attr.getSymbol()); });
 
   module.walk([&](Operation *op) {

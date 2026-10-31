@@ -1016,7 +1016,7 @@ def KGEN_GetLinkageNameAttr : KGEN_ExprAttr<"GetLinkageName",
     ```mlir
     #kgen.get_linkage_name<
       #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target,
-      #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>
+      #kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>
     > : !kgen.string
     ```
   }];
@@ -1087,7 +1087,7 @@ def KGEN_GetSourceNameAttr : KGEN_ExprAttr<"GetSourceName",
 
     ```mlir
     #kgen.get_source_name<
-      #kgen.symbol.constant<@return_two> : !kgen.generator<() -> index>
+      #kgen.gen<#kgen.func.symbol<@return_two>> : !kgen.generator<() -> index>
     > : !kgen.string
     ```
   }];
@@ -1117,7 +1117,7 @@ def KGEN_GetFunctionParameterCountAttr : KGEN_ExprAttr<"GetFunctionParameterCoun
 
     ```mlir
     #kgen.get_function_parameter_count<
-      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+      #kgen.gen<#kgen.func.symbol<@my_func>> : !kgen.generator<...>
     > : index
     ```
   }];
@@ -1148,7 +1148,7 @@ def KGEN_GetFunctionParameterNamesAttr : KGEN_ExprAttr<"GetFunctionParameterName
 
     ```mlir
     #kgen.get_function_parameter_names<
-      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+      #kgen.gen<#kgen.func.symbol<@my_func>> : !kgen.generator<...>
     > : !kgen.param_list<!kgen.string>
     ```
   }];
@@ -1179,7 +1179,7 @@ def KGEN_GetFunctionIsRaisingAttr : KGEN_ExprAttr<"GetFunctionIsRaising",
 
     ```mlir
     #kgen.get_function_is_raising<
-      #kgen.symbol.constant<@my_def> : !kgen.generator<...>
+      #kgen.gen<#kgen.func.symbol<@my_def>> : !kgen.generator<...>
     > : i1
     ```
   }];
@@ -1805,8 +1805,6 @@ def KGEN_TypeGeneratorRefAttr : KGEN_ExprAttr<"TypeGeneratorRef", "genref", [
     This is a symbolic reference to a type-value generator. Its type is the
     metatype of the type-value. If the type-value is parametric, additional
     parameter values may be bound.
-
-    TODO: Merge SymbolConstantAttr into this.
   }];
 
   let parameters = (ins "SymbolRefAttr":$symbol,
@@ -1903,55 +1901,6 @@ def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant",
     bool isConvertibleFrom(Type type);
     /// Get the type of the attribute. It is always DTypeType.
     Type getType() const;
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// SymbolConstantAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
-    [CallableSymbolAttrInterface,
-     DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
-  let summary = "kgen.func or kgen.generator reference";
-  let description = [{
-    This is a value of FuncTypeGenerator type, which refers to a func or
-    generator.  This may optionally bind the input parameter values at time of
-    formation - when this happens, the result type is non-parametric.
-  }];
-
-  let parameters = (ins
-    "SymbolRefAttr":$symbol,
-    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-    AttributeSelfTypeParameter<"", "FuncTypeGeneratorType">:$type
-  );
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins
-        "SymbolRefAttr":$symbol, "FuncTypeGeneratorType":$type,
-        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
-      return get(type.getContext(), symbol, paramValues, type);
-    }]>,
-    AttrBuilderWithInferredContext<(ins
-        "StringAttr":$name, "FuncTypeGeneratorType":$type,
-        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
-      return get(FlatSymbolRefAttr::get(name), type, paramValues);
-    }]>,
-    AttrBuilderWithInferredContext<(ins
-        "GeneratorOp":$func, "FuncTypeGeneratorType":$type,
-        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
-      return get(func.getSymNameAttr(), type, paramValues);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "GeneratorOp":$func), [{
-      return get(func.getSymNameAttr(), func.getFuncTypeGenerator());
-    }]>,
-    AttrBuilderWithInferredContext<(ins "FuncOp":$func), [{
-      return get(func.getSymNameAttr(), func.getFuncTypeGenerator());
-    }]>,
-  ];
-
-  let assemblyFormat = [{
-    `<` $symbol `` custom<ParameterValues>($paramValues) `` `>`
   }];
 }
 
@@ -2804,8 +2753,6 @@ def KGEN_FuncSymbolAttr : KGEN_ExprAttr<"FuncSymbol", "func.symbol",
     This is a value of FuncType, which refers to a func, the `type` must
     match with the FuncType of the given `symbol` after instantiated with the
     `paramValues`.
-
-    TODO: Delete SymbolConstantAttr after fully migrate to FuncLiteralType.
   }];
 
   let parameters = (ins

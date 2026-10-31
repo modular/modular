@@ -90,7 +90,7 @@ def main():
 
 
 # When the function value is a generic parameter (a `param.decl.ref` rather
-# than a `symbol.constant`), parser-time evaluation cannot resolve a defining
+# than a function symbol), parser-time evaluation cannot resolve a defining
 # op, so the reflection attribute persists symbolically. Folding only happens
 # later, at the call site where the parameter is bound to a concrete function.
 

@@ -1024,20 +1024,6 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
-  if (auto actualSym = dyn_cast<SymbolConstantAttr>(actualAttr)) {
-    if (auto expectedSym = dyn_cast<SymbolConstantAttr>(expectedAttr)) {
-      if (actualSym.getSymbol() != expectedSym.getSymbol() ||
-          actualSym.getParamValues().size() !=
-              expectedSym.getParamValues().size())
-        return error(MatchFailure::Unclassified{});
-      for (auto [act, exp] : llvm::zip(actualSym.getParamValues(),
-                                       expectedSym.getParamValues())) {
-        PROP(matchParams(act, exp));
-      }
-      return success();
-    }
-  }
-
   if (auto actualSym = FuncSymbolGenerator::dynCast(actualAttr)) {
     if (auto expectedSym = FuncSymbolGenerator::dynCast(expectedAttr)) {
       if (actualSym.getSymbol() != expectedSym.getSymbol() ||

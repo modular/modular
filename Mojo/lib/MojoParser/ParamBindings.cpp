@@ -105,7 +105,7 @@ static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
 
 /// Utility function to perform substitutions of the bindings into the symbol
 /// for the given function declaration. It returns the resultant
-/// SymbolConstantAttr or produces an error message and returns null.
+/// function reference or produces an error message and returns null.
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                       const VerifiedParamBindings &verified,
                                       ASTDecl &useScope, SMLoc useLoc) {

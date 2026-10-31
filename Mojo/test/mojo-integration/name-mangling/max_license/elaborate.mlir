@@ -28,11 +28,11 @@ kgen.generator export @get_gpu_linkage_name() {
                                          tune_cpu = "sm_80",
                                          data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64">>
   // CHECK: constant: string = <"_42kernel">
-  %0 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@"42kernel"> : !kgen.generator<() -> ()>>>
+  %0 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.gen<#kgen.func.symbol<@"42kernel">> : !kgen.generator<() -> ()>>>
   // CHECK: constant: string = <"_42kernel_with_special_chars6A6AsA">
-  %1 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@"42kernel_with::special,chars"> : !kgen.generator<() -> ()>>>
+  %1 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.gen<#kgen.func.symbol<@"42kernel_with::special,chars">> : !kgen.generator<() -> ()>>>
   // CHECK: constant: string = <"normal_but_special6A6A">
-  %2 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@"normal_but::special"> : !kgen.generator<() -> ()>>>
+  %2 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.gen<#kgen.func.symbol<@"normal_but::special">> : !kgen.generator<() -> ()>>>
   hlcf.return
 }
 
@@ -55,7 +55,7 @@ kgen.generator export @get_gpu_linkage_name() {
                                          tune_cpu = "sm_80",
                                          data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64">>
   // CHECK: constant: string = <"_42_sanitize_this_kernel_{{[0-9a-f]+}}">
-  %0 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@"42kernel"> : !kgen.generator<() -> ()>>>
+  %0 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.gen<#kgen.func.symbol<@"42kernel">> : !kgen.generator<() -> ()>>>
   hlcf.return
 }
 

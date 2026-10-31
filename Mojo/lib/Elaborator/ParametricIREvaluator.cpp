@@ -655,8 +655,10 @@ ParametricIREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot) {
   auto symbol =
       extractFuncSymbolGenerator(getReboundAttribute(op.getOperands().front()));
-  if (!symbol || hasUnresolvedParamValue(symbol))
+  if (!symbol)
     return failure();
+  assert(!hasUnresolvedParamValue(symbol) &&
+         "the symbol must be fully bound for calls");
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   auto gen = elaborator->oldSymTab.lookup<GeneratorOp>(name);
 

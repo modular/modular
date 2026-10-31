@@ -520,7 +520,7 @@ FailureOr<TypedAttr> StructFieldNamesAttr::evaluateWithContext(
 namespace {
 /// Resolve a function-valued `TypedAttr` to its defining op via the
 /// evaluation context. Returns null if the value is not a direct function
-/// reference (`#kgen.symbol.constant<@...>`).
+/// reference (a `FuncSymbolGenerator`).
 ///
 /// The returned `FuncInterface` op is `lit.fn` when resolved through the
 /// parser or LIT symbol-table contexts, or `kgen.generator` when resolved
@@ -531,7 +531,7 @@ namespace {
 /// param list cast accordingly.
 FuncInterface resolveFuncDecl(TypedAttr funcValue,
                               ParameterEvaluationContext &context) {
-  // Mojo function values reach reflection as `#kgen.symbol.constant<@func>`.
+  // Mojo function values reach reflection as a `FuncSymbolGenerator`.
   // Closure literals are not yet supported.
   auto symbol = FuncSymbolGenerator::dynCast(funcValue);
   if (!symbol)

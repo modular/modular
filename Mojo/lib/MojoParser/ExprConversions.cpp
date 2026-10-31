@@ -520,7 +520,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
              .size() == 0);
 
   // Stash the fully-bound-when-thunk-is-bound callee expression on the thunk so
-  // we can later recover the wrapped function's SymbolConstantAttr with all its
+  // we can later recover the wrapped function's symbol reference with all its
   // compile-time params filled in (sourced from the thunk's bound paramValues).
   thunk->setAttr(kTransparentThunkCalleeExprAttr, calleeParam);
 

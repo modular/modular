@@ -222,7 +222,7 @@ private:
   /// Process the given attributes and types for bytecode references.
   WalkResult processBytecodeReferences(Attribute attr) {
     return TypeSwitch<Attribute, WalkResult>(attr)
-        .Case<SymbolConstantAttr, FuncSymbolAttr>([&](auto ref) {
+        .Case([&](FuncSymbolAttr ref) {
           ASTDecl *decl =
               resolveBytecodeReferenceSignature(shared, ref.getSymbol());
           if (!decl)
@@ -256,7 +256,7 @@ private:
 
   WalkResult processBytecodeSignatureReferences(Attribute attr) {
     return TypeSwitch<Attribute, WalkResult>(attr)
-        .Case<SymbolConstantAttr, FuncSymbolAttr>([&](auto ref) {
+        .Case([&](FuncSymbolAttr ref) {
           return success(
               resolveBytecodeReferenceSignature(shared, ref.getSymbol()));
         })

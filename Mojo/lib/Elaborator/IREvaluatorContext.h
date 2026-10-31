@@ -196,7 +196,7 @@ public:
   // Both carry a `kTransparentThunkCalleeExprAttr` attribute holding a
   // parametric expression that resolves - once the thunk's paramDecls are
   // substituted with the callsite's paramValues - to a fully-bound
-  // `SymbolConstantAttr` for the wrapped function. Substitution may involve
+  // `FuncSymbolGenerator` for the wrapped function. Substitution may involve
   // parameter operators (e.g. `GetWitnessAttr` for closures), so resolution
   // must run through an evaluation context.
 
@@ -291,8 +291,7 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// Returns the function reference `attr` denotes, or null if it is not one.
-/// Accepts a `FuncSymbolGenerator`, a function literal, or a fully bound
-/// `SymbolConstantAttr`.
+/// Accepts a `FuncSymbolGenerator` or a function literal.
 FuncSymbolGenerator extractFuncSymbolGenerator(TypedAttr attr);
 
 /// Return true if `symbol` binds any of its input parameters directly to

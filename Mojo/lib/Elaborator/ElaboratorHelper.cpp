@@ -33,17 +33,13 @@ replaceSymNames(Operation *op,
     return;
 
   mlir::AttrTypeReplacer replacer;
-  auto replaceSymbol = [&symToRename](auto attr) {
+  replacer.addReplacement([&](FuncSymbolAttr attr) {
     auto iter = symToRename.find(attr.getSymbol());
     if (iter != symToRename.end())
-      return decltype(attr)::get(iter->second, attr.getType(),
+      return FuncSymbolAttr::get(iter->second, attr.getType(),
                                  attr.getParamValues());
     return attr;
-  };
-  replacer.addReplacement(
-      [&](SymbolConstantAttr attr) { return replaceSymbol(attr); });
-  replacer.addReplacement(
-      [&](FuncSymbolAttr attr) { return replaceSymbol(attr); });
+  });
 
   replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
                                         /*replaceLocs=*/true,

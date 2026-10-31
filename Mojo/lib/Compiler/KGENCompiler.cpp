@@ -284,10 +284,6 @@ static ErrorOr<StringAttr> compileStandaloneKernel(
   // instantiated with the new target. Mirrors `bundleCompileOffloadOp` so a
   // per-kernel offload slice exports the same dependency set.
   mlir::AttrTypeWalker walker;
-  walker.addWalk([&](SymbolConstantAttr ref) {
-    exportedSymbols.insert(
-        {ref.getSymbol().getRootReference(), ExportKind::NotExported});
-  });
   walker.addWalk([&](FuncSymbolAttr ref) {
     exportedSymbols.insert(
         {ref.getSymbol().getRootReference(), ExportKind::NotExported});
@@ -630,7 +626,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       module->walk(
           [&](CallOp call) { callees.insert(call.getCalleeSymbol()); });
 
-      // Collect SymbolConstantAttr names to rename.
+      // Collect FuncSymbolAttr names to rename.
       DenseMap<SymbolRefAttr, StringAttr> symToRename;
 
       for (auto [op, symbolInfo] : offloadInfo.symbols) {
@@ -694,22 +690,16 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         }
       }
 
-      // Replace the SymbolConstantAttr names for the renamed generator
-      // references.
+      // Replace the FuncSymbolAttr names for the renamed generator references.
       if (!symToRename.empty()) {
         mlir::AttrTypeReplacer replacer;
-        auto replaceSymbol = [&symToRename](auto attr) {
+        replacer.addReplacement([&](FuncSymbolAttr attr) {
           auto iter = symToRename.find(attr.getSymbol());
-          if (iter != symToRename.end()) {
-            return decltype(attr)::get(iter->second, attr.getType(),
+          if (iter != symToRename.end())
+            return FuncSymbolAttr::get(iter->second, attr.getType(),
                                        attr.getParamValues());
-          }
           return attr;
-        };
-        replacer.addReplacement(
-            [&](SymbolConstantAttr attr) { return replaceSymbol(attr); });
-        replacer.addReplacement(
-            [&](FuncSymbolAttr attr) { return replaceSymbol(attr); });
+        });
 
         replacer.recursivelyReplaceElementsIn(*module, /*replaceAttrs=*/true,
                                               /*replaceLocs=*/true,

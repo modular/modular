@@ -1239,7 +1239,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
 }
 
 /// Perform substitutions of the specified bindings into the symbol, returning
-/// the resultant LITSymbolConstant attr or producing an error message and
+/// the resultant function reference or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {

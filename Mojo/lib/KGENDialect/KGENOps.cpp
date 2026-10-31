@@ -69,11 +69,10 @@ static LogicalResult verifyParamValueOp(OpT op) {
                           << " does not match result type " << op.getType();
 }
 
-/// Return true if the parameter value contains symbol constants, making the
+/// Return true if the parameter value contains function symbols, making the
 /// operation implicit parametric.
-static bool containsSymbolConstants(TypedAttr value) {
+static bool containsFuncSymbols(TypedAttr value) {
   mlir::AttrTypeWalker walker;
-  walker.addWalk([](SymbolConstantAttr) { return WalkResult::interrupt(); });
   walker.addWalk([](FuncSymbolAttr) { return WalkResult::interrupt(); });
   return walker.walk(value).wasInterrupted();
 }
@@ -101,7 +100,7 @@ void ParamConstantOp::getAsmResultNames(
 }
 
 bool ParamConstantOp::isImplicitlyParametric() {
-  return containsSymbolConstants(getValue());
+  return containsFuncSymbols(getValue());
 }
 
 void ParamConstantOp::walkDefinitions(
@@ -114,7 +113,7 @@ void ParamConstantOp::walkDefinitions(
 LogicalResult ParamMaterializeOp::verify() { return verifyParamValueOp(*this); }
 
 bool ParamMaterializeOp::isImplicitlyParametric() {
-  return containsSymbolConstants(getValue());
+  return containsFuncSymbols(getValue());
 }
 
 void ParamMaterializeOp::walkDefinitions(
