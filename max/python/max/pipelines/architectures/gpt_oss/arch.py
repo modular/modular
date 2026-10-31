@@ -14,13 +14,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .batch_processor import GptOssBatchProcessor
+from .decoder import GptOssDecoder
 from .memory_planner import GptOssMemoryPlanner
-from .model import GptOssModel
 from .model_config import GptOssConfig
 from .tokenizer import GptOssTokenizer
 
@@ -33,8 +32,7 @@ gpt_oss_arch = SupportedArchitecture(
     ],
     default_encoding=GptOssConfig.DEFAULT_ENCODING,
     supported_encodings=GptOssConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=GptOssModel,
-    batching=GptOssBatchProcessor,
+    modules={GraphRole.DECODER: GptOssDecoder},
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=GptOssTokenizer,
     context_type=TextContext,

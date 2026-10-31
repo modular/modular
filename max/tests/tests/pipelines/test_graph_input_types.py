@@ -72,7 +72,6 @@ from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
 from max.pipelines.architectures.gemma4.vision_model.vision_model import (
     Gemma4VisionModel,
 )
-from max.pipelines.architectures.gpt_oss.gpt_oss import GptOss
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
 )
@@ -349,7 +348,7 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
         DeepseekV3_2, ep=True, eplb=True, profile=True
     ),
     "gemma3": _graph_api_decoder,
-    "gpt_oss": lambda: _per_device_offsets(GptOss, nested=True),
+    "gpt_oss": _graph_api_decoder,
     "mimo_v2": lambda: _per_device_offsets(MiMoV2, two_caches=True),
     "deepseekV4_single_device": lambda: _deepseekV4(_gpus(1)),
     "deepseekV4_multi_device": lambda: _deepseekV4(_gpus(2)),
