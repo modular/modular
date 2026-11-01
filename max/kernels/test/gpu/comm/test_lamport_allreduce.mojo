@@ -446,7 +446,7 @@ def lamport_mixed_size_test[
             # Expected per-call sum, accumulated in fp32 (the kernel's accum
             # type) and cast to dtype, exactly as the kernel does.
             var expected_accum = Float32(0)
-            comptime for i in range(ngpus):
+            for i in range(ngpus):
                 expected_accum += Float32(i + 1) + Float32(call_idx % 5)
             var expected = Scalar[dtype](expected_accum)
 
@@ -933,7 +933,7 @@ def lamport_coexist_test[
             list_of_ctx[i].synchronize()
 
         var expected_accum = Float32(0)
-        comptime for i in range(ngpus):
+        for i in range(ngpus):
             expected_accum += Float32(i + 1) + Float32(call_idx % 5)
         var expected = Scalar[dtype](expected_accum)
 
@@ -1101,7 +1101,7 @@ def lamport_unsynced_skew_test[
 
     for it in range(NUM_UNSYNCED_ITERS):
         var expected_accum = Float32(0)
-        comptime for i in range(ngpus):
+        for i in range(ngpus):
             expected_accum += Float32(i + 1) + Float32(it % 5)
         var expected = Scalar[dtype](expected_accum)
 
@@ -1255,7 +1255,7 @@ def lamport_wrap_test[
             list_of_ctx[i].synchronize()
 
         var expected_accum = Float32(0)
-        comptime for i in range(ngpus):
+        for i in range(ngpus):
             expected_accum += Float32(16 * (call + 1) + (i + 1))
         var expected = Scalar[dtype](expected_accum)
 
