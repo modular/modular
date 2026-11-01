@@ -34,6 +34,7 @@ from max.nn import Module
 from max.nn.legacy.layer import Module as GraphApiModule
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .graph_specs import GraphRole
 from .interfaces.pipeline_model import PipelineModel
 from .pipeline_executor import PipelineExecutor
 from .registration_graph_api import registered_pipeline_model
@@ -60,6 +61,7 @@ if TYPE_CHECKING:
 
     from .config import PipelineConfig
     from .interfaces import ArchConfig
+    from .registration_draft import DraftRegistration
     from .weight_transform import WeightRule
 
 logger = logging.getLogger("max.pipelines")
@@ -171,9 +173,18 @@ class SupportedArchitecture:
     The framework constructs each as ``module_cls(config)`` from the
     finalized :attr:`config`, and its ``forward`` (``__call__`` for a
     graph-API :class:`~max.nn.legacy.Module`) takes and returns the role's
-    contract from :mod:`max.pipelines.lib.role_contracts`. Only
-    text-generation ``DECODER`` modules are served so far, with a ``VISION``
-    module beside a ModuleV3 one.
+    contract from :mod:`max.pipelines.lib.role_contracts`. A ``DRAFT`` is a
+    component of a speculative pairing, constructed through :attr:`draft`,
+    and has no standalone serving pipeline.
+    """
+
+    draft: DraftRegistration[Any, Any] | None = field(
+        default=None, kw_only=True
+    )
+    """The registered draft's construction and proposer contract.
+
+    A draft-only architecture has no standalone pipeline model. An architecture
+    with both roles serves its decoder normally until speculation is requested.
     """
 
     task: PipelineTask
@@ -542,13 +553,27 @@ class SupportedArchitecture:
     """
 
     def __post_init__(self) -> None:
+        draft_cls = self.modules.get(GraphRole.DRAFT)
+        if (draft_cls is None) != (self.draft is None):
+            raise ValueError(
+                "DRAFT modules and draft registration must be declared together"
+            )
+        if draft_cls is not None and not issubclass(
+            draft_cls, (Module, GraphApiModule)
+        ):
+            raise TypeError("a registered draft must be a module class")
+        serving = tuple(
+            (role, module)
+            for role, module in self.modules.items()
+            if role != GraphRole.DRAFT
+        )
         # A derived architecture, such as a speculative pairing, keeps the
         # pipeline model it sets.
-        if self.modules and self.pipeline_model is None:
+        if serving and self.pipeline_model is None:
             self.pipeline_model = registered_pipeline_model(
                 self.task,
                 self.config,
-                tuple(self.modules.items()),
+                serving,
                 self.batching,
             )
 

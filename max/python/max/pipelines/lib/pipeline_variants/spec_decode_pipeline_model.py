@@ -121,6 +121,10 @@ from ..interfaces.pipeline_model import (
 from ..memory_estimation import MemoryPlan
 from ..pipeline_parallel import PipelinedModel
 from ..pipeline_stage import PipelineStage
+from ..registration_draft import (
+    RegisteredDraftBuilder,
+    default_target_hidden_states,
+)
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import SupportsVisionEncoding, VisionEncodeResult
 from ..weight_transform import (
@@ -198,10 +202,13 @@ class _UnifiedSpecDecodeModelMixin:
         ).to(self.devices[0])
 
 
-def _builds_module(arch: SupportedArchitecture) -> bool:
-    """Returns whether ``arch`` implements build_module itself.
+def _builds_module(
+    arch: SupportedArchitecture, role: GraphRole = GraphRole.DECODER
+) -> bool:
+    """Returns whether ``arch`` supplies a module for the requested role.
 
-    Its own pipeline model does, or for a draft with none, its config class.
+    A registered draft declares its factory. Legacy components implement
+    ``build_module`` on their pipeline model or draft config class.
 
     This is what tells a pairing that runs through the unified model from
     one that still runs its own spec-decode package. An inherited
@@ -209,7 +216,9 @@ def _builds_module(arch: SupportedArchitecture) -> bool:
     and a legacy spec-decode model can subclass its target's pipeline model,
     as GLM-5.2's ``UnifiedMTPGlm5_2Model`` does ``Glm5_1Model``.
     """
-    builder = _module_builder(arch)
+    if role == GraphRole.DRAFT and arch.draft is not None:
+        return True
+    builder = _module_builder(arch, role)
     return (
         arch.pipeline_model is None or issubclass(builder, PipelineModel)
     ) and ("build_module" in vars(builder))
@@ -334,7 +343,9 @@ def spec_decode_architecture(
     if draft_arch is None:
         return None
     draft = _draft_architecture(base, method, draft_arch)
-    if draft is None or not _builds_module(draft):
+    if draft is None or not _builds_module(draft, GraphRole.DRAFT):
+        return None
+    if draft.draft is not None and draft.draft.method != method:
         return None
     modulev3 = _builds_modulev3(base)
     vision = _takes_images(base, draft)
@@ -469,12 +480,16 @@ def _pipeline_model(
     return model
 
 
-def _module_builder(arch: SupportedArchitecture) -> Any:
-    """Returns what builds ``arch``'s module.
+def _module_builder(
+    arch: SupportedArchitecture, role: GraphRole = GraphRole.DECODER
+) -> Any:
+    """Returns what builds ``arch``'s requested module role.
 
-    That is its pipeline model, or its config class for a draft that has
-    none.
+    Registered drafts use the shared builder. Legacy components use their
+    pipeline model, or their config class for a draft that has none.
     """
+    if role == GraphRole.DRAFT and arch.draft is not None:
+        return RegisteredDraftBuilder(arch)
     return arch.pipeline_model or arch.config
 
 
@@ -570,7 +585,10 @@ def _kv_tree(
 
 
 def _check_pairing(
-    speculative: SpeculativeConfig, draft_config: Any, target_config: Any
+    speculative: SpeculativeConfig,
+    draft_config: Any,
+    target_config: Any,
+    layers: Sequence[int] | None = None,
 ) -> None:
     """Raises if the draft can't run beside the target.
 
@@ -585,10 +603,13 @@ def _check_pairing(
         speculative: The speculative config.
         draft_config: The config the draft's pipeline model built it from.
         target_config: The target's HuggingFace text config.
+        layers: The target layers the draft reads, which default to those
+            its config names.
     """
     method = speculative.speculative_method
     num_layers = target_config.num_hidden_layers
-    layers = proposers.capture_layers(speculative, draft_config)
+    if layers is None:
+        layers = proposers.capture_layers(speculative, draft_config)
     if any(not 0 <= i < num_layers for i in layers):
         raise ValueError(
             f"The {method} draft's target_layer_ids must index the target's"
@@ -1473,10 +1494,17 @@ class SpecDecodePipelineModel(
         target, draft = modules.target, modules.draft
         # A draft without its own embedding or head reads the target's, so
         # those weights load once. Drafts declare it as vLLM's do.
-        shared = tuple(
-            slot
-            for slot in ("embed_tokens", "lm_head")
-            if not getattr(draft, f"has_own_{slot}", False)
+        registration = self.pairing.draft.draft
+        if registration is not None:
+            registration.bind_shared_modules(target, draft)
+        shared = (
+            registration.shared_modules
+            if registration is not None
+            else tuple(
+                slot
+                for slot in ("embed_tokens", "lm_head")
+                if not getattr(draft, f"has_own_{slot}", False)
+            )
         )
         draft_weights = {
             name: value
@@ -1486,7 +1514,7 @@ class SpecDecodePipelineModel(
         # A target that names its embedding and head otherwise hands them to
         # its draft's proposer instead.
         for slot in shared:
-            if hasattr(target, slot):
+            if registration is None and hasattr(target, slot):
                 setattr(draft, slot, getattr(target, slot))
 
         # Only a pairing whose target asks for it traces a second graph, and
@@ -1645,24 +1673,34 @@ class SpecDecodePipelineModel(
                 "draft", config.kv_params.children["target"]
             ),
         )
-        draft_builder = _module_builder(pairing.draft)
+        draft_builder = _module_builder(pairing.draft, GraphRole.DRAFT)
         draft, draft_config = draft_builder.build_module(draft_context)
-        _check_pairing(
-            speculative, draft_config, self.huggingface_config.get_text_config()
+        registration = pairing.draft.draft
+        reads = (
+            registration.target_hidden_states(speculative, draft_config)
+            if registration is not None
+            else default_target_hidden_states(speculative, draft_config)
         )
-        self.drafter_export = getattr(draft_config, "drafter_export", None)
+        _check_pairing(
+            speculative,
+            draft_config,
+            self.huggingface_config.get_text_config(),
+            reads.layer_ids,
+        )
+        if registration is None:
+            self.drafter_export = getattr(draft_config, "drafter_export", None)
+        elif registration.drafter_export is not None:
+            self.drafter_export = registration.drafter_export(
+                draft_context, draft_config
+            )
         # The target verifies every row the driver scores, and returns the
         # hidden states the draft reads.
-        hidden_states = proposers.target_hidden_states(
-            speculative, draft_config
-        )
+        hidden_states = reads.mode
         target_context = replace(
             context,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=hidden_states,
-            target_layer_ids=proposers.capture_layers(
-                speculative, draft_config
-            ),
+            target_layer_ids=reads.layer_ids,
             kv_params=config.kv_params.children["target"],
             encodes_images=_takes_images(pairing.target, pairing.draft),
         )
@@ -1966,6 +2004,63 @@ class _DriverCall:
         return self.driver(**call_kwargs)
 
 
+def _proposer(
+    target_arch: str,
+    draft_arch: SupportedArchitecture,
+    verify: Any,
+    draft: Any,
+    draft_config: Any,
+    speculative: SpeculativeConfig,
+    huggingface_config: AutoConfig,
+) -> Any:
+    """Returns what drives the draft, one token a step or a block at a time.
+
+    A target adapter's proposer runs the draft on the target's own state, so
+    it outranks a registered draft's ``create_proposer``, which is only a
+    fallback for a target without one. The method's own proposer runs when
+    neither does.
+    """
+    distributed = _takes_distributed_inputs(verify)
+    proposer: Any
+    if speculative.is_block_draft():
+        proposer = spec_adapters.block_proposer(
+            target_arch, verify, draft, draft_config, speculative
+        )
+    else:
+        proposer = spec_adapters.sequential_proposer(
+            target_arch, verify, draft, draft_config, speculative
+        )
+    # TODO(kathywu): Separate binding a draft to its target from selecting
+    # its proposer, so a target adapter can't silently replace a registered
+    # draft's.
+    registration = draft_arch.draft
+    if proposer is None and registration and registration.create_proposer:
+        proposer = registration.create_proposer(
+            draft,
+            draft_config,
+            speculative=speculative,
+            takes_distributed_inputs=distributed,
+            target_text_config=huggingface_config.get_text_config(),
+        )
+    if proposer is not None:
+        return proposer
+    if speculative.is_block_draft():
+        return proposers.block_proposer(
+            speculative,
+            draft,
+            draft_config,
+            huggingface_config,
+            distributed=distributed,
+        )
+    return proposers.sequential_proposer(
+        speculative,
+        draft,
+        draft_config,
+        huggingface_config,
+        distributed=distributed,
+    )
+
+
 def _driver_call(
     pipeline_config: PipelineConfig,
     kv_params: MultiKVCacheParams,
@@ -2027,27 +2122,15 @@ def _driver_call(
     verify = spec_adapters.verify_for(
         target_arch, target, target_config, hidden_states, draft_config
     )
-    proposer: Any
-    if speculative.is_block_draft():
-        proposer = spec_adapters.block_proposer(
-            target_arch, verify, draft, draft_config, speculative
-        ) or proposers.block_proposer(
-            speculative,
-            draft,
-            draft_config,
-            huggingface_config,
-            distributed=_takes_distributed_inputs(verify),
-        )
-    else:
-        proposer = spec_adapters.sequential_proposer(
-            target_arch, verify, draft, draft_config, speculative
-        ) or proposers.sequential_proposer(
-            speculative,
-            draft,
-            draft_config,
-            huggingface_config,
-            distributed=_takes_distributed_inputs(verify),
-        )
+    proposer = _proposer(
+        target_arch,
+        pairing.draft,
+        verify,
+        draft,
+        draft_config,
+        speculative,
+        huggingface_config,
+    )
     distributed = _takes_distributed_inputs(verify, proposer)
     if distributed and signal_buffer_index is not None:
         # An adapter names the slot in the undistributed signature; the

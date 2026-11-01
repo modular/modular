@@ -120,6 +120,7 @@ def test_load_registers_the_fused_graph_unless_it_replays(
     pipeline_config.model.pipeline_stage = None
     model.pipeline_config = pipeline_config
     model.pairing = Mock()
+    model.pairing.draft.draft = None
     model.device_refs = []
     model.signal_buffers = []
     model.replay_model = None

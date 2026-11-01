@@ -131,8 +131,10 @@ __all__ = [
     "ModuleV3DecoderPipelineModel",
     "VisionBatchProcessor",
     "bind_state_store",
+    "construct_module",
     "decoder_input_types",
     "decoder_vision_input_types",
+    "device_mesh",
     "graph_name",
     "module_pipeline_model",
 ]
@@ -170,6 +172,33 @@ def graph_name(module_cls: type[Module[..., Any]]) -> str:
     predates registration sets ``graph_name`` to keep it.
     """
     return getattr(module_cls, "graph_name", module_cls.__qualname__)
+
+
+def device_mesh(
+    devices: Sequence[Device], data_parallel_degree: int
+) -> DeviceMesh:
+    """Returns the mesh registered modules are constructed on.
+
+    It is a ``dp`` axis under data parallelism, else a ``tp`` axis.
+    """
+    axis = DP if data_parallel_degree > 1 else TP
+    return DeviceMesh(tuple(devices), (len(devices),), (axis,))
+
+
+def construct_module(
+    module_cls: type[Module[..., Any]], config: object, mesh: DeviceMesh
+) -> Module[..., Any]:
+    """Constructs a registered module as ``module_cls(config)`` on ``mesh``.
+
+    The caller enters ``F.lazy()``, so the module holds no weights until it
+    compiles.
+    """
+    # A registered module takes its config, which type[Module] can't say.
+    constructor: Any = module_cls
+    with default_device(mesh):
+        module = constructor(config)
+    assert isinstance(module, Module)
+    return module
 
 
 def lora_targets(
@@ -643,8 +672,7 @@ class ModuleV3DecoderPipelineModel(
 
     def _device_mesh(self) -> DeviceMesh:
         """Returns the mesh the modules are constructed on."""
-        axis = DP if self._data_parallel_degree > 1 else TP
-        return DeviceMesh(tuple(self.devices), (len(self.devices),), (axis,))
+        return device_mesh(self.devices, self._data_parallel_degree)
 
     @property
     def vision_encoding(self) -> VisionBatchProcessor | None:
@@ -760,11 +788,7 @@ class ModuleV3DecoderPipelineModel(
                     f"{data_parallel_degree} replicas over "
                     f"{len(self.devices)} devices"
                 )
-        mesh = self._device_mesh()
-        # A registered module takes its config, which type[Module] can't say.
-        constructor: Any = decoder_cls
-        with default_device(mesh):
-            return constructor(model_config)
+        return construct_module(decoder_cls, model_config, self._device_mesh())
 
     def _vision_graph_spec(self, model_config: Any) -> GraphSpec | None:
         """Constructs the ``VISION`` module, and returns its graph."""

@@ -18,6 +18,7 @@ from max.graph import DimLike, TensorValue
 from max.nn.legacy.layer import Module
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 
+from .draft_contracts import DraftPhase, EagleDraft, EagleDraftInputs
 from .driver import (
     CarryDimNames,
     DecodeKVSwap,
@@ -28,7 +29,7 @@ from .driver import (
     SequentialBatch,
 )
 
-__all__ = ["EagleProposer"]
+__all__ = ["EagleDraftAdapter", "EagleProposer"]
 
 
 class EagleProposer:
@@ -95,3 +96,48 @@ class EagleProposer:
             logits=outputs.logits["next_token_logits"],
             hidden=list(outputs.hidden_states.tensors())[:1],
         )
+
+
+class EagleDraftAdapter(EagleProposer):
+    """Adapts a registered EAGLE's typed calls to the existing driver."""
+
+    def __init__(self, draft: Module, hidden_dim: DimLike) -> None:
+        super().__init__(draft, hidden_dim)
+        assert isinstance(draft, EagleDraft)
+        self.registered_draft = draft
+
+    def prefill(
+        self,
+        batch: SequentialBatch,
+        tokens: TensorValue,
+        target_hidden: TensorValue,
+    ) -> Proposed:
+        """Runs the initial draft call over the corrected target window."""
+        outputs = self.registered_draft.draft_forward(
+            EagleDraftInputs(
+                tokens=tokens,
+                input_row_offsets=batch.query_offsets_per_dev[0],
+                return_n_logits=batch.return_n_logits,
+                hidden_states=target_hidden,
+                kv=batch.draft_kv_collections[0],
+            ),
+            phase=DraftPhase.INITIAL,
+        )
+        return Proposed(logits=outputs.logits, hidden=[outputs.hidden_states])
+
+    def step(
+        self, batch: SequentialBatch, draft_input: DraftStepInput, index: int
+    ) -> Proposed:
+        """Runs a later draft call using the previous hidden carry."""
+        del index
+        outputs = self.registered_draft.draft_forward(
+            EagleDraftInputs(
+                tokens=draft_input.tokens,
+                input_row_offsets=batch.query_offsets_per_dev[0],
+                return_n_logits=batch.return_n_logits,
+                hidden_states=draft_input.hidden[0],
+                kv=batch.draft_kv_collections[0],
+            ),
+            phase=DraftPhase.STEP,
+        )
+        return Proposed(logits=outputs.logits, hidden=[outputs.hidden_states])

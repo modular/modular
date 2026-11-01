@@ -623,6 +623,9 @@ class Transformer(LogitsPostprocessMixin, Module):
         kv_collection: PagedCacheValues,
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
+        *,
+        return_logits: ReturnLogits | None = None,
+        return_hidden_states: ReturnHiddenStates | None = None,
     ) -> DecoderOutputs:
         freqs_cis = self.rope.freqs_cis
 
@@ -630,7 +633,12 @@ class Transformer(LogitsPostprocessMixin, Module):
         capture_hidden_states: list[list[TensorValue]] | None = None
         if (
             self.target_layer_ids is not None
-            and self.return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS
+            and (
+                return_hidden_states
+                if return_hidden_states is not None
+                else self.return_hidden_states
+            )
+            == ReturnHiddenStates.SELECTED_LAYERS
         ):
             capture_layer_set = set(self.target_layer_ids)
             capture_hidden_states = []
@@ -650,6 +658,24 @@ class Transformer(LogitsPostprocessMixin, Module):
             ):
                 capture_hidden_states.append([h])
 
+        if return_logits is not None or return_hidden_states is not None:
+            return logits_postprocess(
+                h,
+                input_row_offsets,
+                return_n_logits,
+                norm=self.norm,
+                lm_head=self.lm_head,
+                return_logits=return_logits
+                if return_logits is not None
+                else self.return_logits,
+                return_hidden_states=(
+                    return_hidden_states
+                    if return_hidden_states is not None
+                    else self.return_hidden_states
+                ),
+                logits_scaling=self.logits_scaling,
+                capture_hidden_states=capture_hidden_states,
+            )
         return self._postprocess_logits(
             h,
             input_row_offsets,

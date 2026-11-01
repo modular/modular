@@ -52,6 +52,9 @@ class GraphRole(str, Enum):
     DECODER = "decoder"
     """The forward pass: tokens and KV cache to logits."""
 
+    DRAFT = "draft"
+    """A speculative proposal model, composed with a target decoder."""
+
     SAMPLER = "sampler"
     """Samples the next token from the decoder's logits."""
 

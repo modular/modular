@@ -130,6 +130,7 @@ __all__ = [
     "graph_api_decoder_input_types",
     "graph_api_pipeline_model",
     "is_graph_api_module",
+    "load_graph_api_module",
     "registered_pipeline_model",
 ]
 
@@ -152,6 +153,38 @@ def is_graph_api_module(module_cls: object) -> bool:
     return isinstance(module_cls, type) and issubclass(
         module_cls, GraphApiModule
     )
+
+
+def load_graph_api_module(
+    module_cls: type[GraphApiModule],
+    config: object,
+    state_dict: Mapping[str, Any],
+    *,
+    strict: bool | None = None,
+) -> GraphApiModule:
+    """Constructs a registered module as ``module_cls(config)`` and loads it.
+
+    The class's ``override_quantization_encoding`` and
+    ``strict_state_dict_loading`` say how ``state_dict`` loads; ``strict``
+    overrides the latter.
+    """
+    # A registered module takes its config, which type[Module] can't say.
+    constructor: Any = module_cls
+    module = constructor(config)
+    assert isinstance(module, GraphApiModule)
+    module.load_state_dict(
+        state_dict,
+        override_quantization_encoding=bool(
+            getattr(module_cls, "override_quantization_encoding", False)
+        ),
+        weight_alignment=1,
+        strict=(
+            getattr(module_cls, "strict_state_dict_loading", True)
+            if strict is None
+            else strict
+        ),
+    )
+    return module
 
 
 def graph_name(module: type[GraphApiModule] | GraphApiModule) -> str:
@@ -615,16 +648,8 @@ class GraphApiDecoderPipelineModel(
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
         """Returns the decoder graph, with the checkpoint loaded into it."""
         decoder_cls = type(self).decoder_cls
-        # A registered module takes its config, which type[Module] can't say.
-        constructor: Any = decoder_cls
-        decoder = constructor(model_config)
-        decoder.load_state_dict(
-            self._checkpoint,
-            override_quantization_encoding=bool(
-                getattr(decoder_cls, "override_quantization_encoding", False)
-            ),
-            weight_alignment=1,
-            strict=getattr(decoder_cls, "strict_state_dict_loading", True),
+        decoder = load_graph_api_module(
+            decoder_cls, model_config, self._checkpoint
         )
         # The graph's weights registry holds what it binds; drop the rest.
         self._checkpoint = {}
