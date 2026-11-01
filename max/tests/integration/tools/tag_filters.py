@@ -36,7 +36,7 @@ class TagFilter:
         )
 
 
-class TagFilterParamType(click.ParamType):
+class TagFilterParamType(click.ParamType[TagFilter]):
     name = "tag filter"
 
     def convert(

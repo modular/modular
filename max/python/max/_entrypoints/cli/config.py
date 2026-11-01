@@ -71,7 +71,7 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
-class JSONType(click.ParamType):
+class JSONType(click.ParamType[Any]):
     """Click parameter type for JSON input."""
 
     name = "json"

@@ -183,10 +183,6 @@ common = [
   # The vllm/sglang dependency groups resolve transformers independently
   # from their own transitive requirements (see template.py).
   "transformers>=5.12.0,<5.13.0",
-  # click 8.2+ removes APIs MAX tooling still uses (e.g. CliRunner's
-  # mix_stderr). The vllm/sglang groups need newer versions for
-  # huggingface-hub>=1.27 (see template.py).
-  "click==8.1.7",
   "hf-xet==1.4.2",
   "huggingface-hub==1.8.0",
   "openai==2.11.0",

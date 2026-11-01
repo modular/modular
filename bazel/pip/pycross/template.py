@@ -122,16 +122,6 @@ def targets():
     )
 
     native.alias(
-        name = "click@multiple",
-        actual = select({{
-            "@@//:use_aiperf_setting": ":click@8.5.0",
-            "@@//:use_sglang_setting": ":click@8.5.0",
-            "@@//:use_vllm_setting": ":click@8.5.0",
-            "//conditions:default": ":click@8.1.7",
-        }}),
-    )
-
-    native.alias(
         name = "openai@multiple",
         actual = select({{
             "@@//:use_sglang_setting": ":openai@2.6.1",

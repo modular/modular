@@ -38,7 +38,7 @@ PINS = {
     "boto3": "boto3@1.40.61",
     "botocore": "botocore@1.40.61",
     "cachetools": "cachetools@5.4.0",
-    "click": "click@multiple",
+    "click": "click@8.5.0",
     "clickhouse-connect": "clickhouse-connect@0.14.1",
     "codeowners": "codeowners@0.8.0",
     "compressed-tensors": "compressed-tensors@multiple",
@@ -259,16 +259,6 @@ def targets():
             "@@//:use_sglang_setting": ":transformers@5.6.0",
             "@@//:use_vllm_setting": ":transformers@5.12.1",
             "//conditions:default": ":transformers@5.12.1",
-        }),
-    )
-
-    native.alias(
-        name = "click@multiple",
-        actual = select({
-            "@@//:use_aiperf_setting": ":click@8.5.0",
-            "@@//:use_sglang_setting": ":click@8.5.0",
-            "@@//:use_vllm_setting": ":click@8.5.0",
-            "//conditions:default": ":click@8.1.7",
         }),
     )
 
@@ -2423,17 +2413,6 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_click@8.1.7",
-        actual = "@pycross_lock_file_wheel_click_8.1.7_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "click@8.1.7",
-        wheel = ":_wheel_click@8.1.7",
-        testonly = "click" in _TESTONLY_DEPS,
-    )
-
-    native.alias(
         name = "_wheel_click@8.5.0",
         actual = "@pycross_lock_file_wheel_click_8.5.0_py3_none_any//file",
     )
@@ -4467,7 +4446,6 @@ def targets():
 
     _flashinfer_python_0_6_8_post1_deps = [
         ":apache-tvm-ffi@multiple",
-        ":click@multiple",
         ":numpy@multiple",
         ":nvidia-cudnn-frontend@multiple",
         ":nvidia-cutlass-dsl@multiple",
@@ -4475,6 +4453,7 @@ def targets():
         ":tqdm@multiple",
     ] + select({
         ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4484,6 +4463,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4493,6 +4473,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4502,6 +4483,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4511,6 +4493,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4520,6 +4503,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4529,6 +4513,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4538,6 +4523,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4547,6 +4533,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4556,6 +4543,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4565,6 +4553,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4574,6 +4563,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4599,7 +4589,6 @@ def targets():
 
     _flashinfer_python_0_6_11_post1_deps = [
         ":apache-tvm-ffi@multiple",
-        ":click@multiple",
         ":numpy@multiple",
         ":nvidia-cudnn-frontend@multiple",
         ":nvidia-cutlass-dsl@multiple",
@@ -4607,6 +4596,7 @@ def targets():
         ":tqdm@multiple",
     ] + select({
         ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4616,6 +4606,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4625,6 +4616,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4634,6 +4626,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4643,6 +4636,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4652,6 +4646,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4661,6 +4656,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4670,6 +4666,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4679,6 +4676,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4688,6 +4686,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4697,6 +4696,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4706,6 +4706,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
@@ -4731,7 +4732,6 @@ def targets():
 
     _flashinfer_python_0_7_0_deps = [
         ":apache-tvm-ffi@multiple",
-        ":click@multiple",
         ":cuda-python@multiple",
         ":numpy@multiple",
         ":nvidia-cudnn-frontend@multiple",
@@ -4740,6 +4740,7 @@ def targets():
         ":tqdm@multiple",
     ] + select({
         ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4751,6 +4752,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4762,6 +4764,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4773,6 +4776,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4784,6 +4788,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4795,6 +4800,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4806,6 +4812,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4817,6 +4824,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4828,6 +4836,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4839,6 +4848,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4850,6 +4860,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4861,6 +4872,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4888,7 +4900,6 @@ def targets():
 
     _flashinfer_python_0_7_0_post1_deps = [
         ":apache-tvm-ffi@multiple",
-        ":click@multiple",
         ":cuda-python@multiple",
         ":numpy@multiple",
         ":nvidia-cudnn-frontend@multiple",
@@ -4897,6 +4908,7 @@ def targets():
         ":tqdm@multiple",
     ] + select({
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4908,6 +4920,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4919,6 +4932,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4930,6 +4944,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4941,6 +4956,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4952,6 +4968,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4963,6 +4980,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4974,6 +4992,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4985,6 +5004,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -4996,6 +5016,7 @@ def targets():
             ":tabulate@0.9.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":click@8.5.0",
             ":cuda-tile@1.6.0",
             ":einops@0.8.0",
             ":nccl-extensions@0.1.0",
@@ -5023,7 +5044,7 @@ def targets():
 
     _flask_3_0_3_deps = [
         ":blinker@1.8.2",
-        ":click@multiple",
+        ":click@8.5.0",
         ":itsdangerous@2.2.0",
         ":jinja2@3.1.6",
         ":werkzeug@3.0.4",
@@ -6015,7 +6036,7 @@ def targets():
     )
 
     _huggingface_hub_1_33_0_deps = [
-        ":click@multiple",
+        ":click@8.5.0",
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
         ":hf-xet@multiple",
@@ -8436,7 +8457,7 @@ def targets():
     )
 
     _nltk_3_9_1_deps = [
-        ":click@multiple",
+        ":click@8.5.0",
         ":joblib@1.4.2",
         ":regex@2025.11.3",
         ":tqdm@multiple",
@@ -12832,7 +12853,7 @@ def targets():
     )
 
     _rich_toolkit_0_17_0_deps = [
-        ":click@multiple",
+        ":click@8.5.0",
         ":rich@multiple",
         ":typing-extensions@4.16.0",
     ]
@@ -16819,7 +16840,7 @@ def targets():
     )
 
     _typer_0_20_0_deps = [
-        ":click@multiple",
+        ":click@8.5.0",
         ":rich@multiple",
         ":shellingham@1.5.4",
         ":typing-extensions@4.16.0",
@@ -17262,7 +17283,7 @@ def targets():
     )
 
     _uvicorn_0_51_0_deps = [
-        ":click@multiple",
+        ":click@8.5.0",
         ":h11@0.16.0",
         ":httptools@0.8.0",
         ":python-dotenv@1.0.1",
@@ -20610,16 +20631,6 @@ def repositories():
         ],
         sha256 = "3e4d1f6587322d2788836a99c69062fbb091331ec940e02d12d179c1d53e25fc",
         downloaded_file_path = "charset_normalizer-3.3.2-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_click_8.1.7_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/00/2e/d53fa4befbf2cfa713304affc7ca780ce4fc1fd8710527771b58311a3229/click-8.1.7-py3-none-any.whl",
-        ],
-        sha256 = "ae74fb96c20a0277a1d615f1e4d73c8414f5a98db8b799a7931d1582f3390c28",
-        downloaded_file_path = "click-8.1.7-py3-none-any.whl",
     )
 
     maybe(

@@ -71,7 +71,6 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         # resolvable in `override-dependencies` (i.e. we
         # are required to diverge).
         "apache-tvm-ffi",  # vllm 0.30.0 pins 0.1.11; MAX and sglang use 0.1.9
-        "click",  # vllm/sglang need >=8.4.2 via huggingface-hub; MAX tooling needs <8.2
         "compressed-tensors",  # vllm/sglang need 0.17.0; MAX stays on 0.15.0.1
         "cuda-bindings",  # vllm/sglang use CUDA 13; the default groups use CUDA 12
         "cuda-pathfinder",  # Follows cuda-python's split

@@ -727,8 +727,12 @@ def test_pipelines_cli__profile_on_a_text_model_passes_the_flag_check(
 
 def test_pipelines_cli__every_generate_flag_has_a_kind() -> None:
     command = pipelines.main.commands["generate"]
+    ctx = click.Context(command)
+    help_option = command.get_help_option(ctx)
     params = {
-        param.name for param in command.get_params(click.Context(command))
+        param.name
+        for param in command.get_params(ctx)
+        if param is not help_option
     }
     config_params = {
         param.name
@@ -740,7 +744,7 @@ def test_pipelines_cli__every_generate_flag_has_a_kind() -> None:
     }
     text = set(cli_generate._TEXT_ONLY_FLAGS)
     image = set(cli_generate._IMAGE_ONLY_FLAGS)
-    shared = {"prompt", "image_url", "seed", "help"}
+    shared = {"prompt", "image_url", "seed"}
     assert not text & image
     assert not (text | image) & shared
     assert params - config_params == (text | image | shared) - config_params
