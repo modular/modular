@@ -310,24 +310,26 @@ def _context_store_origins_local(
 
 
 def _sample_next(
-    sampler: DraftSampler,
+    sampler: DraftSampler, mesh: DeviceMesh
 ) -> Callable[[Tensor, int], Tensor]:
     """Bridges the driver's per-position sampler into the drafter's loop.
 
-    The bridge passes each step's mesh logits through unchanged, so it
-    serves only samplers that take distributed ``Tensor``s; the greedy
-    :class:`ArgmaxDraftSampler` is routed around it in :meth:`head`.
+    The driver's samplers take one single-device value and hold each row's
+    sampling parameters on the mesh's first device, while the drafter's
+    step logits are replicated on the mesh. So each step draws from rank
+    0's copy of the whole batch, and the picked ids are broadcast back onto
+    the mesh, where the next step's Markov bias reads them. The greedy
+    :class:`ArgmaxDraftSampler` is routed around the bridge in :meth:`head`.
     """
 
     # The framework's sampler protocol spells its inputs as graph values
-    # while the samplers this bridge serves take mesh ``Tensor``s (the
-    # ``_tensor_compat`` boundary is migrating off), so the logits pass
-    # through unchanged and the call itself crosses the boundary the same
-    # way ``_tensor_compat`` does: dynamically, on the runtime types.
+    # while the test samplers take ``Tensor``s, so the call crosses the
+    # boundary the same way ``_tensor_compat`` does: dynamically, on the
+    # runtime types.
     def sample(step_logits: Tensor, position: int) -> Tensor:
         sample_next: Any = sampler.sample_next
-        picked: Tensor = sample_next(step_logits, position)
-        return picked
+        picked = as_tensors(sample_next(_to_lead(step_logits), position))
+        return F.distributed_broadcast(picked, mesh)
 
     return sample
 
@@ -703,10 +705,9 @@ class DSparkDeepseekV41Proposer:
             self.drafter.logits(block_hs, self.target.head.weight),
             self.mesh,
         )
-        # The driver's greedy sampler draws through ``ops.argmax``, a
-        # TensorValue op that rejects the mesh-replicated logits staged
-        # here (its ``Tensor.__tensorvalue__`` bridge refuses anything
-        # distributed). The drafter's own greedy is the same argmax over
+        # The driver's greedy sampler draws through ``ops.argmax`` on one
+        # device, so the bridge would broadcast every step's pick back onto
+        # the mesh. The drafter's own greedy is the same argmax over
         # ``F.argmax``, whose SPMD reduction rule runs replicated on the
         # mesh, so exactly the greedy class bypasses the bridge; a
         # subclass that overrides ``sample_next`` is its own sampler and
@@ -714,7 +715,7 @@ class DSparkDeepseekV41Proposer:
         drafts, _ = self.drafter.draft(
             logits,
             anchors,
-            sampler=None if greedy else _sample_next(sampler),
+            sampler=None if greedy else _sample_next(sampler, self.mesh),
         )
         return as_graph_values(_to_lead(drafts))
 

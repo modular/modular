@@ -97,8 +97,9 @@ modular_py_test(
     ],
 )
 
-# The DP4 context store stages its graph on virtual SM100 devices, per
-# rank over the replicas' own rows (graph build only, no execution; the
+# The DP4 context store and sampled draft head stage their graphs on
+# virtual SM100 devices: the store per rank over the replicas' own rows,
+# the sampler on the first device (graph build only, no execution; the
 # virtual devices need the x86 Linux NVPTX target).
 #   ./bazelw test --config=remote-intel \
 #     //max/tests/integration/architectures/deepseekV41_modulev3/dspark:test_dspark_dp4_graph
@@ -126,6 +127,7 @@ modular_py_test(
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
     ],
 )
 

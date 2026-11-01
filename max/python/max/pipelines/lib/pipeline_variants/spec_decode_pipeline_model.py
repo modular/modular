@@ -191,6 +191,11 @@ class _UnifiedSpecDecodeModelMixin:
         """Distribution outputs: 0 (argmax), 1, or one per replica."""
         return max(0, len(self._spec_decode_model.output_metadata) - 3)
 
+    @property
+    def next_draft_tokens_dtype(self) -> DType:
+        """The dtype the compiled graph emits ``next_draft_tokens`` at."""
+        return self._spec_decode_model.output_metadata[2].dtype
+
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         model_outputs = self._spec_decode_model.execute(*model_inputs.buffers)
         return UnifiedEagleOutputs.from_buffers(model_outputs)
@@ -1398,6 +1403,11 @@ class SpecDecodePipelineModel(
     def num_draft_distributions(self) -> int:
         """Distribution outputs: 0 (argmax), 1, or one per replica."""
         return max(0, len(self.model.output_metadata) - 3)
+
+    @property
+    def next_draft_tokens_dtype(self) -> DType:
+        """The dtype the compiled graph emits ``next_draft_tokens`` at."""
+        return self.model.output_metadata[2].dtype
 
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         """Runs the fused graph and names its outputs.

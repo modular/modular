@@ -286,6 +286,21 @@ def _sampled_draft_vocab_size(
     return vocab_size
 
 
+def _next_draft_tokens_dtype(model: object) -> DType:
+    """The dtype the compiled graph emits ``next_draft_tokens`` at.
+
+    Most graphs emit the engine's int64 token ids, but a graph may declare
+    narrower ones (DeepSeek-V4.1's ModuleV3 DSpark drafts int32), so the
+    buffers that receive them follow the graph and widen where they feed an
+    int64 input.
+    """
+    if isinstance(
+        model, (_UnifiedSpecDecodeModelMixin, SpecDecodePipelineModel)
+    ):
+        return model.next_draft_tokens_dtype
+    return DType.int64
+
+
 def _contiguous_prefix_1d(buffer: Buffer, num_elements: int) -> Buffer:
     """Returns a contiguous 1D prefix view of ``buffer``, aliasing it."""
     if num_elements > buffer.num_elements:
@@ -614,9 +629,13 @@ class SpecDecodeState:
     persistent_next_draft_tokens_pinned: Buffer | None = None
     """Pinned memory for async callback: next-batch draft tokens.
 
-    Shape: [total_max_batch, num_speculative_tokens]. DType int64.
+    Shape: [total_max_batch, num_speculative_tokens]. DType
+    :attr:`next_draft_tokens_dtype`.
     None when structured output is disabled globally.
     """
+
+    next_draft_tokens_dtype: DType = DType.int64
+    """The dtype the compiled graph emits ``next_draft_tokens`` at."""
 
     accepted_token_pinned: Buffer | None = None
     """Pinned mirror of the accepted draft tokens.
@@ -811,6 +830,7 @@ class SpecDecodeState:
         persistent_bonus_tokens_pinned: Buffer | None = None
         persistent_num_accepted_pinned: Buffer | None = None
         persistent_next_draft_tokens_pinned: Buffer | None = None
+        next_draft_tokens_dtype = _next_draft_tokens_dtype(model)
         accepted_token_pinned: Buffer | None = None
         if vocab_size is not None and not is_virtual_device_mode():
             persistent_bonus_tokens_pinned = Buffer(
@@ -826,7 +846,7 @@ class SpecDecodeState:
                 usage=Usage.STAGING | Usage.UNTRACKED,
             )
             persistent_next_draft_tokens_pinned = Buffer(
-                dtype=DType.int64,
+                dtype=next_draft_tokens_dtype,
                 shape=(total_max_batch, num_speculative_tokens),
                 device=model.devices[0],
                 usage=Usage.STAGING | Usage.UNTRACKED,
@@ -869,6 +889,7 @@ class SpecDecodeState:
             persistent_bonus_tokens_pinned=persistent_bonus_tokens_pinned,
             persistent_num_accepted_pinned=persistent_num_accepted_pinned,
             persistent_next_draft_tokens_pinned=persistent_next_draft_tokens_pinned,
+            next_draft_tokens_dtype=next_draft_tokens_dtype,
             accepted_token_pinned=accepted_token_pinned,
             persistent_in_thinking_phase=persistent_in_thinking_phase,
             persistent_seed=persistent_seed,
@@ -1247,6 +1268,7 @@ def build_realize_future_token_graph(
     num_speculative_tokens: int,
     data_parallel_degree: int = 1,
     sampled_draft_vocab_size: int | None = None,
+    next_draft_tokens_dtype: DType = DType.int64,
     custom_extensions: Sequence[Path] = (),
 ) -> Graph:
     """Builds a graph that prepares the input for the next batch.
@@ -1268,6 +1290,9 @@ def build_realize_future_token_graph(
             ``[batch, K, vocab_size]`` ``draft_probs_full`` paired with
             ``draft_tokens``, on the same slot indices so a distribution
             cannot drift away from the token it proposed.
+        next_draft_tokens_dtype: The dtype the model's graph emits the
+            previous batch's ``next_draft_tokens`` at; widened to the int64
+            draft tokens it is scattered into.
         custom_extensions: Custom-op extension paths to compile the graph
             with.
     """
@@ -1310,7 +1335,7 @@ def build_realize_future_token_graph(
             if len(devices) > 1
             else None,
             prev_generated_draft_tokens=TensorType(
-                DType.int64,
+                next_draft_tokens_dtype,
                 shape=[
                     SymbolicDim("prev_batch_size"),
                     SymbolicDim("gen_num_draft_tokens"),
@@ -1429,6 +1454,10 @@ def build_realize_future_token_graph(
                     :, :num_draft_tokens_dim
                 ]
             )
+            if prev_generated_draft_tokens.dtype != DType.int64:
+                prev_generated_draft_tokens = prev_generated_draft_tokens.cast(
+                    DType.int64
+                )
 
             # 0...verify_width
             draft_col_range = ops.range(
@@ -1625,6 +1654,7 @@ class RealizeFutureTokenProcessor:
         enable_dp: bool = False,
         data_parallel_degree: int = 1,
         sampled_draft_vocab_size: int | None = None,
+        next_draft_tokens_dtype: DType = DType.int64,
         custom_extensions: Sequence[Path] = (),
     ) -> None:
         with CompilationTimer("realize_future_token") as timer:
@@ -1634,6 +1664,7 @@ class RealizeFutureTokenProcessor:
                 enable_dp=enable_dp,
                 data_parallel_degree=data_parallel_degree,
                 sampled_draft_vocab_size=sampled_draft_vocab_size,
+                next_draft_tokens_dtype=next_draft_tokens_dtype,
                 custom_extensions=custom_extensions,
             )
             timer.mark_build_complete()
@@ -2254,6 +2285,11 @@ class OverlapTextGenerationPipeline(
                     and self._spec_decode_state.persistent_draft_probs_full
                     is not None
                     else None
+                ),
+                next_draft_tokens_dtype=(
+                    self._spec_decode_state.next_draft_tokens_dtype
+                    if self._spec_decode_state is not None
+                    else DType.int64
                 ),
             )
             if self._pipeline_config.runtime.pipeline_role

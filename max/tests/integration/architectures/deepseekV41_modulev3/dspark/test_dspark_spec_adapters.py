@@ -1081,11 +1081,12 @@ def test_head_still_bridges_a_greedy_subclass_override(tp: int) -> None:
     bypassed.
 
     Only the exact greedy class takes the native SPMD route, so a
-    subclass must go through the bridge with its override invoked. At
-    TP1 the override's legacy argmax drafts the reference tokens; at TP4
-    it is invoked and hits the very conversion error the native route
-    exists to route around -- an ``isinstance`` dispatch would swallow
-    the override into a silently different greedy here.
+    subclass must go through the bridge with its override invoked -- an
+    ``isinstance`` dispatch would swallow the override into a silently
+    different greedy. The override is a graph-value sampler like the
+    driver's sampled one, so on the TP4 mesh the bridge must hand it rank
+    0's single-device logits, not the replicated mesh tensor its
+    conversion refuses, and stage its picks back onto the mesh.
     """
     mesh = _MESH if tp == 1 else _TP4_MESH
     vocab = VOCAB if tp == 1 else _TP4_VOCAB
@@ -1099,61 +1100,47 @@ def test_head_still_bridges_a_greedy_subclass_override(tp: int) -> None:
     batch = _batch(lengths=[BLOCK] * BATCH)
     sampler = _LegacyGreedySubclass()
 
-    if tp == 1:
-        with _eager():
-            got = as_tensors(
-                proposer.head(
-                    batch,
-                    hidden,
-                    cast(Any, SimpleNamespace(next_tokens=anchors)),
-                    sampler,
-                )
-            )
-            # The reference the override's own argmax must reproduce.
-            staged = F.distributed_broadcast(
-                drafter.logits(
-                    F.distributed_broadcast(as_tensors(hidden), mesh),
-                    head_weight,
-                ),
-                mesh,
-            )
-            want, _ = drafter.draft(
-                staged, F.distributed_broadcast(as_tensors(anchors), mesh)
-            )
-        assert sampler.calls == BLOCK
-        torch.testing.assert_close(
-            _torch(got).to(torch.int64), _torch(want).to(torch.int64)
-        )
-    else:
-        with _eager(), pytest.raises(ValueError, match="sharded tensor"):
+    with _eager():
+        got = as_tensors(
             proposer.head(
                 batch,
                 hidden,
                 cast(Any, SimpleNamespace(next_tokens=anchors)),
                 sampler,
             )
-        # The override ran and its own legacy conversion refused the
-        # replicated step logits; the native greedy would not have raised.
-        assert sampler.calls == 1
+        )
+        # The reference the override's own argmax must reproduce.
+        staged = F.distributed_broadcast(
+            drafter.logits(
+                F.distributed_broadcast(as_tensors(hidden), mesh),
+                head_weight,
+            ),
+            mesh,
+        )
+        want, _ = drafter.draft(
+            staged, F.distributed_broadcast(as_tensors(anchors), mesh)
+        )
+    assert sampler.calls == BLOCK
+    torch.testing.assert_close(
+        _torch(got).to(torch.int64), _torch(want).to(torch.int64)
+    )
 
 
 def test_the_legacy_argmax_path_still_rejects_mesh_logits() -> None:
     """Negative control: the TensorValue conversion is not weakened.
 
-    Routed through the production bridge -- the ModuleV3-to-legacy path
-    that accepts the mesh tensor and reaches the legacy sampler's
-    conversion -- a replicated TP4 tensor must still be refused loudly,
-    so a regression that quietly lets distributed tensors through the
-    graph-value conversion fails here.
+    The bridge hands a graph-value sampler rank 0's single-device copy;
+    the sampler's own conversion must still refuse a replicated TP4
+    tensor loudly, so a regression that quietly lets distributed tensors
+    through the graph-value conversion fails here.
     """
-    bridge = spec_adapters._sample_next(ArgmaxDraftSampler())
     with _eager():
         sharded = F.distributed_broadcast(
             _to_max(torch.randn(BATCH, VOCAB)), _TP4_MESH
         )
         assert sharded.is_distributed
         with pytest.raises(ValueError, match="single-device Tensor"):
-            bridge(sharded, 0)
+            ArgmaxDraftSampler().sample_next(cast(Any, sharded), 0)
 
 
 def test_the_legacy_argmax_sampler_still_serves_single_device_values() -> None:
