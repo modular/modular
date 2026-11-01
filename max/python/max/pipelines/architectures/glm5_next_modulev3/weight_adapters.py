@@ -23,9 +23,20 @@ from __future__ import annotations
 
 from max.driver import Buffer
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
+from max.pipelines.lib import PipelineConfig
+from max.pipelines.weights import resolve_hf_quant_config
 from transformers import AutoConfig
+
+from .checkpoint import (
+    _hc_fn_dtype,
+    _stored_hc_fn_dtype,
+    cast_hc_fn_weights,
+    checkpoint_quant_scheme,
+)
+from .model_config import _declared_dtype
 
 __all__ = ["convert_glm5_next_state_dict"]
 
@@ -153,3 +164,36 @@ def convert_glm5_next_state_dict(
             weight = weight.astype(DType.float32)
         out[name] = weight
     return out
+
+
+def convert_registered_state_dict(
+    state_dict: dict[str, Weights],
+    huggingface_config: AutoConfig,
+    pipeline_config: PipelineConfig,
+    **kwargs: object,
+) -> dict[str, WeightData]:
+    """Adapts the checkpoint and explicitly casts the device-selected mHC weights.
+
+    This cast is part of the architecture's precision policy even when the
+    generic automatic weight cast is disabled.
+    """
+    adapted = convert_glm5_next_state_dict(
+        state_dict, huggingface_config, **kwargs
+    )
+    text_config = getattr(huggingface_config, "text_config", huggingface_config)
+    scheme = checkpoint_quant_scheme(
+        resolve_hf_quant_config(huggingface_config, {}),
+        _declared_dtype(text_config),
+        adapted,
+    )
+    spec = pipeline_config.model.device_specs[0]
+    dtype = _hc_fn_dtype(
+        _stored_hc_fn_dtype(adapted),
+        getattr(text_config, "hc_mult", 4),
+        text_config.hidden_size,
+        scheme.compute_dtype
+        if scheme is not None
+        else (_declared_dtype(text_config) or DType.bfloat16),
+        DeviceRef(spec.device_type, spec.id).to_device(),
+    )
+    return cast_hc_fn_weights(adapted, dtype)

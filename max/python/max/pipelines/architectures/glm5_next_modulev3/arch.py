@@ -27,16 +27,13 @@ from max.pipelines.architectures.glm5_1.tool_parser import (  # noqa: F401  regi
     GlmToolParser,
 )
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
-from ..deepseekV3_modulev3.batch_processor import (
-    DeepseekV3ModuleV3BatchProcessor,
-)
 from .memory_planner import Glm5NextMemoryPlanner
-from .model import Glm5NextModel
 from .model_config import Glm5NextConfig
-from .weight_adapters import convert_glm5_next_state_dict
+from .modules import Glm5NextDecoder
+from .weight_adapters import convert_registered_state_dict
 
 __all__ = ["glm5_next_modulev3_arch"]
 
@@ -47,12 +44,11 @@ glm5_next_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Glm5NextConfig.DEFAULT_ENCODING,
     supported_encodings=Glm5NextConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=Glm5NextModel,
-    batching=DeepseekV3ModuleV3BatchProcessor,
+    modules={GraphRole.DECODER: Glm5NextDecoder},
     tokenizer=GlmTokenizer,
     context_type=TextContext,
     weight_adapters={
-        WeightsFormat.safetensors: convert_glm5_next_state_dict,
+        WeightsFormat.safetensors: convert_registered_state_dict,
     },
     config=Glm5NextConfig,
     memory_planner=Glm5NextMemoryPlanner,
