@@ -20,23 +20,26 @@
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/LITDialect/SpecialFunctions.h"
 #include "Mojo/MojoParser/ASTDecl.h"
+#include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/MojoParser/StabilityMarkers.h"
 #include "Mojo/MojoTooling/DeclRendering.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/TypeExtractionUtils.h"
 #include "MojoToolingInternals.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
 #include <algorithm>
 #include <cctype>
+#include <map>
+#include <mutex>
 #include <optional>
 
 using namespace M;
@@ -57,6 +60,164 @@ struct StableInfo {
 /// keyed by the conformed trait's symbol.
 using ConformanceConditionMap =
     llvm::DenseMap<KGEN::TraitSymbolAttr, std::string>;
+
+static std::string extractSymbolLeafName(SymbolRefAttr symbol) {
+  if (symbol.getNestedReferences().empty())
+    return symbol.getRootReference().getValue().str();
+  return symbol.getNestedReferences().back().getAttr().getValue().str();
+}
+
+static std::string extractBaseTypeName(ASTType astType, StringRef fullTypeStr) {
+  if (astType) {
+    Type type = astType.mlirType;
+    if (auto structType = sugarDynCast<LIT::StructType>(type)) {
+      if (auto symbol = structType.getSymbol())
+        return extractSymbolLeafName(symbol);
+    } else if (sugarIsa<LIT::RefType>(type)) {
+      if (ASTType elementType = astType.getReferenceElementType())
+        return extractBaseTypeName(elementType, fullTypeStr);
+    } else if (auto traitType = sugarDynCast<LIT::TraitType>(type)) {
+      if (!traitType.getSymbols().empty())
+        return extractSymbolLeafName(
+            traitType.getSymbols().front().getSymbol());
+    } else if (sugarIsa<LIT::OriginSetType>(type)) {
+      return "OriginSet";
+    }
+  }
+
+  StringRef baseType = fullTypeStr;
+  if (baseType.starts_with("fn(") || baseType.starts_with("fn[") ||
+      baseType.starts_with("def(") || baseType.starts_with("def["))
+    return baseType.trim().str();
+  if (size_t bracket = baseType.find('['); bracket != StringRef::npos)
+    baseType = baseType.substr(0, bracket);
+  return baseType.trim().str();
+}
+
+static std::string extractBaseTypeName(StringRef fullTypeStr) {
+  return extractBaseTypeName(ASTType{}, fullTypeStr);
+}
+
+static std::string extractModulePathFromDecl(ASTDecl *decl) {
+  SmallVector<StringRef> components;
+  for (ASTDecl *current = decl; current; current = current->getParentDecl())
+    if (isa<FileModuleASTDecl, PackageASTDecl>(current))
+      if (auto name = current->getName())
+        components.push_back(*name);
+  std::reverse(components.begin(), components.end());
+  return llvm::join(components, ".");
+}
+
+static ASTDecl *tryResolveTypeToDecl(StringRef typeName,
+                                     SharedState &sharedState,
+                                     const ASTDecl *contextDecl) {
+  for (const ASTDecl *current = contextDecl; current;
+       current = current->getParentDecl()) {
+    for (auto [name, children] : current->getDeclsInScope()) {
+      if (name.getValue() != typeName)
+        continue;
+      for (ASTDecl *child : children)
+        if (isa_and_nonnull<StructASTDecl, TraitASTDecl, AliasASTDecl>(child))
+          return child;
+    }
+  }
+  if (contextDecl)
+    return sharedState.lookupBuiltinTrait(typeName, SMLoc());
+  return nullptr;
+}
+
+static std::string generateDocPath(StringRef module, StringRef typeName,
+                                   StringRef docsBasePath,
+                                   bool isAlias = false) {
+  if (typeName.empty())
+    return {};
+
+  SmallVector<StringRef> components;
+  module.split(components, '.');
+  std::string moduleStr;
+  for (StringRef component : components) {
+    if (component == "__init__")
+      continue;
+    if (!moduleStr.empty())
+      moduleStr += ".";
+    moduleStr += component.str();
+  }
+
+  std::string path;
+  if (StringRef(moduleStr).starts_with("std.")) {
+    path = moduleStr;
+    if (StringRef(path).ends_with(".index"))
+      path = StringRef(path).drop_back(6).str() + ".index_";
+  } else if (!docsBasePath.empty()) {
+    path = docsBasePath.str();
+    if (!moduleStr.empty())
+      path += "/" + moduleStr;
+  } else {
+    path = moduleStr;
+  }
+  std::replace(path.begin(), path.end(), '.', '/');
+  path = "/" + path;
+
+  if (!isAlias)
+    return path.empty() ? typeName.str() : path + "/" + typeName.str();
+
+  std::string anchor = typeName.lower();
+  return path.empty() ? "#" + anchor : path + "/#" + anchor;
+}
+
+struct ResolvedPath {
+  std::string docPath;
+};
+
+static llvm::json::Object
+extractLibraryInfo(StringRef typeStr,
+                   const ASTDecl *currentDeclContext = nullptr,
+                   SharedState *sharedState = nullptr) {
+  static std::map<std::string, ResolvedPath> pathCache;
+  static std::mutex cacheMutex;
+
+  auto makeMetadata = [&](const ResolvedPath &resolved) {
+    llvm::json::Object metadata{{"type", typeStr.str()}};
+    if (!resolved.docPath.empty())
+      metadata["path"] = resolved.docPath;
+    return metadata;
+  };
+
+  StringRef baseType = typeStr;
+  if (size_t bracket = baseType.find('['); bracket != StringRef::npos)
+    baseType = baseType.substr(0, bracket);
+  baseType = baseType.trim();
+
+  std::string cacheKey = baseType.str();
+  {
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    if (auto cached = pathCache.find(cacheKey); cached != pathCache.end())
+      return makeMetadata(cached->second);
+  }
+
+  if (sharedState) {
+    if (ASTDecl *decl =
+            tryResolveTypeToDecl(baseType, *sharedState, currentDeclContext)) {
+      std::string modulePath = extractModulePathFromDecl(decl);
+      if (!modulePath.empty()) {
+        bool isAlias = isa<AliasASTDecl>(decl);
+        std::string typeName =
+            isAlias ? baseType.str() : extractBaseTypeName(typeStr);
+        ResolvedPath resolved{generateDocPath(
+            modulePath, typeName, sharedState->getDocsBasePath(), isAlias)};
+        {
+          std::lock_guard<std::mutex> lock(cacheMutex);
+          pathCache[cacheKey] = resolved;
+        }
+        return makeMetadata(resolved);
+      }
+    }
+  } else {
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    pathCache[cacheKey] = ResolvedPath{};
+  }
+  return makeMetadata(ResolvedPath{});
+}
 
 } // namespace
 
