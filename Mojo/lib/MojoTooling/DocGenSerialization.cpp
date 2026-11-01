@@ -528,7 +528,7 @@ static llvm::json::Object serializeParameterDecl(ASTDecl &decl,
   std::string description = getPogMarkdownDocString(decl);
   if (!description.empty())
     description.pop_back();
-  TypeMetadata typeMetadata =
+  llvm::json::Object typeMetadata =
       extractLibraryInfo(type, &decl, &decl.getShared());
   SmallVector<std::string> traitNames = parseCompoundTraitType(type);
 
@@ -542,8 +542,7 @@ static llvm::json::Object serializeParameterDecl(ASTDecl &decl,
   };
 
   if (traitNames.size() == 1) {
-    llvm::json::Object metadataJson = typeMetadata.toJSON();
-    for (auto &pair : metadataJson) {
+    for (auto &pair : typeMetadata) {
       object[pair.first] = std::move(pair.second);
     }
   } else {
@@ -551,7 +550,7 @@ static llvm::json::Object serializeParameterDecl(ASTDecl &decl,
     llvm::json::Array traitsArray;
     for (const std::string &traitName : traitNames)
       traitsArray.push_back(
-          extractLibraryInfo(traitName, &decl, &decl.getShared()).toJSON());
+          extractLibraryInfo(traitName, &decl, &decl.getShared()));
     object["traits"] = std::move(traitsArray);
   }
 
@@ -568,7 +567,7 @@ static llvm::json::Object serializeArgumentDecl(ASTDecl &decl,
   std::string description = getPogMarkdownDocString(decl);
   if (!description.empty())
     description.pop_back();
-  TypeMetadata typeMetadata =
+  llvm::json::Object typeMetadata =
       extractLibraryInfo(type, &decl, &decl.getShared());
   SmallVector<std::string> traitNames = parseCompoundTraitType(type);
 
@@ -583,8 +582,7 @@ static llvm::json::Object serializeArgumentDecl(ASTDecl &decl,
   };
 
   if (traitNames.size() == 1) {
-    llvm::json::Object metadataJson = typeMetadata.toJSON();
-    for (auto &pair : metadataJson) {
+    for (auto &pair : typeMetadata) {
       object[pair.first] = std::move(pair.second);
     }
   } else {
@@ -592,7 +590,7 @@ static llvm::json::Object serializeArgumentDecl(ASTDecl &decl,
     llvm::json::Array traitsArray;
     for (const std::string &traitName : traitNames)
       traitsArray.push_back(
-          extractLibraryInfo(traitName, &decl, &decl.getShared()).toJSON());
+          extractLibraryInfo(traitName, &decl, &decl.getShared()));
     object["traits"] = std::move(traitsArray);
   }
 
@@ -945,9 +943,8 @@ static llvm::json::Object serializeFunctionDecl(DefASTDecl &decl,
       {"summary", documentation.summary},
   };
   if (std::optional<std::string> returnType = getFunctionReturnType(decl)) {
-    TypeMetadata metadata =
+    llvm::json::Object returnObject =
         extractLibraryInfo(*returnType, &decl, &ctx.getSharedState());
-    llvm::json::Object returnObject = metadata.toJSON();
     if (!documentation.returnsDoc.empty())
       returnObject["doc"] = documentation.returnsDoc;
     result["returns"] = std::move(returnObject);
@@ -1067,7 +1064,7 @@ collectParentTraitsWithMetadata(ASTDecl *self, TraitType canonicalTrait,
 
   struct TraitEntry {
     StringRef name;
-    TypeMetadata metadata;
+    llvm::json::Object metadata;
     StringRef condition;
   };
   SmallVector<TraitEntry> traitData;
@@ -1084,9 +1081,9 @@ collectParentTraitsWithMetadata(ASTDecl *self, TraitType canonicalTrait,
     if (decl && decl != self) {
       std::optional<StringRef> name = decl->getName();
       if (name && isa<TraitASTDecl>(decl)) {
-        TypeMetadata metadata =
-            extractLibraryInfo(*name, self, &self->getShared());
-        traitData.push_back({*name, metadata, condition});
+        traitData.push_back(
+            {*name, extractLibraryInfo(*name, self, &self->getShared()),
+             condition});
         continue;
       }
     }
@@ -1106,9 +1103,9 @@ collectParentTraitsWithMetadata(ASTDecl *self, TraitType canonicalTrait,
         continue; // Skip self-reference
       }
 
-      TypeMetadata metadata =
-          extractLibraryInfo(traitName, self, &self->getShared());
-      traitData.push_back({traitName, metadata, condition});
+      traitData.push_back(
+          {traitName, extractLibraryInfo(traitName, self, &self->getShared()),
+           condition});
     }
   }
 
@@ -1121,9 +1118,8 @@ collectParentTraitsWithMetadata(ASTDecl *self, TraitType canonicalTrait,
     llvm::json::Object traitObj;
     traitObj["name"] = entry.name.str();
 
-    if (!entry.metadata.getRelativeDocPath().empty()) {
-      traitObj["path"] = entry.metadata.getRelativeDocPath().str();
-    }
+    if (std::optional<StringRef> path = entry.metadata.getString("path"))
+      traitObj["path"] = path->str();
 
     if (!entry.condition.empty()) {
       traitObj["condition"] = entry.condition.str();
@@ -1345,19 +1341,16 @@ static llvm::json::Object serializeVariableDecl(ASTDecl &decl,
 
   SmallVector<std::string> traitNames = parseCompoundTraitType(type);
   if (traitNames.size() == 1) {
-    TypeMetadata metadata =
+    llvm::json::Object metadata =
         extractLibraryInfo(type, nullptr, &ctx.getSharedState());
-    llvm::json::Object metadataJSON = metadata.toJSON();
-    for (auto &pair : metadataJSON)
+    for (auto &pair : metadata)
       result[pair.first] = std::move(pair.second);
   } else {
     result["type"] = type;
     llvm::json::Array traits;
-    for (const std::string &traitName : traitNames) {
-      TypeMetadata metadata =
-          extractLibraryInfo(traitName, nullptr, &ctx.getSharedState());
-      traits.push_back(metadata.toJSON());
-    }
+    for (const std::string &traitName : traitNames)
+      traits.push_back(
+          extractLibraryInfo(traitName, nullptr, &ctx.getSharedState()));
     result["traits"] = std::move(traits);
   }
 

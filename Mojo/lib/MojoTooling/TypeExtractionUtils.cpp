@@ -235,26 +235,26 @@ std::string LIT::generateDocPath(llvm::StringRef module,
 /// `List[String]`) share the same path resolution without overwriting each
 /// other's display string.
 ///
-/// An entry with both fields empty is a negative-cache marker — used only when
-/// `extractLibraryInfo` is called without `SharedState`, since AST resolution
-/// may succeed later given better context.
+/// An entry with an empty path is a negative-cache marker, used only when
+/// `extractLibraryInfo` is called without `SharedState`.
 namespace {
 struct ResolvedPath {
-  std::string moduleNamespace;
   std::string docPath;
 };
 } // namespace
 
-/// The main function that extracts comprehensive type metadata from type names.
-TypeMetadata LIT::extractLibraryInfo(llvm::StringRef typeStr,
-                                     const ASTDecl *currentDeclContext,
-                                     SharedState *sharedState) {
+llvm::json::Object LIT::extractLibraryInfo(llvm::StringRef typeStr,
+                                           const ASTDecl *currentDeclContext,
+                                           SharedState *sharedState) {
   // Cache for resolved cross-reference paths, keyed by stripped base name.
   static std::map<std::string, ResolvedPath> pathCache;
   static std::mutex cacheMutex;
 
   auto makeMetadata = [&](const ResolvedPath &resolved) {
-    return TypeMetadata(typeStr, resolved.moduleNamespace, resolved.docPath);
+    llvm::json::Object metadata{{"type", typeStr.str()}};
+    if (!resolved.docPath.empty())
+      metadata["path"] = resolved.docPath;
+    return metadata;
   };
 
   // Extract base type name: remove templates and qualified prefixes
@@ -298,7 +298,7 @@ TypeMetadata LIT::extractLibraryInfo(llvm::StringRef typeStr,
         docPath = generateDocPath(modulePath, typeName,
                                   sharedState->getDocsBasePath(), isAlias);
 
-        ResolvedPath resolved{modulePath, docPath};
+        ResolvedPath resolved{docPath};
         {
           std::lock_guard<std::mutex> lock(cacheMutex);
           pathCache[cacheKey] = resolved;

@@ -13,14 +13,13 @@
 
 #include "Mojo/MojoTooling/TypeExtractionUtils.h"
 #include "Mojo/MojoParser/DeclSignaturePrinter.h"
-#include "Mojo/MojoTooling/TypeMetadata.h"
 #include "gtest/gtest.h"
 
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-/// Test fixture for TypeExtractionUtils and TypeMetadata functionality.
+/// Test fixture for type extraction utilities.
 class TypeExtractionUtilsTest : public ::testing::Test {
 protected:
   void SetUp() override {}
@@ -176,8 +175,7 @@ TEST_F(TypeExtractionUtilsTest, GenerateDocPath_DotToSlashConversion) {
 /// Should return basic metadata without documentation paths.
 TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_SimpleTypes) {
   // Test basic type extraction without AST context
-  auto metadata = extractLibraryInfo("Int");
-  auto json = metadata.toJSON();
+  auto json = extractLibraryInfo("Int");
 
   EXPECT_TRUE(json.find("type") != json.end());
   auto typeValue = json.find("type")->second.getAsString();
@@ -191,8 +189,7 @@ TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_SimpleTypes) {
 /// Test extractLibraryInfo with generic types.
 /// Should preserve full parameterization in the returned metadata.
 TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_GenericTypes) {
-  auto metadata = extractLibraryInfo("List[Int]");
-  auto json = metadata.toJSON();
+  auto json = extractLibraryInfo("List[Int]");
 
   auto typeValue = json.find("type")->second.getAsString();
   EXPECT_TRUE(typeValue.has_value());
@@ -202,8 +199,7 @@ TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_GenericTypes) {
 /// Test extractLibraryInfo with qualified type names.
 /// Should preserve full parameterization including all type arguments.
 TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_QualifiedTypes) {
-  auto metadata = extractLibraryInfo("Dict[String, Int]");
-  auto json = metadata.toJSON();
+  auto json = extractLibraryInfo("Dict[String, Int]");
 
   auto typeValue = json.find("type")->second.getAsString();
   EXPECT_TRUE(typeValue.has_value());
@@ -212,8 +208,7 @@ TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_QualifiedTypes) {
 
 /// Test extractLibraryInfo with deeply nested generics.
 TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_NestedGenerics) {
-  auto metadata = extractLibraryInfo("List[Dict[String, Int]]");
-  auto json = metadata.toJSON();
+  auto json = extractLibraryInfo("List[Dict[String, Int]]");
 
   auto typeValue = json.find("type")->second.getAsString();
   EXPECT_TRUE(typeValue.has_value());
@@ -224,8 +219,7 @@ TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_NestedGenerics) {
 /// Should preserve function signatures without modification.
 TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_FunctionTypes) {
   // Test that function types are preserved as-is
-  auto metadata = extractLibraryInfo("fn(Int) -> String");
-  auto json = metadata.toJSON();
+  auto json = extractLibraryInfo("fn(Int) -> String");
 
   auto typeValue = json.find("type")->second.getAsString();
   EXPECT_TRUE(typeValue.has_value());
@@ -235,49 +229,11 @@ TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_FunctionTypes) {
 /// Test extractLibraryInfo with empty input.
 TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_EmptyType) {
   // Test edge case with empty type
-  auto metadata = extractLibraryInfo("");
-  auto json = metadata.toJSON();
+  auto json = extractLibraryInfo("");
 
   auto typeValue = json.find("type")->second.getAsString();
   EXPECT_TRUE(typeValue.has_value());
   EXPECT_EQ(typeValue.value(), "");
-}
-
-//===----------------------------------------------------------------------===//
-// TypeMetadata class tests
-//===----------------------------------------------------------------------===//
-
-/// Test TypeMetadata JSON serialization with complete metadata.
-/// Should include both type and path information in JSON output.
-TEST_F(TypeExtractionUtilsTest, TypeMetadata_ToJSON) {
-  // Test TypeMetadata JSON serialization
-  TypeMetadata metadata("List[Int]", "std.collections",
-                        "/std/collections/List");
-
-  auto json = metadata.toJSON();
-
-  EXPECT_TRUE(json.find("type") != json.end());
-  EXPECT_TRUE(json.find("path") != json.end());
-
-  auto typeValue = json.find("type")->second.getAsString();
-  auto pathValue = json.find("path")->second.getAsString();
-
-  EXPECT_TRUE(typeValue.has_value());
-  EXPECT_TRUE(pathValue.has_value());
-  EXPECT_EQ(typeValue.value(), "List[Int]");
-  EXPECT_EQ(pathValue.value(), "/std/collections/List");
-}
-
-/// Test TypeMetadata JSON serialization with empty path.
-/// Should omit path field when empty (not include empty string).
-TEST_F(TypeExtractionUtilsTest, TypeMetadata_EmptyPath) {
-  // Test with empty path (should not include path in JSON)
-  TypeMetadata metadata("SomeType", "", "");
-
-  auto json = metadata.toJSON();
-
-  EXPECT_TRUE(json.find("type") != json.end());
-  EXPECT_TRUE(json.find("path") == json.end());
 }
 
 //===----------------------------------------------------------------------===//

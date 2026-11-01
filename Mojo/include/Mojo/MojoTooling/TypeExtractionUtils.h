@@ -15,9 +15,9 @@
 #define KGEN_MOJOTOOLING_TYPEEXTRACTIONUTILS_H
 
 #include "Mojo/MojoParser/SharedState.h"
-#include "Mojo/MojoTooling/TypeMetadata.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/JSON.h"
 #include <optional>
 #include <string>
 
@@ -70,14 +70,11 @@ tryResolveTypeToDecl(StringRef typeName, SharedState &sharedState,
 std::string generateDocPath(StringRef module, StringRef typeName,
                             StringRef docsBasePath, bool isAlias = false);
 
-/// The main function that extracts comprehensive type metadata from type names.
-/// Takes a type like "List[Int]" or "std.collections.Dict" and produces
-/// metadata including the clean type name, module path, and doc link path. Uses
-/// AST resolution when possible to get accurate paths, caches results for
-/// performance, and falls back to basic name for unresolvable types.
-TypeMetadata extractLibraryInfo(StringRef typeStr,
-                                const ASTDecl *currentDeclContext = nullptr,
-                                SharedState *sharedState = nullptr);
+/// Returns the type and, when resolvable, its documentation path.
+llvm::json::Object
+extractLibraryInfo(StringRef typeStr,
+                   const ASTDecl *currentDeclContext = nullptr,
+                   SharedState *sharedState = nullptr);
 
 } // namespace LIT
 } // namespace KGEN
