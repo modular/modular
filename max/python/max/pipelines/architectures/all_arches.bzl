@@ -113,7 +113,6 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/step3p5",
     "//max/python/max/pipelines/architectures/umt5",
     "//max/python/max/pipelines/architectures/unified_mtp_glm5_2",
-    "//max/python/max/pipelines/architectures/unified_mtp_glm5_2_modulev3",
     "//max/python/max/pipelines/architectures/wan",
     "//max/python/max/pipelines/architectures/whisper",
     "//max/python/max/pipelines/architectures/z_image_modulev3",

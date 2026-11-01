@@ -26,12 +26,10 @@ from max.pipelines.architectures.glm5_1.model_config import (
 )
 from max.pipelines.architectures.glm5_1_modulev3.arch import (
     glm5_1_modulev3_arch,
+    glm5_1_mtp_draft_arch,
 )
 from max.pipelines.architectures.glm5_1_modulev3.model_config import (
     Glm5_1Config,
-)
-from max.pipelines.architectures.unified_mtp_glm5_2_modulev3.arch import (
-    unified_mtp_glm5_2_modulev3_arch,
 )
 from max.pipelines.lib import KVCacheConfig, SupportedArchitecture
 
@@ -74,9 +72,7 @@ def _mla_kv_params(
     return mla
 
 
-@pytest.mark.parametrize(
-    "arch", [glm5_1_modulev3_arch, unified_mtp_glm5_2_modulev3_arch]
-)
+@pytest.mark.parametrize("arch", [glm5_1_modulev3_arch, glm5_1_mtp_draft_arch])
 def test_modulev3_glm_archs_accept_an_nvfp4_kv_cache(
     arch: SupportedArchitecture,
 ) -> None:
