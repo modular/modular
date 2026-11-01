@@ -25,8 +25,10 @@ dispatch_dtype is not bfloat16``).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from unittest.mock import MagicMock, NonCallableMock, patch
 
+import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
@@ -35,7 +37,10 @@ from max.nn.legacy.quant_config import QuantConfig, QuantFormat
 from max.pipelines.architectures.deepseekV3.model_config import (
     DeepseekV3Config,
 )
-from max.pipelines.architectures.mtp_deepseekV3.model import _draft_config
+from max.pipelines.architectures.mtp_deepseekV3.model import (
+    _draft_config,
+    configure_mtp_draft,
+)
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 
 NUM_DEVICES = 8
@@ -206,3 +211,27 @@ def test_nvfp4_nextn_draft_keeps_nvfp4_dispatch_unchanged() -> None:
     assert draft_config.ep_config is not None
     assert draft_config.ep_config.dispatch_dtype == DType.float4_e2m1fn
     assert draft_config.ep_config.dispatch_quant_config is nvfp4_quant_config
+
+
+def test_configuring_the_registered_head_starts_expert_parallelism() -> None:
+    """The head's experts shard by the node ID the started runtime sets, so
+    its registration starts it before the head is constructed."""
+    started: list[object] = []
+    context = replace(_make_context(), ep_runtime=started.append)
+    with pytest.raises(KeyError, match="NextN norm"):
+        configure_mtp_draft(context, {})
+    assert not started
+    with (
+        patch.object(
+            DeepseekV3Config,
+            "initialize",
+            return_value=_make_base_config(dtype=DType.float4_e2m1fn),
+        ),
+        patch(
+            "max.pipelines.architectures.deepseekV3.model.parse_quant_config",
+            return_value=None,
+        ),
+    ):
+        config = configure_mtp_draft(context, _draft_state_dict(bf16=True))
+    assert config.ep_config is not None
+    assert started == [config.ep_config]

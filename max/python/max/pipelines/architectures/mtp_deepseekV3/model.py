@@ -10,16 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The NextN head of a DeepseekV3 checkpoint: its config and module builder.
+"""The NextN head of a DeepseekV3 checkpoint: its config and registration.
 
-The head runs only beside its target, inside a unified spec-decode graph.
-The config builds the head's module for that graph from the target's own
-checkpoint.
+The head runs only beside its target, inside a unified spec-decode graph,
+which constructs it from the target's own checkpoint.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
 
 from max.dtype import DType
@@ -34,8 +34,7 @@ from max.pipelines.lib.interfaces.arch_config import (
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
 )
-from max.pipelines.lib.utils import parse_state_dict_from_weights
-from max.pipelines.speculative import DraftAliases, validate_draft_state_dict
+from max.pipelines.lib.registration_draft import DraftRegistration
 from transformers import AutoConfig
 
 from ..deepseekV3.model import DeepseekV3Model
@@ -43,7 +42,7 @@ from ..deepseekV3.model_config import DeepseekV3Config
 from ..deepseekV3_nextn.deepseekV3_nextn import DeepseekV3NextN
 from ..deepseekV3_nextn.model_config import DeepseekV3NextNConfig
 
-__all__ = ["MTPDeepseekV3DraftArchConfig"]
+__all__ = ["MTPDeepseekV3DraftArchConfig", "mtp_draft_registration"]
 
 logger = logging.getLogger("max.pipelines")
 
@@ -92,38 +91,24 @@ class MTPDeepseekV3DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         assert isinstance(target, KVCacheParams)
         return replace(target, num_layers=1)
 
-    @classmethod
-    def build_module(
-        cls, context: ModelLoadContext
-    ) -> tuple[DeepseekV3NextN, DeepseekV3NextNConfig]:
-        """Builds the NextN head from the target's checkpoint.
 
-        ``context`` names it. It embeds and projects through the target's
-        embedding and head, so spec decoding shares those onto it.
+def configure_mtp_draft(
+    context: ModelLoadContext, state_dict: Mapping[str, WeightData]
+) -> DeepseekV3NextNConfig:
+    """Finalizes the NextN head's config from its target's checkpoint.
 
-        It embeds and projects through the target's embedding and head, so
-        spec decoding shares those onto it.
+    It also starts expert parallelism, which shards the head's experts.
 
-        Raises:
-            KeyError: If the checkpoint has no NextN layer.
-        """
-        state_dict = parse_state_dict_from_weights(
-            context.pipeline_config, context.weights, context.adapter
-        )
-        config = _draft_config(context, state_dict)
-        context.start_ep(config.ep_config)
-        draft = DeepseekV3NextN(config)
-        draft.load_state_dict(state_dict, weight_alignment=1, strict=False)
-        validate_draft_state_dict(
-            draft.raw_state_dict().keys(),
-            state_dict.keys(),
-            DraftAliases(always=("embed_tokens.", "lm_head.")),
-        )
-        return draft, draft.config
+    Raises:
+        KeyError: If the checkpoint has no NextN layer.
+    """
+    config = _draft_config(context, state_dict)
+    context.start_ep(config.ep_config)
+    return config
 
 
 def _draft_config(
-    context: ModelLoadContext, state_dict: dict[str, WeightData]
+    context: ModelLoadContext, state_dict: Mapping[str, WeightData]
 ) -> DeepseekV3NextNConfig:
     """The target's config, finalized against the NextN layer's weights."""
     if _NEXTN_NORM not in state_dict:
@@ -160,3 +145,13 @@ def _draft_config(
     return DeepseekV3NextNConfig(
         **{f.name: getattr(base, f.name) for f in fields(base)}
     )
+
+
+mtp_draft_registration = DraftRegistration[
+    DeepseekV3NextN, DeepseekV3NextNConfig
+](
+    method="mtp",
+    configure=configure_mtp_draft,
+    # The head embeds and projects through its target's embedding and head.
+    shared_modules=("embed_tokens", "lm_head"),
+)

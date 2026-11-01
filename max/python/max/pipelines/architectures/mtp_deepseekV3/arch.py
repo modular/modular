@@ -14,18 +14,19 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV3.model_config import DeepseekV3Config
-from .model import MTPDeepseekV3DraftArchConfig
+from ..deepseekV3_nextn.deepseekV3_nextn import DeepseekV3NextN
+from .model import MTPDeepseekV3DraftArchConfig, mtp_draft_registration
 from .weight_adapters import convert_mtp_safetensor_state_dict
 
 __all__ = ["mtp_deepseekV3_draft_arch"]
 
 # The NextN head ships in the target's checkpoint, which has no config of its
-# own, so spec decoding names this architecture from the target's. It has
-# no pipeline model of its own.
+# own, so spec decoding names this architecture from the target's. It is a
+# registered draft, with no pipeline model of its own.
 mtp_deepseekV3_draft_arch = SupportedArchitecture(
     name="MTPDeepseekV3DraftModel",
     task=PipelineTask.TEXT_GENERATION,
@@ -34,7 +35,8 @@ mtp_deepseekV3_draft_arch = SupportedArchitecture(
     supported_encodings=DeepseekV3Config.SUPPORTED_ENCODINGS,
     # Split over the target's devices, as the target is.
     multi_gpu_supported=True,
-    pipeline_model=None,
+    modules={GraphRole.DRAFT: DeepseekV3NextN},
+    draft=mtp_draft_registration,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
