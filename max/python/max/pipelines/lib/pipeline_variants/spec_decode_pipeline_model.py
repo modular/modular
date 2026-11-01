@@ -119,12 +119,17 @@ from ..interfaces.pipeline_model import (
     WeightLoad,
 )
 from ..memory_estimation import MemoryPlan
+from ..module_registration import (
+    ModuleV3DecoderPipelineModel,
+    RegisteredDecoderBuilder,
+)
 from ..pipeline_parallel import PipelinedModel
 from ..pipeline_stage import PipelineStage
 from ..registration_draft import (
     RegisteredDraftBuilder,
     default_target_hidden_states,
 )
+from ..registration_runtime import BatchContextLengths
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import SupportsVisionEncoding, VisionEncodeResult
 from ..weight_transform import (
@@ -207,13 +212,21 @@ class _UnifiedSpecDecodeModelMixin:
         ).to(self.devices[0])
 
 
+def _registered_decoder(arch: SupportedArchitecture) -> bool:
+    """Returns whether ``arch`` registers a ModuleV3 ``DECODER``."""
+    model = arch.pipeline_model
+    return model is not None and issubclass(model, ModuleV3DecoderPipelineModel)
+
+
 def _builds_module(
     arch: SupportedArchitecture, role: GraphRole = GraphRole.DECODER
 ) -> bool:
     """Returns whether ``arch`` supplies a module for the requested role.
 
-    A registered draft declares its factory. Legacy components implement
-    ``build_module`` on their pipeline model or draft config class.
+    A registered draft declares its factory. A registered ModuleV3 decoder
+    is built by the framework, wherever spec decoding holds a call under its
+    architecture's own name. Legacy components implement ``build_module`` on
+    their pipeline model or draft config class.
 
     This is what tells a pairing that runs through the unified model from
     one that still runs its own spec-decode package. An inherited
@@ -223,6 +236,8 @@ def _builds_module(
     """
     if role == GraphRole.DRAFT and arch.draft is not None:
         return True
+    if role == GraphRole.DECODER and _registered_decoder(arch):
+        return spec_adapters.has_adapter(arch.name)
     builder = _module_builder(arch, role)
     return (
         arch.pipeline_model is None or issubclass(builder, PipelineModel)
@@ -343,6 +358,13 @@ def spec_decode_architecture(
     # draft's architecture.
     base = _target_architecture(target, prefer_module_v3)
     if base is None:
+        return None
+    # A registered decoder pairs only as the variant serving selects: its
+    # graph-API twin keeps its own speculative architectures until it pairs
+    # too.
+    if _registered_decoder(base) and base is not ARCH_LOOKUP.find(
+        target, prefer_module_v3=prefer_module_v3
+    ):
         return None
     draft_arch = draft_arch or base.checkpoint_drafts.get(method)
     if draft_arch is None:
@@ -490,11 +512,18 @@ def _module_builder(
 ) -> Any:
     """Returns what builds ``arch``'s requested module role.
 
-    Registered drafts use the shared builder. Legacy components use their
-    pipeline model, or their config class for a draft that has none.
+    Registered drafts and ModuleV3 decoders use the shared builders. Legacy
+    components use their pipeline model, or their config class for a draft
+    that has none.
     """
     if role == GraphRole.DRAFT and arch.draft is not None:
         return RegisteredDraftBuilder(arch)
+    if role == GraphRole.DECODER and _registered_decoder(arch):
+        model = arch.pipeline_model
+        assert model is not None and issubclass(
+            model, ModuleV3DecoderPipelineModel
+        )
+        return RegisteredDecoderBuilder(model)
     return arch.pipeline_model or arch.config
 
 
@@ -1188,10 +1217,11 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
                 np.array([0, len(lengths)], dtype=np.int64)
             )
         if context_lengths is None:
-            context_lengths = [
-                Buffer.zeros(shape=[1], dtype=DType.int32)
-                for _ in self.runtime.devices
-            ]
+            # Under tensor parallelism every device takes the one replica's.
+            devices = len(self.runtime.devices)
+            context_lengths = self._context_lengths.update(
+                list(replica_batches) * (devices // len(replica_batches))
+            )
         # A ModuleV3 target's batching holds no signal buffers, which its
         # module's trace appends itself.
         signals = getattr(target, "signal_buffers", self.runtime.signal_buffers)
@@ -1219,6 +1249,18 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
                 target,
             ),
             target_inputs=target if self._replay_hooks is not None else None,
+        )
+
+    @cached_property
+    def _context_lengths(self) -> BatchContextLengths:
+        """Each device's context length, for a target's batching without them.
+
+        A registered decoder's batching keeps one per replica, and only for
+        the graph it serves alone.
+        """
+        return BatchContextLengths(
+            len(self.runtime.devices),
+            self.runtime.pipeline_config.model.kv_cache.kv_cache_page_size,
         )
 
     @cached_property
@@ -1714,7 +1756,7 @@ class SpecDecodePipelineModel(
             kv_params=config.kv_params.children["target"],
             encodes_images=_takes_images(pairing.target, pairing.draft),
         )
-        target_builder = _pipeline_model(pairing.target)
+        target_builder = _module_builder(pairing.target)
         target, target_config = target_builder.build_module(target_context)
         # The planner sized the cache from this config before finalizing.
         config.target = target_config
@@ -1726,12 +1768,7 @@ class SpecDecodePipelineModel(
         weights: dict[str, Any] = {}
         named = True
         for name, builder, ctx, module_config in (
-            (
-                "target",
-                _module_builder(pairing.target),
-                target_context,
-                target_config,
-            ),
+            ("target", target_builder, target_context, target_config),
             ("draft", draft_builder, draft_context, draft_config),
         ):
             module_entries = _weight_entries(builder, ctx, module_config)

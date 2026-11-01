@@ -62,7 +62,7 @@ import itertools
 from abc import ABCMeta
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, Protocol, cast, runtime_checkable
 
 import numpy as np
@@ -100,6 +100,7 @@ from .interfaces.batch_processor import (
 )
 from .interfaces.pipeline_model import (
     ModelInputs,
+    ModelLoadContext,
     ModelOutputs,
     ModuleV3PipelineModelWithKVCache,
     _cast_to_parameter_dtypes,
@@ -122,13 +123,17 @@ from .request_state import (
     build_state_store,
 )
 from .role_contracts import DecoderInputs, DecoderOutputs, VisionInputs
-from .utils import compute_data_parallel_splits
+from .utils import (
+    compute_data_parallel_splits,
+    parse_state_dict_from_weights,
+)
 from .vision_encoder_cache import SupportsVisionEncoding
 
 __all__ = [
     "DecoderBatchProcessor",
     "DecoderModelInputs",
     "ModuleV3DecoderPipelineModel",
+    "RegisteredDecoderBuilder",
     "VisionBatchProcessor",
     "bind_state_store",
     "construct_module",
@@ -611,6 +616,30 @@ def finalize_config(
     return finalized
 
 
+def _check_data_parallel(
+    decoder_cls: type[Module[..., Any]],
+    data_parallel_degree: int,
+    num_devices: int,
+) -> None:
+    """Raises if a decoder can't run ``data_parallel_degree`` replicas.
+
+    Raises:
+        ValueError: If data parallelism is on and the decoder doesn't
+            support it, or doesn't give each device its own replica.
+    """
+    if data_parallel_degree <= 1:
+        return
+    if not supports_data_parallel(decoder_cls):
+        raise ValueError(
+            f"{decoder_cls.__qualname__} doesn't support data parallelism"
+        )
+    if data_parallel_degree != num_devices:
+        raise ValueError(
+            f"data parallelism needs one replica per device, got "
+            f"{data_parallel_degree} replicas over {num_devices} devices"
+        )
+
+
 class _ModulePipelineModelMeta(ABCMeta):
     """Lets a pipeline model built from a registration be pickled.
 
@@ -775,19 +804,9 @@ class ModuleV3DecoderPipelineModel(
                 support it, or doesn't give each device its own replica.
         """
         decoder_cls = type(self).decoder_cls
-        data_parallel_degree = self._data_parallel_degree
-        if data_parallel_degree > 1:
-            if not supports_data_parallel(decoder_cls):
-                raise ValueError(
-                    f"{decoder_cls.__qualname__} doesn't support data "
-                    "parallelism"
-                )
-            if data_parallel_degree != len(self.devices):
-                raise ValueError(
-                    f"data parallelism needs one replica per device, got "
-                    f"{data_parallel_degree} replicas over "
-                    f"{len(self.devices)} devices"
-                )
+        _check_data_parallel(
+            decoder_cls, self._data_parallel_degree, len(self.devices)
+        )
         return construct_module(decoder_cls, model_config, self._device_mesh())
 
     def _vision_graph_spec(self, model_config: Any) -> GraphSpec | None:
@@ -916,6 +935,105 @@ class ModuleV3DecoderPipelineModel(
                 [state.driver_tensor for state in outputs.state or ()],
             )
         return self._to_model_outputs(outputs)
+
+
+@dataclass
+class RegisteredDecoderBuilder:
+    """Constructs a registered ``DECODER`` for a caller that composes modules.
+
+    A speculative pairing builds its target this way and compiles it beside
+    its draft as one module, so the decoder holds no weights: it compiles
+    with those :meth:`checkpoint_weights` returns.
+    """
+
+    pipeline_model: type[ModuleV3DecoderPipelineModel]
+    """The pipeline model that serves the registration alone."""
+    _weights: dict[str, Any] = field(default_factory=dict, init=False)
+
+    def build_module(
+        self, context: ModelLoadContext
+    ) -> tuple[Module[..., Any], Any]:
+        """Constructs the decoder from the checkpoint ``context`` names.
+
+        The config is finalized and completed with the deployment as serving
+        completes it, on the caller's KV params, and expert parallelism
+        starts through ``context``, which the caller may share with other
+        modules.
+
+        Raises:
+            NotImplementedError: If the decoder reads image embeddings or
+                keeps per-request state, which a composed module doesn't
+                pass it.
+            ValueError: If the deployment asks for expert or data
+                parallelism the decoder doesn't support.
+        """
+        decoder_cls = self.pipeline_model.decoder_cls
+        if consumes_vision(decoder_cls) or hasattr(decoder_cls, "state_store"):
+            raise NotImplementedError(
+                f"{decoder_cls.__qualname__} reads image embeddings or keeps "
+                "per-request state, which a composed module doesn't pass it"
+            )
+        assert context.kv_params is not None
+        pipeline_config = context.pipeline_config
+        config_cls: Any = self.pipeline_model.model_config_cls
+        state_dict = parse_state_dict_from_weights(
+            pipeline_config, context.weights, context.adapter
+        )
+        config: Any = finalize_config(
+            dataclasses.replace(
+                config_cls.initialize(
+                    pipeline_config, max_seq_len=context.max_seq_len
+                ),
+                kv_params=context.kv_params,
+            ),
+            context.huggingface_config,
+            state_dict,
+            ModelOutputConfig(
+                return_logits=context.return_logits,
+                return_hidden_states=context.return_hidden_states,
+            ),
+        )
+        devices = [ref.to_device() for ref in context.kv_params.devices]
+        data_parallel_degree = pipeline_config.model.data_parallel_degree
+        _check_data_parallel(decoder_cls, data_parallel_degree, len(devices))
+        settings = pipeline_config.runtime
+        runtime = ModuleRuntime(
+            mesh=device_mesh(devices, data_parallel_degree),
+            data_parallel_degree=data_parallel_degree,
+            max_batch_input_tokens=settings.max_batch_input_tokens,
+            max_batch_total_tokens=context.max_batch_total_tokens,
+            ep_size=settings.ep_size,
+            ep_use_allreduce=settings.ep_use_allreduce,
+        )
+        if runtime.ep_size > 1:
+            if not isinstance(config, ExpertParallelDeploymentConfig):
+                raise ValueError(
+                    f"{type(config).__qualname__} doesn't support expert "
+                    "parallelism"
+                )
+            ep = config.expert_parallel_config(runtime)
+            context.start_ep(ep)
+            runtime = dataclasses.replace(runtime, ep=ep)
+        if isinstance(config, DeploymentConfig):
+            config = config.apply_runtime(runtime)
+        with F.lazy(), default_dtype(config.dtype):
+            module = construct_module(decoder_cls, config, runtime.mesh)
+        self._weights = _cast_to_parameter_dtypes(
+            module, role_weights(state_dict, config, GraphRole.DECODER)
+        )
+        return module, config
+
+    def checkpoint_weights(
+        self, context: ModelLoadContext, config: object
+    ) -> dict[str, Any]:
+        """Returns the weights the built decoder compiles with.
+
+        They are the checkpoint's ``DECODER`` weights, named as the module
+        names them.
+        """
+        del context, config
+        weights, self._weights = self._weights, {}
+        return weights
 
 
 def bind_state_store(

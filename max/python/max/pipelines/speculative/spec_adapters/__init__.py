@@ -60,6 +60,7 @@ __all__ = [
     "ep_input_types",
     "export_contract",
     "extra",
+    "has_adapter",
     "prepares_every_batch",
     "primary_kv",
     "relaxed_thinking_acceptance",
@@ -121,6 +122,14 @@ def _target_adapter(target_arch: str) -> TargetAdapter:
     ).ADAPTER
     assert isinstance(adapter, TargetAdapter)
     return adapter
+
+
+def has_adapter(target_arch: str) -> bool:
+    """Returns whether spec decoding holds a call under exactly this name.
+
+    A ModuleV3 variant counts only when it names an adapter of its own.
+    """
+    return target_arch in _TARGET_ADAPTERS
 
 
 def _adapter(target_arch: str, method: str | None = None) -> TargetAdapter:

@@ -536,13 +536,16 @@ def _build_until_the_target(
         target_contexts.append(context)
         raise _TargetBuilt
 
+    def module_builder(arch: Any, role: GraphRole = GraphRole.DECODER) -> Any:
+        if role == GraphRole.DRAFT:
+            return RegisteredDraftBuilder(arch)
+        return SimpleNamespace(build_module=build_target)
+
     for name, value in {
         "load_weights": lambda paths: object(),
         "weights_format": lambda paths: WeightsFormat.safetensors,
         "_builds_modulev3": lambda arch: False,
-        "_pipeline_model": lambda arch: SimpleNamespace(
-            build_module=build_target
-        ),
+        "_module_builder": module_builder,
     }.items():
         monkeypatch.setattr(spec_decode_pipeline_model, name, value)
     model = object.__new__(SpecDecodePipelineModel)

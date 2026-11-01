@@ -30,7 +30,7 @@ from max.graph.weights import WeightsFormat
 from max.nn import Module
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
@@ -40,6 +40,7 @@ from max.pipelines.lib.module_registration import (
     DecoderBatchProcessor,
     DecoderModelInputs,
     ModuleV3DecoderPipelineModel,
+    RegisteredDecoderBuilder,
     _DecoderGraph,
     consumes_vision,
     decoder_input_types,
@@ -66,7 +67,7 @@ from max.pipelines.lib.role_contracts import (
 from max.pipelines.lib.vision_encoder_cache import vision_encoding
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
 from max.pipelines.modeling.types import PipelineTask
-from max.tensor import Tensor
+from max.tensor import Tensor, defaults
 from transformers import AutoConfig
 from typing_extensions import Self
 
@@ -145,6 +146,12 @@ class PlainDecoder(Module[[DecoderInputs], DecoderOutputs]):
 
 class VisionDecoder(PlainDecoder):
     consumes_vision: ClassVar[bool] = True
+
+
+class StatefulDecoder(PlainDecoder):
+    @classmethod
+    def state_store(cls, *args: Any, **kwargs: Any) -> None:
+        return None
 
 
 class ToyVision(PlainDecoder):
@@ -710,3 +717,125 @@ def test_a_decoder_can_take_the_exchange_in_its_own_layout() -> None:
         ExpertParallelInputs
     )
     assert ep_input_tree(_TailConfig(), ep) == ("tail", 32)
+
+
+_EP = NonCallableMock(spec=EPConfig)
+
+
+@dataclass(frozen=True)
+class TargetConfig(ToyConfig, ExpertParallelDeploymentConfig):
+    """Records what the target builder completes it with."""
+
+    kv_params: object = None
+    dtype: DType = DType.float32
+    outputs: ModelOutputConfig | None = None
+    runtime: ModuleRuntime | None = None
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> TargetConfig:
+        return replace(self, finalized=True, outputs=outputs)
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        return _EP
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        return replace(self, runtime=runtime)
+
+
+class MeshDecoder(ToyDecoder):
+    """Records the config and mesh it was constructed with."""
+
+    def __init__(self, config: ToyConfig) -> None:
+        super().__init__(config)
+        self.config = config
+        self.mesh = defaults()[1]
+
+
+def _target_context(started: list[EPConfig], *, ep_size: int) -> Any:
+    return SimpleNamespace(
+        pipeline_config=SimpleNamespace(
+            model=SimpleNamespace(data_parallel_degree=1),
+            runtime=SimpleNamespace(
+                max_batch_input_tokens=8,
+                ep_size=ep_size,
+                ep_use_allreduce=False,
+            ),
+        ),
+        weights=object(),
+        adapter=None,
+        kv_params=SimpleNamespace(devices=[DeviceRef.CPU()]),
+        max_seq_len=16,
+        max_batch_total_tokens=32,
+        huggingface_config=_HF_CONFIG,
+        return_logits=ReturnLogits.VARIABLE,
+        return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+        start_ep=started.append,
+    )
+
+
+def test_a_composed_decoder_completes_its_config_as_serving_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    weight = np.zeros(2, dtype=np.float32)
+    monkeypatch.setattr(
+        "max.pipelines.lib.module_registration.parse_state_dict_from_weights",
+        lambda *args, **kwargs: {"scale.weight": weight},
+    )
+    model = module_pipeline_model(
+        TargetConfig, ((GraphRole.DECODER, MeshDecoder),), None
+    )
+    started: list[EPConfig] = []
+    context = _target_context(started, ep_size=2)
+    builder = RegisteredDecoderBuilder(model)
+    module, config = builder.build_module(context)
+    assert isinstance(module, MeshDecoder) and module.config is config
+    assert module.mesh.axis_names == ("tp",)
+    assert module.mesh.devices == (CPU(),)
+    assert isinstance(config, TargetConfig) and config.finalized
+    assert config.kv_params is context.kv_params
+    assert config.outputs == ModelOutputConfig(
+        return_logits=ReturnLogits.VARIABLE,
+        return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+    )
+    # Expert parallelism starts through the caller, which shares it.
+    assert started == [_EP]
+    assert config.runtime is not None
+    assert config.runtime.ep is _EP
+    assert config.runtime.max_batch_total_tokens == 32
+    assert builder.checkpoint_weights(context, config) == {
+        "scale.weight": weight
+    }
+    assert builder.checkpoint_weights(context, config) == {}
+
+
+def test_a_composed_decoder_takes_no_expert_parallelism_unasked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "max.pipelines.lib.module_registration.parse_state_dict_from_weights",
+        lambda *args, **kwargs: {},
+    )
+    model = module_pipeline_model(
+        TargetConfig, ((GraphRole.DECODER, MeshDecoder),), None
+    )
+    started: list[EPConfig] = []
+    _, config = RegisteredDecoderBuilder(model).build_module(
+        _target_context(started, ep_size=1)
+    )
+    assert started == []
+    assert config.runtime is not None and config.runtime.ep is None
+
+
+@pytest.mark.parametrize("decoder", [VisionDecoder, StatefulDecoder])
+def test_a_composed_decoder_refuses_inputs_it_would_not_get(
+    decoder: type[Module[..., Any]],
+) -> None:
+    model: Any = SimpleNamespace(decoder_cls=decoder)
+    with pytest.raises(NotImplementedError, match="composed module"):
+        RegisteredDecoderBuilder(model).build_module(
+            _target_context([], ep_size=1)
+        )
