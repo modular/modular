@@ -2185,8 +2185,8 @@ MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   uint64_t rawCompletePos =
       completeLoc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
-  return MojoParserContext::codeComplete(*buffer, rawCompletePos, &mlirContext,
-                                         getCompilationOptions());
+  return KGEN::Mojo::codeComplete(*buffer, rawCompletePos, &mlirContext,
+                                  getCompilationOptions());
 }
 
 //===----------------------------------------------------------------------===//
@@ -2233,8 +2233,8 @@ MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
   // Query the mojo parser for potential help results.
   uint64_t rawPos = loc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
-  return MojoParserContext::signatureHelp(*buffer, rawPos, &mlirContext,
-                                          getCompilationOptions());
+  return KGEN::Mojo::signatureHelp(*buffer, rawPos, &mlirContext,
+                                   getCompilationOptions());
 }
 
 //===----------------------------------------------------------------------===//

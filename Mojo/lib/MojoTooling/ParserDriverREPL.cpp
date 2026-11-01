@@ -1106,7 +1106,7 @@ MojoParserContext::codeCompleteREPLExpression(
   // Run completion in the cached context. Each request adds a new module, but
   // lastResolvedDecl always points to the last *real* REPL module, so stale
   // completion modules are harmless.
-  auto results = MojoParserContext::codeCompleteInContext(
+  auto results = Mojo::codeCompleteInContext(
       *cache.context, llvm::MemoryBufferRef(wrappedExprText, bufferIdentifier),
       completionPosition, [&](int fileId) {
         const auto *buf = cache.context->getSourceMgr().getMemoryBuffer(fileId);
@@ -1139,7 +1139,7 @@ MojoParserContext::signatureHelpREPLExpression(
       prepareCompletionExpr(position, exprText, *locMapper.exprMappers.back(),
                             replVariables, !cache.lastResolvedDecl);
 
-  auto result = MojoParserContext::signatureHelpInContext(
+  auto result = Mojo::signatureHelpInContext(
       *cache.context, llvm::MemoryBufferRef(wrappedExprText, bufferIdentifier),
       position, [&](int fileId) {
         const auto *buf = cache.context->getSourceMgr().getMemoryBuffer(fileId);

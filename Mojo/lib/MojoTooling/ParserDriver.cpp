@@ -16,7 +16,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
@@ -109,18 +108,6 @@ const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
 
 const FrontendOptions &MojoParserContext::getFrontendOptions() {
   return impl->sharedState.frontendOptions;
-}
-
-ASTType MojoParserContext::concretizeType(ASTType base,
-                                          ArrayRef<TypedAttr> params,
-                                          ASTType type) {
-  KGEN::ParameterEvaluator evaluator(
-      cast<StructASTDecl>(base.getDecl(getSharedState()))
-          ->getOp()
-          .getInputParams(),
-      params);
-
-  return ASTType(evaluator.replace(evaluator.getReboundType(type.mlirType)));
 }
 
 //===----------------------------------------------------------------------===//

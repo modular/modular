@@ -544,15 +544,16 @@ static void parseCompletionImpl(
 //===----------------------------------------------------------------------===//
 // Code Completion
 
-std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
-    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-    MLIRContext *context, const KGEN::CompilationOptions &options) {
+std::vector<CodeCompletionResult>
+M::KGEN::Mojo::codeComplete(llvm::MemoryBufferRef buffer,
+                            uint64_t completionPosition, MLIRContext *context,
+                            const KGEN::CompilationOptions &options) {
   return codeComplete(
       buffer, completionPosition, context, options,
       [](MojoParserContext &ctx, int fileID) { ctx.parseFileForLSP(fileID); });
 }
 
-std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
+std::vector<CodeCompletionResult> M::KGEN::Mojo::codeComplete(
     llvm::MemoryBufferRef buffer, uint64_t completionPosition,
     MLIRContext *context, const KGEN::CompilationOptions &options,
     function_ref<void(MojoParserContext &, int)> parserCallback,
@@ -569,15 +570,15 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
 // Signature Help
 
 std::optional<SignatureHelpResult>
-MojoParserContext::signatureHelp(llvm::MemoryBufferRef buffer,
-                                 uint64_t position, MLIRContext *context,
-                                 const KGEN::CompilationOptions &options) {
+M::KGEN::Mojo::signatureHelp(llvm::MemoryBufferRef buffer, uint64_t position,
+                             MLIRContext *context,
+                             const KGEN::CompilationOptions &options) {
   return signatureHelp(
       buffer, position, context, options,
       [](MojoParserContext &ctx, int fileID) { ctx.parseFileForLSP(fileID); });
 }
 
-std::optional<SignatureHelpResult> MojoParserContext::signatureHelp(
+std::optional<SignatureHelpResult> M::KGEN::Mojo::signatureHelp(
     llvm::MemoryBufferRef buffer, uint64_t completionPosition,
     MLIRContext *context, const KGEN::CompilationOptions &options,
     function_ref<void(MojoParserContext &, int)> parserCallback,
@@ -623,7 +624,7 @@ static void parseCompletionInContextImpl(
   parserCallback(bufId);
 }
 
-std::vector<CodeCompletionResult> MojoParserContext::codeCompleteInContext(
+std::vector<CodeCompletionResult> M::KGEN::Mojo::codeCompleteInContext(
     MojoParserContext &context, llvm::MemoryBufferRef buffer,
     uint64_t completionPosition, function_ref<void(int)> parserCallback) {
   std::vector<CodeCompletionResult> results;
@@ -633,7 +634,7 @@ std::vector<CodeCompletionResult> MojoParserContext::codeCompleteInContext(
   return results;
 }
 
-std::optional<SignatureHelpResult> MojoParserContext::signatureHelpInContext(
+std::optional<SignatureHelpResult> M::KGEN::Mojo::signatureHelpInContext(
     MojoParserContext &context, llvm::MemoryBufferRef buffer, uint64_t position,
     function_ref<void(int)> parserCallback) {
   SignatureHelpResult result;
