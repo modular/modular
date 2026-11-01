@@ -619,6 +619,23 @@ struct SIMD[dtype: DType, length: SIMDLength](
         `>`,
     ]
 
+    comptime _storage_bit_width = size_of[Self.dtype]() * 8
+    """The number of bits used to store each element."""
+
+    comptime _to_int_vector = (
+        __mlir_deferred_type[
+            `i`, +Self._storage_bit_width.__mlir_index__()
+        ] if Self.length
+        == 1 else __mlir_deferred_type[
+            `vector<`,
+            +Self.length._mlir_value,
+            `xi`,
+            +Self._storage_bit_width.__mlir_index__(),
+            `>`,
+        ]
+    )
+    """The builtin integer MLIR type that represents this SIMD's storage."""
+
     var _mlir_value: Self._mlir_type
     """The underlying storage for the vector."""
 
