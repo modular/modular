@@ -13,11 +13,13 @@
 """DeepSeek-V3.2 sparse-attention mixture-of-experts architecture (ModuleV3)."""
 
 from .arch import deepseekV3_2_modulev3_arch
+from .deepseekV3_2 import DeepseekV3_2Decoder
 from .model import DeepseekV3_2Model
 from .model_config import DeepseekV3_2Config
 
 __all__ = [
     "DeepseekV3_2Config",
+    "DeepseekV3_2Decoder",
     "DeepseekV3_2Model",
     "deepseekV3_2_modulev3_arch",
 ]
