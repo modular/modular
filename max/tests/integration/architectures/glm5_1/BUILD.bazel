@@ -92,6 +92,24 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_mtp_draft",
+    srcs = ["test_mtp_draft.py"],
+    ignore_extra_deps = [
+        "//max/python/max/pipelines",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "test_chat_template",
     srcs = ["test_chat_template.py"],
     data = [
@@ -135,6 +153,7 @@ modular_py_test(
             "test_format_spec.py",
             "test_memory_planner.py",
             "test_modulev3_nvfp4_kv.py",
+            "test_mtp_draft.py",
             "test_tokenizer.py",
             "test_tool_parser.py",
         ],

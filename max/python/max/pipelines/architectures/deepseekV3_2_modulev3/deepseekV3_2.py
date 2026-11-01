@@ -79,6 +79,44 @@ def mask_padded_tail(
     return logits + F.cast(F.concat([keep, drop]), logits.dtype)
 
 
+def rotary_embedding(config: DeepseekV3_2Config) -> RotaryEmbedding:
+    """Returns the rotary embedding the config's layers attend with."""
+    if config.rope_scaling is not None:
+        scaling_params = DeepseekYarnRopeScalingParams(
+            scaling_factor=config.rope_scaling["factor"],
+            original_max_position_embeddings=config.rope_scaling[
+                "original_max_position_embeddings"
+            ],
+            beta_fast=config.rope_scaling["beta_fast"],
+            beta_slow=config.rope_scaling["beta_slow"],
+            mscale=config.rope_scaling["mscale"],
+            mscale_all_dim=config.rope_scaling["mscale_all_dim"],
+        )
+        return DeepseekYarnRotaryEmbedding(
+            dim=config.qk_rope_head_dim,
+            n_heads=config.num_attention_heads,
+            theta=config.rope_theta,
+            max_seq_len=config.max_position_embeddings,
+            device=config.devices[0].to_device(),
+            interleaved=config.rope_interleave,
+            scaling_params=scaling_params,
+        )
+    # GLM-5.x declares rope_type "default"; only DeepSeek proper uses
+    # YaRN. Sized by ``max_seq_len`` rather than the model's
+    # ``max_position_embeddings`` (1M for GLM): plain RoPE frequencies
+    # depend only on position, so the shorter table is equivalent and
+    # avoids materializing hundreds of MB of unused rows.
+    return RotaryEmbedding(
+        dim=config.qk_rope_head_dim,
+        n_heads=config.num_attention_heads,
+        theta=config.rope_theta,
+        max_seq_len=config.max_seq_len,
+        device=config.devices[0].to_device(),
+        head_dim=config.qk_rope_head_dim,
+        interleaved=config.rope_interleave,
+    )
+
+
 class DeepseekV3_2TextModel(
     Module[
         [
@@ -108,42 +146,7 @@ class DeepseekV3_2TextModel(
     ) -> None:
         self.ep_batch_manager = ep_batch_manager
 
-        self.rope: RotaryEmbedding
-        if config.rope_scaling is not None:
-            scaling_params = DeepseekYarnRopeScalingParams(
-                scaling_factor=config.rope_scaling["factor"],
-                original_max_position_embeddings=config.rope_scaling[
-                    "original_max_position_embeddings"
-                ],
-                beta_fast=config.rope_scaling["beta_fast"],
-                beta_slow=config.rope_scaling["beta_slow"],
-                mscale=config.rope_scaling["mscale"],
-                mscale_all_dim=config.rope_scaling["mscale_all_dim"],
-            )
-            self.rope = DeepseekYarnRotaryEmbedding(
-                dim=config.qk_rope_head_dim,
-                n_heads=config.num_attention_heads,
-                theta=config.rope_theta,
-                max_seq_len=config.max_position_embeddings,
-                device=config.devices[0].to_device(),
-                interleaved=config.rope_interleave,
-                scaling_params=scaling_params,
-            )
-        else:
-            # GLM-5.x declares rope_type "default"; only DeepSeek proper uses
-            # YaRN. Sized by ``max_seq_len`` rather than the model's
-            # ``max_position_embeddings`` (1M for GLM): plain RoPE frequencies
-            # depend only on position, so the shorter table is equivalent and
-            # avoids materializing hundreds of MB of unused rows.
-            self.rope = RotaryEmbedding(
-                dim=config.qk_rope_head_dim,
-                n_heads=config.num_attention_heads,
-                theta=config.rope_theta,
-                max_seq_len=config.max_seq_len,
-                device=config.devices[0].to_device(),
-                head_dim=config.qk_rope_head_dim,
-                interleaved=config.rope_interleave,
-            )
+        self.rope = rotary_embedding(config)
 
         # Override the tensor parallel axis if data parallelism is enabled.
         tp_axis = DP if config.data_parallel_degree > 1 else None
