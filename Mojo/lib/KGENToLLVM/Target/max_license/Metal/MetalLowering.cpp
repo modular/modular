@@ -148,26 +148,22 @@ bool doesMetalRequireAIRIntrinsicForCast(POP::CastOp cast) {
 /// the GPU machine code with XPC_ERROR_CONNECTION_INTERRUPTED. It does support
 /// `llvm.rint`, which rounds using the current FP rounding mode --
 /// round-to-nearest-even by default, matching `pop.round`'s documented
-/// banker's-rounding semantics, so the result is numerically identical.
-/// Registered with a higher benefit than the generic `ConvertPOPRound` so it
-/// wins on Metal.
-struct MetalRoundToLLVM : public ConvertPOPToLLVMPattern<POP::RoundOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(POP::RoundOp op, POP::RoundOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (!dtype.isFloat()) {
-      rewriter.replaceOp(op, adaptor.getOperand());
-      return success();
-    }
-    Type type = this->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, type, rewriter.getStringAttr("llvm.rint"),
-        SmallVector<Value>{adaptor.getOperand()});
+/// banker's-rounding semantics, so the result is numerically identical. This
+/// is the explicit Metal override for the generic `pop.round` lowering.
+LogicalResult lowerMetalRound(POP::RoundOp op, Value operand,
+                              POPToLLVMTypeConverter &converter,
+                              POPLoweringBuilder &builder) {
+  KGENDType dtype = *op.getType().getResolvedDType();
+  if (!dtype.isFloat()) {
+    builder.replaceOp(op, operand);
     return success();
   }
-};
+  Type type = converter.convertType(op.getType());
+  builder.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+      op, type, builder.getStringAttr("llvm.rint"),
+      SmallVector<Value>{operand});
+  return success();
+}
 
 /// Takes both spellings: `llvm.air.wg.barrier` and `air.wg.barrier`.
 static bool isAIRBarrierName(StringRef name) {
@@ -1079,10 +1075,15 @@ public:
                mlir::cast<mlir::StringAttr>(intrinsic.getIntrin()).getValue());
   }
 
-  void populateLowerPOPToLLVMPatterns(mlir::RewritePatternSet &patterns,
-                                      mlir::LLVMTypeConverter &converter,
-                                      TargetInfoAttr target) const override {
-    patterns.add<MetalRoundToLLVM>(converter, mlir::PatternBenefit(2));
+  LogicalResult
+  lowerFunctionLocalPOPToLLVM(Operation *op, ValueRange operands,
+                              mlir::LLVMTypeConverter &converter,
+                              POPLoweringBuilder &builder) const override {
+    auto round = dyn_cast<POP::RoundOp>(op);
+    if (!round)
+      return failure();
+    auto &popConverter = static_cast<POPToLLVMTypeConverter &>(converter);
+    return lowerMetalRound(round, operands.front(), popConverter, builder);
   }
 
   void populateLowerGlobalPOPToLLVMPatterns(

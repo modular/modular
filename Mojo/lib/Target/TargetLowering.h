@@ -27,12 +27,16 @@
 #include "Support/MDialect/MAttrs.h"
 #include "Target/TargetTraits.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/Types.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include <utility>
 
 #include <memory>
 #include <optional>
@@ -61,15 +65,45 @@ class DIType;
 
 namespace M::KGEN {
 
+/// Builder used by eager function-local POP lowering. Replacements are
+/// recorded by the owning pass, which erases source operations later.
+class POPLoweringBuilder : public mlir::OpBuilder {
+public:
+  POPLoweringBuilder(
+      mlir::MLIRContext *context,
+      llvm::function_ref<void(mlir::Operation *, mlir::ValueRange)> replace,
+      llvm::function_ref<void(mlir::Operation *)> erase)
+      : mlir::OpBuilder(context), replace(replace), erase(erase) {}
+
+  void replaceOp(mlir::Operation *op, mlir::ValueRange values) {
+    replace(op, values);
+  }
+  void replaceOp(mlir::Operation *op, mlir::Value value) { replace(op, value); }
+  void replaceOp(mlir::Operation *op, mlir::Operation *replacement) {
+    replace(op, replacement->getResults());
+  }
+  void eraseOp(mlir::Operation *op) { erase(op); }
+
+  template <typename OpTy, typename... Args>
+  OpTy replaceOpWithNewOp(mlir::Operation *op, Args &&...args) {
+    OpTy replacement =
+        OpTy::create(*this, op->getLoc(), std::forward<Args>(args)...);
+    replace(op, replacement->getResults());
+    return replacement;
+  }
+
+private:
+  llvm::function_ref<void(mlir::Operation *, mlir::ValueRange)> replace;
+  llvm::function_ref<void(mlir::Operation *)> erase;
+};
+
 /// Per-target policy for the KGEN/POP -> LLVM-dialect lowering, dispatched by
-/// triple via `TargetLoweringRegistry`. A target contributes its own rewrite
-/// patterns (the same way a compiler plugin already does); the default
-/// contributes none (host-like).
+/// triple via `TargetLoweringRegistry`. A target may directly override
+/// function-local POP lowering and contribute patterns for module-scoped
+/// lowering; the defaults contribute neither (host-like).
 ///
 /// As the inline per-target branches in the lowering passes are migrated, the
-/// per-target logic moves into target-owned patterns registered through these
-/// hooks, and the passes just call
-/// `TargetLoweringRegistry::lookup(triple)->populate...`.
+/// per-target logic moves behind these hooks.
 class TargetLowering {
 public:
   virtual ~TargetLowering() = default;
@@ -100,16 +134,15 @@ public:
     return matches(triple) ? this : nullptr;
   }
 
-  /// Contributes this target's patterns to the POP -> LLVM lowering
-  /// (LowerPOPToLLVM): e.g. casts that lower to target-specific ISA intrinsics.
-  /// The default contributes none. Mirrors the plugin's
-  /// `populateLowerPOPToLLVMPatterns`, so a plugin is just another target
-  /// lowering. Called after the generic patterns; target patterns use a higher
-  /// benefit so they win for the ops they handle.
-  virtual void
-  populateLowerPOPToLLVMPatterns(mlir::RewritePatternSet &patterns,
-                                 mlir::LLVMTypeConverter &converter,
-                                 TargetInfoAttr target) const {}
+  /// Eagerly lowers a function-local POP operation when this target overrides
+  /// the generic lowering. Returns failure when the generic lowering should be
+  /// used.
+  virtual mlir::LogicalResult
+  lowerFunctionLocalPOPToLLVM(mlir::Operation *op, mlir::ValueRange operands,
+                              mlir::LLVMTypeConverter &converter,
+                              POPLoweringBuilder &builder) const {
+    return mlir::failure();
+  }
 
   /// Contributes this target's patterns to the global (module-scoped) POP ->
   /// LLVM lowering (LowerGlobalPOPToLLVM), i.e. lowerings that create or query

@@ -11,6 +11,14 @@ kgen.func export @test_async_copy_kernel(%arg0: !llvm.ptr<7>, %arg1: !llvm.ptr, 
   hlcf.return
 }
 
+// CHECK-LABEL: define internal void @test_predicated_mbarrier_init
+// CHECK: call void asm sideeffect
+// CHECK-SAME: i1
+kgen.func @test_predicated_mbarrier_init(%barrier: !llvm.ptr<3>, %count: i32, %pred: i1) {
+  nvvm.mbarrier.init %barrier, %count, predicate = %pred : !llvm.ptr<3>, i32, i1
+  hlcf.return
+}
+
 // CHECK-LABEL: @abs_simd
 kgen.func @abs_simd(
   %arg0: !kgen.scalar<f16>, %arg1: !kgen.simd<8, f16>,

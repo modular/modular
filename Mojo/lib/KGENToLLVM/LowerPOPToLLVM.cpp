@@ -33,6 +33,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Dominance.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/Attributes.h"
@@ -54,72 +55,10 @@ namespace {
 
 /// POP dialect fastmath flags match the LLVM ones.
 static LLVM::FastmathFlagsAttr convertFastmathFlags(FastmathFlags fmf,
-                                                    DirectRewriter &rewriter) {
-  return rewriter.getAttr<LLVM::FastmathFlagsAttr>(
+                                                    OpBuilder &builder) {
+  return builder.getAttr<LLVM::FastmathFlagsAttr>(
       static_cast<LLVM::FastmathFlags>(fmf));
 }
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPNeg
-//===----------------------------------------------------------------------===//
-
-/// Convert an integer pop.neg(x) -> 0 - x
-/// and float pop.neg(x) -> llvm.fneg(x)
-struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (!dtype.isInt() && !dtype.isIndex() && !dtype.isUIndex()) {
-      rewriter.replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand(),
-                                                fastmathFlagsOrDefault(op));
-      return success();
-    }
-
-    Type type = adaptor.getOperand().getType();
-    Value zero;
-    if (auto vec = dyn_cast<VectorType>(type)) {
-      auto intType = dyn_cast<IntegerType>(vec.getElementType());
-      if (!intType)
-        return op.emitError("could not handle integer type");
-      auto apZero = APInt::getZero(intType.getWidth());
-      zero = LLVM::ConstantOp::create(rewriter, op.getLoc(),
-                                      DenseIntElementsAttr::get(vec, apZero));
-    } else {
-      zero = LLVM::ConstantOp::create(rewriter, op.getLoc(), type, 0);
-    }
-
-    rewriter.replaceOpWithNewOp<LLVM::SubOp>(op, zero, adaptor.getOperand());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPFloor
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPFloor : public ConvertPOPToLLVMPattern<FloorOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(FloorOp op, FloorOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (!dtype.isFloat()) {
-      rewriter.replaceOp(op, adaptor.getOperand());
-      return success();
-    }
-    Type type = this->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, type, rewriter.getStringAttr("llvm.floor"),
-        SmallVector<Value>{adaptor.getOperand()});
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPFloorDiv
-//===----------------------------------------------------------------------===//
 
 /// Returns the divisor of `op`, at `bitWidth` bits, when every lane is the same
 /// integer constant. The divisor is still a `kgen.param.constant` if it has not
@@ -255,8 +194,8 @@ static std::optional<FloorDivMagic> computeFloorDivMagic(const APInt &divisor) {
 }
 
 /// Creates an integer constant of `type`, splatted if `type` is a vector.
-static Value createIntConstant(DirectRewriter &rewriter, Location loc,
-                               Type type, const APInt &value) {
+static Value createIntConstant(OpBuilder &rewriter, Location loc, Type type,
+                               const APInt &value) {
   if (auto vecType = dyn_cast<VectorType>(type)) {
     SmallVector<APInt> values(vecType.getNumElements(), value);
     return LLVM::ConstantOp::create(
@@ -287,7 +226,7 @@ static Value createIntConstant(DirectRewriter &rewriter, Location loc,
 ///   %hi   = ashr i2W %p, W
 ///   %q    = trunc i2W %hi to iW
 ///   %q    = ashr iW %q, S-W          ; only when S > W
-static Value emitFloorDivByConstant(DirectRewriter &rewriter, Location loc,
+static Value emitFloorDivByConstant(OpBuilder &rewriter, Location loc,
                                     Type type, Value lhs,
                                     const FloorDivMagic &magic) {
   unsigned width = magic.multiplier.getBitWidth();
@@ -342,659 +281,6 @@ static Value emitFloorDivByConstant(DirectRewriter &rewriter, Location loc,
   return result;
 }
 
-struct ConvertPOPFloorDiv : public ConvertPOPToLLVMPattern<FloorDivOp> {
-  ConvertPOPFloorDiv(mlir::LLVMTypeConverter &typeConverter,
-                     const TargetLowering *lowering)
-      : ConvertPOPToLLVMPattern(typeConverter), lowering(lowering) {}
-
-  LogicalResult matchAndRewrite(FloorDivOp op, FloorDivOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    auto loc = op.getLoc();
-    Type type = this->convertType(op.getType());
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isFloat()) {
-      auto fdiv = LLVM::FDivOp::create(rewriter, loc, type, adaptor.getLhs(),
-                                       adaptor.getRhs());
-      rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-          op, type, rewriter.getStringAttr("llvm.floor"),
-          SmallVector<Value>{fdiv});
-      return success();
-    }
-
-    if (dtype.isUInt()) {
-      rewriter.replaceOpWithNewOp<LLVM::UDivOp>(
-          op, type, SmallVector<Value>{adaptor.getLhs(), adaptor.getRhs()});
-      return success();
-    }
-
-    // The reference implementation covers 8- to 64-bit integers; wider ones
-    // would need a multiply wider than 128 bits.
-    auto intType = dyn_cast<IntegerType>(getElementTypeOrSelf(type));
-    if (intType && intType.getWidth() >= 8 && intType.getWidth() <= 64 &&
-        llvm::isPowerOf2_32(intType.getWidth()) &&
-        canWidenProduct(intType.getWidth())) {
-      if (std::optional<APInt> divisor = getSplatConstantDivisor(
-              op, adaptor.getRhs(), intType.getWidth())) {
-        if (std::optional<FloorDivMagic> magic =
-                computeFloorDivMagic(*divisor)) {
-          rewriter.replaceOp(op,
-                             emitFloorDivByConstant(rewriter, loc, type,
-                                                    adaptor.getLhs(), *magic));
-          return success();
-        }
-      }
-    }
-
-    // For signed integers, emit the LLVM IR corresponding to:
-    // int floordiv(int a, int b) {
-    //   int d = a / b;
-    //   return d * b == a ? d : d - ((a < 0) ^ (b < 0));
-    // }
-    // ... which, when turned into optimized LLVM IR, is:
-    //   %sdiv = sdiv i32 %a, %b
-    //   %mul = mul nsw i32 %sdiv, %b
-    //   %icmp = icmp eq i32 %mul, %a
-    //   %xorOp = xor i32 %b, %a
-    //   %ashr = ashr i32 %xorOp, 31
-    //   %sel = select i1 %icmp, i32 0, i32 %ashr
-    //   %ret = add i32 %sdiv, %sel
-    auto sdiv = LLVM::SDivOp::create(rewriter, loc, type, adaptor.getLhs(),
-                                     adaptor.getRhs());
-    auto mul = LLVM::MulOp::create(rewriter, loc, type, sdiv, adaptor.getRhs());
-    auto icmp = LLVM::ICmpOp::create(rewriter, loc, LLVM::ICmpPredicate::eq,
-                                     mul, adaptor.getLhs());
-    auto xorOp = LLVM::XOrOp::create(rewriter, loc, type, adaptor.getLhs(),
-                                     adaptor.getRhs());
-
-    Value signBitShift, zero;
-    if (auto vecType = dyn_cast<VectorType>(type)) {
-      uint64_t size = *op.getType().getResolvedSize();
-      Type eltTy = vecType.getElementType();
-      unsigned eltNumBits = eltTy.getIntOrFloatBitWidth();
-      SmallVector<APInt> zeroValues{size, APInt::getZero(eltNumBits)};
-      SmallVector<APInt> signBitShiftValues{size,
-                                            APInt(eltNumBits, eltNumBits - 1)};
-      auto zeroAttrs =
-          cast<TypedAttr>(IntArrayElementsAttr::get(vecType, zeroValues));
-      auto signBitShiftAttrs = cast<TypedAttr>(
-          IntArrayElementsAttr::get(vecType, signBitShiftValues));
-      zero = LLVM::ConstantOp::create(rewriter, loc, zeroAttrs);
-      signBitShift = LLVM::ConstantOp::create(rewriter, loc, signBitShiftAttrs);
-    } else {
-      assert(type.isIntOrFloat() && "Unexpected type in floordiv");
-      zero = LLVM::ConstantOp::create(rewriter, op.getLoc(),
-                                      rewriter.getIntegerAttr(type, 0));
-      signBitShift = LLVM::ConstantOp::create(
-          rewriter, op.getLoc(),
-          rewriter.getIntegerAttr(type, type.getIntOrFloatBitWidth() - 1));
-    }
-
-    auto ashr = LLVM::AShrOp::create(rewriter, loc, type, xorOp, signBitShift);
-
-    auto sel = LLVM::SelectOp::create(rewriter, loc, type, icmp, zero, ashr);
-
-    rewriter.replaceOpWithNewOp<LLVM::AddOp>(op, type,
-                                             SmallVector<Value>{sdiv, sel});
-    return success();
-  }
-
-private:
-  /// Returns whether the target can compute a `2 * width`-bit product, the
-  /// widened multiply that the constant-divisor sequence needs. Dividing a
-  /// 64-bit dividend widens to `i128`, which Apple's GPU compiler rejects, so
-  /// such targets keep the generic sequence.
-  bool canWidenProduct(unsigned width) const {
-    return 2 * width <= 64 || !lowering || lowering->supportsI128();
-  }
-
-  /// This target's lowering, or null if none was registered for the triple.
-  const TargetLowering *lowering;
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPCeil
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPCeil : public ConvertPOPToLLVMPattern<CeilOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(CeilOp op, CeilOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (!dtype.isFloat()) {
-      rewriter.replaceOp(op, adaptor.getOperand());
-      return success();
-    }
-    Type type = this->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, type, rewriter.getStringAttr("llvm.ceil"),
-        SmallVector<Value>{adaptor.getOperand()});
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPTrunc
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPTrunc : public ConvertPOPToLLVMPattern<TruncOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(TruncOp op, TruncOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (!dtype.isFloat()) {
-      rewriter.replaceOp(op, adaptor.getOperand());
-      return success();
-    }
-    Type type = this->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, type, rewriter.getStringAttr("llvm.trunc"),
-        SmallVector<Value>{adaptor.getOperand()});
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPRound
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPRound : public ConvertPOPToLLVMPattern<RoundOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(RoundOp op, RoundOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (!dtype.isFloat()) {
-      rewriter.replaceOp(op, adaptor.getOperand());
-      return success();
-    }
-    Type type = this->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, type, rewriter.getStringAttr("llvm.roundeven"),
-        SmallVector<Value>{adaptor.getOperand()});
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPAbs
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPAbs : public ConvertPOPToLLVMPattern<AbsOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isUInt() || dtype.isBool()) {
-      rewriter.replaceOp(op, adaptor.getOperand());
-      return success();
-    }
-    Type type = this->convertType(op.getType());
-    if (!dtype.isFloat()) {
-      // As per LLVM, if is_int_min_poison == 0, then if the operand is INT_MIN
-      // the result is also INT_MIN.
-      auto isIntMinPoison = LLVM::ConstantOp::create(
-          rewriter, op.getLoc(), rewriter.getIntegerType(1), false);
-      rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-          op, type, rewriter.getStringAttr("llvm.abs"),
-          SmallVector<Value>{adaptor.getOperand(), isIntMinPoison});
-      return success();
-    }
-
-    // Else, just use the regular LLVM intrinsic
-    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, type, rewriter.getStringAttr("llvm.fabs"),
-        SmallVector<Value>{adaptor.getOperand()});
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPShr
-//===----------------------------------------------------------------------===//
-
-/// Lower to `llvm.ashr` if the result dtype is signed and `llvm.lshr`
-/// otherwise.
-struct ConvertPOPShr : public ConvertPOPToLLVMPattern<ShrOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(ShrOp op, ShrOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isSInt() || dtype.isIndex())
-      rewriter.replaceOpWithNewOp<LLVM::AShrOp>(op, adaptor.getLhs(),
-                                                adaptor.getRhs());
-    else
-      rewriter.replaceOpWithNewOp<LLVM::LShrOp>(op, adaptor.getLhs(),
-                                                adaptor.getRhs());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-//===----------------------------------------------------------------------===//
-
-/// Convert integer pop.fma(x, y, z) -> x * y + z
-/// and float pop.fma(x, y, a) -> llvm.intr.fma(x, y, z)
-struct ConvertPOPFMA : public ConvertPOPToLLVMPattern<FMAOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(FMAOp op, FMAOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isInt() || dtype.isIndex() || dtype.isUIndex()) {
-      auto lhs = LLVM::MulOp::create(rewriter, op.getLoc(), adaptor.getA(),
-                                     adaptor.getB());
-      rewriter.replaceOpWithNewOp<LLVM::AddOp>(op, lhs, adaptor.getC());
-    } else {
-      rewriter.replaceOpWithNewOp<LLVM::FMAOp>(
-          op, adaptor.getA(), adaptor.getB(), adaptor.getC(),
-          convertFastmathFlags(op.getFastmathFlags(), rewriter));
-    }
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPCmp
-//===----------------------------------------------------------------------===//
-
-class ConvertPOPCmp : public ConvertPOPToLLVMPattern<CmpOp> {
-public:
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(CmpOp op, CmpOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getLhs().getType().getResolvedDType();
-    if (dtype.isBool() || dtype.isInt() || dtype.isIndex() ||
-        dtype.isUIndex() || dtype.isAddress()) {
-      rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(
-          op, getICmpPredicate(op.getPred(), dtype.isSInt()), adaptor.getLhs(),
-          adaptor.getRhs());
-    } else {
-      assert(dtype.isFloat());
-      Type i1Type = rewriter.getI1Type();
-      if (auto simd = dyn_cast<SIMDType>(op.getLhs().getType())) {
-        auto size = *simd.getResolvedSize();
-        // Vectors of size 1 should remain scalars
-        if (size != 1)
-          i1Type = VectorType::get(size, i1Type);
-      }
-      rewriter.replaceOpWithNewOp<LLVM::FCmpOp>(
-          op, i1Type, getFCmpPredicate(op.getPred()), adaptor.getLhs(),
-          adaptor.getRhs(), fastmathFlagsOrDefault(op));
-    }
-    return success();
-  }
-
-private:
-  /// Convert the integer comparison predicate to the LLVM predicate based on
-  /// the signedness.
-  static LLVM::ICmpPredicate getICmpPredicate(CmpPredicate pred,
-                                              bool isSigned) {
-    switch (pred) {
-    case CmpPredicate::EQ:
-      return LLVM::ICmpPredicate::eq;
-    case CmpPredicate::NE:
-      return LLVM::ICmpPredicate::ne;
-    case CmpPredicate::LT:
-      return isSigned ? LLVM::ICmpPredicate::slt : LLVM::ICmpPredicate::ult;
-    case CmpPredicate::GT:
-      return isSigned ? LLVM::ICmpPredicate::sgt : LLVM::ICmpPredicate::ugt;
-    case CmpPredicate::LE:
-      return isSigned ? LLVM::ICmpPredicate::sle : LLVM::ICmpPredicate::ule;
-    case CmpPredicate::GE:
-      return isSigned ? LLVM::ICmpPredicate::sge : LLVM::ICmpPredicate::uge;
-    }
-    llvm_unreachable("unknown predicate");
-  }
-
-  /// Convert the float comparison predicate to the LLVM predicate based on the
-  /// signedness.
-  static LLVM::FCmpPredicate getFCmpPredicate(CmpPredicate pred) {
-    switch (pred) {
-    case CmpPredicate::EQ:
-      return LLVM::FCmpPredicate::oeq;
-    case CmpPredicate::NE:
-      return LLVM::FCmpPredicate::une;
-    case CmpPredicate::LT:
-      return LLVM::FCmpPredicate::olt;
-    case CmpPredicate::GT:
-      return LLVM::FCmpPredicate::ogt;
-    case CmpPredicate::LE:
-      return LLVM::FCmpPredicate::ole;
-    case CmpPredicate::GE:
-      return LLVM::FCmpPredicate::oge;
-    }
-    llvm_unreachable("unknown predicate");
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPCast
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(CastOp op, CastOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType inDType = *op.getInput().getType().getResolvedDType();
-    KGENDType outDType = *op.getOutput().getType().getResolvedDType();
-
-    if ((inDType.isFloat() && inDType.getWidthInBits() <= 8) ||
-        (outDType.isFloat() && outDType.getWidthInBits() <= 8)) {
-      return op.emitError() << "illegal conversion";
-    }
-
-    int64_t inByteCount = getDTypeSizeInBytes(inDType);
-    int64_t outByteCount = getDTypeSizeInBytes(outDType);
-
-    // Select the element-wise cast to perform. LLVM integer types are signless,
-    // but the signedness semantics of the operation's input and output types
-    // affect which casts are selected. `bool` is `i1`.
-    StringRef opName;
-    if (inDType.isBool() || inDType.isInt() || inDType.isIndex() ||
-        inDType.isUIndex()) {
-      if (outDType.isBool() || outDType.isInt() || outDType.isIndex() ||
-          outDType.isUIndex()) {
-        // A bool should still become a cast as the bool is only 1 bit but
-        // appears as 1 byte here.
-        if (outByteCount > inByteCount || inDType.isBool()) {
-          // Sign or zero extend.
-          opName = inDType.isSInt() ? LLVM::SExtOp::getOperationName()
-                                    : LLVM::ZExtOp::getOperationName();
-        } else if (outByteCount < inByteCount || outDType.isBool()) {
-          // Truncate.
-          opName = LLVM::TruncOp::getOperationName();
-        }
-      } else {
-        // Cast from an integer to a float.
-        opName = inDType.isSInt() ? LLVM::SIToFPOp::getOperationName()
-                                  : LLVM::UIToFPOp::getOperationName();
-      }
-    } else if (outDType.isBool() || outDType.isInt() || outDType.isIndex() ||
-               outDType.isUIndex()) {
-      // Cast from a float to an integer.
-      opName = outDType.isSInt() ? LLVM::FPToSIOp::getOperationName()
-                                 : LLVM::FPToUIOp::getOperationName();
-    } else if (outByteCount > inByteCount) {
-      // Extend
-      opName = LLVM::FPExtOp::getOperationName();
-    } else if (outByteCount < inByteCount) {
-      // Truncate.
-      if (isFPTyLoweredAsInt(
-              getEquivalentFloatType(op.getContext(), outDType))) {
-        // Can't truncate a floating point number to a floating point number
-        // that's represented as an int (e.g., fp8 types).
-        return emitError(op.getLoc(),
-                         Twine("casts between " + inDType.getAsString() +
-                               " and " + outDType.getAsString() +
-                               " unsupported"));
-      }
-
-      opName = LLVM::FPTruncOp::getOperationName();
-    } else if (outDType != inDType) {
-      // FIXME: Unclear how to cast between `bf16` and `f16`.
-      return rewriter.notifyMatchFailure(
-          op, "casts between 'bf16' and 'f16' unsupported");
-    }
-
-    // If no cast was selected, this is a no-op conversion between equivalent
-    // types.
-    if (opName.empty()) {
-      rewriter.replaceOp(op, adaptor.getInput());
-      return success();
-    }
-
-    // Create the cast.
-    OperationState state(op.getLoc(), opName);
-    state.addOperands(adaptor.getInput());
-    state.addTypes(convertType(op.getOutput().getType()));
-    Operation *cast = rewriter.create(state);
-    rewriter.replaceOp(op, cast->getResults());
-    return success();
-  }
-
-private:
-  int64_t getDTypeSizeInBytes(KGENDType dtype) const {
-    if (dtype.isIndex() || dtype.isUIndex())
-      return getTypeConverter()->getIndexTypeBitwidth() / CHAR_BIT;
-    return dtype.getSizeInBytes();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPSIMDSelect
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPSIMDSelect : public ConvertPOPToLLVMPattern<SIMDSelectOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(SIMDSelectOp op, SIMDSelectOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
-        op, adaptor.getCondition(), adaptor.getTrueValue(),
-        adaptor.getFalseValue(), fastmathFlagsOrDefault(op));
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPSIMDSplat
-//===----------------------------------------------------------------------===//
-
-/// Convert a SIMD splat to an `insertelement` into an `undef` and then a
-/// zero-initialized `shufflevector`.
-struct ConvertPOPSIMDSplat : public ConvertPOPToLLVMPattern<SIMDSplatOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(SIMDSplatOp op, SIMDSplatOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    // If the vector is size 1, skip the shuffle.
-    if (op.getType().isScalar()) {
-      rewriter.replaceOp(op, adaptor.getScalar());
-      return success();
-    }
-
-    SIMDType simdType = op.getType();
-    int64_t size = *simdType.getResolvedSize();
-    Value undef =
-        LLVM::UndefOp::create(rewriter, op.getLoc(), convertType(simdType));
-    Value zero = LLVM::ConstantOp::create(rewriter, op.getLoc(),
-                                          rewriter.getI32IntegerAttr(0));
-    Value vector = LLVM::InsertElementOp::create(rewriter, op.getLoc(), undef,
-                                                 adaptor.getScalar(), zero);
-    rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
-        op, vector, undef, /*mask=*/SmallVector<int32_t>(size, 0));
-
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPSIMDInsertElement
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPSIMDInsertElement
-    : public ConvertPOPToLLVMPattern<SIMDInsertElementOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(SIMDInsertElementOp op,
-                                SIMDInsertElementOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    if (op.getVector().getType().isScalar()) {
-      // If the vector is size 1, return the value as is - it's a scalar.
-      rewriter.replaceOp(op, adaptor.getValue());
-      return success();
-    }
-    rewriter.replaceOpWithNewOp<LLVM::InsertElementOp>(
-        op, convertType(op.getType()), adaptor.getOperands());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPSIMDShuffle
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPSIMDShuffle : public ConvertPOPToLLVMPattern<SIMDShuffleOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(SIMDShuffleOp op, SIMDShuffleOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    auto mask = cast<POP::ArrayAttr>(adaptor.getMask());
-    SmallVector<int32_t> maskValues;
-    for (TypedAttr maskElement : mask.getValues())
-      maskValues.push_back(cast<IntegerAttr>(maskElement).getInt());
-
-    auto lhs = adaptor.getLhs();
-    auto rhs = adaptor.getRhs();
-    auto inputSize = *op.getLhs().getType().getResolvedSize();
-    if (inputSize != 1) {
-      // Both LHS and RHS are vectors - generate LLVM ShuffleVector
-      rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
-          op, lhs, rhs, rewriter.getDenseI32ArrayAttr(maskValues));
-
-      return success();
-    }
-    // Special handling for inputs consisting of just 1 element - instead of
-    // converting them to vectors and generating shufflevector for them, we will
-    // instead generate a sequence of insertelement operations.  Since there are
-    // just two elements to pick from, mask should only contain 0s and 1s. If it
-    // contains a different value, the behavior is undefined - we will simply
-    // treat such a case as value 1.
-    KGENDType dtype = *op.getType().getResolvedDType();
-    auto llvmVecType = VectorType::get(
-        mask.getValues().size(),
-        *getMLIRTypeForDType(op.getType().getContext(), dtype,
-                             getTypeConverter()->getIndexTypeBitwidth()));
-    Value result = LLVM::UndefOp::create(rewriter, op.getLoc(), llvmVecType);
-    int idx = 0;
-    for (int32_t maskElement : maskValues) {
-      Value pos = LLVM::ConstantOp::create(rewriter, op.getLoc(),
-                                           rewriter.getI32IntegerAttr(idx));
-      result = LLVM ::InsertElementOp::create(
-          rewriter, op.getLoc(), result, maskElement == 0 ? lhs : rhs, pos);
-      ++idx;
-    }
-    rewriter.replaceOp(op, result);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPSIMDExtractElement
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPSIMDExtractElement
-    : public ConvertPOPToLLVMPattern<SIMDExtractElementOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(SIMDExtractElementOp op,
-                                SIMDExtractElementOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    // Special handling for scalars
-    if (op.getVector().getType().isScalar()) {
-      rewriter.replaceOp(op, adaptor.getVector());
-      return success();
-    }
-    rewriter.replaceOpWithNewOp<LLVM::ExtractElementOp>(
-        op, convertType(op.getType()), adaptor.getVector(),
-        adaptor.getPosition());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPOffset
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPOffset : public ConvertPOPToLLVMPattern<OffsetOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(OffsetOp op, OffsetOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    Type elementType =
-        typeConverter->convertType(op.getPtr().getType().getElementType());
-
-    // Set the address space if specified.
-    unsigned addrSpace = op.getPtr().getType().getAddrSpaceOrZero();
-
-    // Coerce the index to the same type as the pointer which is required by the
-    // address space.
-    Type intPtrType = getIntPtrType(addrSpace);
-    size_t intPtrTypeSize = intPtrType.getIntOrFloatBitWidth();
-    size_t indexTypeSize = adaptor.getIndex().getType().getIntOrFloatBitWidth();
-
-    Value offset;
-    if (intPtrTypeSize == indexTypeSize) {
-      offset = adaptor.getIndex();
-    } else if (intPtrTypeSize < indexTypeSize) {
-      offset = rewriter.createOrFold<LLVM::TruncOp>(op.getLoc(), intPtrType,
-                                                    adaptor.getIndex());
-    } else {
-      offset = rewriter.createOrFold<LLVM::SExtOp>(op.getLoc(), intPtrType,
-                                                   adaptor.getIndex());
-    }
-    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, /*resultType=*/adaptor.getPtr().getType(),
-        /*elementType=*/elementType,
-        /*basePtr=*/adaptor.getPtr(),
-        /*indices=*/ValueRange{offset},
-        /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPSelect
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPSelect : public ConvertPOPToLLVMPattern<SelectOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(SelectOp op, SelectOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
-        op, adaptor.getCondition(), adaptor.getTrueValue(),
-        adaptor.getFalseValue(), fastmathFlagsOrDefault(op));
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPStackAllocation
-//===----------------------------------------------------------------------===//
-
-/// A `pop.stack_allocation` is lowered by converting it to an `llvm.alloca`
-/// with lifetime markers and hoisting it to the top of the enclosing
-/// function.
-class ConvertPOPStackAllocation
-    : public ConvertPOPToLLVMPattern<StackAllocationOp> {
-public:
-  explicit ConvertPOPStackAllocation(mlir::LLVMTypeConverter &typeConverter,
-                                     TargetInfoAttr target)
-      : ConvertPOPToLLVMPattern(typeConverter), target(target) {}
-
-  LogicalResult matchAndRewrite(StackAllocationOp op,
-                                StackAllocationOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override;
-
-private:
-  /// The target info.
-  TargetInfoAttr target;
-  mlir::DominanceInfo domInfo;
-
-  static unsigned resolveAlignment(std::optional<TypedAttr> alignment) {
-    if (!alignment)
-      return 0;
-    return cast<IntegerAttr>(*alignment).getInt();
-  }
-};
-
 /// Generate the LLVM IR to materialize an alloca with the given LLVM type and
 /// count. The alloca is created at the top of the given block, and lifetime
 /// markers are inserted at the end of the given operation's block.
@@ -1040,89 +326,6 @@ static Value materializeLLVMAlloca(OpBuilder &b, TargetInfoAttr target,
   return ptr;
 }
 
-LogicalResult
-ConvertPOPStackAllocation::matchAndRewrite(StackAllocationOp op,
-                                           StackAllocationOpAdaptor adaptor,
-                                           DirectRewriter &rewriter) const {
-  PointerType ptrType = cast<PointerType>(op.getType());
-  Type elementType = convertType(ptrType.getElementType());
-  if (!elementType)
-    return op.emitError("could not lower pointer element type");
-
-  // Compute the bytecount of the allocated buffer.
-  std::optional<int64_t> typeAllocSize =
-      DataLayoutInterface::getTypeAllocSize(target, ptrType.getElementType());
-  if (!typeAllocSize)
-    return op.emitError("could not get size of variadic element");
-
-  // Compute alignment from the KGEN element type. This correctly handles
-  // structs containing aligned fields (e.g., a struct with an @align(64) field
-  // will have 64-byte alignment even if the containing struct has no explicit
-  // @align decorator). We use the max of this computed alignment and any
-  // explicit alignment specified on the op.
-  std::optional<int64_t> typeAlign =
-      DataLayoutInterface::getTypeABIAlign(target, ptrType.getElementType());
-  if (!typeAlign)
-    return op.emitError("could not get alignment of element type");
-  int64_t alignment =
-      std::max(*typeAlign, (int64_t)resolveAlignment(op.getAlignment()));
-
-  // Check to see if this stack allocation has a single pop.store to it and
-  // some number of pop.loads.  If so, we know the store will dominate the loads
-  // so we can just completely eliminate this.  This is a form of guaranteed
-  // optimization, and it also matters for LLVM intrinsic propagation.
-  StoreOp theStore;
-  SmallVector<LoadOp> loads;
-  bool allSimple = true;
-  for (Operation *user : op->getUsers()) {
-    if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
-      continue;
-    // If this is the first store to the stack allocation, remember it.
-    if (auto storeOp = dyn_cast<StoreOp>(user))
-      if (storeOp.getOperand(1) == op.getResult() && !theStore &&
-          !storeOp.mightBeVolatile()) {
-        theStore = storeOp;
-        continue;
-      }
-    // Remember all the loads.
-    if (auto loadOp = dyn_cast<LoadOp>(user)) {
-      if (!loadOp.mightBeVolatile()) {
-        loads.push_back(loadOp);
-        continue;
-      }
-    }
-    allSimple = false;
-    break;
-  }
-
-  // If all the accesses are simple, we can just remove this entirely.
-  if (allSimple && theStore) {
-    bool dominates = true;
-    for (auto loadOp : loads) {
-      if (!domInfo.dominates(theStore, loadOp)) {
-        dominates = false;
-        break;
-      }
-    }
-    if (dominates) {
-      for (auto load : loads) {
-        load.replaceAllUsesWith(theStore.getOperand(0));
-        rewriter.eraseOp(load);
-      }
-    }
-  }
-
-  Value alloca = materializeLLVMAlloca(
-      rewriter, target, elementType, cast<IntegerAttr>(op.getCount()).getInt(),
-      op, *typeAllocSize, alignment);
-  rewriter.replaceOp(op, alloca);
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPStackAllocLifetimeStart
-//===----------------------------------------------------------------------===//
-
 static Value stripAddrspaceCast(Value value) {
   while (auto cast = value.getDefiningOp<LLVM::AddrSpaceCastOp>())
     value = cast.getOperand();
@@ -1132,7 +335,7 @@ static Value stripAddrspaceCast(Value value) {
 template <typename OpT>
 static LogicalResult lowerLifetimeMarker(Operation *op, ValueRange values,
                                          TargetInfoAttr target,
-                                         DirectRewriter &b) {
+                                         POPLoweringBuilder &b) {
   for (unsigned i = 0, e = values.size(); i < e; ++i) {
     Value value = values[i];
     SmallVector<Value> newValues;
@@ -1148,154 +351,6 @@ static LogicalResult lowerLifetimeMarker(Operation *op, ValueRange values,
   b.eraseOp(op);
   return success();
 }
-
-class ConvertPOPStackAllocLifetimeStart
-    : public ConvertPOPToLLVMPattern<StackAllocLifetimeStartOp> {
-public:
-  explicit ConvertPOPStackAllocLifetimeStart(mlir::LLVMTypeConverter &tc,
-                                             TargetInfoAttr target)
-      : ConvertPOPToLLVMPattern(tc), target(target) {}
-
-  LogicalResult matchAndRewrite(StackAllocLifetimeStartOp op,
-                                StackAllocLifetimeStartOpAdaptor adaptor,
-                                DirectRewriter &b) const override {
-    return lowerLifetimeMarker<LLVM::LifetimeStartOp>(op, adaptor.getValues(),
-                                                      target, b);
-  }
-
-private:
-  TargetInfoAttr target;
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPStackAllocLifetimeEnd
-//===----------------------------------------------------------------------===//
-
-class ConvertPOPStackAllocLifetimeEnd
-    : public ConvertPOPToLLVMPattern<StackAllocLifetimeEndOp> {
-public:
-  explicit ConvertPOPStackAllocLifetimeEnd(mlir::LLVMTypeConverter &tc,
-                                           TargetInfoAttr target)
-      : ConvertPOPToLLVMPattern(tc), target(target) {}
-
-  LogicalResult matchAndRewrite(StackAllocLifetimeEndOp op,
-                                StackAllocLifetimeEndOpAdaptor adaptor,
-                                DirectRewriter &b) const override {
-    return lowerLifetimeMarker<LLVM::LifetimeEndOp>(op, adaptor.getValues(),
-                                                    target, b);
-  }
-
-private:
-  TargetInfoAttr target;
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPArrayCreate
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPArrayCreate : public ConvertPOPToLLVMPattern<ArrayCreateOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(ArrayCreateOp op, ArrayCreateOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    Type type = convertType(op.getType());
-    if (!type)
-      return op.emitError("failed to convert array type");
-
-    Value array = LLVM::UndefOp::create(rewriter, op.getLoc(), type);
-    for (auto [idx, val] : llvm::enumerate(adaptor.getOperands()))
-      array =
-          LLVM::InsertValueOp::create(rewriter, op.getLoc(), array, val, idx);
-    rewriter.replaceOp(op, array);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPArrayRepeat
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPArrayRepeat : public ConvertPOPToLLVMPattern<ArrayRepeatOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(ArrayRepeatOp op, ArrayRepeatOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    Type type = convertType(op.getType());
-    if (!type)
-      return op.emitError("failed to convert array type");
-
-    Value array = LLVM::UndefOp::create(rewriter, op.getLoc(), type);
-    // Fill the consecutive elements of the array by cycling through the
-    // operands until the array is filled.
-    for (unsigned i = 0, size = *op.getType().getResolvedSize(); i < size;) {
-      for (auto it = adaptor.getOperands().begin(),
-                e = adaptor.getOperands().end();
-           it != e && i < size; ++it, ++i) {
-        array =
-            LLVM::InsertValueOp::create(rewriter, op.getLoc(), array, *it, i);
-      }
-    }
-    rewriter.replaceOp(op, array);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPArrayGet
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPArrayGet : public ConvertPOPToLLVMPattern<ArrayGetOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(ArrayGetOp op, ArrayGetOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, adaptor.getArray(), cast<IntegerAttr>(op.getIndex()).getInt());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPArrayReplace
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPArrayReplace : public ConvertPOPToLLVMPattern<ArrayReplaceOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(ArrayReplaceOp op,
-                                ArrayReplaceOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
-        op, adaptor.getArray(), adaptor.getValue(),
-        cast<IntegerAttr>(op.getIndex()).getInt());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPArrayGEP
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPArrayGEP : public ConvertPOPToLLVMPattern<ArrayGEPOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(ArrayGEPOp op, ArrayGEPOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    Type ptrType = convertType(op.getType());
-    Type elementType = convertType(op.getArray().getType().getElementType());
-    if (!ptrType)
-      return op.emitError("failed to convert result type");
-    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, ptrType, elementType, adaptor.getArray(),
-        ArrayRef<LLVM::GEPArg>{0, adaptor.getIndex()},
-        /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// getAtomicOrdering
-//===----------------------------------------------------------------------===//
 
 static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
   switch (ordering) {
@@ -1317,118 +372,13 @@ static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
   llvm_unreachable("unknown atomic ordering");
 }
 
-//===----------------------------------------------------------------------===//
-// ConvertPOPLoad
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(LoadOp op, LoadOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    auto ptrType = cast<PointerType>(op.getPtr().getType());
-    Type elementType = typeConverter->convertType(ptrType.getElementType());
-    unsigned alignment =
-        getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
-
-    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
-        op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/cast<BoolAttr>(adaptor.getIsVolatile()).getValue(),
-        /*isNonTemporal=*/cast<BoolAttr>(adaptor.getIsNonTemporal()).getValue(),
-        /*isInvariant=*/cast<BoolAttr>(adaptor.getIsInvariant()).getValue(),
-        /*isInvariantGroup=*/false, /*isNoundef=*/false,
-        /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
-        /*syncscope=*/adaptor.getSyncscope()
-            ? cast<StringAttr>(*adaptor.getSyncscope())
-            : StringRef());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPStore
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(StoreOp op, StoreOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-
-    auto ptrType = cast<PointerType>(op.getPtr().getType());
-    unsigned alignment =
-        getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
-
-    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
-        op, adaptor.getArg(), adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/cast<BoolAttr>(adaptor.getIsVolatile()).getValue(),
-        /*isNonTemporal=*/cast<BoolAttr>(adaptor.getIsNonTemporal()).getValue(),
-        /*isInvariantGroup=*/false,
-        /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
-        /*syncscope=*/adaptor.getSyncscope()
-            ? cast<StringAttr>(*adaptor.getSyncscope())
-            : StringRef());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPMemcpy
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPMemcpy : ConvertPOPToLLVMPattern<MemcpyOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(MemcpyOp op, MemcpyOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::MemcpyOp>(
-        op, adaptor.getDst(), adaptor.getSrc(), adaptor.getLen(),
-        cast<BoolAttr>(adaptor.getIsVolatile()).getValue());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPCastToBuiltin
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPCastToBuiltin : ConvertPOPToLLVMPattern<CastToBuiltinOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(CastToBuiltinOp op,
-                                CastToBuiltinOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOp(op, adaptor.getInput());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPCastFromBuiltin
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPCastFromBuiltin : ConvertPOPToLLVMPattern<CastFromBuiltinOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(CastFromBuiltinOp op,
-                                CastFromBuiltinOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOp(op, adaptor.getInput());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPInlineAsm
-//===----------------------------------------------------------------------===//
-
 /// Expand one level of structs so kgen.pack elements are passed as individual
 /// values instead of as a kgen.struct.
 ///
 /// Takes both the converted LLVM values and the original KGEN types to
 /// correctly map logical field indices to LLVM field indices (which may
 /// differ due to alignment padding fields).
-static SmallVector<Value> expandOperands(DirectRewriter &rewriter, Location loc,
+static SmallVector<Value> expandOperands(OpBuilder &rewriter, Location loc,
                                          ValueRange args, TypeRange origTypes,
                                          const POPToLLVMTypeConverter &tc) {
   SmallVector<Value> operands;
@@ -1460,102 +410,1087 @@ static SmallVector<Value> expandOperands(DirectRewriter &rewriter, Location loc,
   return operands;
 }
 
-struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+static FailureOr<Value> materializeLLVMUnionAlloca(TargetInfoAttr target,
+                                                   OpBuilder &b, Operation *op,
+                                                   Type popUnionType,
+                                                   Type llvmUnionType) {
+  std::optional<int64_t> typeAllocSize =
+      DataLayoutInterface::getTypeAllocSize(target, popUnionType);
+  std::optional<int64_t> typeABIAlign =
+      DataLayoutInterface::getTypeABIAlign(target, popUnionType);
+  if (!typeAllocSize || !typeABIAlign)
+    return op->emitError("failed to get union type size and alignment");
 
-  LogicalResult matchAndRewrite(InlineAsmOp op, InlineAsmOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    SmallVector<Type, 1> types;
-    if (op.getNumResults()) {
-      types.push_back(
-          getTypeConverter()->packFunctionResults(op->getResultTypes()));
-      if (!types.back())
-        return failure();
-    }
+  return materializeLLVMAlloca(b, target, llvmUnionType, 1, op, *typeAllocSize,
+                               *typeABIAlign);
+}
 
-    auto asmOp = LLVM::InlineAsmOp::create(
-        rewriter, op.getLoc(), types.empty() ? Type() : types.front(),
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
-                       op.getOperands().getTypes(), *getTypeConverter()),
-        cast<StringAttr>(adaptor.getAssembly()),
-        cast<StringAttr>(adaptor.getConstraints()),
-        cast<BoolAttr>(adaptor.getHasSideEffects()).getValue(),
-        cast<BoolAttr>(adaptor.getIsStackAligned()).getValue(),
-        LLVM::TailCallKind::None, /*convergent=*/false,
-        LLVM::AsmDialectAttr::get(op->getContext(), LLVM::AsmDialect::AD_ATT),
-        adaptor.getOperandAttrsAttr());
-
-    if (op.getNumResults() <= 1) {
-      rewriter.replaceOp(op, asmOp);
-      return success();
-    }
-    // Unpack the results.
-    SmallVector<Value> results;
-    for (unsigned i = 0, e = op.getNumResults(); i != e; ++i) {
-      results.push_back(LLVM::ExtractValueOp::create(rewriter, op.getLoc(),
-                                                     asmOp.getResult(0), i));
-    }
-    rewriter.replaceOp(op, results);
-    return success();
-  }
-};
+} // namespace
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPAtomicCmpXchg
+// LowerPOPToLLVMPass
 //===----------------------------------------------------------------------===//
 
-class ConvertPOPAtomicCmpXchg
-    : public ConvertPOPToLLVMPattern<AtomicCmpXchgOp> {
-public:
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+namespace {
+struct LowerPOPToLLVMPass
+    : public KGEN::impl::LowerPOPToLLVMBase<LowerPOPToLLVMPass> {
+  using LowerPOPToLLVMBase::LowerPOPToLLVMBase;
+  LowerPOPToLLVMPass(const LowerPOPToLLVMPass &other)
+      : LowerPOPToLLVMBase(other) {}
 
-  LogicalResult matchAndRewrite(AtomicCmpXchgOp op,
-                                AtomicCmpXchgOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::AtomicCmpXchgOp>(
-        op, adaptor.getPtr(), adaptor.getCmp(), adaptor.getVal(),
-        getAtomicOrdering(op.getSuccessOrdering()),
-        getAtomicOrdering(op.getFailureOrdering()),
-        adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
-                               : StringRef(),
-        resolveAlignment(adaptor), adaptor.getWeak().has_value());
-    return success();
-  }
-
-  static unsigned resolveAlignment(AtomicCmpXchgOpAdaptor adaptor) {
-    if (auto alignment = adaptor.getAlignment())
-      return cast<IntegerAttr>(*alignment).getInt();
-
-    // If alignment is not set on the op, use the alignment of the pointer.
-    Operation *def = adaptor.getPtr().getDefiningOp();
-    if (!def || !def->hasAttr("alignment"))
-      return 0;
-
-    return cast<IntegerAttr>(def->getAttr("alignment")).getInt();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPAtomicRMW
-//===----------------------------------------------------------------------===//
-
-class ConvertPOPAtomicRMW : public ConvertPOPToLLVMPattern<AtomicRMWOp> {
-public:
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(AtomicRMWOp op, AtomicRMWOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *cast<SIMDType>(op.getType()).getResolvedDType();
-    rewriter.replaceOpWithNewOp<LLVM::AtomicRMWOp>(
-        op, getAtomicBinOp(dtype, adaptor.getBinOp()), adaptor.getPtr(),
-        adaptor.getVal(), getAtomicOrdering(op.getOrdering()),
-        adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
-                               : StringRef());
-    return success();
-  }
+  void runOnOperation() override;
 
 private:
-  static LLVM::AtomicBinOp getAtomicBinOp(KGENDType dtype, AtomicBinOp binOp) {
+  /// Verify that the operation is a function and has no nested CFGs.
+  FailureOr<mlir::FunctionOpInterface> validateOperation();
+
+  LogicalResult lowerBlock(Block &block);
+  LogicalResult lowerOperation(Operation *op);
+  Value getLoweredValue(Value value);
+  ValueRange getLoweredOperands(Operation *op);
+  void recordReplacement(Operation *op, ValueRange replacements);
+  void queueSourceOpForErasure(Operation *op);
+  void replaceUsesAndEraseSourceOps();
+
+  template <typename SourceOp, typename TargetOp>
+  LogicalResult lowerOneToOne(SourceOp op) {
+    SmallVector<Value> operands = getLoweredOperands(op);
+    SmallVector<Type> resultTypes;
+    if (failed(typeConverter->convertTypes(op->getResultTypes(), resultTypes)))
+      return failure();
+    builder->setInsertionPoint(op);
+    OperationState state(op.getLoc(), TargetOp::getOperationName());
+    state.addTypes(resultTypes);
+    state.addOperands(operands);
+    state.addAttributes(op->getAttrs());
+    Operation *newOp = builder->create(state);
+    builder->replaceOp(op, newOp);
+    return success();
+  }
+
+  template <typename Op, typename FloatOp, typename SIntOp,
+            typename UIntOp = SIntOp>
+  LogicalResult lowerFloatOrInt(Op op) {
+    auto adaptor = typename Op::Adaptor(getLoweredOperands(op), op);
+    KGENDType dtype = *op.getType().getResolvedDType();
+    Type type = typeConverter->convertType(op.getType());
+    builder->setInsertionPoint(op);
+    if (dtype.isBool() || dtype.isInt() || dtype.isIndex() ||
+        dtype.isUIndex()) {
+      if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex()) {
+        if constexpr (std::is_same_v<SIntOp, LLVM::SDivOp>)
+          builder->replaceOpWithNewOp<SIntOp>(
+              op, type, adaptor.getLhs(), adaptor.getRhs(), op.getIsExact());
+        else
+          builder->replaceOpWithNewOp<SIntOp>(op, type, adaptor.getLhs(),
+                                              adaptor.getRhs());
+      } else {
+        if constexpr (std::is_same_v<UIntOp, LLVM::UDivOp>)
+          builder->replaceOpWithNewOp<UIntOp>(
+              op, type, adaptor.getLhs(), adaptor.getRhs(), op.getIsExact());
+        else
+          builder->replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
+                                              adaptor.getRhs());
+      }
+      return success();
+    }
+    builder->replaceOpWithNewOp<FloatOp>(op, type, adaptor.getLhs(),
+                                         adaptor.getRhs(),
+                                         fastmathFlagsOrDefault(op));
+    return success();
+  }
+
+  LogicalResult lowerPOPNeg(NegOp op);
+  LogicalResult lowerPOPFloor(FloorOp op);
+  LogicalResult lowerPOPFloorDiv(FloorDivOp op);
+  LogicalResult lowerPOPCeil(CeilOp op);
+  LogicalResult lowerPOPTrunc(TruncOp op);
+  LogicalResult lowerPOPRound(RoundOp op);
+  LogicalResult lowerPOPAbs(AbsOp op);
+  LogicalResult lowerPOPShr(ShrOp op);
+  LogicalResult lowerPOPFMA(FMAOp op);
+  LogicalResult lowerPOPCmp(CmpOp op);
+  LogicalResult lowerPOPCast(CastOp op);
+  LogicalResult lowerPOPSIMDSelect(SIMDSelectOp op);
+  LogicalResult lowerPOPSIMDSplat(SIMDSplatOp op);
+  LogicalResult lowerPOPSIMDInsertElement(SIMDInsertElementOp op);
+  LogicalResult lowerPOPSIMDShuffle(SIMDShuffleOp op);
+  LogicalResult lowerPOPSIMDExtractElement(SIMDExtractElementOp op);
+  LogicalResult lowerPOPOffset(OffsetOp op);
+  LogicalResult lowerPOPSelect(SelectOp op);
+  LogicalResult lowerPOPStackAllocation(StackAllocationOp op);
+  LogicalResult lowerPOPStackAllocLifetimeStart(StackAllocLifetimeStartOp op);
+  LogicalResult lowerPOPStackAllocLifetimeEnd(StackAllocLifetimeEndOp op);
+  LogicalResult lowerPOPArrayCreate(ArrayCreateOp op);
+  LogicalResult lowerPOPArrayRepeat(ArrayRepeatOp op);
+  LogicalResult lowerPOPArrayGet(ArrayGetOp op);
+  LogicalResult lowerPOPArrayReplace(ArrayReplaceOp op);
+  LogicalResult lowerPOPArrayGEP(ArrayGEPOp op);
+  LogicalResult lowerPOPLoad(LoadOp op);
+  LogicalResult lowerPOPStore(StoreOp op);
+  LogicalResult lowerPOPMemcpy(MemcpyOp op);
+  LogicalResult lowerPOPCastToBuiltin(CastToBuiltinOp op);
+  LogicalResult lowerPOPCastFromBuiltin(CastFromBuiltinOp op);
+  LogicalResult lowerPOPInlineAsm(InlineAsmOp op);
+  LogicalResult lowerPOPAtomicCmpXchg(AtomicCmpXchgOp op);
+  LogicalResult lowerPOPAtomicRMW(AtomicRMWOp op);
+  LogicalResult lowerPOPFence(FenceOp op);
+  LogicalResult lowerPOPStringAddress(StringAddressOp op);
+  LogicalResult lowerPOPStringSize(StringSizeOp op);
+  LogicalResult lowerPOPDTypeToUI8(DTypeToUI8 op);
+  LogicalResult lowerPOPDTypeFromUI8(DTypeFromUI8 op);
+  LogicalResult lowerPOPCallLLVMIntrinsic(CallLLVMIntrinsicOp op);
+  LogicalResult lowerPOPPointerBitcast(PointerBitcastOp op);
+  LogicalResult lowerPOPUnionBitcast(UnionBitcastOp op);
+  LogicalResult lowerPOPUnionWrap(UnionWrapOp op);
+  LogicalResult lowerPOPUnionUnwrap(UnionUnwrapOp op);
+  LogicalResult lowerPOPSIMDReduceOr(SIMDReduceOrOp op);
+  LogicalResult lowerPOPSIMDReduceAnd(SIMDReduceAndOp op);
+  LogicalResult lowerPOPAnd(AndOp op);
+  LogicalResult lowerPOPOr(OrOp op);
+  LogicalResult lowerPOPXOr(XOrOp op);
+  LogicalResult lowerPOPSIMDAnd(SIMDAndOp op);
+  LogicalResult lowerPOPSIMDOr(SIMDOrOp op);
+  LogicalResult lowerPOPSIMDXOr(SIMDXOrOp op);
+  LogicalResult lowerPOPAdd(AddOp op);
+  LogicalResult lowerPOPSub(SubOp op);
+  LogicalResult lowerPOPMul(MulOp op);
+  LogicalResult lowerPOPDiv(DivOp op);
+  LogicalResult lowerPOPRem(RemOp op);
+  LogicalResult lowerPOPMax(MaxOp op);
+  LogicalResult lowerPOPMin(MinOp op);
+  LogicalResult lowerPOPBitcast(BitcastOp op);
+  LogicalResult lowerPOPShl(ShlOp op);
+  LogicalResult lowerPOPPointerToIndex(PointerToIndexOp op);
+
+  TargetInfoAttr targetInfo;
+  const TargetLowering *targetLowering = nullptr;
+  std::unique_ptr<POPToLLVMTypeConverter> typeConverter;
+  std::unique_ptr<POPLoweringBuilder> builder;
+  DenseMap<Value, Value> loweredValues;
+  SmallVector<Value> loweredOperands;
+  SmallVector<Operation *> sourceOps;
+  llvm::DenseSet<Operation *> sourceOpSet;
+};
+} // namespace
+
+FailureOr<mlir::FunctionOpInterface> LowerPOPToLLVMPass::validateOperation() {
+  auto func = dyn_cast<mlir::FunctionOpInterface>(getOperation());
+  if (!func)
+    return getOperation()->emitError(
+        "lower-pop-to-llvm must be nested on a FunctionOpInterface");
+
+  // Stack allocations cannot be lowered in the presence of CFGs.
+  Operation *cfgOp = nullptr;
+  func->walk([&cfgOp](Operation *op) {
+    if (llvm::none_of(op->getRegions(), [](Region &region) {
+          return region.getBlocks().size() > 1;
+        }))
+      return WalkResult::advance();
+    cfgOp = op;
+    return WalkResult::interrupt();
+  });
+  if (!cfgOp)
+    return func;
+
+  InFlightDiagnostic diag = cfgOp->emitError(
+      "lower-pop-to-llvm cannot run on operations with CFG regions");
+  diag.attachNote() << "try running it before lower-control-flow";
+  return diag;
+}
+
+Value LowerPOPToLLVMPass::getLoweredValue(Value value) {
+  auto it = loweredValues.find(value);
+  if (it != loweredValues.end())
+    return it->second;
+
+  Type loweredType = typeConverter->convertType(value.getType());
+  assert(loweredType && "operand type must be convertible to LLVM");
+  if (loweredType == value.getType()) {
+    loweredValues.try_emplace(value, value);
+    return value;
+  }
+
+  OpBuilder::InsertionGuard guard(*builder);
+  if (Operation *def = value.getDefiningOp())
+    builder->setInsertionPointAfter(def);
+  else
+    builder->setInsertionPointToStart(cast<BlockArgument>(value).getOwner());
+  Value lowered = mlir::UnrealizedConversionCastOp::create(
+                      *builder, value.getLoc(), loweredType, value)
+                      .getResult(0);
+  loweredValues.try_emplace(value, lowered);
+  return lowered;
+}
+
+ValueRange LowerPOPToLLVMPass::getLoweredOperands(Operation *op) {
+  loweredOperands.clear();
+  loweredOperands.reserve(op->getNumOperands());
+  for (Value operand : op->getOperands())
+    loweredOperands.push_back(getLoweredValue(operand));
+  return loweredOperands;
+}
+
+void LowerPOPToLLVMPass::recordReplacement(Operation *op,
+                                           ValueRange replacements) {
+  assert(op->getNumResults() == replacements.size() &&
+         "incorrect number of replacement values");
+  for (auto [source, replacement] : llvm::zip(op->getResults(), replacements))
+    loweredValues[source] = replacement;
+  queueSourceOpForErasure(op);
+}
+
+void LowerPOPToLLVMPass::queueSourceOpForErasure(Operation *op) {
+  if (sourceOpSet.insert(op).second)
+    sourceOps.push_back(op);
+}
+
+void LowerPOPToLLVMPass::replaceUsesAndEraseSourceOps() {
+  for (Operation *op : sourceOps) {
+    for (Value source : op->getResults()) {
+      auto it = loweredValues.find(source);
+      if (it == loweredValues.end()) {
+        assert(source.use_empty() && "erased result still has uses");
+        continue;
+      }
+      Value replacement = it->second;
+      if (source.getType() != replacement.getType()) {
+        OpBuilder::InsertionGuard guard(*builder);
+        builder->setInsertionPointAfter(op);
+        replacement = mlir::UnrealizedConversionCastOp::create(
+                          *builder, op->getLoc(), source.getType(), replacement)
+                          .getResult(0);
+      }
+      source.replaceAllUsesWith(replacement);
+    }
+  }
+  for (Operation *op : llvm::reverse(sourceOps))
+    op->erase();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerBlock(Block &block) {
+  SmallVector<Operation *> pending;
+  SmallVector<Operation *> operations;
+  for (Operation &op : llvm::reverse(block))
+    pending.push_back(&op);
+
+  // Build the preorder worklist iteratively because generated code can contain
+  // region trees deep enough to exhaust the compiler's stack under ASAN.
+  while (!pending.empty()) {
+    Operation *op = pending.pop_back_val();
+    operations.push_back(op);
+    for (Region &region : llvm::reverse(op->getRegions()))
+      for (Block &nestedBlock : llvm::reverse(region))
+        for (Operation &nestedOp : llvm::reverse(nestedBlock))
+          pending.push_back(&nestedOp);
+  }
+
+  for (Operation *op : operations) {
+    if (sourceOpSet.contains(op))
+      continue;
+    if (failed(lowerOperation(op)))
+      return failure();
+  }
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerOperation(Operation *op) {
+  if (!isa_and_present<POPDialect>(op->getDialect()))
+    return success();
+
+  if (targetLowering &&
+      isa<POP::MaxOp, POP::MinOp, POP::AtomicRMWOp, POP::AtomicCmpXchgOp,
+          POP::CastOp, POP::FenceOp, CallLLVMIntrinsicOp>(op) &&
+      targetLowering->isLoweredInGlobalPOPPass(op))
+    return success();
+
+  if (isa<GlobalAllocOp, GlobalConstantOp, ExternalCallOp,
+          ExternPointerSymbolOp, AlignedAllocOp, AlignedFreeOp>(op))
+    return success();
+
+#define LOWER_POP_CASE(OpType, Method)                                         \
+  if (auto typedOp = dyn_cast<OpType>(op)) {                                   \
+    if (succeeded(Method(typedOp)))                                            \
+      return success();                                                        \
+    op->emitError("failed to legalize operation '")                            \
+        << op->getName() << "' that was explicitly marked illegal";            \
+    return failure();                                                          \
+  }
+  LOWER_POP_CASE(NegOp, lowerPOPNeg);
+  LOWER_POP_CASE(FloorOp, lowerPOPFloor);
+  LOWER_POP_CASE(FloorDivOp, lowerPOPFloorDiv);
+  LOWER_POP_CASE(CeilOp, lowerPOPCeil);
+  LOWER_POP_CASE(TruncOp, lowerPOPTrunc);
+  LOWER_POP_CASE(RoundOp, lowerPOPRound);
+  LOWER_POP_CASE(AbsOp, lowerPOPAbs);
+  LOWER_POP_CASE(ShrOp, lowerPOPShr);
+  LOWER_POP_CASE(FMAOp, lowerPOPFMA);
+  LOWER_POP_CASE(CmpOp, lowerPOPCmp);
+  LOWER_POP_CASE(CastOp, lowerPOPCast);
+  LOWER_POP_CASE(SIMDSelectOp, lowerPOPSIMDSelect);
+  LOWER_POP_CASE(SIMDSplatOp, lowerPOPSIMDSplat);
+  LOWER_POP_CASE(SIMDInsertElementOp, lowerPOPSIMDInsertElement);
+  LOWER_POP_CASE(SIMDShuffleOp, lowerPOPSIMDShuffle);
+  LOWER_POP_CASE(SIMDExtractElementOp, lowerPOPSIMDExtractElement);
+  LOWER_POP_CASE(OffsetOp, lowerPOPOffset);
+  LOWER_POP_CASE(SelectOp, lowerPOPSelect);
+  LOWER_POP_CASE(StackAllocationOp, lowerPOPStackAllocation);
+  LOWER_POP_CASE(StackAllocLifetimeStartOp, lowerPOPStackAllocLifetimeStart);
+  LOWER_POP_CASE(StackAllocLifetimeEndOp, lowerPOPStackAllocLifetimeEnd);
+  LOWER_POP_CASE(ArrayCreateOp, lowerPOPArrayCreate);
+  LOWER_POP_CASE(ArrayRepeatOp, lowerPOPArrayRepeat);
+  LOWER_POP_CASE(ArrayGetOp, lowerPOPArrayGet);
+  LOWER_POP_CASE(ArrayReplaceOp, lowerPOPArrayReplace);
+  LOWER_POP_CASE(ArrayGEPOp, lowerPOPArrayGEP);
+  LOWER_POP_CASE(LoadOp, lowerPOPLoad);
+  LOWER_POP_CASE(StoreOp, lowerPOPStore);
+  LOWER_POP_CASE(MemcpyOp, lowerPOPMemcpy);
+  LOWER_POP_CASE(CastToBuiltinOp, lowerPOPCastToBuiltin);
+  LOWER_POP_CASE(CastFromBuiltinOp, lowerPOPCastFromBuiltin);
+  LOWER_POP_CASE(InlineAsmOp, lowerPOPInlineAsm);
+  LOWER_POP_CASE(AtomicCmpXchgOp, lowerPOPAtomicCmpXchg);
+  LOWER_POP_CASE(AtomicRMWOp, lowerPOPAtomicRMW);
+  LOWER_POP_CASE(FenceOp, lowerPOPFence);
+  LOWER_POP_CASE(StringAddressOp, lowerPOPStringAddress);
+  LOWER_POP_CASE(StringSizeOp, lowerPOPStringSize);
+  LOWER_POP_CASE(DTypeToUI8, lowerPOPDTypeToUI8);
+  LOWER_POP_CASE(DTypeFromUI8, lowerPOPDTypeFromUI8);
+  LOWER_POP_CASE(CallLLVMIntrinsicOp, lowerPOPCallLLVMIntrinsic);
+  LOWER_POP_CASE(PointerBitcastOp, lowerPOPPointerBitcast);
+  LOWER_POP_CASE(UnionBitcastOp, lowerPOPUnionBitcast);
+  LOWER_POP_CASE(UnionWrapOp, lowerPOPUnionWrap);
+  LOWER_POP_CASE(UnionUnwrapOp, lowerPOPUnionUnwrap);
+  LOWER_POP_CASE(SIMDReduceOrOp, lowerPOPSIMDReduceOr);
+  LOWER_POP_CASE(SIMDReduceAndOp, lowerPOPSIMDReduceAnd);
+  LOWER_POP_CASE(AndOp, lowerPOPAnd);
+  LOWER_POP_CASE(OrOp, lowerPOPOr);
+  LOWER_POP_CASE(XOrOp, lowerPOPXOr);
+  LOWER_POP_CASE(SIMDAndOp, lowerPOPSIMDAnd);
+  LOWER_POP_CASE(SIMDOrOp, lowerPOPSIMDOr);
+  LOWER_POP_CASE(SIMDXOrOp, lowerPOPSIMDXOr);
+  LOWER_POP_CASE(AddOp, lowerPOPAdd);
+  LOWER_POP_CASE(SubOp, lowerPOPSub);
+  LOWER_POP_CASE(MulOp, lowerPOPMul);
+  LOWER_POP_CASE(DivOp, lowerPOPDiv);
+  LOWER_POP_CASE(RemOp, lowerPOPRem);
+  LOWER_POP_CASE(MaxOp, lowerPOPMax);
+  LOWER_POP_CASE(MinOp, lowerPOPMin);
+  LOWER_POP_CASE(BitcastOp, lowerPOPBitcast);
+  LOWER_POP_CASE(ShlOp, lowerPOPShl);
+  LOWER_POP_CASE(PointerToIndexOp, lowerPOPPointerToIndex);
+#undef LOWER_POP_CASE
+
+  op->emitError("failed to legalize operation '")
+      << op->getName() << "' that was explicitly marked illegal";
+  return failure();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPNeg(NegOp op) {
+  NegOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  KGENDType dtype = *op.getType().getResolvedDType();
+  if (!dtype.isInt() && !dtype.isIndex() && !dtype.isUIndex()) {
+    builder->replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand(),
+                                              fastmathFlagsOrDefault(op));
+    return success();
+  }
+  Type type = adaptor.getOperand().getType();
+  Value zero;
+  if (auto vec = dyn_cast<VectorType>(type)) {
+    auto intType = dyn_cast<IntegerType>(vec.getElementType());
+    if (!intType)
+      return op.emitError("could not handle integer type");
+    zero = LLVM::ConstantOp::create(
+        *builder, op.getLoc(),
+        DenseIntElementsAttr::get(vec, APInt::getZero(intType.getWidth())));
+  } else {
+    zero = LLVM::ConstantOp::create(*builder, op.getLoc(), type, 0);
+  }
+  builder->replaceOpWithNewOp<LLVM::SubOp>(op, zero, adaptor.getOperand());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPFloor(FloorOp op) {
+  FloorOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  if (!op.getType().getResolvedDType()->isFloat()) {
+    builder->replaceOp(op, adaptor.getOperand());
+    return success();
+  }
+  builder->replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+      op, typeConverter->convertType(op.getType()),
+      builder->getStringAttr("llvm.floor"),
+      SmallVector<Value>{adaptor.getOperand()});
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPCeil(CeilOp op) {
+  CeilOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  if (!op.getType().getResolvedDType()->isFloat()) {
+    builder->replaceOp(op, adaptor.getOperand());
+    return success();
+  }
+  builder->replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+      op, typeConverter->convertType(op.getType()),
+      builder->getStringAttr("llvm.ceil"),
+      SmallVector<Value>{adaptor.getOperand()});
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPTrunc(TruncOp op) {
+  TruncOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  if (!op.getType().getResolvedDType()->isFloat()) {
+    builder->replaceOp(op, adaptor.getOperand());
+    return success();
+  }
+  builder->replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+      op, typeConverter->convertType(op.getType()),
+      builder->getStringAttr("llvm.trunc"),
+      SmallVector<Value>{adaptor.getOperand()});
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPShr(ShrOp op) {
+  ShrOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  KGENDType dtype = *op.getType().getResolvedDType();
+  if (dtype.isSInt() || dtype.isIndex())
+    builder->replaceOpWithNewOp<LLVM::AShrOp>(op, adaptor.getLhs(),
+                                              adaptor.getRhs());
+  else
+    builder->replaceOpWithNewOp<LLVM::LShrOp>(op, adaptor.getLhs(),
+                                              adaptor.getRhs());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPFMA(FMAOp op) {
+  FMAOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  KGENDType dtype = *op.getType().getResolvedDType();
+  if (dtype.isInt() || dtype.isIndex() || dtype.isUIndex()) {
+    Value lhs = LLVM::MulOp::create(*builder, op.getLoc(), adaptor.getA(),
+                                    adaptor.getB());
+    builder->replaceOpWithNewOp<LLVM::AddOp>(op, lhs, adaptor.getC());
+  } else {
+    builder->replaceOpWithNewOp<LLVM::FMAOp>(
+        op, adaptor.getA(), adaptor.getB(), adaptor.getC(),
+        convertFastmathFlags(op.getFastmathFlags(), *builder));
+  }
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPCmp(CmpOp op) {
+  CmpOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  auto getICmpPredicate = [](CmpPredicate pred, bool isSigned) {
+    switch (pred) {
+    case CmpPredicate::EQ:
+      return LLVM::ICmpPredicate::eq;
+    case CmpPredicate::NE:
+      return LLVM::ICmpPredicate::ne;
+    case CmpPredicate::LT:
+      return isSigned ? LLVM::ICmpPredicate::slt : LLVM::ICmpPredicate::ult;
+    case CmpPredicate::GT:
+      return isSigned ? LLVM::ICmpPredicate::sgt : LLVM::ICmpPredicate::ugt;
+    case CmpPredicate::LE:
+      return isSigned ? LLVM::ICmpPredicate::sle : LLVM::ICmpPredicate::ule;
+    case CmpPredicate::GE:
+      return isSigned ? LLVM::ICmpPredicate::sge : LLVM::ICmpPredicate::uge;
+    }
+    llvm_unreachable("unknown predicate");
+  };
+  auto getFCmpPredicate = [](CmpPredicate pred) {
+    switch (pred) {
+    case CmpPredicate::EQ:
+      return LLVM::FCmpPredicate::oeq;
+    case CmpPredicate::NE:
+      return LLVM::FCmpPredicate::une;
+    case CmpPredicate::LT:
+      return LLVM::FCmpPredicate::olt;
+    case CmpPredicate::GT:
+      return LLVM::FCmpPredicate::ogt;
+    case CmpPredicate::LE:
+      return LLVM::FCmpPredicate::ole;
+    case CmpPredicate::GE:
+      return LLVM::FCmpPredicate::oge;
+    }
+    llvm_unreachable("unknown predicate");
+  };
+
+  KGENDType dtype = *op.getLhs().getType().getResolvedDType();
+  if (dtype.isBool() || dtype.isInt() || dtype.isIndex() || dtype.isUIndex() ||
+      dtype.isAddress()) {
+    builder->replaceOpWithNewOp<LLVM::ICmpOp>(
+        op, getICmpPredicate(op.getPred(), dtype.isSInt()), adaptor.getLhs(),
+        adaptor.getRhs());
+    return success();
+  }
+  assert(dtype.isFloat());
+  Type i1Type = builder->getI1Type();
+  if (auto simd = dyn_cast<SIMDType>(op.getLhs().getType())) {
+    uint64_t size = *simd.getResolvedSize();
+    if (size != 1)
+      i1Type = VectorType::get(size, i1Type);
+  }
+  builder->replaceOpWithNewOp<LLVM::FCmpOp>(
+      op, i1Type, getFCmpPredicate(op.getPred()), adaptor.getLhs(),
+      adaptor.getRhs(), fastmathFlagsOrDefault(op));
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPSIMDSelect(SIMDSelectOp op) {
+  SIMDSelectOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  builder->replaceOpWithNewOp<LLVM::SelectOp>(
+      op, adaptor.getCondition(), adaptor.getTrueValue(),
+      adaptor.getFalseValue(), fastmathFlagsOrDefault(op));
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPSIMDSplat(SIMDSplatOp op) {
+  SIMDSplatOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  if (op.getType().isScalar()) {
+    builder->replaceOp(op, adaptor.getScalar());
+    return success();
+  }
+  int64_t size = *op.getType().getResolvedSize();
+  Value undef = LLVM::UndefOp::create(*builder, op.getLoc(),
+                                      typeConverter->convertType(op.getType()));
+  Value zero = LLVM::ConstantOp::create(*builder, op.getLoc(),
+                                        builder->getI32IntegerAttr(0));
+  Value vector = LLVM::InsertElementOp::create(*builder, op.getLoc(), undef,
+                                               adaptor.getScalar(), zero);
+  builder->replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
+      op, vector, undef, SmallVector<int32_t>(size, 0));
+  return success();
+}
+
+LogicalResult
+LowerPOPToLLVMPass::lowerPOPSIMDInsertElement(SIMDInsertElementOp op) {
+  SIMDInsertElementOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  if (op.getVector().getType().isScalar()) {
+    builder->replaceOp(op, adaptor.getValue());
+    return success();
+  }
+  builder->replaceOpWithNewOp<LLVM::InsertElementOp>(
+      op, typeConverter->convertType(op.getType()), adaptor.getOperands());
+  return success();
+}
+
+LogicalResult
+LowerPOPToLLVMPass::lowerPOPSIMDExtractElement(SIMDExtractElementOp op) {
+  SIMDExtractElementOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  if (op.getVector().getType().isScalar()) {
+    builder->replaceOp(op, adaptor.getVector());
+    return success();
+  }
+  builder->replaceOpWithNewOp<LLVM::ExtractElementOp>(
+      op, typeConverter->convertType(op.getType()), adaptor.getVector(),
+      adaptor.getPosition());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPSIMDShuffle(SIMDShuffleOp op) {
+  SIMDShuffleOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  auto mask = cast<POP::ArrayAttr>(adaptor.getMask());
+  SmallVector<int32_t> maskValues;
+  for (TypedAttr maskElement : mask.getValues())
+    maskValues.push_back(cast<IntegerAttr>(maskElement).getInt());
+  Value lhs = adaptor.getLhs();
+  Value rhs = adaptor.getRhs();
+  if (*op.getLhs().getType().getResolvedSize() != 1) {
+    builder->replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
+        op, lhs, rhs, builder->getDenseI32ArrayAttr(maskValues));
+    return success();
+  }
+  KGENDType dtype = *op.getType().getResolvedDType();
+  auto llvmVecType = VectorType::get(
+      mask.getValues().size(),
+      *getMLIRTypeForDType(op.getContext(), dtype,
+                           typeConverter->getIndexTypeBitwidth()));
+  Value result = LLVM::UndefOp::create(*builder, op.getLoc(), llvmVecType);
+  for (auto [idx, maskElement] : llvm::enumerate(maskValues)) {
+    Value pos = LLVM::ConstantOp::create(*builder, op.getLoc(),
+                                         builder->getI32IntegerAttr(idx));
+    result = LLVM::InsertElementOp::create(*builder, op.getLoc(), result,
+                                           maskElement == 0 ? lhs : rhs, pos);
+  }
+  builder->replaceOp(op, result);
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPOffset(OffsetOp op) {
+  OffsetOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  Type elementType =
+      typeConverter->convertType(op.getPtr().getType().getElementType());
+  unsigned addrSpace = op.getPtr().getType().getAddrSpaceOrZero();
+  Type intPtrType =
+      IntegerType::get(&typeConverter->getContext(),
+                       typeConverter->getPointerBitwidth(addrSpace));
+  size_t pointerWidth = intPtrType.getIntOrFloatBitWidth();
+  size_t indexWidth = adaptor.getIndex().getType().getIntOrFloatBitWidth();
+  Value offset;
+  if (pointerWidth == indexWidth)
+    offset = adaptor.getIndex();
+  else if (pointerWidth < indexWidth)
+    offset = builder->createOrFold<LLVM::TruncOp>(op.getLoc(), intPtrType,
+                                                  adaptor.getIndex());
+  else
+    offset = builder->createOrFold<LLVM::SExtOp>(op.getLoc(), intPtrType,
+                                                 adaptor.getIndex());
+  builder->replaceOpWithNewOp<LLVM::GEPOp>(
+      op, adaptor.getPtr().getType(), elementType, adaptor.getPtr(),
+      ValueRange{offset}, LLVM::GEPNoWrapFlags::inbounds);
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPSelect(SelectOp op) {
+  SelectOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  builder->replaceOpWithNewOp<LLVM::SelectOp>(
+      op, adaptor.getCondition(), adaptor.getTrueValue(),
+      adaptor.getFalseValue(), fastmathFlagsOrDefault(op));
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPFloorDiv(FloorDivOp op) {
+  FloorDivOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  Location loc = op.getLoc();
+  Type type = typeConverter->convertType(op.getType());
+  KGENDType dtype = *op.getType().getResolvedDType();
+  if (dtype.isFloat()) {
+    Value fdiv = LLVM::FDivOp::create(*builder, loc, type, adaptor.getLhs(),
+                                      adaptor.getRhs());
+    builder->replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+        op, type, builder->getStringAttr("llvm.floor"),
+        SmallVector<Value>{fdiv});
+    return success();
+  }
+  if (dtype.isUInt()) {
+    builder->replaceOpWithNewOp<LLVM::UDivOp>(
+        op, type, SmallVector<Value>{adaptor.getLhs(), adaptor.getRhs()});
+    return success();
+  }
+
+  auto intType = dyn_cast<IntegerType>(getElementTypeOrSelf(type));
+  bool canWiden = intType && (2 * intType.getWidth() <= 64 || !targetLowering ||
+                              targetLowering->supportsI128());
+  if (intType && intType.getWidth() >= 8 && intType.getWidth() <= 64 &&
+      llvm::isPowerOf2_32(intType.getWidth()) && canWiden) {
+    if (std::optional<APInt> divisor =
+            getSplatConstantDivisor(op, adaptor.getRhs(), intType.getWidth())) {
+      if (std::optional<FloorDivMagic> magic = computeFloorDivMagic(*divisor)) {
+        builder->replaceOp(op,
+                           emitFloorDivByConstant(*builder, loc, type,
+                                                  adaptor.getLhs(), *magic));
+        return success();
+      }
+    }
+  }
+
+  Value sdiv = LLVM::SDivOp::create(*builder, loc, type, adaptor.getLhs(),
+                                    adaptor.getRhs());
+  Value mul = LLVM::MulOp::create(*builder, loc, type, sdiv, adaptor.getRhs());
+  Value icmp = LLVM::ICmpOp::create(*builder, loc, LLVM::ICmpPredicate::eq, mul,
+                                    adaptor.getLhs());
+  Value xorOp = LLVM::XOrOp::create(*builder, loc, type, adaptor.getLhs(),
+                                    adaptor.getRhs());
+
+  Value signBitShift;
+  Value zero;
+  if (auto vecType = dyn_cast<VectorType>(type)) {
+    uint64_t size = *op.getType().getResolvedSize();
+    unsigned width = vecType.getElementType().getIntOrFloatBitWidth();
+    auto zeroAttrs = cast<TypedAttr>(IntArrayElementsAttr::get(
+        vecType, SmallVector<APInt>{size, APInt::getZero(width)}));
+    auto shiftAttrs = cast<TypedAttr>(IntArrayElementsAttr::get(
+        vecType, SmallVector<APInt>{size, APInt(width, width - 1)}));
+    zero = LLVM::ConstantOp::create(*builder, loc, zeroAttrs);
+    signBitShift = LLVM::ConstantOp::create(*builder, loc, shiftAttrs);
+  } else {
+    assert(type.isIntOrFloat() && "Unexpected type in floordiv");
+    zero = LLVM::ConstantOp::create(*builder, loc,
+                                    builder->getIntegerAttr(type, 0));
+    signBitShift = LLVM::ConstantOp::create(
+        *builder, loc,
+        builder->getIntegerAttr(type, type.getIntOrFloatBitWidth() - 1));
+  }
+  Value ashr = LLVM::AShrOp::create(*builder, loc, type, xorOp, signBitShift);
+  Value sel = LLVM::SelectOp::create(*builder, loc, type, icmp, zero, ashr);
+  builder->replaceOpWithNewOp<LLVM::AddOp>(op, type,
+                                           SmallVector<Value>{sdiv, sel});
+  return success();
+}
+
+LogicalResult
+LowerPOPToLLVMPass::lowerPOPStackAllocation(StackAllocationOp op) {
+  StackAllocationOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  PointerType ptrType = cast<PointerType>(op.getType());
+  Type elementType = typeConverter->convertType(ptrType.getElementType());
+  if (!elementType)
+    return op.emitError("could not lower pointer element type");
+  std::optional<int64_t> typeAllocSize = DataLayoutInterface::getTypeAllocSize(
+      targetInfo, ptrType.getElementType());
+  if (!typeAllocSize)
+    return op.emitError("could not get size of variadic element");
+  std::optional<int64_t> typeAlign = DataLayoutInterface::getTypeABIAlign(
+      targetInfo, ptrType.getElementType());
+  if (!typeAlign)
+    return op.emitError("could not get alignment of element type");
+  int64_t explicitAlign =
+      op.getAlignment() ? cast<IntegerAttr>(*op.getAlignment()).getInt() : 0;
+  int64_t alignment = std::max(*typeAlign, explicitAlign);
+
+  StoreOp theStore;
+  SmallVector<LoadOp> loads;
+  bool allSimple = true;
+  for (Operation *user : op->getUsers()) {
+    if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
+      continue;
+    if (auto storeOp = dyn_cast<StoreOp>(user);
+        storeOp && storeOp.getOperand(1) == op.getResult() && !theStore &&
+        !storeOp.mightBeVolatile()) {
+      theStore = storeOp;
+      continue;
+    }
+    if (auto loadOp = dyn_cast<LoadOp>(user);
+        loadOp && !loadOp.mightBeVolatile()) {
+      loads.push_back(loadOp);
+      continue;
+    }
+    allSimple = false;
+    break;
+  }
+  if (allSimple && theStore) {
+    mlir::DominanceInfo domInfo;
+    bool dominates = llvm::all_of(
+        loads, [&](LoadOp load) { return domInfo.dominates(theStore, load); });
+    if (dominates) {
+      for (LoadOp load : loads) {
+        load.replaceAllUsesWith(theStore.getOperand(0));
+        builder->eraseOp(load);
+      }
+    }
+  }
+
+  Value alloca = materializeLLVMAlloca(
+      *builder, targetInfo, elementType,
+      cast<IntegerAttr>(op.getCount()).getInt(), op, *typeAllocSize, alignment);
+  builder->replaceOp(op, alloca);
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPStackAllocLifetimeStart(
+    StackAllocLifetimeStartOp op) {
+  StackAllocLifetimeStartOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  return lowerLifetimeMarker<LLVM::LifetimeStartOp>(op, adaptor.getValues(),
+                                                    targetInfo, *builder);
+}
+
+LogicalResult
+LowerPOPToLLVMPass::lowerPOPStackAllocLifetimeEnd(StackAllocLifetimeEndOp op) {
+  StackAllocLifetimeEndOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  return lowerLifetimeMarker<LLVM::LifetimeEndOp>(op, adaptor.getValues(),
+                                                  targetInfo, *builder);
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPArrayCreate(ArrayCreateOp op) {
+  ArrayCreateOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  Type type = typeConverter->convertType(op.getType());
+  if (!type)
+    return op.emitError("failed to convert array type");
+  Value array = LLVM::UndefOp::create(*builder, op.getLoc(), type);
+  for (auto [idx, value] : llvm::enumerate(adaptor.getOperands()))
+    array =
+        LLVM::InsertValueOp::create(*builder, op.getLoc(), array, value, idx);
+  builder->replaceOp(op, array);
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPArrayRepeat(ArrayRepeatOp op) {
+  ArrayRepeatOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  Type type = typeConverter->convertType(op.getType());
+  if (!type)
+    return op.emitError("failed to convert array type");
+  Value array = LLVM::UndefOp::create(*builder, op.getLoc(), type);
+  for (unsigned i = 0, size = *op.getType().getResolvedSize(); i < size;) {
+    for (Value value : adaptor.getOperands()) {
+      if (i == size)
+        break;
+      array =
+          LLVM::InsertValueOp::create(*builder, op.getLoc(), array, value, i++);
+    }
+  }
+  builder->replaceOp(op, array);
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPArrayGet(ArrayGetOp op) {
+  ArrayGetOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  builder->replaceOpWithNewOp<LLVM::ExtractValueOp>(
+      op, adaptor.getArray(), cast<IntegerAttr>(op.getIndex()).getInt());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPArrayReplace(ArrayReplaceOp op) {
+  ArrayReplaceOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  builder->replaceOpWithNewOp<LLVM::InsertValueOp>(
+      op, adaptor.getArray(), adaptor.getValue(),
+      cast<IntegerAttr>(op.getIndex()).getInt());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPArrayGEP(ArrayGEPOp op) {
+  ArrayGEPOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  Type ptrType = typeConverter->convertType(op.getType());
+  Type elementType =
+      typeConverter->convertType(op.getArray().getType().getElementType());
+  if (!ptrType)
+    return op.emitError("failed to convert result type");
+  builder->replaceOpWithNewOp<LLVM::GEPOp>(
+      op, ptrType, elementType, adaptor.getArray(),
+      ArrayRef<LLVM::GEPArg>{0, adaptor.getIndex()},
+      LLVM::GEPNoWrapFlags::inbounds);
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPLoad(LoadOp op) {
+  LoadOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  auto ptrType = cast<PointerType>(op.getPtr().getType());
+  Type elementType = typeConverter->convertType(ptrType.getElementType());
+  unsigned alignment =
+      getAlignment(typeConverter.get(), ptrType, adaptor.getAlignmentAttr());
+  builder->replaceOpWithNewOp<LLVM::LoadOp>(
+      op, elementType, adaptor.getPtr(), alignment,
+      cast<BoolAttr>(adaptor.getIsVolatile()).getValue(),
+      cast<BoolAttr>(adaptor.getIsNonTemporal()).getValue(),
+      cast<BoolAttr>(adaptor.getIsInvariant()).getValue(),
+      /*isInvariantGroup=*/false, /*isNoundef=*/false,
+      getAtomicOrdering(adaptor.getOrdering()),
+      adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
+                             : StringRef());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPStore(StoreOp op) {
+  StoreOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  auto ptrType = cast<PointerType>(op.getPtr().getType());
+  unsigned alignment =
+      getAlignment(typeConverter.get(), ptrType, adaptor.getAlignmentAttr());
+  builder->replaceOpWithNewOp<LLVM::StoreOp>(
+      op, adaptor.getArg(), adaptor.getPtr(), alignment,
+      cast<BoolAttr>(adaptor.getIsVolatile()).getValue(),
+      cast<BoolAttr>(adaptor.getIsNonTemporal()).getValue(),
+      /*isInvariantGroup=*/false, getAtomicOrdering(adaptor.getOrdering()),
+      adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
+                             : StringRef());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPMemcpy(MemcpyOp op) {
+  MemcpyOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  builder->replaceOpWithNewOp<LLVM::MemcpyOp>(
+      op, adaptor.getDst(), adaptor.getSrc(), adaptor.getLen(),
+      cast<BoolAttr>(adaptor.getIsVolatile()).getValue());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPCastToBuiltin(CastToBuiltinOp op) {
+  CastToBuiltinOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->replaceOp(op, adaptor.getInput());
+  return success();
+}
+
+LogicalResult
+LowerPOPToLLVMPass::lowerPOPCastFromBuiltin(CastFromBuiltinOp op) {
+  CastFromBuiltinOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->replaceOp(op, adaptor.getInput());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPCast(CastOp op) {
+  SmallVector<Value> operands = getLoweredOperands(op);
+  builder->setInsertionPoint(op);
+  if (targetLowering && succeeded(targetLowering->lowerFunctionLocalPOPToLLVM(
+                            op, operands, *typeConverter, *builder)))
+    return success();
+  CastOpAdaptor adaptor(operands, op);
+  KGENDType inDType = *op.getInput().getType().getResolvedDType();
+  KGENDType outDType = *op.getOutput().getType().getResolvedDType();
+  if ((inDType.isFloat() && inDType.getWidthInBits() <= 8) ||
+      (outDType.isFloat() && outDType.getWidthInBits() <= 8))
+    return op.emitError() << "illegal conversion";
+
+  auto getByteCount = [&](KGENDType dtype) -> int64_t {
+    if (dtype.isIndex() || dtype.isUIndex())
+      return typeConverter->getIndexTypeBitwidth() / CHAR_BIT;
+    return dtype.getSizeInBytes();
+  };
+  int64_t inByteCount = getByteCount(inDType);
+  int64_t outByteCount = getByteCount(outDType);
+  StringRef opName;
+  if (inDType.isBool() || inDType.isInt() || inDType.isIndex() ||
+      inDType.isUIndex()) {
+    if (outDType.isBool() || outDType.isInt() || outDType.isIndex() ||
+        outDType.isUIndex()) {
+      if (outByteCount > inByteCount || inDType.isBool())
+        opName = inDType.isSInt() ? LLVM::SExtOp::getOperationName()
+                                  : LLVM::ZExtOp::getOperationName();
+      else if (outByteCount < inByteCount || outDType.isBool())
+        opName = LLVM::TruncOp::getOperationName();
+    } else {
+      opName = inDType.isSInt() ? LLVM::SIToFPOp::getOperationName()
+                                : LLVM::UIToFPOp::getOperationName();
+    }
+  } else if (outDType.isBool() || outDType.isInt() || outDType.isIndex() ||
+             outDType.isUIndex()) {
+    opName = outDType.isSInt() ? LLVM::FPToSIOp::getOperationName()
+                               : LLVM::FPToUIOp::getOperationName();
+  } else if (outByteCount > inByteCount) {
+    opName = LLVM::FPExtOp::getOperationName();
+  } else if (outByteCount < inByteCount) {
+    if (isFPTyLoweredAsInt(getEquivalentFloatType(op.getContext(), outDType))) {
+      return emitError(op.getLoc(),
+                       Twine("casts between " + inDType.getAsString() +
+                             " and " + outDType.getAsString() +
+                             " unsupported"));
+    }
+    opName = LLVM::FPTruncOp::getOperationName();
+  } else if (outDType != inDType) {
+    return op.emitError("casts between 'bf16' and 'f16' unsupported");
+  }
+  if (opName.empty()) {
+    builder->replaceOp(op, adaptor.getInput());
+    return success();
+  }
+  OperationState state(op.getLoc(), opName);
+  state.addOperands(adaptor.getInput());
+  state.addTypes(typeConverter->convertType(op.getOutput().getType()));
+  builder->replaceOp(op, builder->create(state));
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPRound(RoundOp op) {
+  SmallVector<Value> operands = getLoweredOperands(op);
+  builder->setInsertionPoint(op);
+  if (targetLowering && succeeded(targetLowering->lowerFunctionLocalPOPToLLVM(
+                            op, operands, *typeConverter, *builder)))
+    return success();
+  RoundOpAdaptor adaptor(operands, op);
+  if (!op.getType().getResolvedDType()->isFloat()) {
+    builder->replaceOp(op, adaptor.getOperand());
+    return success();
+  }
+  builder->replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+      op, typeConverter->convertType(op.getType()),
+      builder->getStringAttr("llvm.roundeven"),
+      SmallVector<Value>{adaptor.getOperand()});
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPAbs(AbsOp op) {
+  SmallVector<Value> operands = getLoweredOperands(op);
+  builder->setInsertionPoint(op);
+  if (targetLowering && succeeded(targetLowering->lowerFunctionLocalPOPToLLVM(
+                            op, operands, *typeConverter, *builder)))
+    return success();
+  AbsOpAdaptor adaptor(operands, op);
+  KGENDType dtype = *op.getType().getResolvedDType();
+  if (dtype.isUInt() || dtype.isBool()) {
+    builder->replaceOp(op, adaptor.getOperand());
+    return success();
+  }
+  Type type = typeConverter->convertType(op.getType());
+  if (!dtype.isFloat()) {
+    Value isIntMinPoison = LLVM::ConstantOp::create(
+        *builder, op.getLoc(), builder->getIntegerType(1), false);
+    builder->replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+        op, type, builder->getStringAttr("llvm.abs"),
+        SmallVector<Value>{adaptor.getOperand(), isIntMinPoison});
+    return success();
+  }
+  builder->replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+      op, type, builder->getStringAttr("llvm.fabs"),
+      SmallVector<Value>{adaptor.getOperand()});
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPInlineAsm(InlineAsmOp op) {
+  InlineAsmOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  SmallVector<Type, 1> types;
+  if (op.getNumResults()) {
+    types.push_back(typeConverter->packFunctionResults(op->getResultTypes()));
+    if (!types.back())
+      return failure();
+  }
+  auto asmOp = LLVM::InlineAsmOp::create(
+      *builder, op.getLoc(), types.empty() ? Type() : types.front(),
+      expandOperands(*builder, op.getLoc(), adaptor.getOperands(),
+                     op.getOperands().getTypes(), *typeConverter),
+      cast<StringAttr>(adaptor.getAssembly()),
+      cast<StringAttr>(adaptor.getConstraints()),
+      cast<BoolAttr>(adaptor.getHasSideEffects()).getValue(),
+      cast<BoolAttr>(adaptor.getIsStackAligned()).getValue(),
+      LLVM::TailCallKind::None, /*convergent=*/false,
+      LLVM::AsmDialectAttr::get(op->getContext(), LLVM::AsmDialect::AD_ATT),
+      adaptor.getOperandAttrsAttr());
+  if (op.getNumResults() <= 1) {
+    builder->replaceOp(op, asmOp);
+    return success();
+  }
+  SmallVector<Value> results;
+  for (unsigned i = 0, e = op.getNumResults(); i != e; ++i)
+    results.push_back(LLVM::ExtractValueOp::create(*builder, op.getLoc(),
+                                                   asmOp.getResult(0), i));
+  builder->replaceOp(op, results);
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPAtomicCmpXchg(AtomicCmpXchgOp op) {
+  AtomicCmpXchgOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  unsigned alignment = 0;
+  if (auto attr = adaptor.getAlignment()) {
+    alignment = cast<IntegerAttr>(*attr).getInt();
+  } else if (Operation *def = adaptor.getPtr().getDefiningOp();
+             def && def->hasAttr("alignment")) {
+    alignment = cast<IntegerAttr>(def->getAttr("alignment")).getInt();
+  }
+  builder->replaceOpWithNewOp<LLVM::AtomicCmpXchgOp>(
+      op, adaptor.getPtr(), adaptor.getCmp(), adaptor.getVal(),
+      getAtomicOrdering(op.getSuccessOrdering()),
+      getAtomicOrdering(op.getFailureOrdering()),
+      adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
+                             : StringRef(),
+      alignment, adaptor.getWeak().has_value());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPAtomicRMW(AtomicRMWOp op) {
+  AtomicRMWOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  KGENDType dtype = *cast<SIMDType>(op.getType()).getResolvedDType();
+  auto getBinOp = [](KGENDType dtype, AtomicBinOp binOp) {
     switch (binOp) {
     case AtomicBinOp::XCHG:
       return LLVM::AtomicBinOp::xchg;
@@ -1588,614 +1523,306 @@ private:
         return LLVM::AtomicBinOp::fmin;
       break;
     }
-    llvm_unreachable("unknown atomic ordering");
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPFence
-//===----------------------------------------------------------------------===//
-
-class ConvertPOPFence : public ConvertPOPToLLVMPattern<FenceOp> {
-public:
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(FenceOp op, FenceOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::FenceOp>(
-        op, getAtomicOrdering(adaptor.getOrdering()),
-        adaptor.getSyncscopeAttr());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPStringAddress
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPStringAddress
-    : public ConvertPOPToLLVMPattern<StringAddressOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(StringAddressOp op,
-                                StringAddressOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-    // The first operand is a !kgen.string lowered to
-    // !llvm.struct<(ptr<i8>, index)>, grab the first field: the address
-    // of the string.
-    Value extractedAddr =
-        LLVM::ExtractValueOp::create(b, adaptor.getOperands().front(), 0);
-    rewriter.replaceOp(op, extractedAddr);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPStringSize
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPStringSize : public ConvertPOPToLLVMPattern<StringSizeOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(StringSizeOp op, StringSizeOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-    // The first operand is a !kgen.string lowered to
-    // !llvm.struct<(ptr<i8>, index)>, grab the second field: the size
-    // of the string.
-    Value extractedAddr =
-        LLVM::ExtractValueOp::create(b, adaptor.getOperands().front(), 1);
-    rewriter.replaceOp(op, extractedAddr);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPDTypeToUI8
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPDTypeToUI8 : public ConvertPOPToLLVMPattern<DTypeToUI8> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(DTypeToUI8 op, DTypeToUI8Adaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    Type type = convertType(op.getType());
-    rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, type, adaptor.getDType());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPDTypeFromUI8
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPDTypeFromUI8 : public ConvertPOPToLLVMPattern<DTypeFromUI8> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(DTypeFromUI8 op, DTypeFromUI8Adaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    rewriter.replaceOp(op, adaptor.getValue());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPCallLLVMIntrinsic
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPCallLLVMIntrinsic
-    : public ConvertPOPToLLVMPattern<CallLLVMIntrinsicOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(CallLLVMIntrinsicOp op,
-                                CallLLVMIntrinsicOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    SmallVector<Type> types;
-    if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), types)))
-      return failure();
-
-    StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
-
-    // Special handling for masked.load: convert alignment operand to attribute
-    if (intrinsicName == "llvm.masked.load") {
-      auto operands =
-          expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
-                         op.getOperands().getTypes(), *getTypeConverter());
-      if (operands.size() != 4) {
-        return op.emitError("llvm.masked.load expects 4 operands "
-                            "(ptr, alignment, mask, passthrough), got ")
-               << operands.size();
-      }
-
-      Value ptr = operands[0];
-      Value alignmentOp = operands[1];
-      Value mask = operands[2];
-      Value passthrough = operands[3];
-
-      // Extract alignment constant from the operand
-      auto alignConstOp = alignmentOp.getDefiningOp<LLVM::ConstantOp>();
-      if (!alignConstOp) {
-        return op.emitError(
-            "llvm.masked.load alignment must be a constant, got runtime value");
-      }
-
-      auto alignAttr = dyn_cast<IntegerAttr>(alignConstOp.getValue());
-      if (!alignAttr) {
-        return op.emitError("llvm.masked.load alignment must be an integer");
-      }
-
-      rewriter.replaceOpWithNewOp<LLVM::MaskedLoadOp>(
-          op, types[0], ptr, mask, passthrough,
-          alignAttr.getValue().getZExtValue());
-      return success();
-    }
-
-    // Special handling for masked.store: convert alignment operand to attribute
-    if (intrinsicName == "llvm.masked.store") {
-      auto operands =
-          expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
-                         op.getOperands().getTypes(), *getTypeConverter());
-      if (operands.size() != 4) {
-        return op.emitError("llvm.masked.store expects 4 operands "
-                            "(value, ptr, alignment, mask), got ")
-               << operands.size();
-      }
-
-      Value value = operands[0];
-      Value ptr = operands[1];
-      Value alignmentOp = operands[2];
-      Value mask = operands[3];
-
-      // Extract alignment constant from the operand
-      auto alignConstOp = alignmentOp.getDefiningOp<LLVM::ConstantOp>();
-      if (!alignConstOp) {
-        return op.emitError("llvm.masked.store alignment must be a constant, "
-                            "got runtime value");
-      }
-
-      auto alignAttr = dyn_cast<IntegerAttr>(alignConstOp.getValue());
-      if (!alignAttr) {
-        return op.emitError("llvm.masked.store alignment must be an integer");
-      }
-
-      rewriter.replaceOpWithNewOp<LLVM::MaskedStoreOp>(
-          op, value, ptr, mask, alignAttr.getValue().getZExtValue());
-      return success();
-    }
-
-    // Special handling for masked.gather: convert alignment operand to
-    // attribute
-    if (intrinsicName == "llvm.masked.gather") {
-      auto operands =
-          expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
-                         op.getOperands().getTypes(), *getTypeConverter());
-      if (operands.size() != 4) {
-        return op.emitError("llvm.masked.gather expects 4 operands "
-                            "(ptr_vec, alignment, mask, passthrough), got ")
-               << operands.size();
-      }
-
-      Value ptrs = operands[0];
-      Value alignmentOp = operands[1];
-      Value mask = operands[2];
-      Value passthrough = operands[3];
-
-      // Extract alignment constant from the operand
-      auto alignConstOp = alignmentOp.getDefiningOp<LLVM::ConstantOp>();
-      if (!alignConstOp) {
-        return op.emitError("llvm.masked.gather alignment must be a constant, "
-                            "got runtime value");
-      }
-
-      auto alignAttr = dyn_cast<IntegerAttr>(alignConstOp.getValue());
-      if (!alignAttr) {
-        return op.emitError("llvm.masked.gather alignment must be an integer");
-      }
-
-      // Create arg_attrs with alignment on the first argument (ptrs)
-      auto alignNamedAttr = rewriter.getNamedAttr("align", alignAttr);
-      auto ptrAttrs = rewriter.getDictionaryAttr({alignNamedAttr});
-      auto emptyAttrs = rewriter.getDictionaryAttr({});
-      auto argAttrs = rewriter.getArrayAttr({ptrAttrs, emptyAttrs, emptyAttrs});
-
-      // Create CallIntrinsicOp with alignment as arg attribute on ptrs
-      auto callOp = LLVM::CallIntrinsicOp::create(
-          rewriter, op.getLoc(), types, cast<StringAttr>(op.getIntrin()),
-          SmallVector<Value>{ptrs, mask, passthrough},
-          convertFastmathFlags(op.getFastmathFlags(), rewriter),
-          /*op_bundle_operands=*/ArrayRef<ValueRange>{},
-          /*op_bundle_tags=*/mlir::ArrayAttr{},
-          /*arg_attrs=*/argAttrs,
-          /*res_attrs=*/mlir::ArrayAttr{});
-      rewriter.replaceOp(op, callOp);
-      return success();
-    }
-
-    // Special handling for masked.scatter: convert alignment operand to
-    // attribute
-    if (intrinsicName == "llvm.masked.scatter") {
-      auto operands =
-          expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
-                         op.getOperands().getTypes(), *getTypeConverter());
-      if (operands.size() != 4) {
-        return op.emitError("llvm.masked.scatter expects 4 operands "
-                            "(value, ptr_vec, alignment, mask), got ")
-               << operands.size();
-      }
-
-      Value value = operands[0];
-      Value ptrs = operands[1];
-      Value alignmentOp = operands[2];
-      Value mask = operands[3];
-
-      // Extract alignment constant from the operand
-      auto alignConstOp = alignmentOp.getDefiningOp<LLVM::ConstantOp>();
-      if (!alignConstOp) {
-        return op.emitError("llvm.masked.scatter alignment must be a constant, "
-                            "got runtime value");
-      }
-
-      auto alignAttr = dyn_cast<IntegerAttr>(alignConstOp.getValue());
-      if (!alignAttr) {
-        return op.emitError("llvm.masked.scatter alignment must be an integer");
-      }
-
-      // Create arg_attrs with alignment on the second argument (ptrs)
-      auto emptyAttrs = rewriter.getDictionaryAttr({});
-      auto alignNamedAttr = rewriter.getNamedAttr("align", alignAttr);
-      auto ptrAttrs = rewriter.getDictionaryAttr({alignNamedAttr});
-      auto argAttrs = rewriter.getArrayAttr({emptyAttrs, ptrAttrs, emptyAttrs});
-
-      // Create CallIntrinsicOp with alignment as arg attribute on ptrs
-      auto callOp = LLVM::CallIntrinsicOp::create(
-          rewriter, op.getLoc(), types, cast<StringAttr>(op.getIntrin()),
-          SmallVector<Value>{value, ptrs, mask},
-          convertFastmathFlags(op.getFastmathFlags(), rewriter),
-          /*op_bundle_operands=*/ArrayRef<ValueRange>{},
-          /*op_bundle_tags=*/mlir::ArrayAttr{},
-          /*arg_attrs=*/argAttrs,
-          /*res_attrs=*/mlir::ArrayAttr{});
-      rewriter.replaceOp(op, callOp);
-      return success();
-    }
-
-    // just emit regular LLVM intrinsic call.
-    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, types, cast<StringAttr>(op.getIntrin()),
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
-                       op.getOperands().getTypes(), *getTypeConverter()),
-        convertFastmathFlags(op.getFastmathFlags(), rewriter));
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPPointerBitcast
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPPointerBitcast
-    : public ConvertPOPToLLVMPattern<PointerBitcastOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(PointerBitcastOp op,
-                                PointerBitcastOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    auto resultTy = getTypeConverter()->convertType(op.getType());
-    if (!resultTy)
-      return failure();
-
-    // The LLVMPointerType doesn't maintain an element type, just an address
-    // space.  Insert an address space cast if needed.
-    auto srcVal = adaptor.getOperands()[0];
-    if (srcVal.getType() != resultTy)
-      rewriter.replaceOpWithNewOp<LLVM::AddrSpaceCastOp>(op, resultTy, srcVal);
-    else
-      rewriter.replaceOp(op, srcVal);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPUnionBitcast
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPUnionBitcast : public ConvertPOPToLLVMPattern<UnionBitcastOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(UnionBitcastOp op,
-                                UnionBitcastOpAdaptor adaptor,
-                                DirectRewriter &b) const override {
-    b.replaceOp(op, adaptor.getValue());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPUnionWrap
-//===----------------------------------------------------------------------===//
-
-static FailureOr<Value> materializeLLVMUnionAlloca(TargetInfoAttr target,
-                                                   OpBuilder &b, Operation *op,
-                                                   Type popUnionType,
-                                                   Type llvmUnionType) {
-  std::optional<int64_t> typeAllocSize =
-      DataLayoutInterface::getTypeAllocSize(target, popUnionType);
-  std::optional<int64_t> typeABIAlign =
-      DataLayoutInterface::getTypeABIAlign(target, popUnionType);
-  if (!typeAllocSize || !typeABIAlign)
-    return op->emitError("failed to get union type size and alignment");
-
-  return materializeLLVMAlloca(b, target, llvmUnionType, 1, op, *typeAllocSize,
-                               *typeABIAlign);
+    llvm_unreachable("unknown atomic operation");
+  };
+  builder->replaceOpWithNewOp<LLVM::AtomicRMWOp>(
+      op, getBinOp(dtype, adaptor.getBinOp()), adaptor.getPtr(),
+      adaptor.getVal(), getAtomicOrdering(op.getOrdering()),
+      adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
+                             : StringRef());
+  return success();
 }
 
-struct ConvertPOPUnionWrap : public ConvertPOPToLLVMPattern<UnionWrapOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(UnionWrapOp op, UnionWrapOpAdaptor adaptor,
-                                DirectRewriter &b) const override {
-
-    auto variantType =
-        dyn_cast_or_null<LLVM::LLVMStructType>(convertType(op.getType()));
-    if (!variantType)
-      return failure();
-
-    TargetInfoAttr target = getTypeConverter()->getTarget();
-    FailureOr<Value> ptrOr =
-        materializeLLVMUnionAlloca(target, b, op, op.getType(), variantType);
-
-    if (failed(ptrOr))
-      return failure();
-
-    LLVM::StoreOp::create(b, op->getLoc(), adaptor.getValue(), *ptrOr);
-    b.replaceOpWithNewOp<LLVM::LoadOp>(op, variantType, *ptrOr);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPUnionUnwrap
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(UnionUnwrapOp op, UnionUnwrapOpAdaptor adaptor,
-                                DirectRewriter &b) const override {
-    Type valueType = convertType(op.getType());
-    if (!valueType)
-      return failure();
-
-    auto contentType = cast<LLVM::LLVMStructType>(adaptor.getValue().getType());
-    if (contentType.getBody().empty()) {
-      b.replaceOpWithNewOp<LLVM::UndefOp>(op, contentType);
-      return success();
-    }
-    assert((contentType.getBody().size() == 1 ||
-            contentType.getBody().size() == 2) &&
-           "must have 1 or 2 fields for union struct.");
-
-    TargetInfoAttr target = getTypeConverter()->getTarget();
-    FailureOr<Value> ptrOr = materializeLLVMUnionAlloca(
-        target, b, op, op.getValue().getType(), contentType);
-
-    if (failed(ptrOr))
-      return failure();
-
-    LLVM::StoreOp::create(b, op->getLoc(), adaptor.getValue(), *ptrOr);
-    b.replaceOpWithNewOp<LLVM::LoadOp>(op, valueType, *ptrOr);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPSIMDReduceOr
-//===----------------------------------------------------------------------===//
-
-/// Convert a SIMD reduction into an llvm.vector.reduce.or intrinsic. If the
-/// vector only has one element, extract that element and return it.
-struct ConvertPOPSIMDReduceOr : public ConvertPOPToLLVMPattern<SIMDReduceOrOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(SIMDReduceOrOp op,
-                                SIMDReduceOrOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    Location loc = op.getLoc();
-    auto resType = convertType(op.getType());
-
-    // If the original vector is size 1, skip the reduction and just extract the
-    // first element (note the "vector" in this case is already a scalar type,
-    // so we do a straightforward replace).
-    if (op.getVector().getType().isScalar()) {
-      rewriter.replaceOp(op, adaptor.getVector());
-      return success();
-    }
-
-    auto reduction = LLVM::vector_reduce_or::create(rewriter, loc, resType,
-                                                    adaptor.getVector());
-
-    rewriter.replaceOp(op, reduction);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPSIMDReduceAnd
-//===----------------------------------------------------------------------===//
-
-/// Convert a SIMD reduction into an llvm.vector.reduce.and intrinsic. If the
-/// vector only has one element, extract that element and return it.
-struct ConvertPOPSIMDReduceAnd
-    : public ConvertPOPToLLVMPattern<SIMDReduceAndOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(SIMDReduceAndOp op,
-                                SIMDReduceAndOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    Location loc = op.getLoc();
-    auto resType = convertType(op.getType());
-
-    // If the original vector is size 1, skip the reduction and just extract the
-    // first element (note the "vector" in this case is already a scalar type,
-    // so we do a straightforward replace).
-    if (op.getVector().getType().isScalar()) {
-      rewriter.replaceOp(op, adaptor.getVector());
-      return success();
-    }
-
-    auto reduction = LLVM::vector_reduce_and::create(rewriter, loc, resType,
-                                                     adaptor.getVector());
-
-    rewriter.replaceOp(op, reduction);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// Trivial Conversions
-//===----------------------------------------------------------------------===//
-
-using ConvertPOPAnd = DirectOneToOnePattern<AndOp, LLVM::AndOp>;
-using ConvertPOPOr = DirectOneToOnePattern<OrOp, LLVM::OrOp>;
-using ConvertPOPXOr = DirectOneToOnePattern<XOrOp, LLVM::XOrOp>;
-using ConvertPOPSIMDAnd = DirectOneToOnePattern<SIMDAndOp, LLVM::AndOp>;
-using ConvertPOPSIMDOr = DirectOneToOnePattern<SIMDOrOp, LLVM::OrOp>;
-using ConvertPOPSIMDXOr = DirectOneToOnePattern<SIMDXOrOp, LLVM::XOrOp>;
-using ConvertPOPAdd =
-    OneToOneFloatOrIntConversion<AddOp, LLVM::FAddOp, LLVM::AddOp>;
-using ConvertPOPSub =
-    OneToOneFloatOrIntConversion<SubOp, LLVM::FSubOp, LLVM::SubOp>;
-using ConvertPOPMul =
-    OneToOneFloatOrIntConversion<MulOp, LLVM::FMulOp, LLVM::MulOp>;
-using ConvertPOPDiv = OneToOneFloatOrIntConversion<DivOp, LLVM::FDivOp,
-                                                   LLVM::SDivOp, LLVM::UDivOp>;
-using ConvertPOPRem = OneToOneFloatOrIntConversion<RemOp, LLVM::FRemOp,
-                                                   LLVM::SRemOp, LLVM::URemOp>;
-using ConvertPOPMax = OneToOneFloatOrIntConversion<MaxOp, LLVM::MaxNumOp,
-                                                   LLVM::SMaxOp, LLVM::UMaxOp>;
-using ConvertPOPMin = OneToOneFloatOrIntConversion<MinOp, LLVM::MinNumOp,
-                                                   LLVM::SMinOp, LLVM::UMinOp>;
-using ConvertPOPBitcast = DirectOneToOnePattern<BitcastOp, LLVM::BitcastOp>;
-using ConvertPOPShl = DirectOneToOnePattern<ShlOp, LLVM::ShlOp>;
-using ConvertPOPPointerToIndex =
-    DirectOneToOnePattern<PointerToIndexOp, LLVM::PtrToIntOp>;
-
-} // namespace
-
-//===----------------------------------------------------------------------===//
-// Pattern Population
-//===----------------------------------------------------------------------===//
-
-static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
-                                      mlir::RewritePatternSet &patterns,
-                                      const TargetLowering *lowering) {
-  patterns.insert<
-      // clang-format off
-      ConvertPOPAbs,
-      ConvertPOPAdd,
-      ConvertPOPAnd,
-      ConvertPOPArrayCreate,
-      ConvertPOPArrayGEP,
-      ConvertPOPArrayGet,
-      ConvertPOPArrayRepeat,
-      ConvertPOPArrayReplace,
-      ConvertPOPAtomicCmpXchg,
-      ConvertPOPAtomicRMW,
-      ConvertPOPBitcast,
-      ConvertPOPCallLLVMIntrinsic,
-      ConvertPOPCast,
-      ConvertPOPCastFromBuiltin,
-      ConvertPOPCastToBuiltin,
-      ConvertPOPCmp,
-      ConvertPOPDiv,
-      ConvertPOPDTypeFromUI8,
-      ConvertPOPDTypeToUI8,
-      ConvertPOPCeil,
-      ConvertPOPFence,
-      ConvertPOPFloor,
-      ConvertPOPFMA,
-      ConvertPOPInlineAsm,
-      ConvertPOPLoad,
-      ConvertPOPMemcpy,
-      ConvertPOPMul,
-      ConvertPOPNeg,
-      ConvertPOPOffset,
-      ConvertPOPOr,
-      ConvertPOPPointerBitcast,
-      ConvertPOPPointerToIndex,
-      ConvertPOPRem,
-      ConvertPOPRound,
-      ConvertPOPSelect,
-      ConvertPOPShl,
-      ConvertPOPShr,
-      ConvertPOPSIMDAnd,
-      ConvertPOPSIMDExtractElement,
-      ConvertPOPSIMDInsertElement,
-      ConvertPOPSIMDOr,
-      ConvertPOPSIMDSelect,
-      ConvertPOPSIMDShuffle,
-      ConvertPOPSIMDSplat,
-      ConvertPOPSIMDXOr,
-      ConvertPOPStore,
-      ConvertPOPStringAddress,
-      ConvertPOPStringSize,
-      ConvertPOPSub,
-      ConvertPOPTrunc,
-      ConvertPOPUnionBitcast,
-      ConvertPOPUnionUnwrap,
-      ConvertPOPUnionWrap,
-      ConvertPOPXOr,
-      ConvertPOPSIMDReduceOr,
-      ConvertPOPSIMDReduceAnd
-      // clang-format on
-      >(typeConverter);
-
-  patterns.insert<ConvertPOPFloorDiv>(typeConverter, lowering);
+LogicalResult LowerPOPToLLVMPass::lowerPOPFence(FenceOp op) {
+  FenceOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  builder->replaceOpWithNewOp<LLVM::FenceOp>(
+      op, getAtomicOrdering(adaptor.getOrdering()), adaptor.getSyncscopeAttr());
+  return success();
 }
 
-//===----------------------------------------------------------------------===//
-// LowerPOPToLLVMPass
-//===----------------------------------------------------------------------===//
+LogicalResult LowerPOPToLLVMPass::lowerPOPStringAddress(StringAddressOp op) {
+  StringAddressOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  Value address = LLVM::ExtractValueOp::create(
+      *builder, op.getLoc(), adaptor.getOperands().front(), 0);
+  builder->replaceOp(op, address);
+  return success();
+}
 
-namespace {
-struct LowerPOPToLLVMPass
-    : public KGEN::impl::LowerPOPToLLVMBase<LowerPOPToLLVMPass> {
-  using LowerPOPToLLVMBase::LowerPOPToLLVMBase;
+LogicalResult LowerPOPToLLVMPass::lowerPOPStringSize(StringSizeOp op) {
+  StringSizeOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  Value size = LLVM::ExtractValueOp::create(*builder, op.getLoc(),
+                                            adaptor.getOperands().front(), 1);
+  builder->replaceOp(op, size);
+  return success();
+}
 
-  void runOnOperation() override;
+LogicalResult LowerPOPToLLVMPass::lowerPOPDTypeToUI8(DTypeToUI8 op) {
+  DTypeToUI8Adaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  builder->replaceOpWithNewOp<LLVM::BitcastOp>(
+      op, typeConverter->convertType(op.getType()), adaptor.getDType());
+  return success();
+}
 
-  /// Verify that the operation is a function and has no nested CFGs.
-  FailureOr<mlir::FunctionOpInterface> validateOperation();
-};
-} // namespace
+LogicalResult LowerPOPToLLVMPass::lowerPOPDTypeFromUI8(DTypeFromUI8 op) {
+  DTypeFromUI8Adaptor adaptor(getLoweredOperands(op), op);
+  builder->replaceOp(op, adaptor.getValue());
+  return success();
+}
 
-FailureOr<mlir::FunctionOpInterface> LowerPOPToLLVMPass::validateOperation() {
-  auto func = dyn_cast<mlir::FunctionOpInterface>(getOperation());
-  if (!func)
-    return getOperation()->emitError(
-        "lower-pop-to-llvm must be nested on a FunctionOpInterface");
+LogicalResult LowerPOPToLLVMPass::lowerPOPPointerBitcast(PointerBitcastOp op) {
+  PointerBitcastOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  Type resultType = typeConverter->convertType(op.getType());
+  if (!resultType)
+    return failure();
+  Value src = adaptor.getOperands()[0];
+  if (src.getType() != resultType)
+    builder->replaceOpWithNewOp<LLVM::AddrSpaceCastOp>(op, resultType, src);
+  else
+    builder->replaceOp(op, src);
+  return success();
+}
 
-  // Stack allocations cannot be lowered in the presence of CFGs.
-  Operation *cfgOp = nullptr;
-  func->walk([&cfgOp](Operation *op) {
-    if (llvm::none_of(op->getRegions(), [](Region &region) {
-          return region.getBlocks().size() > 1;
-        }))
-      return WalkResult::advance();
-    cfgOp = op;
-    return WalkResult::interrupt();
-  });
-  if (!cfgOp)
-    return func;
+LogicalResult LowerPOPToLLVMPass::lowerPOPUnionBitcast(UnionBitcastOp op) {
+  UnionBitcastOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->replaceOp(op, adaptor.getValue());
+  return success();
+}
 
-  InFlightDiagnostic diag = cfgOp->emitError(
-      "lower-pop-to-llvm cannot run on operations with CFG regions");
-  diag.attachNote() << "try running it before lower-control-flow";
-  return diag;
+LogicalResult LowerPOPToLLVMPass::lowerPOPUnionWrap(UnionWrapOp op) {
+  UnionWrapOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  auto variantType = dyn_cast_or_null<LLVM::LLVMStructType>(
+      typeConverter->convertType(op.getType()));
+  if (!variantType)
+    return failure();
+  FailureOr<Value> ptr = materializeLLVMUnionAlloca(
+      typeConverter->getTarget(), *builder, op, op.getType(), variantType);
+  if (failed(ptr))
+    return failure();
+  LLVM::StoreOp::create(*builder, op.getLoc(), adaptor.getValue(), *ptr);
+  builder->replaceOpWithNewOp<LLVM::LoadOp>(op, variantType, *ptr);
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPUnionUnwrap(UnionUnwrapOp op) {
+  UnionUnwrapOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  Type valueType = typeConverter->convertType(op.getType());
+  if (!valueType)
+    return failure();
+  auto contentType = cast<LLVM::LLVMStructType>(adaptor.getValue().getType());
+  if (contentType.getBody().empty()) {
+    builder->replaceOpWithNewOp<LLVM::UndefOp>(op, contentType);
+    return success();
+  }
+  assert((contentType.getBody().size() == 1 ||
+          contentType.getBody().size() == 2) &&
+         "must have 1 or 2 fields for union struct");
+  FailureOr<Value> ptr =
+      materializeLLVMUnionAlloca(typeConverter->getTarget(), *builder, op,
+                                 op.getValue().getType(), contentType);
+  if (failed(ptr))
+    return failure();
+  LLVM::StoreOp::create(*builder, op.getLoc(), adaptor.getValue(), *ptr);
+  builder->replaceOpWithNewOp<LLVM::LoadOp>(op, valueType, *ptr);
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPSIMDReduceOr(SIMDReduceOrOp op) {
+  SIMDReduceOrOpAdaptor adaptor(getLoweredOperands(op), op);
+  if (op.getVector().getType().isScalar()) {
+    builder->replaceOp(op, adaptor.getVector());
+    return success();
+  }
+  builder->setInsertionPoint(op);
+  Type resultType = typeConverter->convertType(op.getType());
+  builder->replaceOpWithNewOp<LLVM::vector_reduce_or>(op, resultType,
+                                                      adaptor.getVector());
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPSIMDReduceAnd(SIMDReduceAndOp op) {
+  SIMDReduceAndOpAdaptor adaptor(getLoweredOperands(op), op);
+  if (op.getVector().getType().isScalar()) {
+    builder->replaceOp(op, adaptor.getVector());
+    return success();
+  }
+  builder->setInsertionPoint(op);
+  Type resultType = typeConverter->convertType(op.getType());
+  builder->replaceOpWithNewOp<LLVM::vector_reduce_and>(op, resultType,
+                                                       adaptor.getVector());
+  return success();
+}
+
+LogicalResult
+LowerPOPToLLVMPass::lowerPOPCallLLVMIntrinsic(CallLLVMIntrinsicOp op) {
+  CallLLVMIntrinsicOpAdaptor adaptor(getLoweredOperands(op), op);
+  builder->setInsertionPoint(op);
+  SmallVector<Type> types;
+  if (failed(typeConverter->convertTypes(op.getResultTypes(), types)))
+    return failure();
+  StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
+  auto operands = expandOperands(*builder, op.getLoc(), adaptor.getOperands(),
+                                 op.getOperands().getTypes(), *typeConverter);
+
+  auto getAlignment = [&](Value alignment,
+                          StringRef name) -> FailureOr<IntegerAttr> {
+    auto constant = alignment.getDefiningOp<LLVM::ConstantOp>();
+    if (!constant)
+      return op.emitError() << name
+                            << " alignment must be a constant, got runtime "
+                               "value";
+    auto attr = dyn_cast<IntegerAttr>(constant.getValue());
+    if (!attr)
+      return op.emitError() << name << " alignment must be an integer";
+    return attr;
+  };
+
+  if (intrinsicName == "llvm.masked.load") {
+    if (operands.size() != 4)
+      return op.emitError("llvm.masked.load expects 4 operands "
+                          "(ptr, alignment, mask, passthrough), got ")
+             << operands.size();
+    FailureOr<IntegerAttr> alignment =
+        getAlignment(operands[1], "llvm.masked.load");
+    if (failed(alignment))
+      return failure();
+    builder->replaceOpWithNewOp<LLVM::MaskedLoadOp>(
+        op, types[0], operands[0], operands[2], operands[3],
+        alignment->getValue().getZExtValue());
+    return success();
+  }
+
+  if (intrinsicName == "llvm.masked.store") {
+    if (operands.size() != 4)
+      return op.emitError("llvm.masked.store expects 4 operands "
+                          "(value, ptr, alignment, mask), got ")
+             << operands.size();
+    FailureOr<IntegerAttr> alignment =
+        getAlignment(operands[2], "llvm.masked.store");
+    if (failed(alignment))
+      return failure();
+    builder->replaceOpWithNewOp<LLVM::MaskedStoreOp>(
+        op, operands[0], operands[1], operands[3],
+        alignment->getValue().getZExtValue());
+    return success();
+  }
+
+  auto createMaskedIntrinsic = [&](ValueRange callOperands,
+                                   unsigned pointerIndex,
+                                   IntegerAttr alignment) {
+    auto emptyAttrs = builder->getDictionaryAttr({});
+    auto pointerAttrs =
+        builder->getDictionaryAttr({builder->getNamedAttr("align", alignment)});
+    SmallVector<Attribute> attrs(callOperands.size(), emptyAttrs);
+    attrs[pointerIndex] = pointerAttrs;
+    return LLVM::CallIntrinsicOp::create(
+        *builder, op.getLoc(), types, cast<StringAttr>(op.getIntrin()),
+        callOperands, convertFastmathFlags(op.getFastmathFlags(), *builder),
+        /*op_bundle_operands=*/ArrayRef<ValueRange>{},
+        /*op_bundle_tags=*/mlir::ArrayAttr{},
+        /*arg_attrs=*/builder->getArrayAttr(attrs),
+        /*res_attrs=*/mlir::ArrayAttr{});
+  };
+
+  if (intrinsicName == "llvm.masked.gather") {
+    if (operands.size() != 4)
+      return op.emitError("llvm.masked.gather expects 4 operands "
+                          "(ptr_vec, alignment, mask, passthrough), got ")
+             << operands.size();
+    FailureOr<IntegerAttr> alignment =
+        getAlignment(operands[1], "llvm.masked.gather");
+    if (failed(alignment))
+      return failure();
+    Value callOperands[] = {operands[0], operands[2], operands[3]};
+    builder->replaceOp(op, createMaskedIntrinsic(callOperands, 0, *alignment));
+    return success();
+  }
+
+  if (intrinsicName == "llvm.masked.scatter") {
+    if (operands.size() != 4)
+      return op.emitError("llvm.masked.scatter expects 4 operands "
+                          "(value, ptr_vec, alignment, mask), got ")
+             << operands.size();
+    FailureOr<IntegerAttr> alignment =
+        getAlignment(operands[2], "llvm.masked.scatter");
+    if (failed(alignment))
+      return failure();
+    Value callOperands[] = {operands[0], operands[1], operands[3]};
+    builder->replaceOp(op, createMaskedIntrinsic(callOperands, 1, *alignment));
+    return success();
+  }
+
+  builder->replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+      op, types, cast<StringAttr>(op.getIntrin()), operands,
+      convertFastmathFlags(op.getFastmathFlags(), *builder));
+  return success();
+}
+
+LogicalResult LowerPOPToLLVMPass::lowerPOPAnd(AndOp op) {
+  return lowerOneToOne<AndOp, LLVM::AndOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPOr(OrOp op) {
+  return lowerOneToOne<OrOp, LLVM::OrOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPXOr(XOrOp op) {
+  return lowerOneToOne<XOrOp, LLVM::XOrOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPSIMDAnd(SIMDAndOp op) {
+  return lowerOneToOne<SIMDAndOp, LLVM::AndOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPSIMDOr(SIMDOrOp op) {
+  return lowerOneToOne<SIMDOrOp, LLVM::OrOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPSIMDXOr(SIMDXOrOp op) {
+  return lowerOneToOne<SIMDXOrOp, LLVM::XOrOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPAdd(AddOp op) {
+  return lowerFloatOrInt<AddOp, LLVM::FAddOp, LLVM::AddOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPSub(SubOp op) {
+  return lowerFloatOrInt<SubOp, LLVM::FSubOp, LLVM::SubOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPMul(MulOp op) {
+  return lowerFloatOrInt<MulOp, LLVM::FMulOp, LLVM::MulOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPDiv(DivOp op) {
+  return lowerFloatOrInt<DivOp, LLVM::FDivOp, LLVM::SDivOp, LLVM::UDivOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPRem(RemOp op) {
+  return lowerFloatOrInt<RemOp, LLVM::FRemOp, LLVM::SRemOp, LLVM::URemOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPMax(MaxOp op) {
+  return lowerFloatOrInt<MaxOp, LLVM::MaxNumOp, LLVM::SMaxOp, LLVM::UMaxOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPMin(MinOp op) {
+  return lowerFloatOrInt<MinOp, LLVM::MinNumOp, LLVM::SMinOp, LLVM::UMinOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPBitcast(BitcastOp op) {
+  return lowerOneToOne<BitcastOp, LLVM::BitcastOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPShl(ShlOp op) {
+  return lowerOneToOne<ShlOp, LLVM::ShlOp>(op);
+}
+LogicalResult LowerPOPToLLVMPass::lowerPOPPointerToIndex(PointerToIndexOp op) {
+  return lowerOneToOne<PointerToIndexOp, LLVM::PtrToIntOp>(op);
 }
 
 void LowerPOPToLLVMPass::runOnOperation() {
+  loweredValues.clear();
+  loweredOperands.clear();
+  sourceOps.clear();
+  sourceOpSet.clear();
+  builder.reset();
+  typeConverter.reset();
+  targetLowering = nullptr;
+  targetInfo = {};
+
   FailureOr<mlir::FunctionOpInterface> func = validateOperation();
   if (failed(func))
     return signalPassFailure();
@@ -2205,7 +1832,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
     return;
 
   // Set LLVM lowering options.
-  TargetInfoAttr targetInfo = lookupTargetInfo(*func);
+  targetInfo = lookupTargetInfo(*func);
   if (!targetInfo) {
     mlir::emitError(func->getLoc(),
                     "could not find an enclosing target specification");
@@ -2214,42 +1841,18 @@ void LowerPOPToLLVMPass::runOnOperation() {
 
   ErrorOr<const TargetLowering *> loweringOr =
       TargetLoweringRegistry::get().lookup(targetInfo.getTriple());
-  const TargetLowering *lowering = loweringOr.isError() ? nullptr : *loweringOr;
+  targetLowering = loweringOr.isError() ? nullptr : *loweringOr;
 
-  POPToLLVMTypeConverter typeConverter(targetInfo);
-
-  // Populate patterns and run the conversion.
-  mlir::RewritePatternSet patterns(&getContext());
-  populatePOPToLLVMPatterns(typeConverter, patterns, lowering);
-
-  patterns.insert<ConvertPOPMax, ConvertPOPMin>(typeConverter);
-  patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,
-                  ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
-
-  // Target-specific patterns contributed by the target lowering, inserted after
-  // the generic patterns. Target patterns use a higher benefit to win for the
-  // ops they handle.
-  if (lowering) {
-    lowering->populateLowerPOPToLLVMPatterns(patterns, typeConverter,
-                                             targetInfo);
-  }
-
-  // Ops the target lowers in the global pass are skipped here.
-  auto skipOp = [&](Operation *op) {
-    return lowering &&
-           isa<POP::MaxOp, POP::MinOp, POP::AtomicRMWOp, POP::AtomicCmpXchgOp,
-               POP::CastOp, POP::FenceOp, CallLLVMIntrinsicOp>(op) &&
-           lowering->isLoweredInGlobalPOPPass(op);
+  typeConverter = std::make_unique<POPToLLVMTypeConverter>(targetInfo);
+  auto replace = [&](Operation *op, ValueRange replacements) {
+    recordReplacement(op, replacements);
   };
-  // Every POP op must convert except the ones other passes handle.
-  auto mustConvert = [&](Operation *op) {
-    return isa_and_present<POPDialect>(op->getDialect()) &&
-           !isa<GlobalAllocOp, GlobalConstantOp, ExternalCallOp,
-                ExternPointerSymbolOp, AlignedAllocOp, AlignedFreeOp>(op);
-  };
-  if (failed(M::applyDirectConversion(
-          *func, &typeConverter, std::move(patterns), skipOp, mustConvert)))
+  auto erase = [&](Operation *op) { queueSourceOpForErasure(op); };
+  builder = std::make_unique<POPLoweringBuilder>(&getContext(), replace, erase);
+
+  if (failed(lowerBlock(func->getFunctionBody().front())))
     return signalPassFailure();
+  replaceUsesAndEraseSourceOps();
 
   // The index dialect is lowered with the upstream conversion patterns, which
   // require the dialect conversion driver; run it rollback-free over the
@@ -2259,7 +1862,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   indexTarget.addLegalDialect<LLVM::LLVMDialect>();
   indexTarget.addLegalOp<mlir::UnrealizedConversionCastOp>();
   mlir::RewritePatternSet indexPatterns(&getContext());
-  mlir::index::populateIndexToLLVMConversionPatterns(typeConverter,
+  mlir::index::populateIndexToLLVMConversionPatterns(*typeConverter,
                                                      indexPatterns);
   mlir::ConversionConfig config;
   config.allowPatternRollback = false;
