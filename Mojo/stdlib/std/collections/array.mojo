@@ -691,7 +691,7 @@ struct Array[T: AnyType, length: Int](
             This method provides array-style indexing access to elements in the
             Array. The index is bounds-checked at runtime.
         """
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self._unchecked_get(idx)
 
     @inline(.always)
@@ -717,7 +717,7 @@ struct Array[T: AnyType, length: Int](
             This method provides array-style indexing access to elements in the
             Array. The index is bounds-checked at runtime.
         """
-        check_bounds(idx, len(self))
+        check_bounds(index(idx), length=len(self))
         return self._unchecked_get(idx)
 
     @inline(.always)
@@ -1037,7 +1037,7 @@ struct Array[T: AnyType, length: Int](
             This is an unsafe method that skips bounds checking for performance.
             Users should prefer `__getitem__` instead for safety.
         """
-        check_bounds[cpu_default=False](idx, len(self))
+        check_bounds[cpu_default=False](index(idx), length=len(self))
         return self._unchecked_get(idx)
 
     @inline(.always)

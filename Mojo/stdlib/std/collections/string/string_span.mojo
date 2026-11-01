@@ -924,7 +924,7 @@ struct StringSpan[origin: ImmOrigin](
         # Show source location where user provided incorrect index by skipping
         # two levels of inlining above this function call.
         var location = call_location[inline_count=2]()
-        check_bounds(idx, self.byte_length(), location)
+        check_bounds(idx, length=self.byte_length(), location=location)
         # Subscripting checks codepoint boundaries unconditionally, to avoid
         # breaking methods that assume valid utf8.
         debug_assert[assert_mode="safe"](

@@ -364,7 +364,7 @@ struct Span[
         Returns:
             A reference to the element at the given index.
         """
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self._data[unsafe_offset=idx]
 
     @inline(.always)
@@ -379,7 +379,7 @@ struct Span[
         Returns:
             A reference to the element at the given index.
         """
-        check_bounds(idx, len(self))
+        check_bounds(index(idx), length=len(self))
         return self._data[unsafe_offset=idx]
 
     @inline(.always)
@@ -398,7 +398,7 @@ struct Span[
             "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
             " instead"
         )
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self._data[unsafe_offset=idx]
 
     @inline(.always)
@@ -657,7 +657,7 @@ struct Span[
             in undefined behavior.
             - This function does not support wraparound for negative indices.
         """
-        check_bounds[cpu_default=False](idx, len(self))
+        check_bounds[cpu_default=False](index(idx), length=len(self))
         return self._data[unsafe_offset=idx]
 
     @always_inline("builtin")

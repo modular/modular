@@ -610,7 +610,7 @@ struct LinkedList[ElementType: Movable](
 
         # Valid range is `[0, len(self)]` (an index of `len(self)` appends).
         var i = index(idx)
-        check_bounds(i, len(self) + 1)
+        check_bounds(i, length=len(self) + 1)
 
         if i == 0:
             var node: Pointer[
@@ -844,7 +844,7 @@ struct LinkedList[ElementType: Movable](
         """
         var i = index(idx)
         var l = len(self)
-        check_bounds(i, l, call_location[inline_count=2]())
+        check_bounds(i, length=l, location=call_location[inline_count=2]())
         var mid = l // 2
         if i <= mid:
             var curr = self._head

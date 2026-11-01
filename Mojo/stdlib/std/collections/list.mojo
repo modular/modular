@@ -929,7 +929,7 @@ struct List[T: AnyType, /](
         ```
         """
         # Valid range is `[0, len(self)]` (`len(self)` appends).
-        check_bounds(i, len(self) + 1)
+        check_bounds(i, length=len(self) + 1)
 
         var old_len = self._len
         self._grow_amortized(old_len + 1)
@@ -1116,7 +1116,7 @@ struct List[T: AnyType, /](
         print(numbers)                            # ['1', '2', '4', '5']
         ```
         """
-        check_bounds(i, len(self))
+        check_bounds(i, length=len(self))
         # UntrackedOrigin is needed to prevent exclusivity violations
         var data = self.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
         var ret_val = data.unsafe_offset(i).unsafe_take_pointee()
@@ -1483,7 +1483,7 @@ struct List[T: AnyType, /](
         comptime assert (
             IntLiteral[idx.value]() >= 0
         ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self.unsafe_get(index(idx))
 
     @stable(since="1.0")
@@ -1504,7 +1504,7 @@ struct List[T: AnyType, /](
         Returns:
             A reference to the element at the given index.
         """
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self.unsafe_get(index(idx))
 
     @__unsafe_nested_origins_read_only
@@ -1524,7 +1524,7 @@ struct List[T: AnyType, /](
         Returns:
             A reference to the element at the given index.
         """
-        check_bounds(idx, len(self))
+        check_bounds(index(idx), length=len(self))
         return self.unsafe_get(index(idx))
 
     @__unsafe_nested_origins_read_only
@@ -1550,7 +1550,7 @@ struct List[T: AnyType, /](
             Never use `my_list.unsafe_get(-1)` to get the last element of the
             list. Instead, do `my_list.unsafe_get(len(my_list) - 1)`.
         """
-        check_bounds[cpu_default=False](idx, len(self))
+        check_bounds[cpu_default=False](idx, length=len(self))
         return self._unsafe_interior_ptr().unsafe_offset(idx)[]
 
     @inline(.always)
@@ -1573,7 +1573,7 @@ struct List[T: AnyType, /](
             Never use `my_list.unsafe_set(-1, value)` to set the last element of
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
-        check_bounds[cpu_default=False](idx, len(self))
+        check_bounds[cpu_default=False](idx, length=len(self))
         Span(self)._unchecked_get(idx) = value^
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):

@@ -1063,7 +1063,7 @@ struct IntTuple(
         ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
         # This avoids an interpreter unsafe_memcpy error
         if not __is_run_in_comptime_interpreter:
-            check_bounds(idx, len(self))
+            check_bounds(idx, length=len(self))
         return self._unchecked_get(Int(idx))
 
     @inline(.always)
@@ -1079,7 +1079,7 @@ struct IntTuple(
         """
         # This avoids an interpreter unsafe_memcpy error
         if not __is_run_in_comptime_interpreter:
-            check_bounds(idx, len(self))
+            check_bounds(idx, length=len(self))
         return self._unchecked_get(idx)
 
     @inline(.always)
