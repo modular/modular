@@ -30,6 +30,10 @@ from max.pipelines.architectures.qwen3_embedding import (
     Qwen3EmbeddingEncoder,
     qwen3_embedding_arch,
 )
+from max.pipelines.architectures.qwen3_embedding_modulev3 import (
+    Qwen3Embedding,
+    qwen3_embedding_modulev3_arch,
+)
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.lib.registration_encoder import (
     EncoderPipelineModel,
@@ -60,6 +64,13 @@ _MODULEV3 = ModuleV3EncoderPipelineModel
             MPNetModuleV3Model,
             "MPNetModel",
             PaddedEncoderProcessor,
+            _MODULEV3,
+        ),
+        (
+            qwen3_embedding_modulev3_arch,
+            Qwen3Embedding,
+            "Qwen3Embedding",
+            RaggedEncoderProcessor,
             _MODULEV3,
         ),
     ],

@@ -82,6 +82,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/qwen3",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3_embedding",
+        "//max/python/max/pipelines/architectures/qwen3_embedding_modulev3",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
         "//max/python/max/pipelines/architectures/step3p5",
         "//max/python/max/pipelines/lib",

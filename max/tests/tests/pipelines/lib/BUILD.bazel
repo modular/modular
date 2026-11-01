@@ -59,7 +59,6 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/architectures/minimax_m2",
         "//max/python/max/pipelines/architectures/qwen3_5",
-        "//max/python/max/pipelines/architectures/qwen3_embedding_modulev3",
         "//max/python/max/pipelines/architectures/wan",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",

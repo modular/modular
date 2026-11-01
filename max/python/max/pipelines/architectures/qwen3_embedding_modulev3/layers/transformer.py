@@ -122,27 +122,3 @@ class Qwen3EmbeddingTransformer(
             return (embeddings_normalized,)
         else:
             return (F.cast(h, DType.float32),)
-
-
-class Qwen3Embedding(
-    Module[[Tensor, Tensor, Tensor], tuple[Tensor, ...]],
-):
-    """Wrapper module providing ``language_model.`` weight prefix.
-
-    V3's ``compile(weights=state_dict)`` resolves names from the root module.
-    The weight adapter maps ``model.`` to ``language_model.``, so the root
-    compiled module must store the transformer as ``self.language_model``.
-    """
-
-    def __init__(self, transformer: Qwen3EmbeddingTransformer) -> None:
-        super().__init__()
-        self.language_model = transformer
-
-    def forward(
-        self,
-        tokens: Tensor,
-        input_row_offsets: Tensor,
-        return_n_logits: Tensor,
-    ) -> tuple[Tensor, ...]:
-        """Runs the language model over the tokens."""
-        return self.language_model(tokens, input_row_offsets, return_n_logits)
