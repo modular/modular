@@ -52,3 +52,49 @@ struct CStruct(ImplicitlyCopyable):
         """
         self.rename = rename
         self.skip_fields = skip_fields
+
+
+struct CField(ImplicitlyCopyable):
+    """Describes how a field of a struct that mirrors a C struct is checked
+    against C.
+
+    Attach it to the field with `@__annotation`. A field without one is
+    checked against the C field of the same name, at the C type that its Mojo
+    type implies.
+
+    Example:
+
+    ```mojo
+    from std.testing._ffi import CField, CStruct
+
+    @__annotation(CStruct(rename="kevent"))
+    struct kevent_s:
+        @__annotation(CField(rename="udata", c_type="void *"))
+        var _udata: Array[UInt32, 2]
+    ```
+    """
+
+    var rename: Optional[String]
+    """The C field's name, when it differs from the Mojo field's name."""
+
+    var c_type: Optional[String]
+    """The C field's type, overriding the one that the Mojo field's type
+    implies."""
+
+    def __init__(
+        out self,
+        *,
+        rename: Optional[String] = None,
+        c_type: Optional[String] = None,
+    ):
+        """Creates the annotation.
+
+        Args:
+            rename: The C field's name, when it differs from the Mojo field's
+                name.
+            c_type: The C field's type as spelled in C, such as `void *`.
+                The field's type check uses it instead of the type that the
+                Mojo field's type implies. It can't be an array type.
+        """
+        self.rename = rename
+        self.c_type = c_type
