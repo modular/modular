@@ -174,7 +174,7 @@ def matmul_swiglu_dispatch_sm100[
 
 
 def matmul_swiglu_dispatch_sm100_bf16[
-    pdl_level: PDLLevel = PDLLevel(0),
+    pdl_level: PDLLevel = PDLLevel.ON,
     has_bias: Bool = False,
 ](
     c_out: TileTensor[mut=True, ...],

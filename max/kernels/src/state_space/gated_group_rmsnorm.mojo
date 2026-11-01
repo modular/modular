@@ -305,7 +305,6 @@ def gated_group_rmsnorm_gpu[
     GateFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int](Int, Int) -> SIMD[gate_dtype, width],
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     output: TileTensor[mut=True, dtype, ...],
     y: TileTensor[dtype, ...],
@@ -324,8 +323,6 @@ def gated_group_rmsnorm_gpu[
         group_size: Width of each independently normalized group.
         GateFn: Reads the gate projection `[n_rows, num_groups * group_size]`,
             claiming `alignment` elements of alignment.
-        pdl_level: Programmatic dependent launch level. Every enabled level
-            waits on the predecessor grid, including `NO_WAIT_OVERLAP_AT_END`.
 
     Args:
         output: The `[n_rows, num_groups * group_size]` result.
@@ -360,7 +357,11 @@ def gated_group_rmsnorm_gpu[
                 type_of(y).Engine,
                 type_of(weight).Engine,
                 GateFn,
-                pdl_level,
+                # Wait on the predecessor grid, then release dependents right
+                # after the wait: a following GEMM overlaps its prologue with
+                # the norm, and its own wait still blocks until the norm
+                # completes.
+                PDLLevel.OVERLAP_AT_BEGINNING,
             ]
             ctx.enqueue_function[vec_kernel](
                 output,
@@ -372,7 +373,7 @@ def gated_group_rmsnorm_gpu[
                 host_args=(gate_fn,),
                 grid_dim=ceildiv(total_warps * warp_size, VEC_BLK),
                 block_dim=VEC_BLK,
-                attributes=pdl_launch_attributes(pdl_level),
+                attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_BEGINNING),
             )
             return
 
@@ -389,7 +390,10 @@ def gated_group_rmsnorm_gpu[
         type_of(y).Engine,
         type_of(weight).Engine,
         GateFn,
-        pdl_level,
+        # Wait on the predecessor grid, then release dependents right after
+        # the wait: a following GEMM overlaps its prologue with the norm, and
+        # its own wait still blocks until the norm completes.
+        PDLLevel.OVERLAP_AT_BEGINNING,
     ]
     ctx.enqueue_function[kernel](
         output,
@@ -402,7 +406,7 @@ def gated_group_rmsnorm_gpu[
         host_args=(gate_fn,),
         grid_dim=grid,
         block_dim=BLK,
-        attributes=pdl_launch_attributes(pdl_level),
+        attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_BEGINNING),
     )
 
 

@@ -684,7 +684,6 @@ def _dispatch_rs_norm[
     TwoLaunchFuncType: def() raises -> None,
     has_residual: Bool = False,
     group_size: Int = ngpus,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -735,8 +734,6 @@ def _dispatch_rs_norm[
         group_size: Number of devices per independent reduce-scatter group.
             Must evenly divide `ngpus`. Defaults to `ngpus` (one full-world
             group, byte-identical to the pre-grouping behavior).
-        pdl_level: PDL setting for the fused kernel; see `reducescatter_rmsnorm`.
-            Comptime, so it cannot make the fuse gate below group-variant.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors,
@@ -815,7 +812,7 @@ def _dispatch_rs_norm[
         reducescatter_rmsnorm[
             has_residual=has_residual,
             group_size=group_size,
-            pdl_level=pdl_level,
+            pdl_level=PDLLevel.ON,
         ](
             input_buffers,
             normed_out,

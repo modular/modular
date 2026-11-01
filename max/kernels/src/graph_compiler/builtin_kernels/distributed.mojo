@@ -61,7 +61,6 @@ from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import DeviceContext, DeviceContextArray
-from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, row_major
 from layout.int_tuple import UNKNOWN_VALUE
@@ -1029,15 +1028,8 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             # The kernel waits for the producing GEMM before it signals its
             # peers, and the next GEMM waits for this kernel to retire, so
             # releasing that GEMM at entry lets it prefetch weights meanwhile.
-            # TODO(adakkak): only the two-rank launches were run with PDL on;
-            # lift the gate once TP=4 and TP=8 are verified.
-            comptime pdl_level = (
-                PDLLevel.OVERLAP_AT_BEGINNING if num_devices
-                <= 2 else PDLLevel.OFF
-            )
             allreduce_residual_rmsnorm[
-                multiply_before_cast=multiply_before_cast,
-                pdl_level=pdl_level,
+                multiply_before_cast=multiply_before_cast
             ](
                 in_tensors,
                 residual_buf,
@@ -1538,7 +1530,6 @@ struct DistributedReduceScatterRMSNorm:
                 _dispatch_rs_norm[
                     has_residual=True,
                     group_size=group_size,
-                    pdl_level=PDLLevel.ON,
                 ](
                     in_tensors,
                     normed_buf,
@@ -1556,7 +1547,6 @@ struct DistributedReduceScatterRMSNorm:
                 _dispatch_rs_norm[
                     has_residual=False,
                     group_size=group_size,
-                    pdl_level=PDLLevel.ON,
                 ](
                     in_tensors,
                     normed_buf,
@@ -1788,12 +1778,7 @@ struct DistributedAllGatherRMSNorm:
                     dev_ctxs_input[index],
                 )
 
-            # PDL is verified on 2 GPUs only; 4/8-GPU and grouped runs stay OFF
-            # until someone measures them.
-            comptime ag_norm_pdl = (
-                PDLLevel.ON if num_devices == 2 else PDLLevel.OFF
-            )
-            _dispatch_ag_norm[group_size=group_size, pdl_level=ag_norm_pdl](
+            _dispatch_ag_norm[group_size=group_size](
                 in_tensors,
                 normed_buf,
                 sum_buf,
@@ -2472,8 +2457,6 @@ struct LamportAllreduceRMSNorm:
     def execute[
         target: StaticString,
         my_rank: Int,
-        pdl: Bool = True,
-        early_launch: Bool = True,
     ](
         output: OutputTensor[rank=2, ...],
         act: InputTensor[dtype=output.dtype, rank=2, ...],
@@ -2534,9 +2517,7 @@ struct LamportAllreduceRMSNorm:
         var dst = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](output._ptr)
         var gm = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](gamma._ptr)
 
-        lamport_allreduce_rmsnorm[
-            dtype, ngpus, pdl=pdl, early_launch=early_launch
-        ](
+        lamport_allreduce_rmsnorm[dtype, ngpus](
             my_rank,
             src,
             dst,

@@ -286,7 +286,7 @@ def rmsnorm_test[
     for it in range(iters):
         comptime if interleave_zero_rows:
             comptime for g in range(ngpus):
-                lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+                lamport_allreduce_rmsnorm[dtype, ngpus](
                     g,
                     rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                         act_in[g].unsafe_ptr()
@@ -305,7 +305,7 @@ def rmsnorm_test[
                 )
         group_start()
         comptime for g in range(ngpus):
-            lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+            lamport_allreduce_rmsnorm[dtype, ngpus](
                 g,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_in[g].unsafe_ptr()
@@ -495,7 +495,7 @@ def unsynced_skew_test[
     for it in range(NUM_UNSYNCED_ITERS):
         var base = it * slice_size
         comptime for g in range(ngpus):
-            lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+            lamport_allreduce_rmsnorm[dtype, ngpus](
                 g,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_big[g].unsafe_ptr().unsafe_offset(base)

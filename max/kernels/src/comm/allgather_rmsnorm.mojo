@@ -722,7 +722,6 @@ def _dispatch_ag_norm[
     TwoLaunchFnType: def() raises -> None,
     //,
     group_size: Int = ngpus,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -759,14 +758,6 @@ def _dispatch_ag_norm[
         group_size: Number of devices per independent all-gather group. Must
             evenly divide `ngpus`. Defaults to `ngpus` (one full-world group,
             byte-identical to the pre-grouping behavior).
-        pdl_level: Programmatic dependent launch level. Above `OFF` the grid
-            waits on its predecessor before it reads any input, including
-            gamma, and releases its dependents after the end barrier that
-            retires the peers' reads (`ON`) or right after that wait
-            (`OVERLAP_AT_BEGINNING`). That level requires the next kernel not
-            to write this kernel's inputs before its own PDL wait, because
-            peers may still be reading them. `ON` is the level that is safe
-            against a dependent that does.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors,
@@ -835,7 +826,9 @@ def _dispatch_ag_norm[
     if fuse:
         # Hand the fused kernel the whole world plus the group width, and
         # let it derive the group-local slice, rank, and barrier domain
-        # itself.
+        # itself. PDL is verified on 2 GPUs only; 4/8-GPU and grouped runs
+        # stay OFF until someone measures them.
+        comptime pdl_level = PDLLevel.ON if ngpus == 2 else PDLLevel.OFF
         allgather_rmsnorm[group_size=group_size, pdl_level=pdl_level](
             input_buffers,
             normed_out,

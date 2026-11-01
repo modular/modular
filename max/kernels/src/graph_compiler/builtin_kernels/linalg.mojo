@@ -32,10 +32,8 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 
 from max.gpu.host import DeviceBuffer, DeviceContext
-from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
 from max.gpu.host.info import is_gpu, _is_sm10x_gpu
-from max.gpu.primitives.grid_controls import PDLLevel
 from layout import (
     Coord,
     Idx,
@@ -602,7 +600,6 @@ struct BatchMatmulGPU:
                 transpose_a=False,
                 transpose_b=transpose_b,
                 target=target,
-                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -615,7 +612,6 @@ struct BatchMatmulGPU:
                 transpose_a=False,
                 transpose_b=transpose_b,
                 target=target,
-                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -821,7 +817,6 @@ struct Struct_grouped_matmul_ragged:
         grouped_matmul[
             has_epilogue_fn=has_epilogue_fusion and not has_compute_lambda,
             has_compute_fn=has_epilogue_fusion and has_compute_lambda,
-            pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
         ](
             c.to_tile_tensor[.int64](),
             a.to_tile_tensor[.int64](),
@@ -1268,7 +1263,6 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
         grouped_matmul_rowwise_dynamic_scaled_fp8[
             transpose_b=True,
             target=target,
-            pdl_level=PDLLevel.ON,
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -1806,7 +1800,6 @@ struct Struct_matmul_dynamic_block_scaled:
             transpose_b=True,
             has_epilogue_fn=has_epilogue_fusion and not has_compute_lambda,
             has_compute_fn=has_epilogue_fusion and has_compute_lambda,
-            pdl_level=PDLLevel.ON,
             target=target,
         ](
             c.to_tile_tensor[.int64](),
@@ -1858,7 +1851,6 @@ struct Struct_matmul_dynamic_block_scaled_block_diagonal:
         block_scaled_matmul_block_diagonal[
             groups=groups,
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            pdl_level=PDLLevel.ON,
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -2404,7 +2396,6 @@ struct MatmulDynamicScaledFloat8:
             k_scale_granularity,
             transpose_b=True,
             target=target,
-            pdl_level=PDLLevel.ON,
         ](
             output.to_tile_tensor(),
             a.to_tile_tensor(),
@@ -2690,7 +2681,7 @@ struct MatmulSwiGLU:
         comptime assert type_of(output).dtype == DType.bfloat16
         comptime assert type_of(a).dtype == DType.bfloat16
         comptime assert type_of(b).dtype == DType.bfloat16
-        matmul_swiglu_dispatch_sm100_bf16[pdl_level=PDLLevel.ON](
+        matmul_swiglu_dispatch_sm100_bf16(
             output.to_tile_tensor(),
             a.to_tile_tensor(),
             b.to_tile_tensor(),
@@ -2731,7 +2722,7 @@ struct MatmulSwiGLUBias:
         comptime assert type_of(a).dtype == DType.bfloat16
         comptime assert type_of(b).dtype == DType.bfloat16
         comptime assert type_of(bias).dtype == DType.bfloat16
-        matmul_swiglu_dispatch_sm100_bf16[pdl_level=PDLLevel.ON, has_bias=True](
+        matmul_swiglu_dispatch_sm100_bf16[has_bias=True](
             output.to_tile_tensor(),
             a.to_tile_tensor(),
             b.to_tile_tensor(),

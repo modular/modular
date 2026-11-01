@@ -253,7 +253,7 @@ def check_equal(
 
 
 def conv_launch[
-    WIDTH: Int, pdl: PDLLevel
+    WIDTH: Int
 ](
     ctx: DeviceContext,
     w_buf: DeviceBuffer[DType.bfloat16],
@@ -292,7 +292,7 @@ def conv_launch[
     ](b: Int) {var slot_t} -> SIMD[DType.uint32, width]:
         return slot_t.load[width=width]((b,))
 
-    causal_conv1d_varlen_fwd_gpu[WIDTH, True, False, True, pdl](
+    causal_conv1d_varlen_fwd_gpu[WIDTH, True, False, True](
         w_t,
         bias_t,
         qsl_t,
@@ -375,7 +375,7 @@ def conv_case[
     ctx.enqueue_copy(st_pdl, st_h)
 
     # Reference: PDL off, straight from the sources.
-    conv_launch[WIDTH, PDLLevel.OFF](
+    conv_launch[WIDTH](
         ctx,
         w_d,
         bias_d,
@@ -457,7 +457,7 @@ def conv_case[
             empty,
             empty,
         )
-        conv_launch[WIDTH, level](
+        conv_launch[WIDTH](
             ctx,
             w_dst,
             bias_dst,
@@ -591,7 +591,6 @@ def scan_launch[
         True,
         prefill,
         CH_PER_THREAD=CH_PER_THREAD,
-        pdl_level=pdl,
     ]
     ctx.enqueue_function[kernel](
         Int32(ngroups),
@@ -839,7 +838,7 @@ def scan_case[
 
 
 def norm_launch[
-    group_size: Int, gate_dtype: DType, pdl: PDLLevel
+    group_size: Int, gate_dtype: DType
 ](
     ctx: DeviceContext,
     w_buf: DeviceBuffer[DType.float32],
@@ -863,7 +862,7 @@ def norm_launch[
         ]((r, col))
 
     gated_group_rmsnorm_gpu[
-        DType.bfloat16, gate_dtype, group_size, type_of(gate_fn), pdl
+        DType.bfloat16, gate_dtype, group_size, type_of(gate_fn)
     ](out_t, y_t, gate_fn, w_t, n_rows, num_groups, Float32(1e-5), ctx)
 
 
@@ -905,7 +904,7 @@ def norm_case[
     ctx.enqueue_copy(y_src, y_h)
     ctx.enqueue_copy(gate_src, gate_h)
     ctx.enqueue_copy(w_d, w_h)
-    norm_launch[group_size, gate_dtype, PDLLevel.OFF](
+    norm_launch[group_size, gate_dtype](
         ctx, w_d, y_src, gate_src, out_ref, n_rows, num_groups
     )
     launch_consumer[PDLLevel.OFF](
@@ -955,7 +954,7 @@ def norm_case[
             empty,
             empty,
         )
-        norm_launch[group_size, gate_dtype, level](
+        norm_launch[group_size, gate_dtype](
             ctx, w_dst, y_dst, gate_dst, out_pdl, n_rows, num_groups
         )
         launch_consumer[level](

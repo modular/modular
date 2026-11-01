@@ -2972,7 +2972,7 @@ def block_scaled_matmul[
     compute_fn_needs_vectors: Bool = False,
     compute_fn_col_period: Int = 0,
     compute_fn_col_start: Int = 0,
-    pdl_level: PDLLevel = PDLLevel.OFF,
+    pdl_level: PDLLevel = PDLLevel.ON,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](

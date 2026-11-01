@@ -65,7 +65,6 @@ def rms_norm[
     weight_offset: Float32,
     multiply_before_cast: Bool = True,
     reduce_dim: Int = rank - 1,
-    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     input_fn: InputFn,
     output_fn: OutputFn,
@@ -175,7 +174,9 @@ def rms_norm[
         num_phases=2,
         dtype_size=size_of[dtype](),
         computationally_expensive=True,
-        pdl_level=pdl_level,
+        # Wait on the predecessor grid, then release dependents early so a
+        # following GEMM overlaps its prologue with the norm.
+        pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
     ](body, shape, context)
 
 

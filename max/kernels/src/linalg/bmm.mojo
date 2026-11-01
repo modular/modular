@@ -1297,7 +1297,7 @@ def batched_matmul[
     transpose_b: Bool = False,
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
     a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
@@ -1354,7 +1354,7 @@ def batched_matmul[
     transpose_b: Bool = False,
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
     a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
@@ -1417,7 +1417,7 @@ def batched_matmul[
     transpose_b: Bool = False,
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
     a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],

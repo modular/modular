@@ -106,8 +106,6 @@ def _allreduce_lamport_rmsnorm_kernel[
     CLUSTER_SIZE: Int = 1,
     has_residual: Bool = False,
     multiply_before_cast: Bool = True,
-    pdl: Bool = True,
-    early_launch: Bool = True,
 ](
     result: MutPointer[Scalar[dtype], MutAnyOrigin],
     src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
@@ -160,16 +158,11 @@ def _allreduce_lamport_rmsnorm_kernel[
         2, Scalar[accum_type], address_space=.SHARED
     ]()
 
-    # PDL: wait for the producer, then (if early_launch) release the consumer
-    # immediately so it overlaps the whole AR+RMSNorm. Called by all threads in
-    # the block before any divergence. With `early_launch=False` the trigger is
-    # instead moved to the END of the kernel (after the output is written), so
-    # the consumer overlaps only the tail bookkeeping + grid teardown -- partial
-    # overlap rather than full.
-    comptime if pdl:
-        wait_on_dependent_grids()
-        comptime if early_launch:
-            launch_dependent_grids()
+    # PDL: wait for the producer, then release the consumer immediately so it
+    # overlaps the whole AR+RMSNorm. Called by all threads in the block before
+    # any divergence.
+    wait_on_dependent_grids()
+    launch_dependent_grids()
 
     # This rank's own region (polled) + peer regions in round-robin order.
     var my_region = rank_sigs[my_rank][].lamport_region_ptr[dtype]()
@@ -301,17 +294,6 @@ def _allreduce_lamport_rmsnorm_kernel[
                     width=atomic_width, alignment=alignment, volatile=True
                 ](clr_off * atomic_width, sentinel)
 
-    # When the early trigger is disabled, release the consumer HERE instead --
-    # after this block's `result` writes are done, but before the tail
-    # bookkeeping (leftover clear + generation advance) and grid teardown. The
-    # next GEMM thus still overlaps that tail rather than waiting for full grid
-    # completion (partial overlap). launch_dependent_grids makes this block's
-    # prior writes visible to the dependent grid, so triggering after the output
-    # store is correct (strictly safer than the start trigger, which fires before
-    # any output is written).
-    comptime if pdl and not early_launch:
-        launch_dependent_grids()
-
     # (f-tail) If the previous call was LARGER, clear the leftover packs of the
     # reused generation here (empty in the common same-size case).
     var cur_packs = rows * packs_per_row
@@ -405,8 +387,6 @@ def _lamport_allreduce_rmsnorm_launch[
     *,
     has_residual: Bool = False,
     multiply_before_cast: Bool = True,
-    pdl: Bool = True,
-    early_launch: Bool = True,
 ](
     my_rank: Int,
     src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
@@ -465,8 +445,6 @@ def _lamport_allreduce_rmsnorm_launch[
     if rows == 0:
         return
 
-    comptime pdl_level = PDLLevel.ON if pdl else PDLLevel.OFF
-
     def launch[block_size: Int, cluster_size: Int]() raises {imm}:
         comptime kernel = _allreduce_lamport_rmsnorm_kernel[
             ResidualLayoutType=residual.T.LayoutType,
@@ -479,8 +457,6 @@ def _lamport_allreduce_rmsnorm_launch[
             CLUSTER_SIZE=cluster_size,
             has_residual=has_residual,
             multiply_before_cast=multiply_before_cast,
-            pdl=pdl,
-            early_launch=early_launch,
         ]
         var num_clusters = min(MAX_NUM_BLOCKS_UPPER_BOUND // cluster_size, rows)
         ctx.enqueue_function[kernel](
@@ -499,7 +475,7 @@ def _lamport_allreduce_rmsnorm_launch[
             block_dim=block_size,
             cluster_dim=OptionalReg(Dim(cluster_size, 1, 1)) if cluster_size
             > 1 else None,
-            attributes=pdl_launch_attributes(pdl_level),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     comptime if _clusters_supported[ngpus]():
@@ -514,9 +490,6 @@ def _lamport_allreduce_rmsnorm_launch[
 def lamport_allreduce_rmsnorm[
     dtype: DType,
     ngpus: Int,
-    *,
-    pdl: Bool = True,
-    early_launch: Bool = True,
 ](
     my_rank: Int,
     src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
@@ -537,18 +510,15 @@ def lamport_allreduce_rmsnorm[
     including CUDA-graph replay -- rotate the buffers correctly with no per-call
     fill or phase argument.
 
+    The launch carries the PDL attribute, and the kernel waits for its
+    predecessor before any read and releases its dependents at entry so a
+    following GEMM overlaps the whole AR+RMSNorm.
+
     Parameters:
         dtype: Element type (bf16/fp16/fp32 transport).
         ngpus: Number of participating GPUs.
-        pdl: If True (default) launch with PDL and early-trigger the consumer.
-        early_launch: If True (default) and `pdl`, call launch_dependent_grids()
-            at kernel start so the consumer overlaps the whole kernel. If False,
-            the trigger moves to the END (after the output is written), so the
-            consumer overlaps only the tail bookkeeping + grid teardown.
     """
-    _lamport_allreduce_rmsnorm_launch[
-        dtype, ngpus, pdl=pdl, early_launch=early_launch
-    ](
+    _lamport_allreduce_rmsnorm_launch[dtype, ngpus](
         my_rank,
         src,
         dst,

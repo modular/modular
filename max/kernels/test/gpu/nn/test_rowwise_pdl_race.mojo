@@ -19,14 +19,13 @@ A real PDL chain with no host sync between the launches:
    publishes the activation. It starts from a stale sentinel, so a norm that
    reads its input before its own `wait_on_dependent_grids()` computes the
    wrong row statistics.
-2. The row-wise kernel is launched with the PDL attribute at each tested
-   level (`ON` releases dependents at exit, `OVERLAP_AT_BEGINNING` right
+2. The row-wise kernel is launched with the PDL attribute at the level it
+   bakes in (`OVERLAP_AT_BEGINNING`: wait, then release dependents right
    after the wait). It becomes resident while the producer still spins.
 3. `consumer` waits on the row-wise kernel and copies its output out. Its own
    wait makes an early release unobservable here, so this only confirms the
    output is complete; the test checks that the row-wise kernel does not read
-   its input before its own wait, not when it releases dependents. The `ON`
-   arm runs the same check and is a harness baseline for `OVERLAP_AT_BEGINNING`.
+   its input before its own wait, not when it releases dependents.
 
 The producer's activation is not scale-invariant against the sentinel, so a
 stale read changes every output element.
@@ -38,8 +37,7 @@ before its own wait. Every input load of the row-wise kernel is held
 can only be resident while the grid runs if the grid released it before its
 threads finished (a CTA releases its dependents when its first thread issues
 the release, so every load is held), which makes the hold end in time only for
-an early release. `OVERLAP_AT_BEGINNING` must end it; `ON` (release at exit)
-and `OFF` must time out, which shows the harness can tell the two apart.
+an early release: the default `OVERLAP_AT_BEGINNING` level must end it.
 
 The probe only sees a release if its launch is the grid's programmatic
 dependent, so no stream work may sit between the two launches. The split-K
@@ -163,7 +161,6 @@ struct Kind:
 
 def run_case[
     kind: Int,
-    pdl_level: PDLLevel,
 ](
     ctx: DeviceContext,
     label: String,
@@ -240,7 +237,6 @@ def run_case[
                 target="gpu",
                 epsilon=EPS,
                 weight_offset=Float32(0),
-                pdl_level=pdl_level,
             ](
                 input_fn,
                 output_fn,
@@ -261,7 +257,7 @@ def run_case[
                 ctx,
             )
         else:
-            softmax[dtype, 2, target="gpu", pdl_level=pdl_level](
+            softmax[dtype, 2, target="gpu"](
                 input_fn, Coord(shape), cols, out_t, 1, ctx
             )
 
@@ -507,7 +503,6 @@ def _report_release(
 
 def run_release_case[
     kind: Int,
-    pdl_level: PDLLevel,
 ](
     ctx: DeviceContext,
     label: String,
@@ -516,8 +511,8 @@ def run_release_case[
     expect_early: Bool,
     mut failures: Int,
 ) raises:
-    """Checks that the row-wise grid releases its dependent early iff
-    `pdl_level` says so (the default level for layer norm, which takes none)."""
+    """Checks that the row-wise grid releases its dependent early at its
+    default PDL level."""
     var n = rows * cols
     var act_h = ctx.enqueue_create_host_buffer[dtype](n)
     var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
@@ -571,7 +566,6 @@ def run_release_case[
             target="gpu",
             epsilon=EPS,
             weight_offset=Float32(0),
-            pdl_level=pdl_level,
         ](
             input_fn,
             output_fn,
@@ -592,7 +586,7 @@ def run_release_case[
             ctx,
         )
     else:
-        softmax[dtype, 2, target="gpu", pdl_level=pdl_level](
+        softmax[dtype, 2, target="gpu"](
             input_fn, Coord(shape), cols, out_t, 1, ctx
         )
     ctx.enqueue_function[release_probe](
@@ -699,17 +693,7 @@ def run_levels[
     delay_us: Int,
     mut failures: Int,
 ) raises:
-    # Layer norm takes the scaffolder's default level only.
-    comptime if kind != Kind.LAYER:
-        run_case[kind, PDLLevel.OFF](
-            ctx, name + " OFF", rows, cols, iters, delay_us, failures
-        )
-        run_case[kind, PDLLevel.ON](
-            ctx, name + " ON", rows, cols, iters, delay_us, failures
-        )
-    run_case[kind, PDLLevel.OVERLAP_AT_BEGINNING](
-        ctx, name + " OVERLAP", rows, cols, iters, delay_us, failures
-    )
+    run_case[kind](ctx, name, rows, cols, iters, delay_us, failures)
 
 
 def main() raises:
@@ -777,9 +761,8 @@ def main() raises:
         run_argmax_case[0](
             ctx, "argmax coop 4096x8", 4096, 8, iters, delay_us, failures
         )
-        # When the grid releases its dependent: early at the default level
-        # and at OVERLAP_AT_BEGINNING, at exit at ON, never at OFF. The warp
-        # and block tiers of the norms and softmax, and the split-K and tiled
+        # When the grid releases its dependent: early, at the default level.
+        # The warp and block tiers of the norms and softmax, and the split-K and tiled
         # argmax tiers; the split-K softmax phases always release at exit.
         # The probe's module is loaded first: a cold first launch takes
         # longer than a gated load waits for it.
@@ -792,39 +775,27 @@ def main() raises:
             attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_END),
         )
         ctx.synchronize()
-        run_release_case[Kind.RMS, PDLLevel.OVERLAP_AT_BEGINNING](
+        run_release_case[Kind.RMS](
             ctx,
-            "release rms warp 1024x1024 OVERLAP",
+            "release rms warp 1024x1024",
             1024,
             1024,
             True,
             failures,
         )
-        run_release_case[Kind.RMS, PDLLevel.ON](
-            ctx, "release rms warp 1024x1024 ON", 1024, 1024, False, failures
+        run_release_case[Kind.RMS](
+            ctx, "release rms block 3x4096", 3, 4096, True, failures
         )
-        run_release_case[Kind.RMS, PDLLevel.OFF](
-            ctx, "release rms warp 1024x1024 OFF", 1024, 1024, False, failures
+        run_release_case[Kind.LAYER](
+            ctx, "release layer block 3x4096", 3, 4096, True, failures
         )
-        run_release_case[Kind.RMS, PDLLevel.OVERLAP_AT_BEGINNING](
-            ctx, "release rms block 3x4096 OVERLAP", 3, 4096, True, failures
-        )
-        run_release_case[Kind.RMS, PDLLevel.ON](
-            ctx, "release rms block 3x4096 ON", 3, 4096, False, failures
-        )
-        run_release_case[Kind.LAYER, PDLLevel.OVERLAP_AT_BEGINNING](
-            ctx, "release layer block 3x4096 default", 3, 4096, True, failures
-        )
-        run_release_case[Kind.SOFTMAX, PDLLevel.OVERLAP_AT_BEGINNING](
+        run_release_case[Kind.SOFTMAX](
             ctx,
-            "release softmax block 32x4096 OVERLAP",
+            "release softmax block 32x4096",
             32,
             4096,
             True,
             failures,
-        )
-        run_release_case[Kind.SOFTMAX, PDLLevel.ON](
-            ctx, "release softmax block 32x4096 ON", 32, 4096, False, failures
         )
         run_release_argmax_case[1](
             ctx, "release argmax splitk 2x65536", 2, 65536, failures

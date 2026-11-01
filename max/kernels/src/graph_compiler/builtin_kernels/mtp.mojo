@@ -120,7 +120,6 @@ struct MTPEhNorm:
             type_of(prev_tt.as_imm()).Engine,
             type_of(ew_tt.as_imm()).Engine,
             type_of(hw_tt.as_imm()).Engine,
-            pdl_level=PDLLevel.ON,
         ]
         ctx.enqueue_function[kernel](
             out_tt,

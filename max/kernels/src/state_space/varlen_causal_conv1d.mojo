@@ -833,7 +833,6 @@ def causal_conv1d_varlen_fwd_gpu[
     silu_activation: Bool = False,
     use_residual: Bool = False,
     channels_last: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     weight: TileTensor[dtype, weight_LT, _, Engine=Engine],
     bias: TileTensor[dtype, bias_LT, _, Engine=Engine],
@@ -890,8 +889,6 @@ def causal_conv1d_varlen_fwd_gpu[
             the activation.
         channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
             rather than `(dim, total_seqlen)`.
-        pdl_level: Programmatic dependent launch level. Every enabled level
-            waits on the predecessor grid, including `NO_WAIT_OVERLAP_AT_END`.
 
     Args:
         weight: Weight tensor of shape `(dim, width)`.
@@ -969,7 +966,7 @@ def causal_conv1d_varlen_fwd_gpu[
         # (256 to 1024 tokens measured on B200) the early-resident tile grid
         # cost 8 to 10 us per layer, and at that size the launch gap PDL
         # hides is a rounding error anyway.
-        launch[1, True, pdl_level]()
+        launch[1, True, PDLLevel.ON]()
         return
 
     comptime if channels_last:

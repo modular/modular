@@ -50,7 +50,6 @@ def softmax[
     target: StaticString,
     logsoftmax: Bool = False,
     reduce_dim: Int = rank - 1,
-    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     input_fn: InputFn,
     shape: Coord,
@@ -169,5 +168,7 @@ def softmax[
         computationally_expensive=True,
         num_phases=3,
         dtype_size=size_of[dtype](),
-        pdl_level=pdl_level,
+        # Wait on the predecessor grid, then release dependents early so a
+        # following kernel overlaps its prologue with the softmax.
+        pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
     ](body, shape, context)

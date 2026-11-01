@@ -384,7 +384,6 @@ def _launch_compress[
         out_t.Engine,
         head_dim,
         kpool,
-        pdl_level,
     ]
     ctx.enqueue_function[kernel](
         out_t,
@@ -431,7 +430,6 @@ def _launch_seed_tail[
         type_of(slot_t.as_imm()).Engine,
         head_dim,
         kpool,
-        pdl_level,
     ]
     ctx.enqueue_function[kernel](
         tail_t,
@@ -496,7 +494,6 @@ def _launch_ring_close[
         type_of(slot_t.as_imm()).Engine,
         head_dim,
         kpool,
-        pdl_level,
     ]
     ctx.enqueue_function[kernel](
         out_t,
@@ -549,7 +546,6 @@ def _launch_expand[
         kpool,
         pool_topk,
         always_select_tail,
-        pdl_level,
     ]
     ctx.enqueue_function[kernel](
         out_t,

@@ -108,7 +108,6 @@ from max.gpu import (
 )
 from max.gpu.primitives import warp
 from max.gpu.primitives.grid_controls import (
-    PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
@@ -124,40 +123,20 @@ comptime _SharedF32 = Pointer[
 
 
 @always_inline
-def pdl_enter[pdl_level: PDLLevel]():
+def pdl_enter():
     """Waits for the grid before this one, before the kernel reads any operand.
 
     Every operand of these kernels (the conv output, the decay and beta, the
     offsets, the slot indices) can be the preceding grid's output, so nothing
-    is read ahead of the wait. `PDLLevel.OVERLAP_AT_BEGINNING` then releases
-    the dependent grid at once. That cannot expose unwritten output, since the
-    dependent's own wait blocks until this grid has completed.
-
-    `PDLLevel.NO_WAIT_OVERLAP_AT_END` is rejected, because it means "do not
-    wait" and every operand here may be the preceding grid's output.
-
-    Parameters:
-        pdl_level: The launch's PDL level; `OFF` compiles to nothing.
+    is read ahead of the wait. The launch carries `pdl_launch_attributes`.
     """
-    comptime assert pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END, (
-        "the gated-delta kernels read the preceding grid's output, so they"
-        " cannot skip the PDL wait"
-    )
-    comptime if pdl_level > PDLLevel.OFF:
-        wait_on_dependent_grids()
-        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
-            launch_dependent_grids()
+    wait_on_dependent_grids()
 
 
 @always_inline
-def pdl_exit[pdl_level: PDLLevel]():
-    """Releases the dependent grid once this thread has issued its stores.
-
-    Parameters:
-        pdl_level: The launch's PDL level; only `ON` releases here.
-    """
-    comptime if pdl_level == PDLLevel.ON:
-        launch_dependent_grids()
+def pdl_exit():
+    """Releases the dependent grid once this thread has issued its stores."""
+    launch_dependent_grids()
 
 
 @always_inline
@@ -276,7 +255,6 @@ def gated_delta_recurrence_fwd_gpu[
     slot_idx_LT: TensorLayout,
     input_row_offsets_LT: TensorLayout,
     Engine: TensorEngine,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     batch_size: Int32,
     num_value_heads: Int32,  # nv
@@ -333,8 +311,6 @@ def gated_delta_recurrence_fwd_gpu[
         input_row_offsets_LT: `TensorLayout` for
             `input_row_offsets`.
         Engine: Engine shared by all tile operands.
-        pdl_level: Whether this launch may overlap the grid before it in the
-            stream; the launch must then carry `pdl_launch_attributes`.
 
     Args:
         batch_size: Number of sequences in the ragged batch.
@@ -370,7 +346,7 @@ def gated_delta_recurrence_fwd_gpu[
         KEY_HEAD_DIM == VALUE_HEAD_DIM
     ), "gated_delta_recurrence_fwd_gpu requires KEY_HEAD_DIM == VALUE_HEAD_DIM"
 
-    pdl_enter[pdl_level]()
+    pdl_enter()
 
     var tid = thread_idx.x
     var block = block_idx.x
@@ -457,7 +433,7 @@ def gated_delta_recurrence_fwd_gpu[
             Scalar[state_dtype](state_col[kd]),
         )
 
-    pdl_exit[pdl_level]()
+    pdl_exit()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -535,7 +511,6 @@ def gated_delta_recurrence_verify_ring_gpu[
     ring_slot_idx_LT: TensorLayout,
     Engine: TensorEngine,
     RECORDS_ONLY: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     batch_size: Int32,
     num_value_heads: Int32,
@@ -614,9 +589,6 @@ def gated_delta_recurrence_verify_ring_gpu[
             out, which keeps the state column from being live to the
             exit and costs the recording path about 30% of its time
             in spills.
-        pdl_level: Whether this launch may overlap the grid before it in the
-            stream; the launch must then carry `pdl_launch_attributes`.
-
     Args:
         batch_size: Number of sequences in the ragged batch.
         num_value_heads: Number of value heads (`nv`).
@@ -643,7 +615,7 @@ def gated_delta_recurrence_verify_ring_gpu[
         " VALUE_HEAD_DIM"
     )
 
-    pdl_enter[pdl_level]()
+    pdl_enter()
 
     var tid = thread_idx.x
     var block = block_idx.x
@@ -780,7 +752,7 @@ def gated_delta_recurrence_verify_ring_gpu[
                     Scalar[state_dtype](state_col[kd]),
                 )
 
-    pdl_exit[pdl_level]()
+    pdl_exit()
 
 
 def gated_delta_state_fold_gpu[
@@ -796,7 +768,6 @@ def gated_delta_state_fold_gpu[
     num_accepted_LT: TensorLayout,
     Engine: TensorEngine,
     KEY_DIM_TILE: Int = 8,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     batch_size: Int32,
     num_layers: Int32,
@@ -842,9 +813,6 @@ def gated_delta_state_fold_gpu[
         Engine: Engine shared by all tile operands.
         KEY_DIM_TILE: Key-dim elements a thread holds in registers at once.
             Must divide `KEY_HEAD_DIM`.
-        pdl_level: Whether this launch may overlap the grid before it in the
-            stream; the launch must then carry `pdl_launch_attributes`.
-
     Args:
         batch_size: Number of sequences the verify covered.
         num_layers: Number of layers, each with its own pool row.
@@ -868,7 +836,7 @@ def gated_delta_state_fold_gpu[
         KEY_HEAD_DIM % KEY_DIM_TILE == 0
     ), "gated_delta_state_fold_gpu requires KEY_DIM_TILE to divide KEY_HEAD_DIM"
 
-    pdl_enter[pdl_level]()
+    pdl_enter()
 
     var tid = thread_idx.x
     var block = block_idx.x
@@ -971,4 +939,4 @@ def gated_delta_state_fold_gpu[
                 Scalar[state_dtype](state_tile[i]),
             )
 
-    pdl_exit[pdl_level]()
+    pdl_exit()

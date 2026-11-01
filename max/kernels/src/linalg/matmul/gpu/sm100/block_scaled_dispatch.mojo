@@ -572,7 +572,7 @@ def block_scaled_matmul_block_diagonal[
     *,
     groups: Int,
     SF_VECTOR_SIZE: Int,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],

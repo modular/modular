@@ -689,7 +689,7 @@ def grouped_matmul[
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[address_space=.GENERIC, ...],
@@ -1095,7 +1095,7 @@ def grouped_matmul[
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[address_space=.GENERIC, ...],
@@ -1291,7 +1291,7 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     expert_ids_engine: TensorEngine,
     *,
     transpose_b: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin, Engine=c_engine],
     a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin, Engine=a_engine],
@@ -1430,7 +1430,7 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     //,
     transpose_b: Bool = True,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, Engine=_, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, Engine=_, ...],

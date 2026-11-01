@@ -181,7 +181,7 @@ def _verify_results[
     )
     ctx0.synchronize()
 
-    # ---- Fused path on GPU 0 (PDL off for clean comparison). ----
+    # ---- Fused path on GPU 0. ----
     # Both ranks must call so the Lamport pushes complete; otherwise GPU 0's
     # poll blocks waiting for peers.
     group_start()
@@ -189,7 +189,7 @@ def _verify_results[
         var out_ptr = v_fused_dev.unsafe_ptr() if g == 0 else cb_inputs[
             g
         ].offset_ptr(0)
-        lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+        lamport_allreduce_rmsnorm[dtype, ngpus](
             g,
             rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 cb_inputs[g].offset_ptr(0)
@@ -403,7 +403,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
     ) raises {imm}:
         @inline(.always)
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
-            lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+            lamport_allreduce_rmsnorm[dtype, ngpus](
                 ctx_idx,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     cb_inputs[ctx_idx].offset_ptr(cache_iter)

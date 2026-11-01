@@ -2004,7 +2004,6 @@ def allreduce_residual_rmsnorm[
     in_engine: TensorEngine,
     //,
     multiply_before_cast: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[
         TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
@@ -2045,15 +2044,6 @@ def allreduce_residual_rmsnorm[
             float32 before the single cast to the output dtype; False casts
             the normalized value to `in_dtype` first and applies gamma in
             `in_dtype`. False requires `out_dtype == in_dtype`.
-        pdl_level: Programmatic dependent launch level. The fused kernels
-            wait for their predecessor before they signal their peers, and
-            release the next kernel after the barrier that retires the peers'
-            reads (`ON`) or right after the wait (`OVERLAP_AT_BEGINNING`). On
-            the split path the allreduce always releases the norm at its exit,
-            and only the norm honors `OVERLAP_AT_BEGINNING`. That level
-            requires the next kernel not to write this kernel's inputs before
-            its own PDL wait, because peers may still be reading them. The
-            Lamport branch always uses PDL.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
@@ -2116,6 +2106,12 @@ def allreduce_residual_rmsnorm[
     )
     var scale_output_1d = scale_output.reshape(row_major(rows))
 
+    # PDL is verified on 2 GPUs only; 4/8-GPU runs stay OFF until someone
+    # measures them. The fused kernels wait for their predecessor before they
+    # signal their peers, and release the next kernel right after that wait.
+    comptime pdl_level = (
+        PDLLevel.OVERLAP_AT_BEGINNING if ngpus <= 2 else PDLLevel.OFF
+    )
     _dispatch_fused_kernel[
         in_dtype,
         out_dtype,

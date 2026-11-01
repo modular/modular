@@ -1271,7 +1271,7 @@ def matmul_dynamic_scaled_fp8[
     k_scale_granularity: Int,
     transpose_b: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],

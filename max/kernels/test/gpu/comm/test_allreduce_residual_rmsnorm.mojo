@@ -1335,7 +1335,6 @@ def _residual_rmsnorm_call[
                 ngpus,
                 has_residual=True,
                 multiply_before_cast=multiply_before_cast,
-                pdl=False,
             ](
                 i,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -2039,52 +2038,25 @@ def test_pdl_ordering[
                 scales_dev[i], row_major(Idx[rows], Idx[1])
             )
             var gamma_tensor = TileTensor(gamma_dev[i], row_major(cols))
-            if pass_idx == 0:
-                allreduce_residual_rmsnorm(
-                    in_tiles,
-                    residual_tile.as_imm(),
-                    out_tile,
-                    res_out_tile,
-                    gamma_tensor,
-                    Float32(1e-5),
-                    Scalar[in_dtype](0.0),
-                    scale_ub,
-                    scales_tile,
-                    rank_sigs,
-                    c,
-                    my_rank=i,
-                )
-            else:
-                allreduce_residual_rmsnorm[pdl_level=pdl_level](
-                    in_tiles,
-                    residual_tile.as_imm(),
-                    out_tile,
-                    res_out_tile,
-                    gamma_tensor,
-                    Float32(1e-5),
-                    Scalar[in_dtype](0.0),
-                    scale_ub,
-                    scales_tile,
-                    rank_sigs,
-                    c,
-                    my_rank=i,
-                )
-                if is_pdl_pass:
-                    comptime if pdl_level == PDLLevel.ON:
-                        # The release follows the barrier that retires the
-                        # peers' reads, so reusing the input right away must
-                        # not corrupt a peer's result.
-                        c.enqueue_function[_early_overwrite[in_dtype]](
-                            in_dev[i],
-                            Int32(length),
-                            grid_dim=592,
-                            block_dim=256,
-                            attributes=pdl_launch_attributes(PDLLevel.ON),
-                        )
-                    _copy_after_wait(c, out_cons[i], out_dev[i], length)
-                    _copy_after_wait(c, res_out_cons[i], res_out_dev[i], length)
-                    comptime if quantize:
-                        _copy_after_wait(c, scales_cons[i], scales_dev[i], rows)
+            allreduce_residual_rmsnorm(
+                in_tiles,
+                residual_tile.as_imm(),
+                out_tile,
+                res_out_tile,
+                gamma_tensor,
+                Float32(1e-5),
+                Scalar[in_dtype](0.0),
+                scale_ub,
+                scales_tile,
+                rank_sigs,
+                c,
+                my_rank=i,
+            )
+            if is_pdl_pass:
+                _copy_after_wait(c, out_cons[i], out_dev[i], length)
+                _copy_after_wait(c, res_out_cons[i], res_out_dev[i], length)
+                comptime if quantize:
+                    _copy_after_wait(c, scales_cons[i], scales_dev[i], rows)
         group_end()
 
         for i in range(ngpus):

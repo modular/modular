@@ -677,7 +677,7 @@ def _lamport_rmsnorm_random_call[
             expected[j] = expected[j] * norm * gamma[c].cast[DType.float64]()
 
     comptime for i in range(ngpus):
-        lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+        lamport_allreduce_rmsnorm[dtype, ngpus](
             i,
             rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 in_dev[i].unsafe_ptr()

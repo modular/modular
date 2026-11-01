@@ -51,7 +51,6 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.primitives.grid_controls import (
-    PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
@@ -84,8 +83,6 @@ def mtp_eh_norm_kernel[
     PrevEngine: TensorEngine,
     EWEngine: TensorEngine,
     HWEngine: TensorEngine,
-    *,
-    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     out_buf: TileTensor[dtype, OutLayoutType, out_origin, Engine=OutEngine],
     embed: TileTensor[
@@ -144,12 +141,6 @@ def mtp_eh_norm_kernel[
         PrevEngine: Engine policy of `prev`.
         EWEngine: Engine policy of `enorm_weight`.
         HWEngine: Engine policy of `hnorm_weight`.
-        pdl_level: Whether the launch may overlap the grid before it in the
-            stream. The op launches with that attribute and passes
-            `PDLLevel.ON`; a caller launching without it must pass
-            `PDLLevel.OFF`, or this kernel would read its inputs before the
-            grid that wrote them finished.
-
     Args:
         out_buf: Output `[num_tokens, 2 * hidden_size]`.
         embed: Token embeddings `[num_tokens, hidden_size]`.
@@ -162,8 +153,9 @@ def mtp_eh_norm_kernel[
     var token = block_idx.x
     if token >= Int(num_tokens):
         return
-    comptime if pdl_level > PDLLevel.OFF:
-        wait_on_dependent_grids()
+    # The op launches this kernel with the PDL attribute; wait for the grid
+    # that produced the inputs before the first read.
+    wait_on_dependent_grids()
 
     var tid = thread_idx.x
     var row = token * hidden_size
@@ -226,8 +218,7 @@ def mtp_eh_norm_kernel[
             (out_row + hidden_size + hi,),
             (p_hi * SIMD[DType.float32, 8](rrms_h)).cast[dtype]() * v_hi,
         )
-        comptime if pdl_level > PDLLevel.OFF:
-            launch_dependent_grids()
+        launch_dependent_grids()
         return
 
     # Ragged shapes: the strided scalar body. `block_reduce_dual_sum` reads
@@ -265,5 +256,4 @@ def mtp_eh_norm_kernel[
             p.cast[dtype]() * hnorm_flat.load[width=1]((col,)),
         )
         col += stride
-    comptime if pdl_level > PDLLevel.OFF:
-        launch_dependent_grids()
+    launch_dependent_grids()

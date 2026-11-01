@@ -33,6 +33,7 @@ from max.gpu.host import (
     LaunchAttributeValue,
 )
 from std._gpu.host.info import TargetAccelerator
+from std.sys import CompilationTarget
 
 from max._plugin._overlay import TARGETS
 
@@ -111,7 +112,13 @@ def launch_dependent_grids():
           should trigger the execution of other grids.
     """
 
-    comptime if _SUPPORT_PDL_LAUNCH:
+    # `_SUPPORT_PDL_LAUNCH` reads the default accelerator, which is the host's
+    # device even when this function is cross-compiled for another target.
+    # `griddepcontrol` only exists for NVPTX, so gate on the compilation
+    # target: emitting it in an AMD module fails instruction selection.
+    comptime if (
+        _SUPPORT_PDL_LAUNCH and CompilationTarget.current().is_nvidia_gpu()
+    ):
         comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action<launch_dependents>`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
@@ -130,7 +137,9 @@ def _griddepcontrol_wait():
     documented guarantee; `test_pdl_wait_sass.mojo` checks it in the SASS.
     """
 
-    comptime if _SUPPORT_PDL_LAUNCH:
+    comptime if (
+        _SUPPORT_PDL_LAUNCH and CompilationTarget.current().is_nvidia_gpu()
+    ):
         comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action<wait>`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 

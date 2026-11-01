@@ -243,7 +243,7 @@ def _run_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[pdl_level=pdl_level](
+            _dispatch_rs_norm(
                 in_bufs,
                 normed_view,
                 sum_view,
@@ -699,10 +699,7 @@ def _run_prod_oracle_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[
-                group_size=group_size,
-                pdl_level=pdl_level,
-            ](
+            _dispatch_rs_norm[group_size=group_size](
                 world_bufs,
                 normed_view,
                 sum_view,
