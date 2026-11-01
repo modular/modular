@@ -200,6 +200,7 @@ mojo_test(
             "test_multimem_reducescatter.mojo",
             "test_allreduce_residual_rmsnorm.mojo",  # Has its own standalone rule above
             "test_enum_like_conformance.mojo",  # Has its own standalone rule below
+            "test_allreduce_peer_load_codegen.mojo",  # Host-only rule below
             "test_bundled_allreduce_build_graph.mojo",  # Has its own standalone rule above
             "test_blocking_driver_calls.mojo",  # One rule per round, below
         ],
@@ -268,6 +269,22 @@ mojo_test(
         "//max:linalg",
         "//max:nn",
         "//max:pipeline",
+        "@mojo//:std",
+    ],
+)
+
+# Host-only: compiles the allreduce peer-load helper for gfx950 and checks the
+# asm, so it needs no GPU. Under ASan the test is compiled by the instrumented
+# Mojo compiler, whose gfx950 backend overruns the 900 s compile timeout even
+# for one kernel (all eight take about 5 s uninstrumented). The test checks
+# codegen, not host memory, so ASan has nothing to add.
+mojo_test(
+    name = "test_allreduce_peer_load_codegen.mojo.test",
+    srcs = ["test_allreduce_peer_load_codegen.mojo"],
+    tags = ["skip-ci-asan"],
+    deps = [
+        "//max:comm",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

@@ -13,10 +13,10 @@
 """Fused one-shot Lamport allreduce + RMSNorm (high-perf protocol).
 
 Grafts the barrier-free Lamport comm protocol from `comm/lamport.mojo` +
-`comm/allreduce.mojo` (in-register local seed, poll-all-peers arrival, 3-way
-generation rotation, fused clear, the device-resident `Signal.lamport_region` /
-`lamport_state`) onto a row-blocked RMSNorm epilogue so the whole TP
-allreduce+RMSNorm producer is a single kernel.
+`comm/allreduce.mojo` (in-register local pack, poll-all-peers arrival, a sum in
+global rank order, 3-way generation rotation, fused clear, the device-resident
+`Signal.lamport_region` / `lamport_state`) onto a row-blocked RMSNorm epilogue
+so the whole TP allreduce+RMSNorm producer is a single kernel.
 
 Layout: with the 128-bit Lamport pack (`atomic_width` = 16B / sizeof(dtype) =
 8 for bf16) one thread owns exactly one pack = one column group of a row
@@ -205,8 +205,8 @@ def _allreduce_lamport_rmsnorm_kernel[
 
         var accum = SIMD[accum_type, atomic_width](0)
         if is_valid:
-            # (a) Local input pack -> producer-sanitize; kept in-register as the
-            # reduction seed, so this rank only touches the ngpus-1 remote slots.
+            # (a) Local input pack -> producer-sanitize; kept in-register, so
+            # this rank only touches the ngpus-1 remote slots.
             var local = remove_neg_zero[dtype, atomic_width](
                 src.unsafe_load[width=atomic_width, alignment=alignment](base)
             )
@@ -225,29 +225,54 @@ def _allreduce_lamport_rmsnorm_kernel[
                 ](push_off * atomic_width, local)
 
             # (d) Poll all ngpus-1 remote slots until none hold the sentinel
-            # (observes parallel arrival rather than per-peer spinning).
-            var peer_packs = Array[SIMD[dtype, atomic_width], ngpus](
+            # (observes parallel arrival rather than per-peer spinning), then
+            # (e) reduce in global rank order 0 .. ngpus-1 in accum_type: a
+            # per-rank order rounds the sum differently on each rank. Branching
+            # once on the rank makes every slot index a compile-time constant,
+            # so the polls keep the round-robin order and `packs` stays in
+            # registers.
+            var packs = Array[SIMD[dtype, atomic_width], ngpus](
                 uninitialized=True
             )
-            var done = False
-            while not done:
-                done = True
-                comptime for i in range(1, ngpus):
-                    var peer = circular_add[ngpus](my_rank, i)
+            comptime if ngpus == 2:
+                # Two terms sum to the same bits in either order, so the
+                # local-first sum is already rank-consistent.
+                var done = False
+                while not done:
                     var slot_off = (
-                        data_gen_off + peer * Lamport.MAX_PACKS + global_pack
+                        data_gen_off
+                        + (1 - my_rank) * Lamport.MAX_PACKS
+                        + global_pack
                     )
-                    var p = my_region.unsafe_load[
+                    packs[1] = my_region.unsafe_load[
                         width=atomic_width, alignment=alignment, volatile=True
                     ](slot_off * atomic_width)
-                    peer_packs[i] = p
-                    if has_neg_zero[dtype, atomic_width](p):
-                        done = False
-
-            # (e) Reduce: in-register local seed + arrived peers, in accum_type.
-            accum = local.cast[accum_type]()
-            comptime for i in range(1, ngpus):
-                accum += peer_packs[i].cast[accum_type]()
+                    done = not has_neg_zero[dtype, atomic_width](packs[1])
+                accum = local.cast[accum_type]() + packs[1].cast[accum_type]()
+            else:
+                comptime for r in range(ngpus):
+                    if my_rank == r:
+                        packs[r] = local
+                        var done = False
+                        while not done:
+                            done = True
+                            comptime for i in range(1, ngpus):
+                                comptime g = (r + i) % ngpus
+                                var slot_off = (
+                                    data_gen_off
+                                    + g * Lamport.MAX_PACKS
+                                    + global_pack
+                                )
+                                packs[g] = my_region.unsafe_load[
+                                    width=atomic_width,
+                                    alignment=alignment,
+                                    volatile=True,
+                                ](slot_off * atomic_width)
+                                if has_neg_zero[dtype, atomic_width](packs[g]):
+                                    done = False
+                        accum = packs[0].cast[accum_type]()
+                        comptime for g in range(1, ngpus):
+                            accum += packs[g].cast[accum_type]()
 
             # The residual is replicated, so each rank adds it locally rather
             # than through the reduction.
