@@ -33,7 +33,6 @@
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Dominance.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/Attributes.h"
@@ -348,7 +347,7 @@ static LogicalResult lowerLifetimeMarker(Operation *op, ValueRange values,
 
     OpT::create(b, op->getLoc(), value);
   }
-  b.eraseOp(op);
+  b.deleteLater(op);
   return success();
 }
 
@@ -448,9 +447,6 @@ private:
   LogicalResult lowerOperation(Operation *op);
   Value getLoweredValue(Value value);
   ValueRange getLoweredOperands(Operation *op);
-  void recordReplacement(Operation *op, ValueRange replacements);
-  void queueSourceOpForErasure(Operation *op);
-  void replaceUsesAndEraseSourceOps();
 
   template <typename SourceOp, typename TargetOp>
   LogicalResult lowerOneToOne(SourceOp op) {
@@ -566,11 +562,9 @@ private:
   TargetInfoAttr targetInfo;
   const TargetLowering *targetLowering = nullptr;
   std::unique_ptr<POPToLLVMTypeConverter> typeConverter;
-  std::unique_ptr<POPLoweringBuilder> builder;
+  POPLoweringBuilder *builder = nullptr;
   DenseMap<Value, Value> loweredValues;
   SmallVector<Value> loweredOperands;
-  SmallVector<Operation *> sourceOps;
-  llvm::DenseSet<Operation *> sourceOpSet;
 };
 } // namespace
 
@@ -631,43 +625,6 @@ ValueRange LowerPOPToLLVMPass::getLoweredOperands(Operation *op) {
   return loweredOperands;
 }
 
-void LowerPOPToLLVMPass::recordReplacement(Operation *op,
-                                           ValueRange replacements) {
-  assert(op->getNumResults() == replacements.size() &&
-         "incorrect number of replacement values");
-  for (auto [source, replacement] : llvm::zip(op->getResults(), replacements))
-    loweredValues[source] = replacement;
-  queueSourceOpForErasure(op);
-}
-
-void LowerPOPToLLVMPass::queueSourceOpForErasure(Operation *op) {
-  if (sourceOpSet.insert(op).second)
-    sourceOps.push_back(op);
-}
-
-void LowerPOPToLLVMPass::replaceUsesAndEraseSourceOps() {
-  for (Operation *op : sourceOps) {
-    for (Value source : op->getResults()) {
-      auto it = loweredValues.find(source);
-      if (it == loweredValues.end()) {
-        assert(source.use_empty() && "erased result still has uses");
-        continue;
-      }
-      Value replacement = it->second;
-      if (source.getType() != replacement.getType()) {
-        OpBuilder::InsertionGuard guard(*builder);
-        builder->setInsertionPointAfter(op);
-        replacement = mlir::UnrealizedConversionCastOp::create(
-                          *builder, op->getLoc(), source.getType(), replacement)
-                          .getResult(0);
-      }
-      source.replaceAllUsesWith(replacement);
-    }
-  }
-  for (Operation *op : llvm::reverse(sourceOps))
-    op->erase();
-}
-
 LogicalResult LowerPOPToLLVMPass::lowerBlock(Block &block) {
   SmallVector<Operation *> pending;
   SmallVector<Operation *> operations;
@@ -686,7 +643,7 @@ LogicalResult LowerPOPToLLVMPass::lowerBlock(Block &block) {
   }
 
   for (Operation *op : operations) {
-    if (sourceOpSet.contains(op))
+    if (!op->getBlock())
       continue;
     if (failed(lowerOperation(op)))
       return failure();
@@ -1177,7 +1134,7 @@ LowerPOPToLLVMPass::lowerPOPStackAllocation(StackAllocationOp op) {
     if (dominates) {
       for (LoadOp load : loads) {
         load.replaceAllUsesWith(theStore.getOperand(0));
-        builder->eraseOp(load);
+        builder->deleteLater(load);
       }
     }
   }
@@ -1816,9 +1773,7 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPPointerToIndex(PointerToIndexOp op) {
 void LowerPOPToLLVMPass::runOnOperation() {
   loweredValues.clear();
   loweredOperands.clear();
-  sourceOps.clear();
-  sourceOpSet.clear();
-  builder.reset();
+  builder = nullptr;
   typeConverter.reset();
   targetLowering = nullptr;
   targetInfo = {};
@@ -1844,15 +1799,11 @@ void LowerPOPToLLVMPass::runOnOperation() {
   targetLowering = loweringOr.isError() ? nullptr : *loweringOr;
 
   typeConverter = std::make_unique<POPToLLVMTypeConverter>(targetInfo);
-  auto replace = [&](Operation *op, ValueRange replacements) {
-    recordReplacement(op, replacements);
-  };
-  auto erase = [&](Operation *op) { queueSourceOpForErasure(op); };
-  builder = std::make_unique<POPLoweringBuilder>(&getContext(), replace, erase);
+  POPLoweringBuilder loweringBuilder(&getContext(), loweredValues);
+  builder = &loweringBuilder;
 
   if (failed(lowerBlock(func->getFunctionBody().front())))
     return signalPassFailure();
-  replaceUsesAndEraseSourceOps();
 
   // The index dialect is lowered with the upstream conversion patterns, which
   // require the dialect conversion driver; run it rollback-free over the

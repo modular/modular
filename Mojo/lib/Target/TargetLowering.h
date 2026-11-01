@@ -28,14 +28,18 @@
 #include "Target/TargetTraits.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include <cassert>
 #include <utility>
 
 #include <memory>
@@ -65,36 +69,71 @@ class DIType;
 
 namespace M::KGEN {
 
-/// Builder used by eager function-local POP lowering. Replacements are
-/// recorded by the owning pass, which erases source operations later.
+/// Builder used by eager function-local POP lowering.
 class POPLoweringBuilder : public mlir::OpBuilder {
 public:
-  POPLoweringBuilder(
-      mlir::MLIRContext *context,
-      llvm::function_ref<void(mlir::Operation *, mlir::ValueRange)> replace,
-      llvm::function_ref<void(mlir::Operation *)> erase)
-      : mlir::OpBuilder(context), replace(replace), erase(erase) {}
+  POPLoweringBuilder(mlir::MLIRContext *context,
+                     llvm::DenseMap<mlir::Value, mlir::Value> &loweredValues)
+      : mlir::OpBuilder(context), loweredValues(loweredValues) {}
+
+  ~POPLoweringBuilder() {
+    for (mlir::Operation *op : llvm::reverse(operationsToDelete))
+      op->destroy();
+  }
 
   void replaceOp(mlir::Operation *op, mlir::ValueRange values) {
-    replace(op, values);
+    assert(op->getNumResults() == values.size() &&
+           "incorrect number of replacement values");
+    for (auto [source, replacement] : llvm::zip(op->getResults(), values)) {
+      loweredValues[source] = replacement;
+      mlir::Value sourceReplacement = replacement;
+      if (source.getType() != replacement.getType()) {
+        mlir::OpBuilder::InsertionGuard guard(*this);
+        setInsertionPoint(op);
+        sourceReplacement =
+            mlir::UnrealizedConversionCastOp::create(
+                *this, op->getLoc(), source.getType(), replacement)
+                .getResult(0);
+        loweredValues[sourceReplacement] = replacement;
+      }
+      source.replaceAllUsesWith(sourceReplacement);
+    }
+    deleteLater(op);
   }
-  void replaceOp(mlir::Operation *op, mlir::Value value) { replace(op, value); }
+  void replaceOp(mlir::Operation *op, mlir::Value value) {
+    replaceOp(op, mlir::ValueRange(value));
+  }
   void replaceOp(mlir::Operation *op, mlir::Operation *replacement) {
-    replace(op, replacement->getResults());
+    replaceOp(op, replacement->getResults());
   }
-  void eraseOp(mlir::Operation *op) { erase(op); }
+
+  void deleteLater(mlir::Operation *op) {
+    assert(op->getNumRegions() == 0 &&
+           "function-local POP operations must not contain regions");
+    assert(op->use_empty() && "operation still has uses");
+    mlir::Block *block = op->getBlock();
+    assert(block && "operation is already scheduled for deletion");
+    bool invalidatesInsertionPoint = getInsertionBlock() == block &&
+                                     getInsertionPoint() != block->end() &&
+                                     &*getInsertionPoint() == op;
+    op->dropAllReferences();
+    op->remove();
+    if (invalidatesInsertionPoint)
+      clearInsertionPoint();
+    operationsToDelete.push_back(op);
+  }
 
   template <typename OpTy, typename... Args>
   OpTy replaceOpWithNewOp(mlir::Operation *op, Args &&...args) {
     OpTy replacement =
         OpTy::create(*this, op->getLoc(), std::forward<Args>(args)...);
-    replace(op, replacement->getResults());
+    replaceOp(op, replacement->getResults());
     return replacement;
   }
 
 private:
-  llvm::function_ref<void(mlir::Operation *, mlir::ValueRange)> replace;
-  llvm::function_ref<void(mlir::Operation *)> erase;
+  llvm::DenseMap<mlir::Value, mlir::Value> &loweredValues;
+  llvm::SmallVector<mlir::Operation *> operationsToDelete;
 };
 
 /// Per-target policy for the KGEN/POP -> LLVM-dialect lowering, dispatched by
