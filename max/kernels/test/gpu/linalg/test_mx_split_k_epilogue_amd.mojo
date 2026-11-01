@@ -519,6 +519,42 @@ def main() raises:
                 lane_bytes, 2048, 2560, 6144, expect_split_k=False
             ]("cap-over-m2048", ctx)
 
+        print("\n--- plain vs split: the wide-N short-K floor ---")
+
+        # A split adds no blocks, only the workspace round trip, so a wide N
+        # that already fills the GPU takes the plain tile. Both sides of the
+        # block floor, which is 3/16 of the CUs (48 blocks on MI355X):
+        # N=8192 at M=64 is 64 blocks and N=16384 at M=128 is 256, both plain;
+        # N=4096 at M=64 is 32 and N=2304 at M=64 is 18, both under the floor
+        # and both still splitting. All four run the MXFP4 path: the gate is
+        # MXFP4-only, so MXFP8 keeps its split here.
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 8192, 2048, expect_split_k=False
+        ]("plain-wide-m64", ctx)
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 128, 16384, 2048, expect_split_k=False
+        ]("plain-wide-m128", ctx)
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 4096, 2048, expect_split_k=True
+        ]("split-floor-32-blocks", ctx)
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 2304, 2048, expect_split_k=True
+        ]("split-narrow-m64", ctx)
+
+        # The K bound of the same gate (`K*elems <= 3072`), crossing it at a
+        # fixed block count so only K decides: M=64 N=8192 is 64 blocks on
+        # either side of the floor. K=3072 sits exactly on the inclusive bound
+        # and must stay plain; K=4096 must split. K is a multiple of 128, so
+        # these are the closest legal points to the bound. Without the K term
+        # the long-K shape would take the plain route and both cases would pass
+        # the floor check alike.
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 8192, 3072, expect_split_k=False
+        ]("plain-k3072-bound", ctx)
+        test_dispatch_workspace_cap[
+            MXFP4_LANE_BYTES, 64, 8192, 4096, expect_split_k=True
+        ]("split-k4096-bound", ctx)
+
         # `N % SK_BN != 0` must route past split-K whatever the workspace says:
         # the matmul writes its f32 workspace through `RegTileWriter`, which
         # spills the last column block into the next row instead of clipping it.

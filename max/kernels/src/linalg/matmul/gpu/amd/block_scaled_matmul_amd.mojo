@@ -2775,6 +2775,74 @@ def _block_scaled_matmul_amd_impl[
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
                 return
+        # Wide-N short-K, M > 16: keep the split route's own tile (BM=64,
+        # BN=128, BK=256) and drop the split. A split does not add blocks -- it
+        # re-runs K in shorter bands and then pays a workspace round trip of
+        # `(s + 1) * M * N` float32 (80 MiB at M=256, N=16384, s=4) plus a
+        # second launch, which a wide N does not need: the plain launch already
+        # supplies the blocks.
+        # The crossover tracks the block count
+        # (`blocks = ceildiv(N, SK_BN) * ceildiv(M, SK_BM)`), not N. Measured
+        # on MI355X at MXFP4, K=2048, this tile against the split the
+        # heuristic picks (medians of interleaved rounds):
+        #    32 blocks (M= 64, N=4096)   0.93x   plain loses
+        #    36 blocks (M=128, N=2304)   1.06x   ~neutral
+        #    54 blocks (M=192, N=2304)   1.17x
+        #    56 blocks (M= 64, N=7168)   1.17x
+        #    64 blocks (M=128, N=4096)   1.23x
+        #    72 blocks (M=256, N=2304)   1.45x
+        #   112 blocks (M=128, N=7168)   1.70x
+        #   128 blocks (M= 64, N=16384)  1.49x
+        #   512 blocks (M=256, N=16384)  2.14x
+        # hence a floor of 3/16 of the CUs (48 blocks here): above the neutral
+        # 36-block point, below the 54-block point worth 17%.
+        # Long K keeps the split at every block count: with the plain tile
+        # forced on, N=4096 K=7168 at 32 blocks is 29.2 us against the split's
+        # 17.6 us (1.66x), at 64 blocks 28.0 us against 26.1 us, and N=2304
+        # K=8192 at 18 blocks 31.0 us against 14.8 us (2.1x). That is the same
+        # short-K bound the decode gate above measured, reused for M > 16.
+        # `_sk_band_splits > 1` keeps this a replacement for a split, not for
+        # the BK512/narrow plain fallbacks below, which are unmeasured against
+        # this tile.
+        # MXFP8 is excluded: its crossover is not measured, and its production
+        # shapes are covered by the o_projection gate above.
+        #
+        # TODO: both constants are measured heuristics with known limits that
+        # someone should lift rather than widen blindly. The block floor comes
+        # from one MI355X sweep (36 blocks neutral, 54 blocks worth 17%); a
+        # per-shape tile that keeps the coalesced epilogue would move it, and
+        # the short-K bound is inherited from the decode gate rather than
+        # re-measured for M > 16. Re-run the sweep in
+        # `bench_block_scaled_matmul_amd_splitk.yaml` (the gate forced open on
+        # both sides) before changing either number.
+        comptime _plain_min_blocks = 3 * _gpu.sm_count // 16
+        comptime _plain_wide_n = (
+            lane_bytes == 16
+            and can_use_bk_256
+            and _sk_band_splits > 1
+            and _sk_n_aligned
+            and _mma_is_default
+            and K_BYTES * _elems_per_byte <= 3072
+        )
+        comptime if _plain_wide_n:
+            if (
+                M <= _sk_route_max_m
+                and ceildiv(N, SK_BN) * ceildiv(M, SK_BM) >= _plain_min_blocks
+            ):
+                _launch_block_scaled_impl[
+                    BM=SK_BM,
+                    BN=SK_BN,
+                    BK_ELEMS=SK_BK_ELEMS,
+                    WM=SK_WM,
+                    WN=SK_WN,
+                    MMA_M=MMA_M,
+                    MMA_N=MMA_N,
+                    MMA_K=MMA_K,
+                    matrix_format=_fmt,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
+                return
         comptime if (
             can_use_bk_256
             and _sk_band_splits > 1
