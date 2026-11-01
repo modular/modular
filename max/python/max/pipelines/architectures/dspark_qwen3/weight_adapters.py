@@ -30,9 +30,15 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import Shape
-from max.graph.weights import WeightData
+from max.graph.weights import WeightData, Weights, load_weights
+from max.pipelines.lib import PipelineConfig
+from transformers import AutoConfig
 
-from .dspark_qwen3 import DSparkQwen3DraftConfig, draft_nvfp4_modules
+from .dspark_qwen3 import (
+    DSparkQwen3DraftConfig,
+    draft_nvfp4_modules,
+    parse_dspark_draft_config,
+)
 
 __all__ = [
     "MASK_EMBEDDING",
@@ -202,3 +208,22 @@ def convert_draft_state_dict(
             f" {sorted(missing)[:5]}; unexpected: {sorted(extra)[:5]}."
         )
     return weights
+
+
+def convert_registered_state_dict(
+    state_dict: dict[str, Weights],
+    huggingface_config: AutoConfig,
+    pipeline_config: PipelineConfig,
+    **kwargs: object,
+) -> dict[str, WeightData]:
+    """Audits the frozen target embedding and adapts the draft's owned weights."""
+    del kwargs
+    config = parse_dspark_draft_config(huggingface_config)
+    target = dict(
+        load_weights(pipeline_config.model.resolved_weight_paths()).items()
+    )
+    return convert_draft_state_dict(
+        {name: weight.data() for name, weight in state_dict.items()},
+        config,
+        target_embedding=target["backbone.embeddings.weight"].data(),
+    )
