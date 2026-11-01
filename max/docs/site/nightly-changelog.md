@@ -293,6 +293,14 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- On AMD MI355X (CDNA4), the fused gated activation now quantizes to MXFP4 as
+  well as MXFP8, so a `uint8` / `float8_e8m0fnu` request from
+  `swiglu_quantize_dynamic_block_scaled` runs as one kernel. Such a request
+  was rejected on AMD before; quantizing MXFP4 without the fusion writes the
+  bfloat16 `[M, N]` activation of the `[gate | up]` input out with a SwiGLU
+  kernel and reads it back in an ungated quantize, and the fused kernel never
+  materializes it.
+
 - Enabled automatic fusion of eligible bfloat16 matrix multiplications and
   SwiGLU activations on NVIDIA B200 GPUs.
 

@@ -1,0 +1,44 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# AMD CDNA4 (MI355X) MX quantize shapes: the MoE/attention widths that run
+# every layer every token, at decode batch sizes and prefill row counts.
+#
+# `N` is the activation half width, so the gated cases read an `[M, 2 * N]`
+# `[gate | up]` tile and the ungated case an `[M, N]` tile. `M` is a runtime
+# row count, which `main()` reads with `arg_parse`, so it stays
+# `$`-prefixed.
+#
+# `variant` is a compile-time define, as on the command line: one binary per
+# value, so it must not be `$`-prefixed (a `$` parameter becomes a runtime
+# argument). It picks the case: 0 the ungated quantize, 1 the gated fusion,
+# 2 the two-kernel chain the fusion replaces. Every case takes its output
+# format from `is_fp4`, which this config leaves at its MXFP4 default; pass
+# `-D is_fp4=False` for the same sweep in MXFP8. Variants 1 and 2 report the
+# same BenchId on purpose, so that a base-tree CSV and a branch CSV pair bar
+# for bar; within one swept CSV the `kbench_filter` column names the arm.
+name: bench_mx_quant_amd
+file: $KERNEL_BENCHMARKS_ROOT/gpu/quantization/bench_quantization.mojo
+
+params:
+
+# 4096-wide activation half, i.e. an 8192-wide `[gate | up]` tile in the
+# gated cases, swept from single-token decode to prefill row counts.
+- $M: [1, 8, 32, 128, 512, 2048]
+  N: 4096
+  variant: [0, 1, 2]
+
+# Mixtral-8x7B expert width (intermediate 14336 -> 28672 gate_up).
+- $M: [128, 1024, 4096]
+  N: 14336
+  variant: [0, 1, 2]

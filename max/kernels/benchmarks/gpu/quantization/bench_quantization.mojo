@@ -16,6 +16,7 @@ from std.sys import (
     get_defined_int,
     size_of,
     get_defined_bool,
+    align_of,
 )
 from std.math import ceildiv, divmod
 from max.benchmark import bencher_iter_custom
@@ -28,10 +29,12 @@ from std.benchmark import (
     BenchMetric,
 )
 from std.memory.alloc import unsafe_alloc
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
+from layout.tile_layout import TensorLayout
 from layout._fillers import random
-from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import MI355X, _is_sm10x_gpu
 
 from std.utils.index import IndexList
 from linalg.fp4_utils import (
@@ -44,10 +47,13 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
 )
 from linalg.block_scaled_quantization import (
+    quantize_dynamic_block_scaled,
     quantize_dynamic_scaled_fp4fp8,
     quantize_dynamic_scaled_fp4_async,
     grouped_quantize_dynamic_scaled_fp4_async,
+    swiglu_quantize_dynamic_block_scaled,
 )
+from linalg.swiglu_activation import apply_swiglu_activation, swiglu
 from internal_utils import arg_parse
 
 
@@ -297,6 +303,213 @@ def bench_grouped_quantization[
     ctx.synchronize()
 
 
+@__name("bench_silu_mul_kernel")
+def _bench_silu_mul_kernel[
+    N: Int, h_layout: TensorLayout, gate_up_layout: TensorLayout
+](
+    h: TileTensor[.bfloat16, h_layout, MutAnyOrigin],
+    gate_up: TileTensor[.bfloat16, gate_up_layout, ImmutAnyOrigin],
+    num_rows: Int32,
+):
+    """Elementwise `h = swiglu(gate_up)`, bfloat16 rounded: the arm the
+    fused gated MX quantize replaces on AMD.
+
+    The 8-wide accesses claim only element alignment, not the 16-byte
+    vector width that GPU loads and stores default to.
+    """
+    comptime alignment = align_of[BFloat16]()
+    var i = global_idx.x
+    if i >= Int(num_rows) * (N // 8):
+        return
+    var row, c = divmod(i, N // 8)
+    var h_vec = h.vectorize[1, 8]()
+    var gate_up_vec = gate_up.vectorize[1, 8]()
+    h_vec.store[alignment=alignment](
+        (row, c),
+        apply_swiglu_activation[swiglu[0.0]](
+            gate_up_vec.load[alignment=alignment]((row, c)),
+            gate_up_vec.load[alignment=alignment]((row, c + N // 8)),
+        ),
+    )
+
+
+def bench_mx_amd_quantization[
+    cols: Int, is_fp4: Bool
+](ctx: DeviceContext, mut b: Bench, rows: Int) raises:
+    """Times the ungated AMD CDNA4 MX quantize: `[rows, cols]` bf16 in,
+    nibble-packed MXFP4 or byte-per-element MXFP8 out."""
+    comptime out_dtype = DType.uint8 if is_fp4 else DType.float8_e4m3fn
+    comptime packed_cols = cols // 2 if is_fp4 else cols
+    comptime scale_cols = cols // MXFP8_SF_VECTOR_SIZE
+
+    var in_device = ctx.enqueue_create_buffer[.bfloat16](rows * cols)
+    var input_tensor = TileTensor(in_device, row_major(rows, Idx[cols]))
+    with in_device.map_to_host() as in_host:
+        random(TileTensor(in_host, row_major(rows, Idx[cols])))
+
+    var out_device = ctx.enqueue_create_buffer[out_dtype](rows * packed_cols)
+    var output_tensor = TileTensor(
+        out_device, row_major(rows, Idx[packed_cols])
+    )
+    var scales_device = ctx.enqueue_create_buffer[MXFP8_SF_DTYPE](
+        rows * scale_cols
+    )
+    var scales_tensor = TileTensor(
+        scales_device, row_major(rows, Idx[scale_cols])
+    )
+
+    @inline(.always)
+    def bench_fn(
+        mut b: Bencher,
+    ) raises {var input_tensor, var output_tensor, var scales_tensor, imm}:
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
+            quantize_dynamic_block_scaled[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
+                output_tensor.as_unsafe_any_origin(),
+                scales_tensor.as_unsafe_any_origin(),
+                input_tensor.as_unsafe_any_origin(),
+                Float32(1.0),
+                ctx,
+            )
+
+        bencher_iter_custom(b, kernel_launch, ctx)
+
+    var bytes = ThroughputMeasure(
+        BenchMetric.bytes,
+        rows * cols * size_of[BFloat16]()
+        + rows * packed_cols * size_of[out_dtype]()
+        + rows * scale_cols * size_of[MXFP8_SF_DTYPE](),
+    )
+
+    b.bench_function(
+        bench_fn,
+        BenchId(
+            "quant_amd",
+            input_id=String("mx4" if is_fp4 else "mx8", rows, cols, sep="/"),
+        ),
+        [bytes],
+    )
+    ctx.synchronize()
+
+
+def bench_mx_amd_gated[
+    gate_cols: Int, is_fp4: Bool, fused: Bool
+](ctx: DeviceContext, mut b: Bench, rows: Int) raises:
+    """Times the gated MX quantize over a `[rows, 2 * gate_cols]` bf16
+    `[gate | up]` tile.
+
+    `fused=False` times the two kernels main runs instead on AMD: the
+    swiglu elementwise kernel writing a bf16 `[rows, gate_cols]`
+    activation, then the ungated quantize over it. `fused=True` times the
+    single kernel. Both arms report the same BenchId, so the plot pairs
+    them.
+    """
+    comptime cols = 2 * gate_cols
+    comptime out_dtype = DType.uint8 if is_fp4 else DType.float8_e4m3fn
+    comptime packed_cols = gate_cols // 2 if is_fp4 else gate_cols
+    comptime scale_cols = gate_cols // MXFP8_SF_VECTOR_SIZE
+
+    var in_device = ctx.enqueue_create_buffer[.bfloat16](rows * cols)
+    var input_tensor = TileTensor(in_device, row_major(rows, Idx[cols]))
+    with in_device.map_to_host() as in_host:
+        random(TileTensor(in_host, row_major(rows, Idx[cols])))
+
+    var out_device = ctx.enqueue_create_buffer[out_dtype](rows * packed_cols)
+    var output_tensor = TileTensor(
+        out_device, row_major(rows, Idx[packed_cols])
+    )
+    var scales_device = ctx.enqueue_create_buffer[MXFP8_SF_DTYPE](
+        rows * scale_cols
+    )
+    var scales_tensor = TileTensor(
+        scales_device, row_major(rows, Idx[scale_cols])
+    )
+    # The unfused arm stages the bf16 activation here; the fused arm never
+    # touches it, so it holds one element rather than the whole tile.
+    var h_elems = 1
+    comptime if not fused:
+        h_elems = rows * gate_cols
+    var h_device = ctx.enqueue_create_buffer[.bfloat16](h_elems)
+
+    @inline(.always)
+    def bench_fn(
+        mut b: Bencher,
+    ) raises {
+        var input_tensor,
+        var output_tensor,
+        var scales_tensor,
+        var h_device,
+        imm,
+    }:
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
+            comptime if fused:
+                # The op the graph calls; on AMD it routes MXFP4 and MXFP8
+                # to the gated kernel.
+                swiglu_quantize_dynamic_block_scaled[
+                    SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
+                    activation=swiglu[0.0],
+                ](
+                    output_tensor.as_unsafe_any_origin(),
+                    scales_tensor.as_unsafe_any_origin(),
+                    input_tensor.as_unsafe_any_origin(),
+                    Float32(1.0),
+                    ctx,
+                )
+            else:
+                var h_tensor = TileTensor(
+                    h_device, row_major(rows, Idx[gate_cols])
+                )
+                ctx.enqueue_function[
+                    _bench_silu_mul_kernel[
+                        gate_cols,
+                        type_of(h_tensor).LayoutType,
+                        type_of(input_tensor).LayoutType,
+                    ]
+                ](
+                    h_tensor,
+                    input_tensor.as_imm(),
+                    Int32(rows),
+                    grid_dim=ceildiv(rows * gate_cols, 8 * 256),
+                    block_dim=256,
+                )
+                quantize_dynamic_block_scaled[
+                    SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE
+                ](
+                    output_tensor.as_unsafe_any_origin(),
+                    scales_tensor.as_unsafe_any_origin(),
+                    h_tensor.as_unsafe_any_origin(),
+                    Float32(1.0),
+                    ctx,
+                )
+
+        bencher_iter_custom(b, kernel_launch, ctx)
+
+    # The unfused arm also writes the [rows, gate_cols] bf16 activation and
+    # reads it back to quantize; charging both arms only the input and the
+    # final outputs would overstate that arm's bandwidth.
+    var moved_bytes = (
+        rows * cols * size_of[BFloat16]()
+        + rows * packed_cols * size_of[out_dtype]()
+        + rows * scale_cols * size_of[MXFP8_SF_DTYPE]()
+    )
+    comptime if not fused:
+        moved_bytes += 2 * rows * gate_cols * size_of[BFloat16]()
+    var bytes = ThroughputMeasure(BenchMetric.bytes, moved_bytes)
+
+    b.bench_function(
+        bench_fn,
+        BenchId(
+            "gated_amd",
+            input_id=String(
+                "mx4" if is_fp4 else "mx8", rows, gate_cols, sep="/"
+            ),
+        ),
+        [bytes],
+    )
+    ctx.synchronize()
+
+
 def main() raises:
     comptime in_dtype = get_defined_dtype["dtype", .bfloat16]()
 
@@ -307,6 +520,10 @@ def main() raises:
     # The grouped cases carry their own row counts, so they ignore `M` and
     # would repeat identically across an `M` sweep. Opt in with -D grouped=1.
     comptime grouped = get_defined_bool["grouped", False]()
+    # Which AMD MI355X case to time; see the dispatch below. The output
+    # format stays with `is_fp4`, so the define means the same thing on both
+    # vendors.
+    comptime variant = get_defined_int["variant", 0]()
 
     with DeviceContext() as ctx:
         comptime if _is_sm10x_gpu(ctx.default_device_info):
@@ -338,5 +555,24 @@ def main() raises:
                     ctx, m, "1d1d_quantization", rows
                 )
             m.dump_report()
+        elif ctx.default_device_info == MI355X:
+            var m = Bench(BenchConfig(num_repetitions=1))
+            # 0 times the ungated quantize, 1 the gated fusion, 2 the
+            # two-kernel chain it replaces. All three take their output
+            # format from `is_fp4`, as the SM100 arm above does, so
+            # `-D is_fp4=False` times MXFP8 instead of timing MXFP4 under an
+            # MXFP8 request. The fused and unfused arms report the same
+            # BenchId, so two CSVs pair up bar for bar.
+            comptime if variant == 0:
+                bench_mx_amd_quantization[cols, is_fp4](ctx, m, rows)
+            elif variant == 1:
+                bench_mx_amd_gated[cols, is_fp4, True](ctx, m, rows)
+            else:
+                comptime assert variant == 2, (
+                    "variant must be 0 (ungated), 1 (gated fused), or 2"
+                    " (gated unfused)"
+                )
+                bench_mx_amd_gated[cols, is_fp4, False](ctx, m, rows)
+            m.dump_report()
         else:
-            print("this benchmark is only supported on NVIDIA SM100")
+            print("this benchmark runs on NVIDIA SM100 and AMD MI355X only")

@@ -12235,9 +12235,9 @@ def swiglu_quantize_dynamic_block_scaled(
     activation out. ``gate`` is the first half of each row and ``up`` the
     second. The formats and arguments match
     :func:`quantize_dynamic_block_scaled`. Runs on NVIDIA SM100 and SM120
-    (NVFP4 and MXFP8), and on AMD CDNA4 (MI355X) for MXFP8 only, with
+    (NVFP4 and MXFP8), and on AMD CDNA4 (MI355X) for MXFP4 and MXFP8, with
     rank-2 ``[M, N // 32]`` row-major scales and ``tensor_sf`` fixed at
-    1.0 (MXFP8 is purely block scaled).
+    1.0 (MXFP4 and MXFP8 are purely block scaled).
 
     Args:
         gate_up: The bfloat16 input. Shape: ``[M, 2 * N]``.
@@ -12263,8 +12263,7 @@ def swiglu_quantize_dynamic_block_scaled(
         ValueError: If the GPU is not SM100, SM120, or AMD CDNA4 (MI355X),
             ``gate_up`` is not a rank-2 bfloat16 tensor with a static even
             width whose halves are whole scale blocks, the format arguments
-            do not name a supported format, or the format is not MXFP8 on
-            AMD.
+            do not name a supported format, or the format is NVFP4 on AMD.
     """
     is_amd = _is_amd_gpu()
     if not (is_amd or _is_sm10x_gpu() or _is_sm12x_gpu()):
@@ -12273,8 +12272,8 @@ def swiglu_quantize_dynamic_block_scaled(
             " SM120, or AMD CDNA4 (MI355X) GPU"
         )
     if is_amd:
-        # The Mojo dispatcher runs the gated MXFP8 kernel on MI355X only;
-        # gate here too so other HIP devices fail with the documented
+        # The Mojo dispatcher runs the gated MXFP4/MXFP8 kernel on MI355X
+        # only; gate here too so other HIP devices fail with the documented
         # error instead of a kernel compile assert.
         architecture = accelerator_architecture_name()
         if not architecture.startswith("gfx950"):
@@ -12282,19 +12281,20 @@ def swiglu_quantize_dynamic_block_scaled(
                 "swiglu_quantize_dynamic_block_scaled requires an AMD CDNA4"
                 f" (MI355X) GPU, got {architecture}"
             )
-        if out_type != DType.float8_e4m3fn:
+        if out_type not in (DType.uint8, DType.float8_e4m3fn):
             raise ValueError(
-                "swiglu_quantize_dynamic_block_scaled on AMD supports MXFP8"
-                f" only (out_type=float8_e4m3fn), got out_type={out_type}"
+                "swiglu_quantize_dynamic_block_scaled on AMD supports MXFP4"
+                " (out_type=uint8) and MXFP8 (out_type=float8_e4m3fn), got"
+                f" out_type={out_type}"
             )
         if scales_type != DType.float8_e8m0fnu:
             raise ValueError(
-                "scales_type must be float8_e8m0fnu for MXFP8 on AMD, got"
-                f" {scales_type}"
+                "scales_type must be float8_e8m0fnu for MXFP4/MXFP8 on AMD,"
+                f" got {scales_type}"
             )
         if sf_vector_size != 32:
             raise ValueError(
-                "sf_vector_size must be 32 for MXFP8 on AMD, got"
+                "sf_vector_size must be 32 for MXFP4/MXFP8 on AMD, got"
                 f" {sf_vector_size}"
             )
         if isinstance(tensor_sf, TensorValue) or float(tensor_sf) != 1.0:

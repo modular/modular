@@ -17,7 +17,9 @@ replaces: a `situ` elementwise kernel writing the bfloat16 activation, then
 `quantize_mx_amd`. That gate catches a missing bfloat16 rounding, a swapped
 gate/up, a launch geometry computed on 2N, and a skipped scale column; the
 sentinel-filled buffers and the guard tails after them catch unwritten or
-out-of-bounds stores.
+out-of-bounds stores. `test_fused_mxfp4_matches_unfused` runs the same gate
+for the nibble-packed MXFP4 route, which must reproduce the ungated MXFP4
+kernel's bytes exactly.
 
 A second, independent host fp64 oracle (SiTU in fp64 -> bfloat16 round ->
 a block quant written here, mirroring the kernel's fp32 scale arithmetic)
@@ -35,6 +37,10 @@ and a host reference built without the bfloat16 rounding.
 The public launcher has its own negative case: `swiglu_quantize_mx_amd`
 called directly with a wrongly shaped scales tile raises before the kernel
 is enqueued, because the kernel stores into the scales tile unchecked.
+`test_launch_geometry_keeps_lane_groups` covers the launcher's thread cap:
+four lanes share each scale block and the column loop strides by the block
+size, so a cap that is not a multiple of four must still reproduce the
+512-thread bytes in both formats.
 """
 
 from std.math import ceildiv, divmod, exp, isfinite, tanh
@@ -295,6 +301,205 @@ def _signed_e4m3_code(byte: UInt8) -> Int:
     if byte & 0x80:
         magnitude = -magnitude
     return magnitude
+
+
+def _run_unfused_mxfp4[
+    N: Int, M: Int, activation: swiglu_activation_type
+](
+    ctx: DeviceContext,
+    values: List[Float32],
+    mut data: List[UInt8],
+    mut scales: List[UInt8],
+) raises:
+    """The chain the fused MXFP4 kernel replaces: the `situ` elementwise
+    kernel writing bfloat16, then `quantize_mx_amd` packing two nibbles a
+    byte. Output `[M, N // 2]` for a `[M, 2 * N]` input."""
+    comptime scale_N = N // MXFP8_SF_VECTOR_SIZE
+    var gate_up_dev = _upload_gate_up[M, N](ctx, values)
+    var h_dev = ctx.enqueue_create_buffer[.bfloat16](M * N)
+    var gate_up_tt = TileTensor(gate_up_dev, row_major((Idx[M], Idx[2 * N])))
+    var h_tt = TileTensor(h_dev, row_major((Idx[M], Idx[N])))
+    ctx.enqueue_function[_situ_activation[activation, M, N]](
+        h_tt,
+        gate_up_tt.as_imm(),
+        grid_dim=ceildiv(M * (N // 8), 256),
+        block_dim=256,
+    )
+
+    var data_dev = ctx.enqueue_create_buffer[.uint8](M * (N // 2))
+    var scales_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](M * scale_N)
+    var data_tt = TileTensor(data_dev, row_major((Idx[M], Idx[N // 2])))
+    var scales_tt = TileTensor(scales_dev, row_major((Idx[M], Idx[scale_N])))
+    quantize_mx_amd(ctx, data_tt, scales_tt, h_tt)
+
+    var data_host = ctx.enqueue_create_host_buffer[.uint8](M * (N // 2))
+    var scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
+        M * scale_N
+    )
+    ctx.enqueue_copy(data_host, data_dev)
+    ctx.enqueue_copy(scales_host, scales_dev)
+    ctx.synchronize()
+
+    data.clear()
+    for i in range(M * (N // 2)):
+        data.append(data_host[i])
+    scales.clear()
+    for i in range(M * scale_N):
+        scales.append(bitcast[.uint8](scales_host[i]))
+
+
+def _run_fused_mxfp4[
+    N: Int, M: Int, activation: swiglu_activation_type
+](
+    ctx: DeviceContext,
+    values: List[Float32],
+    mut data: List[UInt8],
+    mut scales: List[UInt8],
+) raises:
+    """The fused MXFP4 kernel through the same dispatcher the graph op
+    calls, into sentinel-filled buffers with guard tails."""
+    comptime scale_N = N // MXFP8_SF_VECTOR_SIZE
+    comptime out_bytes = M * (N // 2)
+    var gate_up_dev = _upload_gate_up[M, N](ctx, values)
+
+    var out_dev = ctx.enqueue_create_buffer[.uint8](out_bytes + OUT_GUARD_BYTES)
+    out_dev.enqueue_fill(0xAB)
+    var sf_dev = ctx.enqueue_create_buffer[.uint8](M * scale_N + SF_GUARD_BYTES)
+    sf_dev.enqueue_fill(0xCD)
+
+    swiglu_quantize_dynamic_block_scaled[
+        SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE, activation=activation
+    ](
+        TileTensor(out_dev, row_major((Idx[M], Idx[N // 2]))),
+        TileTensor(
+            sf_dev.unsafe_ptr().unsafe_bitcast[Scalar[.float8_e8m0fnu]](),
+            row_major((Idx[M], Idx[scale_N])),
+        ),
+        TileTensor(gate_up_dev, row_major((Idx[M], Idx[2 * N]))),
+        Float32(1.0),
+        ctx,
+    )
+
+    var raw_host = ctx.enqueue_create_host_buffer[.uint8](
+        out_bytes + OUT_GUARD_BYTES
+    )
+    ctx.enqueue_copy(raw_host, out_dev)
+    ctx.synchronize()
+    for i in range(OUT_GUARD_BYTES):
+        assert_true(
+            raw_host[out_bytes + i] == 0xAB,
+            (
+                "a packed FP4 guard tail byte changed: the kernel writes"
+                " past [M, N // 2], a launch geometry computed on 2N"
+            ),
+        )
+    data.clear()
+    for i in range(out_bytes):
+        data.append(raw_host[i])
+
+    var raw_sf_host = ctx.enqueue_create_host_buffer[.uint8](
+        M * scale_N + SF_GUARD_BYTES
+    )
+    ctx.enqueue_copy(raw_sf_host, sf_dev)
+    ctx.synchronize()
+    for i in range(SF_GUARD_BYTES):
+        assert_true(
+            raw_sf_host[M * scale_N + i] == 0xCD,
+            (
+                "a scales guard tail byte changed: the kernel writes past"
+                " [M, N // 32], a doubled scale column"
+            ),
+        )
+    scales.clear()
+    for i in range(M * scale_N):
+        scales.append(raw_sf_host[i])
+
+
+def _run_gated_threads[
+    N: Int,
+    M: Int,
+    activation: swiglu_activation_type,
+    num_max_threads: Int,
+](
+    ctx: DeviceContext,
+    values: List[Float32],
+    mut data: List[UInt8],
+    mut scales: List[UInt8],
+) raises:
+    """The fused MXFP8 kernel launched directly at `num_max_threads`.
+
+    The dispatcher the graph op calls always passes 512, so only a direct
+    call can reach another block size.
+    """
+    comptime scale_N = N // MXFP8_SF_VECTOR_SIZE
+    var gate_up_dev = _upload_gate_up[M, N](ctx, values)
+    var out_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](M * N)
+    var sf_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](M * scale_N)
+    swiglu_quantize_mx_amd[
+        num_max_threads=num_max_threads, activation=activation
+    ](
+        ctx,
+        TileTensor(out_dev, row_major((Idx[M], Idx[N]))),
+        TileTensor(sf_dev, row_major((Idx[M], Idx[scale_N]))),
+        TileTensor(gate_up_dev, row_major((Idx[M], Idx[2 * N]))),
+    )
+
+    var data_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](M * N)
+    var scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
+        M * scale_N
+    )
+    ctx.enqueue_copy(data_host, out_dev)
+    ctx.enqueue_copy(scales_host, sf_dev)
+    ctx.synchronize()
+
+    data.clear()
+    for i in range(M * N):
+        data.append(bitcast[.uint8](data_host[i]))
+    scales.clear()
+    for i in range(M * scale_N):
+        scales.append(bitcast[.uint8](scales_host[i]))
+
+
+def _run_gated_mxfp4_threads[
+    N: Int,
+    M: Int,
+    activation: swiglu_activation_type,
+    num_max_threads: Int,
+](
+    ctx: DeviceContext,
+    values: List[Float32],
+    mut data: List[UInt8],
+    mut scales: List[UInt8],
+) raises:
+    """The fused MXFP4 kernel launched directly at `num_max_threads`."""
+    comptime scale_N = N // MXFP8_SF_VECTOR_SIZE
+    comptime packed_N = N // 2
+    var gate_up_dev = _upload_gate_up[M, N](ctx, values)
+    var out_dev = ctx.enqueue_create_buffer[.uint8](M * packed_N)
+    var sf_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](M * scale_N)
+    swiglu_quantize_mx_amd[
+        num_max_threads=num_max_threads, activation=activation
+    ](
+        ctx,
+        TileTensor(out_dev, row_major((Idx[M], Idx[packed_N]))),
+        TileTensor(sf_dev, row_major((Idx[M], Idx[scale_N]))),
+        TileTensor(gate_up_dev, row_major((Idx[M], Idx[2 * N]))),
+    )
+
+    var data_host = ctx.enqueue_create_host_buffer[.uint8](M * packed_N)
+    var scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
+        M * scale_N
+    )
+    ctx.enqueue_copy(data_host, out_dev)
+    ctx.enqueue_copy(scales_host, sf_dev)
+    ctx.synchronize()
+
+    data.clear()
+    for i in range(M * packed_N):
+        data.append(data_host[i])
+    scales.clear()
+    for i in range(M * scale_N):
+        scales.append(bitcast[.uint8](scales_host[i]))
 
 
 def _host_quantize(
@@ -625,6 +830,39 @@ def test_no_bf16_round_reference_differs[
     )
 
 
+def test_fused_mxfp4_matches_unfused[
+    N: Int, M: Int, activation: swiglu_activation_type
+](ctx: DeviceContext, label: StaticString) raises:
+    """Fused MXFP4 bytes == silu-then-quantize bytes, data and scales both.
+
+    The gated route quantizes to nibble-packed MXFP4 through the same
+    `compute_mxfp4_even_scale` / `cast_float_to_fp4e2m1_amd` pair the
+    ungated kernel uses, so this gate needs to be byte for byte, not
+    within a code step.
+    """
+    var values = List[Float32]()
+    _fill_gate_up(values, M, N)
+
+    var ref_data = List[UInt8]()
+    var ref_scales = List[UInt8]()
+    _run_unfused_mxfp4[N, M, activation](ctx, values, ref_data, ref_scales)
+    var got_data = List[UInt8]()
+    var got_scales = List[UInt8]()
+    _run_fused_mxfp4[N, M, activation](ctx, values, got_data, got_scales)
+
+    var diffs = 0
+    _count_byte_diffs[N, M](label, "packed FP4 byte", ref_data, got_data, diffs)
+    _count_byte_diffs[N, M](label, "scale byte", ref_scales, got_scales, diffs)
+    assert_true(
+        diffs == 0,
+        String(label)
+        + ": fused MXFP4 differs from the unfused chain in "
+        + String(diffs)
+        + " bytes",
+    )
+    print(label, ": fused MXFP4 matches unfused, M =", M, "N =", N)
+
+
 def test_rejects_wrong_scales_shape[
     N: Int, M: Int, activation: swiglu_activation_type
 ](ctx: DeviceContext) raises:
@@ -652,6 +890,76 @@ def test_rejects_wrong_scales_shape[
     print("wrong scales shape: raised before enqueue, M =", M, "N =", N)
 
 
+def test_launch_geometry_keeps_lane_groups[
+    N: Int, M: Int, activation: swiglu_activation_type
+](ctx: DeviceContext) raises:
+    """A block size that is not a multiple of four must not move a byte.
+
+    Four lanes cooperate on each 32-element scale block, and the kernel's
+    column loop strides by the block size, so a cap the launcher passed
+    through unrounded split one block across two iterations: at
+    `num_max_threads=5` over 64 columns, iteration one put block 1's first
+    lane in a group whose other lanes ran in iteration two, and that lane
+    stored a scale no group had computed. Rounded down to whole groups,
+    every cap reproduces the 512-thread bytes for both output formats.
+    """
+    print("  lane-group geometry M=", M, " N=", N)
+    var values = List[Float32]()
+    _fill_gate_up(values, M, N)
+
+    var fp8_ref = List[UInt8]()
+    var fp8_ref_scales = List[UInt8]()
+    _run_gated_threads[N, M, activation, 512](
+        ctx, values, fp8_ref, fp8_ref_scales
+    )
+    var fp4_ref = List[UInt8]()
+    var fp4_ref_scales = List[UInt8]()
+    _run_gated_mxfp4_threads[N, M, activation, 512](
+        ctx, values, fp4_ref, fp4_ref_scales
+    )
+
+    comptime for threads in [9, 5]:
+        var fp8_data = List[UInt8]()
+        var fp8_scales = List[UInt8]()
+        _run_gated_threads[N, M, activation, threads](
+            ctx, values, fp8_data, fp8_scales
+        )
+        var fp4_data = List[UInt8]()
+        var fp4_scales = List[UInt8]()
+        _run_gated_mxfp4_threads[N, M, activation, threads](
+            ctx, values, fp4_data, fp4_scales
+        )
+
+        var diffs = 0
+        for i in range(len(fp8_ref)):
+            if fp8_data[i] != fp8_ref[i]:
+                diffs += 1
+        for i in range(len(fp8_ref_scales)):
+            if fp8_scales[i] != fp8_ref_scales[i]:
+                diffs += 1
+        for i in range(len(fp4_ref)):
+            if fp4_data[i] != fp4_ref[i]:
+                diffs += 1
+        for i in range(len(fp4_ref_scales)):
+            if fp4_scales[i] != fp4_ref_scales[i]:
+                diffs += 1
+        assert_true(
+            diffs == 0,
+            (
+                String("num_max_threads=")
+                + String(threads)
+                + " moved "
+                + String(diffs)
+                + " bytes away from the 512-thread launch at M = "
+                + String(M)
+                + " N = "
+                + String(N)
+                + ": a scale block straddled two lane groups"
+            ),
+        )
+    print("  every cap reproduced the 512-thread bytes, M =", M, "N =", N)
+
+
 def main() raises:
     comptime act = get_swiglu_activation["situ", BETA, LINEAR_BETA]
     comptime act_passthrough = get_swiglu_activation["situ", BETA]
@@ -675,6 +983,24 @@ def main() raises:
             ctx, "linear_beta=None"
         )
 
+        print("fused MXFP4 vs the on-GPU unfused chain:")
+        test_fused_mxfp4_matches_unfused[384, 16, act](ctx, "mx4 situ")
+        test_fused_mxfp4_matches_unfused[384, 128, act](ctx, "mx4 situ")
+        test_fused_mxfp4_matches_unfused[384, 300, act](ctx, "mx4 situ")
+        test_fused_mxfp4_matches_unfused[3072, 8, act](ctx, "mx4 situ")
+        # More rows than the grid the launcher derives at this width, so
+        # the kernel's row loop strides.
+        test_fused_mxfp4_matches_unfused[3072, 1300, act](ctx, "mx4 situ")
+        # Twice the columns one 512-thread block pass covers, so the
+        # kernel's column loop strides within a row.
+        test_fused_mxfp4_matches_unfused[8192, 8, act](ctx, "mx4 situ")
+        test_fused_mxfp4_matches_unfused[384, 16, act_passthrough](
+            ctx, "mx4 linear_beta=None"
+        )
+        test_fused_mxfp4_matches_unfused[384, 128, act_passthrough](
+            ctx, "mx4 linear_beta=None"
+        )
+
         print("fused vs the host fp64 oracle:")
         test_fused_matches_host_fp64[384, 16, act, BETA, LINEAR_BETA](ctx)
         test_fused_matches_host_fp64[384, 64, act, BETA, LINEAR_BETA](ctx)
@@ -688,5 +1014,12 @@ def main() raises:
 
         print("launcher validation:")
         test_rejects_wrong_scales_shape[64, 3, act](ctx)
+
+        print("launch geometry:")
+        # 64 columns is two scale blocks over eight column threads, so the
+        # odd caps below one 4-lane group straddle a block boundary; 96
+        # leaves the last iteration partial.
+        test_launch_geometry_keeps_lane_groups[64, 3, act](ctx)
+        test_launch_geometry_keeps_lane_groups[96, 3, act](ctx)
 
         print("PASS")
