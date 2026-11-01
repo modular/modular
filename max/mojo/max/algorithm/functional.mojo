@@ -26,8 +26,9 @@ from max.gpu.host.info import is_cpu, is_gpu
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.sys.info import CompilationTarget, _accelerator_arch
 
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import Coord, CoordLike, DynamicCoord
 from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 # Re-export CPU implementations.
 from .backend.cpu import (
@@ -116,6 +117,119 @@ def _get_start_indices_of_nth_subvolume[
     res.data[0] = curr_index
 
 
+@inline(.always)
+def _start_indices_of_nth_element[
+    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    use_32bit: Bool,
+    subvolume_rank: Int = 0,
+](n: Int, shape: Coord) -> StaticTuple[Int, rank]:
+    """Converts a flat index into row-major ND start indices.
+
+    Divides by a compile-time literal for every dimension whose extent
+    `shape_types` knows statically, so those divisions strength-reduce instead
+    of lowering to a runtime `div`.
+
+    Matches `_get_start_indices_of_nth_subvolume[subvolume_rank]` exactly,
+    including leftover-into-dim-0: the outermost coordinate is the undivided
+    remainder, never reduced modulo `shape[0]`. Dimensions inside the trailing
+    subvolume are left zeroed for the caller to fill in.
+
+    Parameters:
+        rank: The rank of the ND index.
+        shape_types: The `Coord` element types of `shape`, carrying whichever
+            extents are known at compile time.
+        use_32bit: Divide in 32-bit when every extent fits in 32 bits. The
+            narrowing keeps the runtime `divmod` off the 64-bit path.
+        subvolume_rank: The rank of the trailing subvolume left untouched.
+
+    Args:
+        n: The flat index to convert.
+        shape: The shape of the ND space we are converting into.
+
+    Returns:
+        The start indices.
+    """
+    comptime assert (
+        subvolume_rank < rank
+    ), "the trailing subvolume must be smaller than the index rank"
+
+    var res = StaticTuple[Int, rank](0)
+    comptime if use_32bit:
+        _decompose_flat_index[rank, shape_types, .uint32, subvolume_rank](
+            n, shape, res
+        )
+    else:
+        _decompose_flat_index[rank, shape_types, .int, subvolume_rank](
+            n, shape, res
+        )
+    return res
+
+
+@inline(.always)
+def _decompose_flat_index[
+    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    dtype: DType,
+    subvolume_rank: Int,
+](n: Int, shape: Coord, mut res: StaticTuple[Int, rank]):
+    """Fills `res` with the row-major start indices of flat index `n`.
+
+    The `dtype` accumulator keeps the runtime `divmod` in the caller's chosen
+    arithmetic width; compile-time extents fold the division away entirely.
+
+    Parameters:
+        rank: The rank of the ND index.
+        shape_types: The `Coord` element types of `shape`.
+        dtype: The arithmetic type of the accumulator.
+        subvolume_rank: The rank of the trailing subvolume left untouched.
+
+    Args:
+        n: The flat index to convert.
+        shape: The shape of the ND space we are converting into.
+        res: Receives the start indices.
+    """
+    comptime T = Scalar[dtype]
+    var curr = T(n)
+
+    comptime for i in reversed(range(1, rank - subvolume_rank)):
+        comptime if shape_types[i].is_static_value:
+            var quotient, remainder = divmod(
+                curr, T(shape_types[i].static_value)
+            )
+            curr = quotient
+            res[i] = Int(remainder)
+        else:
+            var quotient, remainder = divmod(curr, T(Int(shape[i])))
+            curr = quotient
+            res[i] = Int(remainder)
+
+    res[0] = Int(curr)
+
+
+@inline(.always)
+def _index_coord[
+    rank: Int
+](flat: StaticTuple[Int, rank]) -> DynamicCoord[.int64, rank]:
+    """Materializes a flat index tuple as the `Coord` an elementwise body takes.
+
+    Indices are `int64` so bodies can do plain integer index arithmetic.
+
+    Parameters:
+        rank: The rank of the index space.
+
+    Args:
+        flat: The per-dimension indices.
+
+    Returns:
+        The same indices as a `Coord`.
+    """
+    var coord = DynamicCoord[.int64, rank]()
+    comptime for i in range(rank):
+        coord.replace_dynamic[i](Int64(flat[i]))
+    return coord
+
+
 # ===-----------------------------------------------------------------------===#
 # Elementwise
 # ===-----------------------------------------------------------------------===#
@@ -142,9 +256,8 @@ def elementwise[
     `elementwise[N](func, shape, ctx)`.
 
     Parameters:
-        FuncType: A parametric callable taking
-            `IndexList[rank]` and template parameters `width`, `rank`,
-            `alignment`.
+        FuncType: A parametric callable taking an index `Coord` and template
+            parameters `width` and `alignment`.
         simd_width: The SIMD vector width to use.
         target: The target to run on.
         _trace_description: Description of the trace.
@@ -164,76 +277,6 @@ def elementwise[
     ](func, shape, context)
 
 
-@fieldwise_init
-struct _IndexListToCoordAdapter[
-    rank: Int,
-    FuncType: ImplicitlyCopyable
-    & RegisterPassable
-    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
-](
-    ImplicitlyCopyable,
-    RegisterPassable,
-    def[width: Int, alignment: Int = 1](Coord) -> None,
-):
-    """Adapts an `IndexList`-taking function to a `Coord`-taking callable.
-
-    Bridges the `IndexList`-based elementwise body convention to the
-    `Coord`-based GPU kernel interface required by `_elementwise_impl_gpu`.
-
-    TODO(MOCO-4071): Use a closure instead, using a struct avoids a generic
-    `lit.closure.init` with parametric witnesses in the MOGG package that the
-    package loader cannot resolve.
-
-    Parameters:
-        rank: The rank of the index space.
-        FuncType: The wrapped function type.
-    """
-
-    var func: Self.FuncType
-
-    @inline(.always)
-    def __call__[width: Int, alignment: Int = 1](self, coords: Coord):
-        self.func[width, Self.rank, alignment](
-            rebind[IndexList[Self.rank]](coord_to_index_list(coords))
-        )
-
-
-@fieldwise_init
-struct _CoordToIndexListAdapter[
-    rank: Int,
-    FuncType: ImplicitlyCopyable
-    & RegisterPassable
-    & def[width: Int, alignment: Int = 1](Coord) -> None,
-](
-    ImplicitlyCopyable,
-    RegisterPassable,
-    def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
-):
-    """Adapts a `Coord`-taking function to an `IndexList`-taking callable.
-
-    Bridges the `Coord`-based elementwise body convention to the
-    `IndexList`-based plugin entry points required by
-    `MaxPluginForTarget.elementwise_fn`.
-
-    TODO(MOCO-4071): Use a closure instead, using a struct avoids a generic
-    `lit.closure.init` with parametric witnesses in the MOGG package that the
-    package loader cannot resolve.
-
-    Parameters:
-        rank: The rank of the index space.
-        FuncType: The wrapped function type.
-    """
-
-    var func: Self.FuncType
-
-    @inline(.always)
-    def __call__[
-        width: Int, call_rank: Int, alignment: Int = 1
-    ](self, indices: IndexList[call_rank]):
-        comptime assert call_rank == Self.rank
-        self.func[width, alignment](Coord(indices))
-
-
 @inline(.always)
 def _elementwise_impl[
     simd_width: Int,
@@ -249,7 +292,7 @@ def _elementwise_impl[
 
     @inline(.always)
     def description_fn() {imm} -> String:
-        var shape_str = trace_arg("shape", coord_to_index_list(shape))
+        var shape_str = trace_arg("shape", shape)
         var vector_width_str = String(t"vector_width={simd_width}")
         return ";".join([shape_str^, vector_width_str^])
 
@@ -290,8 +333,8 @@ def _elementwise_impl[
         ]._handles_elementwise:
             comptime plugin = MaxPluginForTarget[context.target]
             return plugin.elementwise_fn[shape.rank, simd_width](
-                _CoordToIndexListAdapter[shape.rank, FuncType](func),
-                coord_to_index_list(shape),
+                func,
+                shape,
                 context.assert_default_target(),
             )
         elif is_gpu[target]():
@@ -384,8 +427,8 @@ def _dual_elementwise_impl[
 ) raises:
     @inline(.always)
     def description_fn() {imm} -> String:
-        var s0 = trace_arg("shape_0", coord_to_index_list(shape_0))
-        var s1 = trace_arg("shape_1", coord_to_index_list(shape_1))
+        var s0 = trace_arg("shape_0", shape_0)
+        var s1 = trace_arg("shape_1", shape_1)
         var vw = String(t"vector_width={simd_width}")
         return ";".join([s0^, s1^, vw^])
 

@@ -14,14 +14,14 @@
 
 from std.math import ceildiv
 
-from std.utils.coord import Coord, coord_to_index_list
-from std.utils.index import IndexList
+from std.utils.coord import Coord
+from std.utils.static_tuple import StaticTuple
 
 from max.gpu.host import DeviceContext
 from std.algorithm.backend.vectorize import vectorize
 
 from .parallelize import _get_num_workers, sync_parallelize
-from max.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.functional import _index_coord, _start_indices_of_nth_element
 
 
 # ===-----------------------------------------------------------------------===#
@@ -147,21 +147,24 @@ def _elementwise_impl_cpu_nd[
         if len <= 0:
             return
 
-        var indices = IndexList[rank]()
+        var flat = StaticTuple[Int, rank](0)
 
         @inline(.always)
         def func_wrapper_nd[
             simd_width: Int
-        ](idx: Int) {mut indices, imm func, imm}:
-            indices[rank - 1] = idx
-            func[simd_width](Coord(indices.canonicalize()))
+        ](idx: Int) {mut flat, imm func, imm}:
+            flat[rank - 1] = idx
+            func[simd_width](_index_coord(flat))
 
         for parallel_offset in range(
             start_parallel_offset, end_parallel_offset
         ):
-            indices = _get_start_indices_of_nth_subvolume(
-                parallel_offset, coord_to_index_list(shape)
-            )
+            flat = _start_indices_of_nth_element[
+                rank,
+                type_of(shape).ParamListType,
+                False,
+                subvolume_rank=1,
+            ](parallel_offset, shape)
 
             # We vectorize over the innermost dimension.
             vectorize[simd_width, unroll_factor=unroll_factor](
