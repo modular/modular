@@ -21,10 +21,17 @@ from std.sys.info import (
     has_amd_rdna_gpu_accelerator,
 )
 
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100, _is_sm10x_gpu, is_gpu
-from max.gpu import WARP_SIZE, block_idx, global_idx, lane_id, thread_idx
+from max.gpu import (
+    WARP_SIZE,
+    block_dim,
+    block_idx,
+    global_idx,
+    lane_id,
+    thread_idx,
+)
 import max.gpu.primitives.warp as warp
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -1213,14 +1220,17 @@ def naive_grouped_matmul[
 # Rowwise / per-token dynamic-scaled FP8 grouped matmul (SM100 B200)
 # ===----------------------------------------------------------------------=== #
 #
-# Target: NVIDIA SM100 (B200). Correctness-first naive ``block_idx.z`` grouped
-# kernel - NO persistent / TileScheduler / TMA path (deliberately deferred).
+# Serves compressed-tensors FP8-dynamic MoE layers (per-output-channel weight
+# scale + per-token dynamic activation scale), e.g.
+# ``RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic``: rowwise scales that
+# the 128x128 blockwise grouped FP8 kernel
+# (``grouped_matmul_dynamic_scaled_fp8``) cannot express (it hard-asserts
+# ``(1,128,128)`` scale granularity).
 #
-# This serves rowwise (per-output-channel) weight scales + per-token (colwise)
-# dynamic activation scales - the compressed-tensors FP8 layout used by
-# ``RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic`` - which the 128x128
-# blockwise grouped FP8 kernel (``grouped_matmul_dynamic_scaled_fp8``) cannot
-# express (it hard-asserts ``(1,128,128)`` scale granularity).
+# Two kernels: on SM100 with a bf16 output the op runs the persistent
+# tensor-core grouped GEMM and applies the scales in its compute epilogue; the
+# tiled CUDA-core kernel below is the path for every other target (all AMD
+# GPUs) and for fp32/fp16 output or shapes the TMA path cannot take.
 #
 # The simplification vs. the blockwise kernel: there is NO per-K scale
 # streaming. We accumulate the FP8 x FP8 products in fp32 over the FULL K, then
@@ -1238,8 +1248,8 @@ def naive_grouped_matmul[
 #   3. Accumulate in fp32; scale ONCE after the full-K reduction. A partial-K
 #      rescale would be silently wrong.
 #   4. Empty groups (M == 0) produce no work; ``expert == -1`` (LoRA-style
-#      inactive block) skips the matmul but the row range is still empty so no
-#      output is written for it here.
+#      inactive block) skips the matmul and stores the zero reduction for the
+#      rows of its range.
 
 
 def _stage_usage_stats_kernel[
@@ -1265,6 +1275,24 @@ def _stage_usage_stats_kernel[
         wait_on_dependent_grids()
     stats[0] = max_num_tokens_per_expert
     stats[1] = num_active_experts
+
+
+# Tile geometry of the tiled CUDA-core rowwise FP8 grouped matmul (the
+# non-tensor-core path). One CTA covers `block_dim.y * _ROW_TILE_REG_M` ragged
+# rows by `_ROW_TILE_N` output channels, and each thread owns a
+# `_ROW_TILE_REG_M` x `_ROW_TILE_REG_N` block of that tile: every activation
+# vector it loads feeds `_ROW_TILE_REG_N` multiply-adds and every weight vector
+# feeds `_ROW_TILE_REG_M`, which is the reuse the one-thread-per-output kernel
+# this replaces could not get. The vector width along K is the device's own
+# (`simd_width_of`, one 128-bit load of fp8 on both NVIDIA and CDNA), and the
+# lanes per CTA follow `WARP_SIZE`; neither is a pinned count. The CTA's row
+# extent is a launch parameter because how many rows a group has is a host
+# scalar; `_ROW_TILE_MAX_THREADS_M` caps it.
+comptime _ROW_TILE_THREADS_N = WARP_SIZE
+comptime _ROW_TILE_REG_N = 2
+comptime _ROW_TILE_REG_M = 2
+comptime _ROW_TILE_N = _ROW_TILE_THREADS_N * _ROW_TILE_REG_N
+comptime _ROW_TILE_MAX_THREADS_M = 8
 
 
 @__name(t"grouped_matmul_rowwise_scaled_fp8_kernel_{c_type}_{a_type}_{b_type}")
@@ -1325,13 +1353,22 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
         Engine=expert_ids_engine,
     ],
 ):
-    """Computes the naive grouped FP8 matmul with rowwise weight scales and per-token activation scales, accumulating in fp32 and applying a single post-reduction scale.
+    """Computes the tiled grouped FP8 matmul with rowwise weight scales and per-token activation scales, accumulating in fp32 and applying a single post-reduction scale.
 
     For each token ``t`` in group ``g``'s row range and output channel ``n``,
     computes ``out[t, n] = (sum_k a[t, k] * b[expert, n, k]) * a_scale[t] * b_scale[expert, n]``.
     The ``a_scale`` is indexed by the global ragged row and ``b_scale`` by the
     real expert id, per the correctness invariants documented in the file
-    header. Skips the matmul for ``expert == -1`` (inactive LoRA blocks).
+    header. Skips the matmul for ``expert == -1`` (inactive LoRA blocks), which
+    writes zeros like an all-zero reduction does.
+
+    Each thread owns a ``_ROW_TILE_REG_M`` x ``_ROW_TILE_REG_N`` block of the
+    CTA's output tile and walks K one device vector at a time, widening each
+    fp8 vector once and reusing it across its register block, so
+    the K loop spends two multiply-adds per widened operand instead of two
+    scalar loads and two converts. The thread block's M extent is a runtime
+    value (``block_dim.y``): the launcher shrinks it for a decode-shaped
+    expert so lanes are not spent on rows no token reaches.
     """
     comptime assert transpose_b, "Only support transposed B (B is [E, N, K])."
     comptime assert (
@@ -1365,9 +1402,14 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     var expert = rebind[Int32](expert_ids[block_idx.z])
     var b_expert_off = Int(expert) * N * K
 
-    # indices in current matmul
-    var n = global_idx.x
-    var m = global_idx.y
+    # First (row, channel) of this thread's register block inside the CTA tile.
+    # The tile's M extent follows the launch's block_dim.y, which the launcher
+    # shrinks for a decode-shaped expert.
+    var m = (
+        block_idx.y * (block_dim.y * _ROW_TILE_REG_M)
+        + thread_idx.y * _ROW_TILE_REG_M
+    )
+    var n = block_idx.x * _ROW_TILE_N + thread_idx.x * _ROW_TILE_REG_N
 
     if n >= N or m >= M:
         # Every thread of the block issues the release, in-bounds or not.
@@ -1378,41 +1420,119 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
             launch_dependent_grids()
         return
 
-    # Global ragged row index for this token (correctness invariant #1).
-    var m_global = a_start_row + UInt32(m)
+    # Second row and channel of the register block, clamped so a partial edge
+    # tile re-reads a valid row or channel instead of branching inside the K
+    # loop. The stores at the end are what stays guarded.
+    var m1 = min(m + 1, M - 1)
+    var n1 = min(n + 1, N - 1)
 
-    var accum = Scalar[accum_type](0.0)
+    var dot00 = Scalar[accum_type](0.0)
+    var dot01 = Scalar[accum_type](0.0)
+    var dot10 = Scalar[accum_type](0.0)
+    var dot11 = Scalar[accum_type](0.0)
 
-    # ``expert == -1`` marks an inactive (LoRA) block; skip the matmul.
+    # ``expert == -1`` marks an inactive (LoRA) block; skip the matmul, which
+    # leaves the zero reduction every output of the block stores.
     if expert != -1:
         var a_flat = a.reshape(row_major(a.num_elements()))
         var b_flat = b.reshape(row_major(b.num_elements()))
-        for k in range(K):
-            accum += (
-                rebind[Scalar[a_type]](
-                    a_flat.load((a_expert_off + m * K + k,))
-                ).cast[accum_type]()
-                * rebind[Scalar[b_type]](
-                    b_flat.load((b_expert_off + n * K + k,))
-                ).cast[accum_type]()
-            )
+        var a_row0 = a_expert_off + m * K
+        var a_row1 = a_expert_off + m1 * K
+        var b_row0 = b_expert_off + n * K
+        var b_row1 = b_expert_off + n1 * K
 
-        # Apply the rowwise + per-token scale ONCE after the full-K reduction
-        # (correctness invariant #3). a_scale is per global token (invariant
-        # #1); b_scale is per (real expert, output channel) (invariant #2).
-        comptime assert a_scales.flat_rank == 2
-        comptime assert b_scales.flat_rank == 3
-        var a_scale = rebind[Scalar[a_scales_type]](
-            a_scales[Int(m_global), 0]
+        # A vector load needs every row start aligned to the device's vector
+        # width: `K` a multiple of it covers the row stride, and both buffers
+        # starting on a vector boundary covers the base address. Only the first
+        # is a compile-time fact -- a contiguous view can begin one byte into a
+        # larger buffer -- so the base is checked at runtime. Both terms are
+        # uniform over the grid, so this branch is not divergent.
+        comptime k_tile = simd_width_of[a_type, target=get_gpu_target()]()
+        var base_aligned = (
+            Int(a_flat.unsafe_ptr()) % k_tile == 0
+            and Int(b_flat.unsafe_ptr()) % k_tile == 0
+        )
+        if K % k_tile == 0 and base_aligned:
+            var acc00 = SIMD[accum_type, k_tile](0.0)
+            var acc01 = SIMD[accum_type, k_tile](0.0)
+            var acc10 = SIMD[accum_type, k_tile](0.0)
+            var acc11 = SIMD[accum_type, k_tile](0.0)
+            for k in range(0, K, k_tile):
+                var a0 = a_flat.load[width=k_tile]((a_row0 + k,)).cast[
+                    accum_type
+                ]()
+                var a1 = a_flat.load[width=k_tile]((a_row1 + k,)).cast[
+                    accum_type
+                ]()
+                var b0 = b_flat.load[width=k_tile]((b_row0 + k,)).cast[
+                    accum_type
+                ]()
+                var b1 = b_flat.load[width=k_tile]((b_row1 + k,)).cast[
+                    accum_type
+                ]()
+                acc00 += a0 * b0
+                acc01 += a0 * b1
+                acc10 += a1 * b0
+                acc11 += a1 * b1
+            dot00 = acc00.reduce_add()
+            dot01 = acc01.reduce_add()
+            dot10 = acc10.reduce_add()
+            dot11 = acc11.reduce_add()
+        else:
+            for k in range(K):
+                var a0 = rebind[Scalar[a_type]](
+                    a_flat.load((a_row0 + k,))
+                ).cast[accum_type]()
+                var a1 = rebind[Scalar[a_type]](
+                    a_flat.load((a_row1 + k,))
+                ).cast[accum_type]()
+                var b0 = rebind[Scalar[b_type]](
+                    b_flat.load((b_row0 + k,))
+                ).cast[accum_type]()
+                var b1 = rebind[Scalar[b_type]](
+                    b_flat.load((b_row1 + k,))
+                ).cast[accum_type]()
+                dot00 += a0 * b0
+                dot01 += a0 * b1
+                dot10 += a1 * b0
+                dot11 += a1 * b1
+
+    # Apply the rowwise + per-token scale ONCE after the full-K reduction
+    # (correctness invariant #3). a_scale is per global token (invariant #1);
+    # b_scale is per (real expert, output channel) (invariant #2).
+    comptime assert a_scales.flat_rank == 2
+    comptime assert b_scales.flat_rank == 3
+    var out00 = Scalar[accum_type](0.0)
+    var out01 = Scalar[accum_type](0.0)
+    var out10 = Scalar[accum_type](0.0)
+    var out11 = Scalar[accum_type](0.0)
+    if expert != -1:
+        var a_scale0 = rebind[Scalar[a_scales_type]](
+            a_scales[Int(a_start_row) + m, 0]
         ).cast[accum_type]()
-        var b_scale = rebind[Scalar[b_scales_type]](
+        var a_scale1 = rebind[Scalar[a_scales_type]](
+            a_scales[Int(a_start_row) + m1, 0]
+        ).cast[accum_type]()
+        var b_scale0 = rebind[Scalar[b_scales_type]](
             b_scales[Int(expert), n, 0]
         ).cast[accum_type]()
-        accum = accum * a_scale * b_scale
+        var b_scale1 = rebind[Scalar[b_scales_type]](
+            b_scales[Int(expert), n1, 0]
+        ).cast[accum_type]()
+        out00 = dot00 * a_scale0 * b_scale0
+        out01 = dot01 * a_scale0 * b_scale1
+        out10 = dot10 * a_scale1 * b_scale0
+        out11 = dot11 * a_scale1 * b_scale1
 
-    c.reshape(row_major(c.num_elements())).store(
-        (Int(a_start_row) * N + m * N + n,), accum.cast[c_type]()
-    )
+    var c_flat = c.reshape(row_major(c.num_elements()))
+    var c_off = Int(a_start_row) * N + m * N + n
+    c_flat.store((c_off,), out00.cast[c_type]())
+    if n1 != n:
+        c_flat.store((c_off + 1,), out01.cast[c_type]())
+    if m1 != m:
+        c_flat.store((c_off + N,), out10.cast[c_type]())
+        if n1 != n:
+            c_flat.store((c_off + N + 1,), out11.cast[c_type]())
 
     comptime if (
         pdl_level > PDLLevel.OFF and pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
@@ -1591,6 +1711,18 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
         _ = usage_stats_buf^
         return
 
+    # Thread rows in the CTA tile. A decode-shaped expert has fewer rows than
+    # the full tile, and the threads of the rows it does not reach would only
+    # repeat a neighbour's loads and multiply-adds, so the M extent of the tile
+    # follows the widest group in the batch (the kernel reads it back as
+    # block_dim.y). One thread row covers `_ROW_TILE_REG_M` rows.
+    var rows_per_block = 1
+    while (
+        rows_per_block < _ROW_TILE_MAX_THREADS_M
+        and rows_per_block * _ROW_TILE_REG_M < max_num_tokens_per_expert
+    ):
+        rows_per_block += 1
+
     comptime accum_type = get_accum_type[a_type]()
 
     comptime kernel = grouped_matmul_rowwise_scaled_fp8_kernel[
@@ -1634,11 +1766,14 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
             a_offsets,
             expert_ids,
             grid_dim=(
-                ceildiv(Int(c.dim[1]()), 32),
-                ceildiv(max_num_tokens_per_expert, 16),
+                ceildiv(Int(c.dim[1]()), _ROW_TILE_N),
+                ceildiv(
+                    max_num_tokens_per_expert,
+                    rows_per_block * _ROW_TILE_REG_M,
+                ),
                 num_active_experts,
             ),
-            block_dim=(32, 16, 1),
+            block_dim=(_ROW_TILE_THREADS_N, rows_per_block, 1),
             attributes=pdl_launch_attributes(pdl_level),
         )
 

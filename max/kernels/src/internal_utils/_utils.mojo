@@ -393,9 +393,11 @@ def init_vector_gpu[
 
     def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= _len:
-                    return
+            # Every store is guarded, not just the last: the launch rounds the
+            # thread count up to a whole block, so a buffer shorter than four
+            # strides has threads whose first stores already land past the end.
+            if tid >= _len:
+                return
             x[tid] = values[i]
             tid += stride
 
@@ -468,9 +470,10 @@ def _init_block_scaled_scales_gpu[
 
     def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= _len:
-                    return
+            # Same short-buffer guard as `init_vector_gpu`: the last store's
+            # check does not protect the first three.
+            if tid >= _len:
+                return
             x[tid] = Scalar[dtype](values[i])
             tid += stride
 
