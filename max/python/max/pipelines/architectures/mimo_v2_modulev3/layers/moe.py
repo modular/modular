@@ -133,10 +133,12 @@ class MiMoV2Router(Module[[Tensor], tuple[Tensor, Tensor]]):
         num_experts: int,
         num_experts_per_tok: int,
         norm_topk_prob: bool,
+        route_on_every_device: bool = False,
     ) -> None:
         self.num_experts = num_experts
         self.num_experts_per_tok = num_experts_per_tok
         self.norm_topk_prob = norm_topk_prob
+        self.route_on_every_device = route_on_every_device
         self.gate_score = Linear(hidden_dim, num_experts, bias=False)
         self.e_score_correction_bias = Tensor.zeros(
             [num_experts], dtype=DType.float32
@@ -152,17 +154,16 @@ class MiMoV2Router(Module[[Tensor], tuple[Tensor, Tensor]]):
             return self._route(
                 x, self.gate_score.weight, self.e_score_correction_bias
             )
-        if mesh.num_devices <= 2:
-            # Every device routes its own replica of the tokens. The replicas
-            # come out of an allreduce, and a two-way sum is the same in
-            # either order, so both devices pick the same experts without a
-            # collective.
+        if self.route_on_every_device:
+            # Bit-identical replicas of the router input: every device picks
+            # the same experts without a collective.
             return self._route(
                 x, self.gate_score.weight, self.e_score_correction_bias
             )
-        # A wider allreduce sums in a different order on each device, so a
-        # replica can differ in its last bit and break a near tie the other
-        # way. Device 0 routes for every device.
+        # Fallback for a router whose owner did not vouch for rank-ordered
+        # reductions: device 0 routes for every device. No MiMo-V2 mode lands
+        # here, because the model flags both tensor-parallel modes and
+        # data-parallel attention routes above.
         experts, weights = self._route(
             x.local_shards[0],
             self.gate_score.weight.local_shards[0],
@@ -235,6 +236,7 @@ class MiMoV2MoE(Module[..., Tensor]):
         moe_dim: int,
         norm_topk_prob: bool,
         quant_config: QuantConfig,
+        route_on_every_device: bool = False,
     ) -> None:
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
@@ -247,6 +249,7 @@ class MiMoV2MoE(Module[..., Tensor]):
             num_experts=num_experts,
             num_experts_per_tok=num_experts_per_tok,
             norm_topk_prob=norm_topk_prob,
+            route_on_every_device=route_on_every_device,
         )
         self.experts = ModuleList(
             [MiMoV2Expert(moe_dim, hidden_dim) for _ in range(num_experts)]
@@ -468,6 +471,7 @@ class MiMoV2ExpertParallelMoE(MiMoV2MoE):
         norm_topk_prob: bool,
         quant_config: QuantConfig,
         ep_batch_manager: EPBatchManager,
+        route_on_every_device: bool = False,
     ) -> None:
         super().__init__(
             hidden_dim=hidden_dim,
@@ -476,6 +480,7 @@ class MiMoV2ExpertParallelMoE(MiMoV2MoE):
             moe_dim=moe_dim,
             norm_topk_prob=norm_topk_prob,
             quant_config=quant_config,
+            route_on_every_device=route_on_every_device,
         )
         self.ep_batch_manager = ep_batch_manager
 
@@ -664,8 +669,9 @@ class MiMoV2ExpertParallelMoE(MiMoV2MoE):
         device_ids = [d.id for d in mesh.devices]
         experts, weights = self.gate(x)
         stacked = self._stacked_weights(mesh)
-        # Replicated: every device holds the same rows and routes them the
-        # same way (the router broadcasts its decisions).
+        # Under tensor parallelism every device holds the same rows and the
+        # same routing decision: bit-identical replicas, or device 0's
+        # broadcast.
         x_shards = [x.local_shards[d] for d in range(n)]
         # The cast runs at the graph level: the router's output placement is
         # unknown inside the shared subgraph, which the functional cast's

@@ -281,6 +281,10 @@ class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
             # either order, so both devices pick the same experts without a
             # collective.
             return self._route(x, self.weight, self.e_score_correction_bias)
+        # TODO(ssenecal): this rationale no longer holds. The allreduce kernels
+        # add peers in global rank order, so a wider replica is bit-identical
+        # too. NemotronH should take MiMo-V2's route_on_every_device gate, or
+        # say why it keeps the broadcast.
         # A wider allreduce sums in a different order on each device, so a
         # replica can differ in its last bit and break a near tie the other
         # way. Device 0 routes for every device.
