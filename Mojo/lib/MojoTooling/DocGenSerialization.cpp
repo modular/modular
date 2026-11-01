@@ -388,7 +388,7 @@ static void dumpMarkdownDeclListSection(llvm::raw_ostream &os,
                                         ArrayRef<ASTDecl *> decls) {
   bool isFirst = true;
   for (ASTDecl *decl : decls) {
-    std::string documentation = getPublicDeclMarkdownDocString(*decl);
+    std::string documentation = getDeclMarkdownDocString(*decl);
     if (documentation.empty())
       continue;
     StringRef description = StringRef(documentation).drop_back();
@@ -449,10 +449,12 @@ static std::string getAliasMarkdownDocString(AliasASTDecl &decl);
 // Public declaration rendering
 //===----------------------------------------------------------------------===//
 
-std::string M::KGEN::LIT::getPublicDeclDeclarationSnippet(ASTDecl &decl) {
+std::string M::KGEN::LIT::getDeclDeclarationSnippet(ASTDecl &decl) {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
 
+  if (isa<DefASTDecl>(decl))
+    return getFunctionDeclarationSnippet(cast<DefASTDecl>(decl));
   if (isa<AliasASTDecl>(decl))
     return getAliasDeclarationSnippet(cast<AliasASTDecl>(decl));
   if (auto *variable = dyn_cast<VarASTDecl>(&decl)) {
@@ -484,7 +486,7 @@ std::string M::KGEN::LIT::getPublicDeclDeclarationSnippet(ASTDecl &decl) {
   return {};
 }
 
-std::string M::KGEN::LIT::getPublicDeclFullMarkdownString(ASTDecl &decl) {
+std::string M::KGEN::LIT::getDeclFullMarkdownString(ASTDecl &decl) {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
@@ -512,11 +514,10 @@ std::string M::KGEN::LIT::getPublicDeclFullMarkdownString(ASTDecl &decl) {
   if (decl.isUserParameterDecl())
     name = decl.getPogMetadata().getName();
   os << formatv("### {0} `{1}`\n", kindName, name);
-  if (auto docString = getPublicDeclMarkdownDocString(decl); !docString.empty())
+  if (auto docString = getDeclMarkdownDocString(decl); !docString.empty())
     os << llvm::formatv(docStringSnippet, docString);
 
-  os << llvm::formatv(declarationSnippet,
-                      getPublicDeclDeclarationSnippet(decl));
+  os << llvm::formatv(declarationSnippet, getDeclDeclarationSnippet(decl));
   return buff;
 }
 
@@ -892,7 +893,7 @@ static FunctionDocumentation getFunctionDocumentation(DefASTDecl &decl) {
   return documentation;
 }
 
-std::string M::KGEN::LIT::getFunctionMarkdownDocString(DefASTDecl &decl) {
+static std::string getFunctionMarkdownDocString(DefASTDecl &decl) {
   FunctionDocumentation documentation = getFunctionDocumentation(decl);
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
@@ -908,18 +909,6 @@ std::string M::KGEN::LIT::getFunctionMarkdownDocString(DefASTDecl &decl) {
   dumpMarkdownTextSection(os, DocString::kSectionRaises,
                           documentation.raisesDoc);
   dumpMarkdownDocumentationDescription(os, documentation.description);
-  return markdown;
-}
-
-std::string M::KGEN::LIT::getFunctionFullMarkdownString(DefASTDecl &decl) {
-  std::string markdown;
-  llvm::raw_string_ostream os(markdown);
-  os << formatv("### function `{0}`\n", decl.getName().value_or(StringRef{}));
-  if (std::string docString = getFunctionMarkdownDocString(decl);
-      !docString.empty())
-    os << "\n---\n\n###\n" << docString;
-  os << "\n---\n\n###\n```mojo\n"
-     << getFunctionDeclarationSnippet(decl) << "\n```";
   return markdown;
 }
 
@@ -1472,9 +1461,11 @@ M::KGEN::LIT::serializeDocDecl(ASTDecl &decl, MojoParserContext &ctx) {
   return std::nullopt;
 }
 
-std::string M::KGEN::LIT::getPublicDeclMarkdownDocString(ASTDecl &decl) {
+std::string M::KGEN::LIT::getDeclMarkdownDocString(ASTDecl &decl) {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
+  if (isa<DefASTDecl>(decl))
+    return getFunctionMarkdownDocString(cast<DefASTDecl>(decl));
   if (isa<AliasASTDecl>(decl))
     return getAliasMarkdownDocString(cast<AliasASTDecl>(decl));
   if (auto *variable = dyn_cast<VarASTDecl>(&decl)) {

@@ -22,19 +22,15 @@
 namespace M::KGEN::LIT {
 
 class ASTDecl;
-class DefASTDecl;
 class StructASTDecl;
 
-std::string getPublicDeclDeclarationSnippet(ASTDecl &decl);
-std::string getPublicDeclMarkdownDocString(ASTDecl &decl);
-std::string getPublicDeclFullMarkdownString(ASTDecl &decl);
+std::string getDeclDeclarationSnippet(ASTDecl &decl);
+std::string getDeclMarkdownDocString(ASTDecl &decl);
+std::string getDeclFullMarkdownString(ASTDecl &decl);
 
 std::string getStructDeclarationSnippet(
     StructASTDecl &decl,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets = nullptr);
-
-std::string getFunctionMarkdownDocString(DefASTDecl &decl);
-std::string getFunctionFullMarkdownString(DefASTDecl &decl);
 
 } // namespace M::KGEN::LIT
 

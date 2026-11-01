@@ -129,8 +129,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
                                       frontendOptions);
       if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
         if (!module->getToolingKindName().empty())
-          results.back().documentation =
-              getPublicDeclFullMarkdownString(*module);
+          results.back().documentation = getDeclFullMarkdownString(*module);
       }
     };
 
@@ -328,10 +327,8 @@ struct CodeCompletionListener : public BaseCompletionListener {
     }
 
     CodeCompletionResult result(name, kind);
-    if (auto *function = dyn_cast<DefASTDecl>(decl))
-      result.documentation = getFunctionFullMarkdownString(*function);
-    else if (!decl->getToolingKindName().empty())
-      result.documentation = getPublicDeclFullMarkdownString(*decl);
+    if (!decl->getToolingKindName().empty())
+      result.documentation = getDeclFullMarkdownString(*decl);
     results.emplace_back(result);
   }
 
@@ -403,11 +400,11 @@ struct SignatureHelpListener : public BaseCompletionListener {
       SmallVector<std::pair<unsigned, unsigned>> argOffsets;
       signature.label = getFunctionDeclarationSnippet(
           *function, /*parameterOffsets=*/nullptr, &argOffsets);
-      signature.documentation = getFunctionFullMarkdownString(*function);
+      signature.documentation = getDeclFullMarkdownString(*function);
       for (const auto &[argumentDecl, offset] :
            llvm::zip(argumentDecls, argOffsets))
         signature.parameters.push_back(
-            {offset, getPublicDeclMarkdownDocString(*argumentDecl)});
+            {offset, getDeclMarkdownDocString(*argumentDecl)});
       result.signatures.emplace_back(std::move(signature));
     }
   }
@@ -441,11 +438,11 @@ struct SignatureHelpListener : public BaseCompletionListener {
         SmallVector<std::pair<unsigned, unsigned>> paramOffsets;
         signature.label =
             getFunctionDeclarationSnippet(*function, &paramOffsets);
-        signature.documentation = getFunctionFullMarkdownString(*function);
+        signature.documentation = getDeclFullMarkdownString(*function);
         for (const auto &[parameter, offset] :
              llvm::zip(functionParameters, paramOffsets))
           signature.parameters.push_back(
-              {offset, getPublicDeclMarkdownDocString(*parameter)});
+              {offset, getDeclMarkdownDocString(*parameter)});
         result.signatures.emplace_back(std::move(signature));
         continue;
       }
@@ -471,10 +468,9 @@ struct SignatureHelpListener : public BaseCompletionListener {
   static void addDeclDocAndParametersToSignature(
       SignatureHelpResult::Signature &signature, ASTDecl &decl, RangeT &&range,
       ArrayRef<std::pair<unsigned, unsigned>> offsets) {
-    signature.documentation = getPublicDeclFullMarkdownString(decl);
+    signature.documentation = getDeclFullMarkdownString(decl);
     for (const auto &[arg, offset] : llvm::zip(range, offsets))
-      signature.parameters.push_back(
-          {offset, getPublicDeclMarkdownDocString(*arg)});
+      signature.parameters.push_back({offset, getDeclMarkdownDocString(*arg)});
   }
 
   /// The result that has been collected so far.

@@ -71,6 +71,8 @@ ASTType ASTDecl::getToolingType() {
 StringRef ASTDecl::getToolingKindName() {
   if (auto *variable = dyn_cast<VarASTDecl>(this))
     return variable->isArgument() ? "argument" : "variable";
+  if (isa<DefASTDecl>(this))
+    return "function";
   if (isa<AliasASTDecl>(this))
     return "alias";
   if (isa<FileModuleASTDecl, ImportASTDecl>(this))

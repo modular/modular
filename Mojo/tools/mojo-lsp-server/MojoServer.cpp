@@ -178,15 +178,9 @@ std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
     return buff;
   };
 
-  if (auto *function = dyn_cast<DefASTDecl>(decl)) {
-    std::string snippet = KGEN::getFunctionDeclarationSnippet(*function);
-    std::string docString = getFunctionMarkdownDocString(*function);
-    return processDecl("function", snippet, docString,
-                       /*includeKindInSnippet=*/true);
-  }
   if (StringRef kind = decl->getToolingKindName(); !kind.empty())
-    return processDecl(kind, getPublicDeclDeclarationSnippet(*decl),
-                       getPublicDeclMarkdownDocString(*decl),
+    return processDecl(kind, getDeclDeclarationSnippet(*decl),
+                       getDeclMarkdownDocString(*decl),
                        !isa<AliasASTDecl, StructASTDecl>(decl));
   // If didn't get a view, we fall back to simply printing the name of the
   // entity.
