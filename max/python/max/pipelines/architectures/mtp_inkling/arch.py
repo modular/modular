@@ -14,12 +14,13 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from ..inkling.model_config import InklingConfig
 from ..inkling.tokenizer import InklingTokenizer
-from .model import (
+from .draft import InklingMTPDraft, mtp_draft_registration
+from .model_config import (
     MTPInklingDraftArchConfig,
     inkling_mtp_draft_width,
 )
@@ -39,7 +40,8 @@ mtp_inkling_draft_arch = SupportedArchitecture(
     # Split over the target's devices, as the target is.
     multi_gpu_supported=True,
     supports_device_graph_capture=True,
-    pipeline_model=None,
+    modules={GraphRole.DRAFT: InklingMTPDraft},
+    draft=mtp_draft_registration,
     tokenizer=InklingTokenizer,
     context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,

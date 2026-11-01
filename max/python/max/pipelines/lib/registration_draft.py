@@ -144,6 +144,15 @@ class DraftRegistration(Generic[_ModuleT, _ConfigT]):
     """Describes what the graph bakes in of the draft, for an export's
     sidecar."""
 
+    strict_weights: bool = True
+    """Rejects unexpected owned checkpoint weights as well as missing ones.
+
+    Missing required weights are always rejected. Shared target modules and
+    absent optional weights remain valid. Set this to ``False`` only when
+    the draft intentionally accepts unused checkpoint weights; those keys
+    are logged as warnings instead.
+    """
+
     def bind_shared_modules(self, target: object, draft: object) -> None:
         """Aliases declared target modules onto the draft before tracing.
 
@@ -185,7 +194,7 @@ class RegisteredDraftBuilder:
         Raises:
             ValueError: If the requested method differs from the
                 registration, or the checkpoint lacks a weight the draft
-                owns.
+                owns, or strict loading finds unexpected owned weights.
         """
         registration = self.architecture.draft
         assert registration is not None
@@ -236,6 +245,12 @@ class RegisteredDraftBuilder:
                 )
             names = [name for name, _ in module.parameters]
             self._weights = _cast_to_parameter_dtypes(module, owned)
+        if registration.strict_weights:
+            unexpected = set(owned) - set(names)
+            if unexpected:
+                raise ValueError(
+                    f"Draft state_dict has unexpected weights: {sorted(unexpected)}"
+                )
         validate_draft_state_dict(
             (
                 name

@@ -176,6 +176,8 @@ def test_registered_draft_survives_worker_serialization() -> None:
     restored = pickle.loads(pickle.dumps(eagle_llama_arch))
     assert restored.modules == eagle_llama_arch.modules
     assert restored.draft == eagle_llama_arch.draft
+    assert restored.draft is not None
+    assert restored.draft.strict_weights is True
     assert restored.pipeline_model is None
 
 
@@ -200,8 +202,10 @@ def test_builder_rejects_the_wrong_method_before_loading() -> None:
         RegisteredDraftBuilder(eagle_llama_arch).build_module(context)
 
 
+@pytest.mark.parametrize("strict_weights", [None, False, True])
 def test_builder_validates_owned_weights_and_drops_target_aliases(
     monkeypatch: pytest.MonkeyPatch,
+    strict_weights: bool | None,
 ) -> None:
     config = _config()
     template = EagleLlama3Draft(config)
@@ -213,8 +217,11 @@ def test_builder_validates_owned_weights_and_drops_target_aliases(
     }
     assert eagle_llama_arch.draft is not None
     registration = replace(
-        eagle_llama_arch.draft, configure=lambda context, weights: config
+        eagle_llama_arch.draft,
+        configure=lambda context, weights: config,
     )
+    if strict_weights is not None:
+        registration = replace(registration, strict_weights=strict_weights)
     arch = replace(eagle_llama_arch, draft=registration)
     from_module = (
         "max.pipelines.lib.registration_draft.parse_state_dict_from_weights"
@@ -241,6 +248,15 @@ def test_builder_validates_owned_weights_and_drops_target_aliases(
     assert loaded and not any(
         key.startswith(("embed_tokens.", "lm_head.")) for key in loaded[0]
     )
+    state["unexpected.weight"] = object()
+    if strict_weights is not False:
+        with pytest.raises(
+            ValueError, match=r"unexpected weights.*unexpected\.weight"
+        ):
+            RegisteredDraftBuilder(arch).build_module(context)
+    else:
+        RegisteredDraftBuilder(arch).build_module(context)
+    del state["unexpected.weight"]
     del state["fc.weight"]
     with pytest.raises(ValueError, match=r"fc\.weight"):
         RegisteredDraftBuilder(arch).build_module(context)
@@ -401,8 +417,10 @@ def _registered(arch: Any, **changes: Any) -> Any:
     return replace(arch, draft=replace(arch.draft, **changes))
 
 
+@pytest.mark.parametrize("strict_weights", [None, False, True])
 def test_registered_modulev3_draft_compiles_with_its_owned_weights(
     monkeypatch: pytest.MonkeyPatch,
+    strict_weights: bool | None,
 ) -> None:
     config = object()
     arch = _registered(
@@ -411,6 +429,8 @@ def test_registered_modulev3_draft_compiles_with_its_owned_weights(
         shared_modules=("embed_tokens",),
         optional_weights=frozenset({"proj.bias"}),
     )
+    if strict_weights is not None:
+        arch = _registered(arch, strict_weights=strict_weights)
     weight = np.zeros((4, 4), dtype=np.float32)
     state: Any = {"proj.weight": weight, "embed_tokens.weight": weight}
     monkeypatch.setattr(
@@ -436,6 +456,15 @@ def test_registered_modulev3_draft_compiles_with_its_owned_weights(
     assert builder.checkpoint_weights(context, config) == {
         "proj.weight": weight
     }
+    state["unexpected.weight"] = object()
+    if strict_weights is not False:
+        with pytest.raises(
+            ValueError, match=r"unexpected weights.*unexpected\.weight"
+        ):
+            RegisteredDraftBuilder(arch).build_module(context)
+    else:
+        RegisteredDraftBuilder(arch).build_module(context)
+    del state["unexpected.weight"]
     del state["proj.weight"]
     with pytest.raises(ValueError, match=r"proj\.weight"):
         RegisteredDraftBuilder(arch).build_module(context)

@@ -10,25 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The MTP depths an Inkling checkpoint ships: their config and module builder.
-
-The depths run only beside their target, inside a unified spec-decode graph.
-The config builds the depths' module for that graph from the target's own
-checkpoint.
-"""
+"""Configuration for Inkling's MTP depths."""
 
 from __future__ import annotations
 
-from dataclasses import replace
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
 )
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.speculative.config import SpeculativeConfig
 from transformers import AutoConfig
 
@@ -39,7 +35,6 @@ from ..inkling.model_config import (
     InklingMTPConfig,
     parse_inkling_mtp_config,
 )
-from ..inkling.mtp import InklingMultiTokenPredictor
 
 __all__ = [
     "MTPInklingDraftArchConfig",
@@ -70,11 +65,14 @@ def inkling_mtp_draft_width(
     return _mtp_config(target_huggingface_config).num_depths_for(speculative)
 
 
+@dataclass(kw_only=True)
 class MTPInklingDraftArchConfig(InklingConfig):
     """The depths' config: their target's, with a KV leaf per flavor.
 
     Each attention flavor the depths use gets its own leaf.
     """
+
+    num_draft_depths: int = 0
 
     @property
     def hidden_size(self) -> int:
@@ -119,38 +117,19 @@ class MTPInklingDraftArchConfig(InklingConfig):
             }
         )
 
-    @classmethod
-    def build_module(
-        cls, context: ModelLoadContext
-    ) -> tuple[InklingMultiTokenPredictor, MTPInklingDraftArchConfig]:
-        """Builds the depths the speculative width needs.
 
-        They come from the target's checkpoint, which ``context`` names. They
-        embed and project through the target's embedding and head, which their
-        proposer shares onto them.
-
-        They embed and project through the target's embedding and head,
-        which their proposer shares onto them.
-
-        Raises:
-            ValueError: If the checkpoint ships no MTP depths.
-        """
-        assert isinstance(context.kv_params, MultiKVCacheParams)
-        speculative = context.pipeline_config.speculative
-        assert speculative is not None
-        config = MTPInklingDraftArchConfig.initialize(
-            context.pipeline_config, max_seq_len=context.max_seq_len
-        )
-        config.mtp = _mtp_config(context.huggingface_config)
-        config.kv_params = context.kv_params
-        draft = InklingMultiTokenPredictor(
-            config, config.mtp.num_depths_for(speculative), context.kv_params
-        )
-        draft.load_state_dict(
-            parse_state_dict_from_weights(
-                context.pipeline_config, context.weights, context.adapter
-            ),
-            weight_alignment=1,
-            strict=True,
-        )
-        return draft, config
+def configure_mtp_draft(
+    context: ModelLoadContext, state_dict: Mapping[str, WeightData]
+) -> MTPInklingDraftArchConfig:
+    """Finalizes the checkpoint's depths and their planned cache leaves."""
+    del state_dict
+    assert isinstance(context.kv_params, MultiKVCacheParams)
+    speculative = context.pipeline_config.speculative
+    assert speculative is not None
+    config = MTPInklingDraftArchConfig.initialize(
+        context.pipeline_config, max_seq_len=context.max_seq_len
+    )
+    config.mtp = _mtp_config(context.huggingface_config)
+    config.num_draft_depths = config.mtp.num_depths_for(speculative)
+    config.kv_params = context.kv_params
+    return config
