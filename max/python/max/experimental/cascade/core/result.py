@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from pydantic import TypeAdapter
+from typing_extensions import TypeForm
 
 if TYPE_CHECKING:
     from max.experimental.cascade.core.interfaces import Runtime
@@ -41,7 +42,7 @@ class Result(Generic[T]):
     result_id: str
     runtime: Runtime
     # Expected type of the resolved value; local only, never sent on the wire.
-    type_hint: object | None = None
+    type_hint: TypeForm[Any] | None = None
 
     def _decode(self, value: object) -> T:
         # We can either get a fully formed value (i.e. from LocalRuntime),
@@ -73,7 +74,7 @@ class ResultIter(Generic[T]):
     result_id: str
     runtime: Runtime
     # Expected element type; local only, never sent on the wire.
-    type_hint: object | None = None
+    type_hint: TypeForm[Any] | None = None
 
     def _decode(self, item: object) -> T:
         # See :py:meth:`Result._decode`: only raw JSON composites get rebuilt.

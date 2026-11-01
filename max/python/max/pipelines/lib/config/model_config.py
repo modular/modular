@@ -1824,6 +1824,7 @@ def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
     # For compound types (list, dict) the raw CLI string is JSON, so try
     # json.loads first; fall back to the raw string for plain scalars.
     field_info = MAXModelConfig.model_fields[field_name]
+    assert field_info.annotation is not None
     adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
     try:
         parsed_value = json.loads(raw_value)

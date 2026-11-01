@@ -118,8 +118,8 @@ PINS = {
     "psutil": "psutil@7.0.0",
     "pyarrow": "pyarrow@22.0.0",
     "pybind11": "pybind11@3.0.3",
-    "pydantic": "pydantic@2.12.5",
-    "pydantic-core": "pydantic-core@2.41.5",
+    "pydantic": "pydantic@2.14.2",
+    "pydantic-core": "pydantic-core@2.50.2",
     "pydantic-settings": "pydantic-settings@2.14.2",
     "pygame-ce": "pygame-ce@2.5.6",
     "pygithub": "pygithub@2.8.1",
@@ -1024,7 +1024,7 @@ def targets():
             ":psutil@7.0.0",
             ":pyarrow@22.0.0",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":ruamel-yaml@0.18.15",
             ":seaborn@0.13.2",
             ":sentencepiece@0.2.1",
@@ -1061,7 +1061,7 @@ def targets():
             ":psutil@7.0.0",
             ":pyarrow@22.0.0",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":ruamel-yaml@0.18.15",
             ":seaborn@0.13.2",
             ":sentencepiece@0.2.1",
@@ -1098,7 +1098,7 @@ def targets():
             ":psutil@7.0.0",
             ":pyarrow@22.0.0",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":ruamel-yaml@0.18.15",
             ":seaborn@0.13.2",
             ":sentencepiece@0.2.1",
@@ -1135,7 +1135,7 @@ def targets():
             ":psutil@7.0.0",
             ":pyarrow@22.0.0",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":ruamel-yaml@0.18.15",
             ":seaborn@0.13.2",
             ":sentencepiece@0.2.1",
@@ -1172,7 +1172,7 @@ def targets():
             ":psutil@7.0.0",
             ":pyarrow@22.0.0",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":ruamel-yaml@0.18.15",
             ":seaborn@0.13.2",
             ":sentencepiece@0.2.1",
@@ -1209,7 +1209,7 @@ def targets():
             ":psutil@7.0.0",
             ":pyarrow@22.0.0",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":ruamel-yaml@0.18.15",
             ":seaborn@0.13.2",
             ":sentencepiece@0.2.1",
@@ -1246,7 +1246,7 @@ def targets():
             ":psutil@7.0.0",
             ":pyarrow@22.0.0",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":ruamel-yaml@0.18.15",
             ":seaborn@0.13.2",
             ":sentencepiece@0.2.1",
@@ -1283,7 +1283,7 @@ def targets():
             ":psutil@7.0.0",
             ":pyarrow@22.0.0",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":ruamel-yaml@0.18.15",
             ":seaborn@0.13.2",
             ":sentencepiece@0.2.1",
@@ -1320,7 +1320,7 @@ def targets():
             ":psutil@7.0.0",
             ":pyarrow@22.0.0",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":ruamel-yaml@0.18.15",
             ":seaborn@0.13.2",
             ":sentencepiece@0.2.1",
@@ -1467,7 +1467,7 @@ def targets():
             ":docstring-parser@0.17.0",
             ":httpx@0.27.2",
             ":jiter@0.12.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":sniffio@1.3.1",
             ":typing-extensions@4.16.0",
         ],
@@ -1477,7 +1477,7 @@ def targets():
             ":docstring-parser@0.17.0",
             ":httpx@0.27.2",
             ":jiter@0.12.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":sniffio@1.3.1",
             ":typing-extensions@4.16.0",
         ],
@@ -1487,7 +1487,7 @@ def targets():
             ":docstring-parser@0.17.0",
             ":httpx@0.27.2",
             ":jiter@0.12.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":sniffio@1.3.1",
             ":typing-extensions@4.16.0",
         ],
@@ -1497,7 +1497,7 @@ def targets():
             ":docstring-parser@0.17.0",
             ":httpx@0.27.2",
             ":jiter@0.12.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":sniffio@1.3.1",
             ":typing-extensions@4.16.0",
         ],
@@ -1507,7 +1507,7 @@ def targets():
             ":docstring-parser@0.17.0",
             ":httpx@0.27.2",
             ":jiter@0.12.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":sniffio@1.3.1",
             ":typing-extensions@4.16.0",
         ],
@@ -1517,7 +1517,7 @@ def targets():
             ":docstring-parser@0.17.0",
             ":httpx@0.27.2",
             ":jiter@0.12.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":sniffio@1.3.1",
             ":typing-extensions@4.16.0",
         ],
@@ -2517,51 +2517,51 @@ def targets():
     ] + select({
         ":_env_python_3.10_aarch64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         "//conditions:default": [],
     })
@@ -2584,27 +2584,27 @@ def targets():
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":loguru@0.7.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         "//conditions:default": [],
     })
@@ -3961,11 +3961,11 @@ def targets():
             ":jinja2@3.1.6",
             ":pydantic-extra-types@2.10.6",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":starlette@1.3.1",
             ":typing-extensions@4.16.0",
-            ":typing-inspection@0.4.2",
+            ":typing-inspection@0.4.4",
             ":uvicorn@0.51.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -3977,11 +3977,11 @@ def targets():
             ":jinja2@3.1.6",
             ":pydantic-extra-types@2.10.6",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":starlette@1.3.1",
             ":typing-extensions@4.16.0",
-            ":typing-inspection@0.4.2",
+            ":typing-inspection@0.4.4",
             ":uvicorn@0.51.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -3993,11 +3993,11 @@ def targets():
             ":jinja2@3.1.6",
             ":pydantic-extra-types@2.10.6",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":starlette@1.3.1",
             ":typing-extensions@4.16.0",
-            ":typing-inspection@0.4.2",
+            ":typing-inspection@0.4.4",
             ":uvicorn@0.51.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
@@ -4009,11 +4009,11 @@ def targets():
             ":jinja2@3.1.6",
             ":pydantic-extra-types@2.10.6",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":starlette@1.3.1",
             ":typing-extensions@4.16.0",
-            ":typing-inspection@0.4.2",
+            ":typing-inspection@0.4.4",
             ":uvicorn@0.51.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -4025,11 +4025,11 @@ def targets():
             ":jinja2@3.1.6",
             ":pydantic-extra-types@2.10.6",
             ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":starlette@1.3.1",
             ":typing-extensions@4.16.0",
-            ":typing-inspection@0.4.2",
+            ":typing-inspection@0.4.4",
             ":uvicorn@0.51.0",
         ],
         "//conditions:default": [],
@@ -4056,11 +4056,11 @@ def targets():
         ":jinja2@3.1.6",
         ":pydantic-extra-types@2.10.6",
         ":pydantic-settings@2.14.2",
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":python-multipart@0.0.20",
         ":starlette@1.3.1",
         ":typing-extensions@4.16.0",
-        ":typing-inspection@0.4.2",
+        ":typing-inspection@0.4.4",
         ":uvicorn@0.51.0",
     ]
 
@@ -4109,7 +4109,7 @@ def targets():
     _fastapi_cloud_cli_0_7_0_deps = [
         ":fastar@0.11.0",
         ":httpx@0.27.2",
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":rich-toolkit@0.17.0",
         ":rignore@0.7.6",
         ":sentry-sdk@2.48.0",
@@ -7013,61 +7013,61 @@ def targets():
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":interegular@0.3.3",
             ":packaging@25.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pyyaml@6.0.3",
         ],
         "//conditions:default": [],
@@ -7448,13 +7448,13 @@ def targets():
         ":httpx@0.27.2",
         ":jsonschema@4.23.0",
         ":pydantic-settings@2.14.2",
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":pyjwt@2.11.0",
         ":python-multipart@0.0.20",
         ":sse-starlette@multiple",
         ":starlette@1.3.1",
         ":typing-extensions@4.16.0",
-        ":typing-inspection@0.4.2",
+        ":typing-inspection@0.4.4",
         ":uvicorn@0.51.0",
     ]
 
@@ -7476,13 +7476,13 @@ def targets():
         ":jsonschema@4.23.0",
         ":mcp-types@2.3.0",
         ":opentelemetry-api@1.35.0",
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":pyjwt@2.11.0",
         ":python-multipart@0.0.20",
         ":sse-starlette@multiple",
         ":starlette@1.3.1",
         ":typing-extensions@4.16.0",
-        ":typing-inspection@0.4.2",
+        ":typing-inspection@0.4.4",
         ":uvicorn@0.51.0",
     ]
 
@@ -7499,7 +7499,7 @@ def targets():
     )
 
     _mcp_types_2_3_0_deps = [
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":typing-extensions@4.16.0",
     ]
 
@@ -7577,7 +7577,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":requests@2.32.3",
             ":tiktoken@0.12.0",
             ":typing-extensions@4.16.0",
@@ -7586,7 +7586,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":requests@2.32.3",
             ":tiktoken@0.12.0",
             ":typing-extensions@4.16.0",
@@ -7595,7 +7595,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":requests@2.32.3",
             ":tiktoken@0.12.0",
             ":typing-extensions@4.16.0",
@@ -7604,7 +7604,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":requests@2.32.3",
             ":tiktoken@0.12.0",
             ":typing-extensions@4.16.0",
@@ -7613,7 +7613,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":requests@2.32.3",
             ":tiktoken@0.12.0",
             ":typing-extensions@4.16.0",
@@ -7622,7 +7622,7 @@ def targets():
             ":jsonschema@4.23.0",
             ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":requests@2.32.3",
             ":tiktoken@0.12.0",
             ":typing-extensions@4.16.0",
@@ -7683,7 +7683,7 @@ def targets():
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7691,7 +7691,7 @@ def targets():
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7699,7 +7699,7 @@ def targets():
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7707,7 +7707,7 @@ def targets():
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7715,7 +7715,7 @@ def targets():
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7723,7 +7723,7 @@ def targets():
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7731,7 +7731,7 @@ def targets():
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7739,7 +7739,7 @@ def targets():
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7747,7 +7747,7 @@ def targets():
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7755,7 +7755,7 @@ def targets():
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":setuptools@80.9.0",
             ":starlette@1.3.1",
             ":supervisor@4.3.0",
@@ -7964,7 +7964,7 @@ def targets():
         ":eval-type-backport@0.2.2",
         ":numpy@multiple",
         ":polars@1.20.0",
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":pytrec-eval-terrier@0.5.7",
         ":requests@2.32.3",
         ":rich@multiple",
@@ -7999,7 +7999,7 @@ def targets():
     ] + select({
         ":_env_python_3.11_aarch64-apple-darwin": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8008,7 +8008,7 @@ def targets():
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8017,7 +8017,7 @@ def targets():
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8026,7 +8026,7 @@ def targets():
         ],
         ":_env_python_3.12_aarch64-apple-darwin": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8035,7 +8035,7 @@ def targets():
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8044,7 +8044,7 @@ def targets():
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8053,7 +8053,7 @@ def targets():
         ],
         ":_env_python_3.13_aarch64-apple-darwin": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8062,7 +8062,7 @@ def targets():
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8071,7 +8071,7 @@ def targets():
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8080,7 +8080,7 @@ def targets():
         ],
         ":_env_python_3.14_aarch64-apple-darwin": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8089,7 +8089,7 @@ def targets():
         ],
         ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8098,7 +8098,7 @@ def targets():
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8107,7 +8107,7 @@ def targets():
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8116,7 +8116,7 @@ def targets():
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -8125,7 +8125,7 @@ def targets():
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":polars@1.20.0",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pytrec-eval-terrier@0.5.7",
             ":requests@2.32.3",
             ":scikit-learn@1.7.2",
@@ -10242,7 +10242,7 @@ def targets():
         ":distro@1.9.0",
         ":httpx@0.27.2",
         ":jiter@0.12.0",
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":sniffio@1.3.1",
         ":tqdm@multiple",
         ":typing-extensions@4.16.0",
@@ -10265,7 +10265,7 @@ def targets():
         ":distro@1.9.0",
         ":httpx@0.27.2",
         ":jiter@0.12.0",
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":sniffio@1.3.1",
         ":tqdm@multiple",
         ":typing-extensions@4.16.0",
@@ -10288,7 +10288,7 @@ def targets():
         ":distro@1.9.0",
         ":httpx@0.27.2",
         ":jiter@0.12.0",
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":sniffio@1.3.1",
         ":tqdm@multiple",
         ":typing-extensions@4.16.0",
@@ -10309,40 +10309,40 @@ def targets():
     _openai_harmony_0_0_8_deps = [
     ] + select({
         ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         "//conditions:default": [],
     })
@@ -10786,34 +10786,34 @@ def targets():
     _oss_harmony_0_0_11_deps = [
     ] + select({
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
         ],
         "//conditions:default": [],
     })
@@ -10850,7 +10850,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -10865,7 +10865,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -10880,7 +10880,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -10895,7 +10895,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -10910,7 +10910,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -10925,7 +10925,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -10940,7 +10940,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -10955,7 +10955,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -10970,7 +10970,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -10985,7 +10985,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -11000,7 +11000,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -11015,7 +11015,7 @@ def targets():
             ":lark@1.2.2",
             ":nest-asyncio@1.6.0",
             ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":referencing@0.35.1",
             ":requests@2.32.3",
             ":typing-extensions@4.16.0",
@@ -11791,63 +11791,63 @@ def targets():
         testonly = "pycryptodomex" in _TESTONLY_DEPS,
     )
 
-    _pydantic_2_12_5_deps = [
+    _pydantic_2_14_2_deps = [
         ":annotated-types@0.7.0",
         ":email-validator@2.3.0",
-        ":pydantic-core@2.41.5",
+        ":pydantic-core@2.50.2",
         ":typing-extensions@4.16.0",
-        ":typing-inspection@0.4.2",
+        ":typing-inspection@0.4.4",
     ]
 
     native.alias(
-        name = "_wheel_pydantic@2.12.5",
-        actual = "@pycross_lock_file_wheel_pydantic_2.12.5_py3_none_any//file",
+        name = "_wheel_pydantic@2.14.2",
+        actual = "@pycross_lock_file_wheel_pydantic_2.14.2_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "pydantic@2.12.5",
-        deps = _pydantic_2_12_5_deps,
-        wheel = ":_wheel_pydantic@2.12.5",
+        name = "pydantic@2.14.2",
+        deps = _pydantic_2_14_2_deps,
+        wheel = ":_wheel_pydantic@2.14.2",
         testonly = "pydantic" in _TESTONLY_DEPS,
     )
 
-    _pydantic_core_2_41_5_deps = [
+    _pydantic_core_2_50_2_deps = [
         ":typing-extensions@4.16.0",
     ]
 
     native.alias(
-        name = "_wheel_pydantic-core@2.41.5",
+        name = "_wheel_pydantic-core@2.50.2",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp313_cp313_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp313_cp313_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314t_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314t_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314t_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314t_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "pydantic-core@2.41.5",
-        deps = _pydantic_core_2_41_5_deps,
-        wheel = ":_wheel_pydantic-core@2.41.5",
+        name = "pydantic-core@2.50.2",
+        deps = _pydantic_core_2_50_2_deps,
+        wheel = ":_wheel_pydantic-core@2.50.2",
         testonly = "pydantic-core" in _TESTONLY_DEPS,
     )
 
     _pydantic_extra_types_2_10_6_deps = [
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":typing-extensions@4.16.0",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -11884,9 +11884,9 @@ def targets():
     )
 
     _pydantic_settings_2_14_2_deps = [
-        ":pydantic@2.12.5",
+        ":pydantic@2.14.2",
         ":python-dotenv@1.0.1",
-        ":typing-inspection@0.4.2",
+        ":typing-inspection@0.4.4",
     ]
 
     native.alias(
@@ -13602,7 +13602,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -13645,7 +13645,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -13690,7 +13690,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -13733,7 +13733,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -13778,7 +13778,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -13821,7 +13821,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -13866,7 +13866,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -13909,7 +13909,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -13954,7 +13954,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -13999,7 +13999,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -14042,7 +14042,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -14085,7 +14085,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":python-multipart@0.0.20",
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
@@ -17244,19 +17244,19 @@ def targets():
         testonly = "typing-extensions" in _TESTONLY_DEPS,
     )
 
-    _typing_inspection_0_4_2_deps = [
+    _typing_inspection_0_4_4_deps = [
         ":typing-extensions@4.16.0",
     ]
 
     native.alias(
-        name = "_wheel_typing-inspection@0.4.2",
-        actual = "@pycross_lock_file_wheel_typing_inspection_0.4.2_py3_none_any//file",
+        name = "_wheel_typing-inspection@0.4.4",
+        actual = "@pycross_lock_file_wheel_typing_inspection_0.4.4_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "typing-inspection@0.4.2",
-        deps = _typing_inspection_0_4_2_deps,
-        wheel = ":_wheel_typing-inspection@0.4.2",
+        name = "typing-inspection@0.4.4",
+        deps = _typing_inspection_0_4_4_deps,
+        wheel = ":_wheel_typing-inspection@0.4.4",
         testonly = "typing-inspection" in _TESTONLY_DEPS,
     )
 
@@ -17397,7 +17397,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -17448,7 +17448,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -17499,7 +17499,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -17552,7 +17552,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -17605,7 +17605,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -17658,7 +17658,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -17711,7 +17711,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -17764,7 +17764,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -17817,7 +17817,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -17870,7 +17870,7 @@ def targets():
             ":psutil@7.0.0",
             ":py-cpuinfo@9.0.0",
             ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":pynvvideocodec@2.0.4",
             ":python-json-logger@2.0.7",
             ":pyyaml@6.0.3",
@@ -18147,51 +18147,51 @@ def targets():
         ":triton@multiple",
     ] + select({
         ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         "//conditions:default": [],
@@ -18221,43 +18221,43 @@ def targets():
         ":triton@multiple",
     ] + select({
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":pydantic@2.12.5",
+            ":pydantic@2.14.2",
             ":typing-extensions@4.16.0",
         ],
         "//conditions:default": [],
@@ -30285,192 +30285,192 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_2.12.5_py3_none_any",
+        name = "pycross_lock_file_wheel_pydantic_2.14.2_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/5a/87/b70ad306ebb6f9b585f114d0ac2137d792b48be34d732d60e597c2f8465a/pydantic-2.12.5-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/97/01/c71a71258b58659c72504e5fd65b451f6e36e34dc931d0b237ded213c814/pydantic-2.14.2-py3-none-any.whl",
         ],
-        sha256 = "e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d",
-        downloaded_file_path = "pydantic-2.12.5-py3-none-any.whl",
+        sha256 = "7efbf7507b937931cd32a5755acb00ea1cf5ccb1d4e8067a5850d5069e382118",
+        downloaded_file_path = "pydantic-2.14.2-py3-none-any.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp310_cp310_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp310_cp310_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/fb/a8/61c96a77fe28993d9a6fb0f4127e05430a267b235a124545d79fea46dd65/pydantic_core-2.41.5-cp310-cp310-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/a4/d5/6ec0fb1ccf75a8d6b42164f8e9440012416546f9badb683850c58167a5a8/pydantic_core-2.50.2-cp310-cp310-macosx_11_0_arm64.whl",
         ],
-        sha256 = "dfa8a0c812ac681395907e71e1274819dec685fec28273a28905df579ef137e2",
-        downloaded_file_path = "pydantic_core-2.41.5-cp310-cp310-macosx_11_0_arm64.whl",
+        sha256 = "a786cf782ebb2e45a43c7118d75d452aac982b79577dfe804d8dbf2878f0b589",
+        downloaded_file_path = "pydantic_core-2.50.2-cp310-cp310-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/5d/b6/338abf60225acc18cdc08b4faef592d0310923d19a87fba1faf05af5346e/pydantic_core-2.41.5-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/b9/9d/99fcf55e44eab0436cf0e49e34eee7393a9f737ab830018d67cdda7a02bc/pydantic_core-2.50.2-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "5921a4d3ca3aee735d9fd163808f5e8dd6c6972101e4adbda9a4667908849b97",
-        downloaded_file_path = "pydantic_core-2.41.5-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "71615edeaf1ae70f5f3f558426072eede0168b7e5190fd9633878e29a0b85732",
+        downloaded_file_path = "pydantic_core-2.50.2-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/a8/76/7727ef2ffa4b62fcab916686a68a0426b9b790139720e1934e8ba797e238/pydantic_core-2.41.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/30/b0/5aae06bbe58fac7cf5c6aac6dc11b04a9beeb5e50bd74f6e4f724ac91c4e/pydantic_core-2.50.2-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "100baa204bb412b74fe285fb0f3a385256dad1d1879f0a5cb1499ed2e83d132a",
-        downloaded_file_path = "pydantic_core-2.41.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "5c12a5a080570a91bbcbf6d10db008b80e3f5dea015ef2f0137bbec70f24f3f3",
+        downloaded_file_path = "pydantic_core-2.50.2-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp311_cp311_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp311_cp311_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/12/44/37e403fd9455708b3b942949e1d7febc02167662bf1a7da5b78ee1ea2842/pydantic_core-2.41.5-cp311-cp311-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/d8/95/6211dfe1794bde5ce14f3de2212551196784c67411ac5249d8aa627e3e23/pydantic_core-2.50.2-cp311-cp311-macosx_11_0_arm64.whl",
         ],
-        sha256 = "7f3bf998340c6d4b0c9a2f02d6a400e51f123b59565d74dc60d252ce888c260b",
-        downloaded_file_path = "pydantic_core-2.41.5-cp311-cp311-macosx_11_0_arm64.whl",
+        sha256 = "b2dd65864aad38dbcc57c3d0e2c978d4286e063378137d8fc0c9fcd558943285",
+        downloaded_file_path = "pydantic_core-2.50.2-cp311-cp311-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/33/7f/1d5cab3ccf44c1935a359d51a8a2a9e1a654b744b5e7f80d41b88d501eec/pydantic_core-2.41.5-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/69/0b/22349c3114a3b3c400333ba6ec1d2e127fc9a4e4682440d8e23d954df0d1/pydantic_core-2.50.2-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "378bec5c66998815d224c9ca994f1e14c0c21cb95d2f52b6021cc0b2a58f2a5a",
-        downloaded_file_path = "pydantic_core-2.41.5-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "e80c47314c7233e7105a7efcfffd89d56e479e558189d1959eeeaf2639a27680",
+        downloaded_file_path = "pydantic_core-2.50.2-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/c8/be/8fed28dd0a180dca19e72c233cbf58efa36df055e5b9d90d64fd1740b828/pydantic_core-2.41.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/70/7d/22bd04c22adae266ae5e99e4c34bd882daf6c93c35bda2f9674421c1e7c3/pydantic_core-2.50.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "f31d95a179f8d64d90f6831d71fa93290893a33148d890ba15de25642c5d075b",
-        downloaded_file_path = "pydantic_core-2.41.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "86e7abd24a67f61a4bfe8df059b67a2bdd8bf33705178e98463195d140bd3780",
+        downloaded_file_path = "pydantic_core-2.50.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp312_cp312_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp312_cp312_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/aa/32/9c2e8ccb57c01111e0fd091f236c7b371c1bccea0fa85247ac55b1e2b6b6/pydantic_core-2.41.5-cp312-cp312-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/f9/0b/92463ae7be78d73885487f72c4599902c2cc190378bccaad5718b7495250/pydantic_core-2.50.2-cp312-cp312-macosx_11_0_arm64.whl",
         ],
-        sha256 = "070259a8818988b9a84a449a2a7337c7f430a22acc0859c6b110aa7212a6d9c0",
-        downloaded_file_path = "pydantic_core-2.41.5-cp312-cp312-macosx_11_0_arm64.whl",
+        sha256 = "596921489390a002d6a5e303384a0f1f98384f8bb550fbf38a1aafa6093da0f9",
+        downloaded_file_path = "pydantic_core-2.50.2-cp312-cp312-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/68/b8/a01b53cb0e59139fbc9e4fda3e9724ede8de279097179be4ff31f1abb65a/pydantic_core-2.41.5-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/f6/50/2628ca3c83a0d9a6fda3305fe59b1b28e40c0221e8f234cd1ef86fb64745/pydantic_core-2.50.2-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "e96cea19e34778f8d59fe40775a7a574d95816eb150850a85a7a4c8f4b94ac69",
-        downloaded_file_path = "pydantic_core-2.41.5-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "43a8fd56f3c681f3cda2d5c842ad28e88241df742dfcbe8fd1dd437a3056e1f6",
+        downloaded_file_path = "pydantic_core-2.50.2-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/0d/76/941cc9f73529988688a665a5c0ecff1112b3d95ab48f81db5f7606f522d3/pydantic_core-2.41.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/08/93/2a6556bbdb8e918175af9d849a5d0b367b5644e41939d040f3a7215b1339/pydantic_core-2.50.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "eceb81a8d74f9267ef4081e246ffd6d129da5d87e37a77c9bde550cb04870c1c",
-        downloaded_file_path = "pydantic_core-2.41.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "9667637665acba166a7dbbc786f14c50512d3a01f7199e0e1a13b929e92d7c7a",
+        downloaded_file_path = "pydantic_core-2.50.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp313_cp313_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp313_cp313_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/94/02/abfa0e0bda67faa65fef1c84971c7e45928e108fe24333c81f3bfe35d5f5/pydantic_core-2.41.5-cp313-cp313-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/f7/0b/7605223654ed4e777d05668e914d32b476b1fa2bb756bff9820fe270456b/pydantic_core-2.50.2-cp313-cp313-macosx_11_0_arm64.whl",
         ],
-        sha256 = "112e305c3314f40c93998e567879e887a3160bb8689ef3d2c04b6cc62c33ac34",
-        downloaded_file_path = "pydantic_core-2.41.5-cp313-cp313-macosx_11_0_arm64.whl",
+        sha256 = "7c539d452cba22f250103c7d1c00cbe9038eb705e657476e701c43374efd9f2e",
+        downloaded_file_path = "pydantic_core-2.50.2-cp313-cp313-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp313_cp313_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/15/df/a4c740c0943e93e6500f9eb23f4ca7ec9bf71b19e608ae5b579678c8d02f/pydantic_core-2.41.5-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/6c/f5/03ce5ed01c98b60272cdee8ac1abb819b64ef347717c11d96215e32d9952/pydantic_core-2.50.2-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "0cbaad15cb0c90aa221d43c00e77bb33c93e8d36e0bf74760cd00e732d10a6a0",
-        downloaded_file_path = "pydantic_core-2.41.5-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "f142cd663d1148ed32993ed9a58e5c67ea312f446a01a6c13a956945aafc9f23",
+        downloaded_file_path = "pydantic_core-2.50.2-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/cf/4e/35a80cae583a37cf15604b44240e45c05e04e86f9cfd766623149297e971/pydantic_core-2.41.5-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/79/be/b559a1ceaff8b1d4581733d47d2ffa785635ac05716eae4c964466aac6e8/pydantic_core-2.50.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "406bf18d345822d6c21366031003612b9c77b3e29ffdb0f612367352aab7d586",
-        downloaded_file_path = "pydantic_core-2.41.5-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "31a1fb3ffbd1195b24490f671d12623dd4c9bfa56d6af0a299fa43b516134f5b",
+        downloaded_file_path = "pydantic_core-2.50.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/74/1a/145646e5687e8d9a1e8d09acb278c8535ebe9e972e1f162ed338a622f193/pydantic_core-2.41.5-cp314-cp314-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/db/68/315701095f25687938ab79d263a6d939337456c2840fe69038fd38000338/pydantic_core-2.50.2-cp314-cp314-macosx_11_0_arm64.whl",
         ],
-        sha256 = "1d1d9764366c73f996edd17abb6d9d7649a7eb690006ab6adbda117717099b14",
-        downloaded_file_path = "pydantic_core-2.41.5-cp314-cp314-macosx_11_0_arm64.whl",
+        sha256 = "6ffb4dce3ecb2cd563aa30f9eb5088a1cf1f4f688b90cbb374fa96e49fc50b02",
+        downloaded_file_path = "pydantic_core-2.50.2-cp314-cp314-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/23/04/e89c29e267b8060b40dca97bfc64a19b2a3cf99018167ea1677d96368273/pydantic_core-2.41.5-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/2d/6c/146b36eed4de8115a0fda76840703e75f5f8b36aeb3af86976bf094d1a17/pydantic_core-2.50.2-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "25e1c2af0fce638d5f1988b686f3b3ea8cd7de5f244ca147c777769e798a9cd1",
-        downloaded_file_path = "pydantic_core-2.41.5-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "1db9cab6197e797824f0479dd2ae5fd2e272aa61c61b7faa5a6e450ca7a0d3b7",
+        downloaded_file_path = "pydantic_core-2.50.2-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/4c/d2/ef2074dc020dd6e109611a8be4449b98cd25e1b9b8a303c2f0fca2f2bcf7/pydantic_core-2.41.5-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/9d/a2/8eeabaf1d394f0d3b9a27129ac21556eabee6f2ddcb418069ef4037e00b0/pydantic_core-2.50.2-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "22f0fb8c1c583a3b6f24df2470833b40207e907b90c928cc8d3594b76f874375",
-        downloaded_file_path = "pydantic_core-2.41.5-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "b29b7c5adf4b2be7c941f7f76432aa3269cd5052ff8610376b8ece24d7b02c51",
+        downloaded_file_path = "pydantic_core-2.50.2-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314t_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314t_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/bb/3d/6913dde84d5be21e284439676168b28d8bbba5600d838b9dca99de0fad71/pydantic_core-2.41.5-cp314-cp314t-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/ce/73/e0ef88cfbcca5409f57751289bc20be63a58af596a36e94b8cd795e59747/pydantic_core-2.50.2-cp314-cp314t-macosx_11_0_arm64.whl",
         ],
-        sha256 = "b80aa5095cd3109962a298ce14110ae16b8c1aece8b72f9dafe81cf597ad80b3",
-        downloaded_file_path = "pydantic_core-2.41.5-cp314-cp314t-macosx_11_0_arm64.whl",
+        sha256 = "f81df206b937d0dca5efb38c25fc99037d82dbcd3740e34c3f81997d2322ac1c",
+        downloaded_file_path = "pydantic_core-2.50.2-cp314-cp314t-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314t_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/5a/f0/e5e6b99d4191da102f2b0eb9687aaa7f5bea5d9964071a84effc3e40f997/pydantic_core-2.41.5-cp314-cp314t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/bc/d1/30e9d3c86d81884ee3199560ddfa2c1a66a8dc0736441748eae43064abbc/pydantic_core-2.50.2-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
         ],
-        sha256 = "3006c3dd9ba34b0c094c544c6006cc79e87d8612999f1a5d43b769b89181f23c",
-        downloaded_file_path = "pydantic_core-2.41.5-cp314-cp314t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "9eff570402175c7d5fff8497d5a9c05580664a79bb66c07b8f205d17f69e580b",
+        downloaded_file_path = "pydantic_core-2.50.2-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pydantic_core_2.41.5_cp314_cp314t_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_pydantic_core_2.50.2_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/aa/4e/2ae1aa85d6af35a39b236b1b1641de73f5a6ac4d5a7509f77b814885760c/pydantic_core-2.41.5-cp314-cp314t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/7b/9e/f1fe9384bb37e4e728c51c79151808deacf7b2502e245f50b57c85eeb199/pydantic_core-2.50.2-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
         ],
-        sha256 = "2ff4321e56e879ee8d2a879501c8e469414d948f4aba74a2d4593184eb326660",
-        downloaded_file_path = "pydantic_core-2.41.5-cp314-cp314t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "713d7c33c0e231e3786eb0ec95885814dd65d5f3a09754399b6acbf5e9365f11",
+        downloaded_file_path = "pydantic_core-2.50.2-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
     )
 
     maybe(
@@ -35055,12 +35055,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_typing_inspection_0.4.2_py3_none_any",
+        name = "pycross_lock_file_wheel_typing_inspection_0.4.4_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
         ],
-        sha256 = "4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7",
-        downloaded_file_path = "typing_inspection-0.4.2-py3-none-any.whl",
+        sha256 = "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+        downloaded_file_path = "typing_inspection-0.4.4-py3-none-any.whl",
     )
 
     maybe(

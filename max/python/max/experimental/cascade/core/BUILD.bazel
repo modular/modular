@@ -10,5 +10,6 @@ modular_py_library(
         "//max/python/max/support:taskgroups",
         requirement("numpy"),
         requirement("pydantic"),
+        requirement("typing-extensions"),
     ],
 )
