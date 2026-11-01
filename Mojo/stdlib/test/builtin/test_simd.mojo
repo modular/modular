@@ -2632,7 +2632,7 @@ def test_slice_aligned_offsets() raises:
 
     var lo, hi = f8.split()
 
-    comptime for i in range(4):
+    for i in range(4):
         assert_equal(lo[i], Float32(i + 1))
         assert_equal(hi[i], Float32(i + 5))
 
@@ -2641,12 +2641,12 @@ def test_slice_aligned_offsets() raises:
     # reached the intrinsic with an index it rejects.
     var f32 = SIMD[DType.float32, 32]()
 
-    comptime for i in range(32):
+    for i in range(32):
         f32[i] = Float32(i)
 
     var wide = f32.slice[16, offset=8]()
 
-    comptime for i in range(16):
+    for i in range(16):
         assert_equal(wide[i], Float32(i + 8))
 
     # Unaligned offsets still take the element-wise path.
