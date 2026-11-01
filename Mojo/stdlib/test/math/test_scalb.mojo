@@ -31,11 +31,11 @@ def _run[dtype: DType]() raises where dtype.is_floating_point():
         for base in range(0, length, width):
             var xv = SIMD[dtype, width]()
             var yv = SIMD[dtype, width]()
-            comptime for j in range(width):
+            for j in range(width):
                 xv[j] = xs[base + j]
                 yv[j] = ys[base + j]
             var got = scalb(xv, yv)
-            comptime for j in range(width):
+            for j in range(width):
                 var x = xv[j]
                 var y = yv[j]
                 var expected = libm_scalb(x, y)
@@ -80,7 +80,7 @@ def test_narrow_exponent_promotion() raises:
             inf[dtype](), -inf[dtype](), -0.0, 0.0
         )
         var want_negative = SIMD[dtype, 4](0.0, -0.0, -0.0, 0.0)
-        comptime for lane in range(4):
+        for lane in range(4):
             assert_equal(
                 positive[lane].to_bits(), want_positive[lane].to_bits()
             )

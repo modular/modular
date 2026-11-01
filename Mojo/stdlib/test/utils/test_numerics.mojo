@@ -492,7 +492,7 @@ def test_nextafter_matches_libm() raises:
     # The pure-Mojo bit walk must agree with the system libm bit for bit on
     # every input class: normals, subnormals, both zero signs, signed
     # infinities, sign-boundary neighbours, and equal-input cases.
-    comptime f32_bits: List[UInt32] = [
+    var f32_bits: List[UInt32] = [
         0x00000000,  # +0
         0x80000000,  # -0
         0x00000001,  # smallest subnormal
@@ -512,7 +512,7 @@ def test_nextafter_matches_libm() raises:
         0x40490FDB,  # pi
         0xC0490FDB,  # -pi
     ]
-    comptime f64_bits: List[UInt64] = [
+    var f64_bits: List[UInt64] = [
         0x0000000000000000,
         0x8000000000000000,
         0x0000000000000001,
@@ -533,17 +533,20 @@ def test_nextafter_matches_libm() raises:
         0xC00921FB54442D18,
     ]
 
-    comptime for xi in range(len(f32_bits)):
-        comptime x = Float32(from_bits=f32_bits[xi])
-        comptime for yi in range(len(f32_bits)):
-            comptime y = Float32(from_bits=f32_bits[yi])
-            comptime if not (isnan(x) or isnan(y)):
+    # Iterate the tables with runtime loops. Unrolling these pairs at comptime
+    # nests every failing assertion inside the previous one's error path, which
+    # builds a needlessly deep region tree.
+    for xi in range(len(f32_bits)):
+        var x = Float32(from_bits=f32_bits[xi])
+        for yi in range(len(f32_bits)):
+            var y = Float32(from_bits=f32_bits[yi])
+            if not (isnan(x) or isnan(y)):
                 _assert_nextafter_matches_libm[.float32](x, y)
-    comptime for xi in range(len(f64_bits)):
-        comptime x = Float64(from_bits=f64_bits[xi])
-        comptime for yi in range(len(f64_bits)):
-            comptime y = Float64(from_bits=f64_bits[yi])
-            comptime if not (isnan(x) or isnan(y)):
+    for xi in range(len(f64_bits)):
+        var x = Float64(from_bits=f64_bits[xi])
+        for yi in range(len(f64_bits)):
+            var y = Float64(from_bits=f64_bits[yi])
+            if not (isnan(x) or isnan(y)):
                 _assert_nextafter_matches_libm[.float64](x, y)
 
     # A runtime pseudo-random sweep over arbitrary bit patterns reaches every

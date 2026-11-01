@@ -177,7 +177,7 @@ def _check_specials[dtype: DType]() raises where dtype.is_floating_point():
     var v = SIMD[dtype, 8](-2.5, 3.5, -3.0, -0.25, 0.75, -17.25, 40.0, -1e-3)
     v[3] = nan[dtype]()
     var got = lgamma(v)
-    comptime for k in range(8):
+    for k in range(8):
         var want = lgamma(v[k])
         if isnan(want):
             assert_true(isnan(got[k]))
