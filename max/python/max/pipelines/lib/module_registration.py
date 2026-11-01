@@ -29,6 +29,8 @@ A registered module class can also set:
 - ``consumes_vision``, when it reads
   :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.vision`
   (:func:`consumes_vision`);
+- ``supports_pipeline_stages``, when its config builds one pipeline
+  stage's layers (:func:`supports_pipeline_stages`);
 - ``state_store(config, *, max_batch_size, devices)``, a classmethod that
   returns the store of the per-request state it carries between steps (see
   :mod:`~max.pipelines.lib.request_state`). Its batch processor must be a
@@ -71,7 +73,7 @@ from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef, TensorType, Type
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
@@ -106,6 +108,11 @@ from .interfaces.pipeline_model import (
     _cast_to_parameter_dtypes,
 )
 from .log_probabilities import LogProbabilitiesMixin
+from .pipeline_parallel import (
+    PipelinedModel,
+    raise_stage_traced,
+    stage_input_types,
+)
 from .registration_runtime import (
     BatchContextLengths,
     DeploymentConfig,
@@ -142,6 +149,7 @@ __all__ = [
     "device_mesh",
     "graph_name",
     "module_pipeline_model",
+    "supports_pipeline_stages",
 ]
 
 # Roles that the framework builds, never an architecture.
@@ -234,6 +242,18 @@ def consumes_vision(module_cls: type[Module[..., Any]]) -> bool:
     registers beside a ``VISION`` module.
     """
     return bool(getattr(module_cls, "consumes_vision", False))
+
+
+def supports_pipeline_stages(module_cls: type[Module[..., Any]]) -> bool:
+    """Returns whether a registered decoder builds as pipeline stages.
+
+    A decoder that sets ``supports_pipeline_stages`` builds the layers of the
+    stage its config carries. On a stage after the first it starts from
+    :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.stage_boundary`,
+    and on a stage before the last it returns the tree it hands the next
+    stage in place of its outputs.
+    """
+    return bool(getattr(module_cls, "supports_pipeline_stages", False))
 
 
 def decoder_input_types(
@@ -586,6 +606,24 @@ class _DecoderGraph(Module[..., DecoderOutputs]):
         return self.model(fields)
 
 
+def _returned_types(spec: GraphSpec) -> tree.Tree[Type[Any]]:
+    """Returns the types of what a ModuleV3 graph returns, in its tree.
+
+    Raises:
+        ValueError: If it returns a tensor on several devices, which one
+            tensor type can't describe.
+    """
+    staged, _ = spec._staged
+    # The graph outputs every shard of a distributed tensor.
+    types = staged.graph.output_types
+    if len(types) != len(staged.out_layouts):
+        raise ValueError(
+            f"{spec.name} returns a tensor on several devices, which can't"
+            " cross a pipeline cut"
+        )
+    return tree.unflatten(staged.out_tree, types)
+
+
 def finalize_config(
     config: ArchConfig,
     huggingface_config: AutoConfig,
@@ -730,10 +768,14 @@ class ModuleV3DecoderPipelineModel(
         """
         self._session = session
         models = super().load_graphs(session)
-        if (vision := self.vision_encoding) is not None:
+        # A pipeline stage after the first compiles no VISION graph.
+        vision_model = self.compiled_modules.get(GraphRole.VISION)
+        if (
+            vision_model is not None
+            and (vision := self.vision_encoding) is not None
+        ):
             vision.bind_vision_encoder(
-                vision_model=self.compiled_modules[GraphRole.VISION],
-                session=session,
+                vision_model=vision_model, session=session
             )
         return models
 
@@ -810,9 +852,14 @@ class ModuleV3DecoderPipelineModel(
         return construct_module(decoder_cls, model_config, self._device_mesh())
 
     def _vision_graph_spec(self, model_config: Any) -> GraphSpec | None:
-        """Constructs the ``VISION`` module, and returns its graph."""
+        """Constructs the ``VISION`` module, and returns its graph.
+
+        Only the first pipeline stage embeds tokens, so only it encodes
+        images.
+        """
         vision_cls = type(self).vision_cls
-        if vision_cls is None:
+        stage = self.pipeline_config.model.pipeline_stage
+        if vision_cls is None or (stage is not None and not stage.is_first):
             return None
         # A registered module takes its config, which type[Module] can't say.
         constructor: Any = vision_cls
@@ -833,10 +880,25 @@ class ModuleV3DecoderPipelineModel(
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
         """Returns the decoder graph, and the vision graph when registered.
 
+        Under a pipeline stage the decoder graph is the stage's: after the
+        first it also takes what the previous stage returned, and it binds
+        only its own layers' weights.
+
         Raises:
             NotImplementedError: If it serves LoRA adapters under data
                 parallelism.
+            ValueError: If the config carries a pipeline stage the decoder
+                doesn't build, or a stage that only traces hands the next a
+                tensor on several devices.
+            StageTraced: On a stage that only traces, carrying the types of
+                what it hands the next stage, in the tree it returns them.
         """
+        stage = self.pipeline_config.model.pipeline_stage
+        decoder_cls = type(self).decoder_cls
+        if stage is not None and not supports_pipeline_stages(decoder_cls):
+            raise ValueError(
+                f"{decoder_cls.__qualname__} doesn't build pipeline stages"
+            )
         lora_manager = (
             self._lora_manager
             if isinstance(self._lora_manager, LoRAManagerV3)
@@ -872,36 +934,47 @@ class ModuleV3DecoderPipelineModel(
                 # returns isn't the graph's root.
                 lora_manager.wrap(decoder)
                 lora_types = lora_manager.symbolic_inputs(self.device_refs[0])
-        input_types = self._bind_graph_inputs(
-            decoder_input_types(
-                self.kv_params,
-                self.device_refs[0],
-                data_parallel_degree=self._data_parallel_degree,
-                vision=self._decoder_vision_inputs(),
-                batch_context_lengths=(
-                    batch_context_length_types(self._data_parallel_degree)
-                    if isinstance(model_config, DeploymentConfig)
-                    and model_config.takes_batch_context_lengths
-                    else None
-                ),
-                ep=self._decoder_ep_inputs(model_config),
-                lora=lora_types,
-                state=(
-                    self._state_store.input_types()
-                    if self._state_store is not None
-                    else ()
-                ),
-            )
+        decoder_inputs = decoder_input_types(
+            self.kv_params,
+            self.device_refs[0],
+            data_parallel_degree=self._data_parallel_degree,
+            vision=self._decoder_vision_inputs(),
+            batch_context_lengths=(
+                batch_context_length_types(self._data_parallel_degree)
+                if isinstance(model_config, DeploymentConfig)
+                and model_config.takes_batch_context_lengths
+                else None
+            ),
+            ep=self._decoder_ep_inputs(model_config),
+            lora=lora_types,
+            state=(
+                self._state_store.input_types()
+                if self._state_store is not None
+                else ()
+            ),
         )
+        # A stage after the first takes the previous stage's return last.
+        if boundary := stage_input_types(stage, ()):
+            (decoder_inputs["stage_boundary"],) = boundary
+        input_types = self._bind_graph_inputs(decoder_inputs)
         graph = _DecoderGraph(decoder, input_types, lora_manager)
-        specs: dict[str, GraphSpec] = {
-            GraphRole.DECODER: GraphSpec(
-                graph,
-                graph_name(type(self).decoder_cls),
-                tuple(tree.leaves(input_types)),
-                weights=_cast_to_parameter_dtypes(graph, state_dict),
-            )
-        }
+        if stage is not None:
+            # A stage holds only its own layers.
+            declared = dict(graph.parameters)
+            state_dict = {
+                name: value
+                for name, value in state_dict.items()
+                if name in declared
+            }
+        spec = GraphSpec(
+            graph,
+            graph_name(decoder_cls),
+            tuple(tree.leaves(input_types)),
+            weights=_cast_to_parameter_dtypes(graph, state_dict),
+        )
+        if stage is not None and not stage.is_last and stage.trace_only:
+            raise_stage_traced(_returned_types(spec))
+        specs: dict[str, GraphSpec] = {GraphRole.DECODER: spec}
         if vision_spec is not None:
             specs[GraphRole.VISION] = vision_spec
         return specs
@@ -1183,6 +1256,9 @@ def module_pipeline_model(
     bases: tuple[type, ...] = (ModuleV3DecoderPipelineModel,)
     if hasattr(decoder_cls, "state_store"):
         bases = (RequestStateMixin, *bases)
+    # Exporters build the stages of a pipelined model only.
+    if supports_pipeline_stages(decoder_cls):
+        bases = (*bases, PipelinedModel)
     model = _ModulePipelineModelMeta(
         name,
         bases,

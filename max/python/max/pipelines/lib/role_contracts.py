@@ -143,6 +143,13 @@ class DecoderInputs(Generic[TensorT]):
     architecture defines what each one holds.
     """
 
+    stage_boundary: Any = None
+    """What the previous pipeline stage's decoder returned, in the tree it
+    returned it, on a stage after the first (see
+    :attr:`~max.pipelines.lib.pipeline_stage.PipelineStage.boundary_types`).
+    A stage before the last returns such a tree in place of
+    :class:`DecoderOutputs`."""
+
 
 DecoderOutputs = ModuleV3Outputs
 """The outputs of a ``DECODER`` module's ``forward``.

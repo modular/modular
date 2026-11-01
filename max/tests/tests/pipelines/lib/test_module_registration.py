@@ -25,6 +25,7 @@ import numpy as np
 import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn import Module
@@ -49,7 +50,10 @@ from max.pipelines.lib.module_registration import (
     lora_targets,
     module_pipeline_model,
     supports_data_parallel,
+    supports_pipeline_stages,
 )
+from max.pipelines.lib.pipeline_parallel import PipelinedModel, StageTraced
+from max.pipelines.lib.pipeline_stage import PipelineStage
 from max.pipelines.lib.registration_graph_api import registered_pipeline_model
 from max.pipelines.lib.registration_runtime import (
     DeploymentConfig,
@@ -267,6 +271,7 @@ def test_decoder_inputs_take_the_canonical_order() -> None:
         "ep",
         "lora",
         "state",
+        "stage_boundary",
     ]
 
 
@@ -839,3 +844,192 @@ def test_a_composed_decoder_refuses_inputs_it_would_not_get(
         RegisteredDecoderBuilder(model).build_module(
             _target_context([], ep_size=1)
         )
+
+
+@dataclass(frozen=True)
+class StagedConfig(ToyConfig):
+    """Builds the layers of the stage the pipeline config carries."""
+
+    layers: range = range(2)
+    dtype: DType = DType.float32
+
+    @classmethod
+    def initialize(
+        cls,
+        pipeline_config: Any,
+        model_config: Any = None,
+        *,
+        max_seq_len: int,
+    ) -> Self:
+        stage = pipeline_config.model.pipeline_stage
+        return cls() if stage is None else cls(layers=stage.layers)
+
+
+class StagedDecoder(Module[[DecoderInputs], Any]):
+    """Scales its input once per layer, each layer under its global name."""
+
+    supports_pipeline_stages: ClassVar[bool] = True
+
+    def __init__(self, config: StagedConfig) -> None:
+        super().__init__()
+        self.config = config
+        for i in config.layers:
+            setattr(self, f"layer_{i}", Scale())
+
+    def forward(self, inputs: DecoderInputs) -> Any:
+        h = (
+            inputs.kv[0]
+            if inputs.stage_boundary is None
+            else inputs.stage_boundary[0]
+        )
+        for i in self.config.layers:
+            h = getattr(self, f"layer_{i}")(h)
+        if self.config.layers.stop < 2:
+            return (h,)
+        return DecoderOutputs(next_token_logits=h)
+
+
+class StagedVisionDecoder(StagedDecoder):
+    consumes_vision: ClassVar[bool] = True
+
+
+def _staged_model(
+    decoder: type[Module[..., Any]],
+    stage: PipelineStage | None,
+    *,
+    vision: type[Module[..., Any]] | None = None,
+) -> Any:
+    modules: tuple[tuple[str, type[Module[..., Any]]], ...] = (
+        (GraphRole.DECODER, decoder),
+    )
+    if vision is not None:
+        modules += ((GraphRole.VISION, vision),)
+    cls = module_pipeline_model(
+        StagedConfig,
+        modules,
+        ToyVisionBatchProcessor if vision is not None else None,
+    )
+    model = cls.__new__(cls)
+    pipeline_config: Any = SimpleNamespace(
+        model=SimpleNamespace(pipeline_stage=stage, data_parallel_degree=1)
+    )
+    model.pipeline_config = pipeline_config
+    model._lora_manager = None
+    model._batch_processor = None
+    model.max_batch_size = 1
+    model.devices = [CPU()]
+    model.device_refs = [DeviceRef.CPU()]
+    model.kv_params = NonCallableMock(get_symbolic_inputs=lambda: (X,))
+    model._runtime = NonCallableMock(spec=ModuleRuntime, ep=None)
+    model._checkpoint = {
+        f"layer_{i}.weight": np.full(2, i + 2, dtype=np.float32)
+        for i in range(2)
+    }
+    return model
+
+
+def test_a_staged_decoder_is_a_pipelined_model() -> None:
+    assert supports_pipeline_stages(StagedDecoder)
+    assert not supports_pipeline_stages(PlainDecoder)
+    staged = module_pipeline_model(
+        StagedConfig, ((GraphRole.DECODER, StagedDecoder),), None
+    )
+    plain = module_pipeline_model(
+        StagedConfig, ((GraphRole.DECODER, PlainDecoder),), None
+    )
+    assert issubclass(staged, PipelinedModel)
+    assert not issubclass(plain, PipelinedModel)
+
+
+def test_a_stage_before_the_last_traces_what_it_hands_on() -> None:
+    stage = PipelineStage(0, 2, range(1), trace_only=True)
+    model = _staged_model(StagedDecoder, stage)
+    with pytest.raises(StageTraced) as traced:
+        model.graph_specs(StagedConfig(layers=stage.layers))
+    assert traced.value.boundary_types == (X,)
+
+
+def test_a_later_stage_starts_from_the_boundary_with_its_own_weights() -> None:
+    stage = PipelineStage(1, 2, range(1, 2), boundary_types=(X,))
+    model = _staged_model(StagedDecoder, stage)
+    spec = model.graph_specs(StagedConfig(layers=stage.layers))[
+        GraphRole.DECODER
+    ]
+    # The boundary comes after every other input.
+    assert len(spec.input_types) == 5
+    assert spec.input_types[-1] == X
+    assert set(spec.weights) == {"layer_1.weight"}
+    run = spec.module.compile(*spec.input_types, weights=spec.weights)
+    outputs = run(
+        Buffer.from_numpy(np.zeros(1, np.int64)),
+        Buffer.from_numpy(np.array([0, 1], np.uint32)),
+        Buffer.from_numpy(np.ones(1, np.int64)),
+        Buffer.from_numpy(np.full(2, 4, np.float32)),
+        Buffer.from_numpy(np.full(2, 5, np.float32)),
+    )
+    np.testing.assert_array_equal(
+        np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 15)
+    )
+
+
+class NestedStagedDecoder(StagedDecoder):
+    """Hands the next stage a dictionary that nests a tuple."""
+
+    def forward(self, inputs: DecoderInputs) -> Any:
+        if inputs.stage_boundary is None:
+            h, skip = inputs.kv[0], inputs.kv[0]
+        else:
+            h, (skip,) = (
+                inputs.stage_boundary["h"],
+                inputs.stage_boundary["skip"],
+            )
+        for i in self.config.layers:
+            h = getattr(self, f"layer_{i}")(h)
+        if self.config.layers.stop < 2:
+            return {"h": h, "skip": (skip,)}
+        return DecoderOutputs(next_token_logits=h + skip)
+
+
+def test_the_next_stage_takes_the_tree_the_last_one_returned() -> None:
+    first = PipelineStage(0, 2, range(1), trace_only=True)
+    with pytest.raises(StageTraced) as traced:
+        _staged_model(NestedStagedDecoder, first).graph_specs(
+            StagedConfig(layers=first.layers)
+        )
+    boundary = traced.value.boundary_types
+    assert boundary == {"h": X, "skip": (X,)}
+    stage = PipelineStage(1, 2, range(1, 2), boundary_types=boundary)
+    spec = _staged_model(NestedStagedDecoder, stage).graph_specs(
+        StagedConfig(layers=stage.layers)
+    )[GraphRole.DECODER]
+    run = spec.module.compile(*spec.input_types, weights=spec.weights)
+    outputs = run(
+        Buffer.from_numpy(np.zeros(1, np.int64)),
+        Buffer.from_numpy(np.array([0, 1], np.uint32)),
+        Buffer.from_numpy(np.ones(1, np.int64)),
+        Buffer.from_numpy(np.full(2, 4, np.float32)),
+        Buffer.from_numpy(np.full(2, 5, np.float32)),
+        Buffer.from_numpy(np.full(2, 7, np.float32)),
+    )
+    np.testing.assert_array_equal(
+        np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 22)
+    )
+
+
+def test_only_the_first_stage_encodes_images() -> None:
+    stage = PipelineStage(1, 2, range(1, 2), boundary_types=(X,))
+    model = _staged_model(StagedVisionDecoder, stage, vision=ToyVision)
+    model._batch_processor = NonCallableMock(spec=ToyVisionBatchProcessor)
+    model._load_state_dict = dict
+    model._create_model_config = lambda state_dict: StagedConfig(
+        layers=stage.layers
+    )
+    models = model.load_graphs(InferenceSession(devices=[CPU()]))
+    assert list(models) == [GraphRole.DECODER]
+    model._batch_processor.bind_vision_encoder.assert_not_called()
+
+
+def test_a_decoder_without_stages_refuses_one() -> None:
+    stage = PipelineStage(0, 2, range(1))
+    with pytest.raises(ValueError, match="doesn't build pipeline stages"):
+        _staged_model(PlainDecoder, stage).graph_specs(StagedConfig())
