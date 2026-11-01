@@ -14,25 +14,28 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import ClassVar, Literal
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
+from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import (
     _interleaved_rope_weights,
     _select_quantization_encoding,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchVLConfigWithTextSubconfig,
+    ModelOutputConfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.registration_runtime import DeploymentConfig
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -48,11 +51,23 @@ from ..llama3_modulev3.model_config import Llama3Config
 
 
 @dataclass(kw_only=True)
-class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
+class Idefics3Config(
+    ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache, DeploymentConfig
+):
     """Configuration for Idefics3 models (ModuleV3)."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
+
+    weight_prefixes: ClassVar[Mapping[str, str]] = {
+        GraphRole.DECODER: "decoder.",
+        GraphRole.VISION: "vision.",
+    }
+
+    @property
+    def dtype(self) -> DType:
+        """The decoder's compute dtype."""
+        return self.text_config.dtype
 
     devices: list[DeviceRef]
     """Devices that the Idefics3 model is parallelized over."""
@@ -148,22 +163,24 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        llm_state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
     ) -> None:
-        """Finalize the Idefics3Config with state_dict-dependent fields."""
-        hf_text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
+        """Finalizes the text tower without mutating the planning config."""
+        self.text_config = replace(self.text_config)
         self.text_config.finalize(
-            huggingface_config=hf_text_config,
-            state_dict=llm_state_dict,
-            norm_method=norm_method,
+            huggingface_config=getattr(
+                huggingface_config, "text_config", huggingface_config
+            ),
+            state_dict={
+                name.removeprefix("decoder."): value
+                for name, value in state_dict.items()
+                if name.startswith("decoder.")
+            },
+            norm_method="rms_norm",
             attention_bias=False,
-            return_logits=return_logits,
-            return_hidden_states=return_hidden_states,
+            return_logits=outputs.return_logits,
+            return_hidden_states=outputs.return_hidden_states,
         )
 
 

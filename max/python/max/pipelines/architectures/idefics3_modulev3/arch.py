@@ -13,16 +13,16 @@
 """Registers Idefics3 with the ModuleV3 registry."""
 
 from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.idefics3.tokenizer import Idefics3Tokenizer
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
-# Reuse the tokenizer from the V2 implementation.
-from ..idefics3.tokenizer import Idefics3Tokenizer
 from .batch_processor import Idefics3ModuleV3BatchProcessor
-from .model import Idefics3Model
 from .model_config import Idefics3Config
+from .modules import Idefics3Decoder, Idefics3Vision
+from .weight_adapters import convert_registered_state_dict
 
 idefics3_modulev3_arch = SupportedArchitecture(
     name="Idefics3ForConditionalGeneration_ModuleV3",
@@ -30,7 +30,10 @@ idefics3_modulev3_arch = SupportedArchitecture(
     example_repo_ids=["HuggingFaceM4/Idefics3-8B-Llama3"],
     default_encoding=Idefics3Config.DEFAULT_ENCODING,
     supported_encodings=Idefics3Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Idefics3Model,
+    modules={
+        GraphRole.DECODER: Idefics3Decoder,
+        GraphRole.VISION: Idefics3Vision,
+    },
     tokenizer=Idefics3Tokenizer,
     context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -41,6 +44,7 @@ idefics3_modulev3_arch = SupportedArchitecture(
         "enable_prefix_caching": False,
     },
     config=Idefics3Config,
+    weight_adapters={WeightsFormat.safetensors: convert_registered_state_dict},
     batching=Idefics3ModuleV3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
