@@ -53,7 +53,9 @@ from max.pipelines.lib.registration_graph_api import registered_pipeline_model
 from max.pipelines.lib.registration_runtime import (
     DeploymentConfig,
     ExpertParallelDeploymentConfig,
+    ExpertParallelInputs,
     ModuleRuntime,
+    ep_input_tree,
     role_weights,
 )
 from max.pipelines.lib.role_contracts import (
@@ -690,3 +692,21 @@ def test_finalize_config_rejects_another_config_type() -> None:
 
     with pytest.raises(TypeError, match="not the config"):
         finalize_config(Wrong(), _HF_CONFIG, {}, ModelOutputConfig())
+
+
+class _TailInputs(ExpertParallelInputs):
+    def input_tree(self, ep: EPConfig) -> object:
+        return ("tail", ep.n_experts)
+
+
+@dataclass(frozen=True)
+class _TailConfig(ShardedExpertsConfig):
+    expert_parallel_inputs: ClassVar[ExpertParallelInputs] = _TailInputs()
+
+
+def test_a_decoder_can_take_the_exchange_in_its_own_layout() -> None:
+    ep = NonCallableMock(spec=EPConfig, n_experts=32)
+    assert type(ShardedExpertsConfig.expert_parallel_inputs) is (
+        ExpertParallelInputs
+    )
+    assert ep_input_tree(_TailConfig(), ep) == ("tail", 32)

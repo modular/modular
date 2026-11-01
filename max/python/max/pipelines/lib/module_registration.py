@@ -74,8 +74,6 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
-from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.graph_groups import EPPayload
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lora import LoRAManagerV3, LoRATargetModule
@@ -111,6 +109,7 @@ from .registration_runtime import (
     BatchContextLengths,
     DeploymentConfig,
     ExpertParallelDeploymentConfig,
+    ExpertParallelExchange,
     ModuleRuntime,
     batch_context_length_types,
     ep_input_tree,
@@ -210,7 +209,7 @@ def decoder_input_types(
     data_parallel_degree: int = 1,
     vision: VisionInputs[TensorLayout] | None = None,
     batch_context_lengths: Sequence[TensorType] | None = None,
-    ep: EPPayload | None = None,
+    ep: object | None = None,
     lora: Sequence[TensorType] = (),
     state: Sequence[Any] = (),
 ) -> OrderedDict[str, object]:
@@ -232,7 +231,8 @@ def decoder_input_types(
         batch_context_lengths: Each replica's context-length input type,
             when the decoder reads them.
         ep: The expert-parallel input types, when serving with expert
-            parallelism.
+            parallelism, in the layout of the config's
+            :attr:`~max.pipelines.lib.registration_runtime.ExpertParallelDeploymentConfig.expert_parallel_inputs`.
         lora: The LoRA input types, when serving LoRA adapters.
         state: The input types of the decoder's per-request state.
     """
@@ -375,7 +375,7 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
     """
 
     _batch_context_lengths: BatchContextLengths | None = None
-    _ep_comm_initializer: EPCommInitializer | None = None
+    _ep_comm_initializer: ExpertParallelExchange | None = None
 
     def bind_input_tree(self, input_tree: OrderedDict[str, object]) -> None:
         """Binds the graph's inputs, and sizes the ones this fills."""
@@ -390,7 +390,7 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
         )
 
     def bind_ep_comm_initializer(
-        self, initializer: EPCommInitializer | None
+        self, initializer: ExpertParallelExchange | None
     ) -> None:
         """Binds the expert-parallel buffers each batch passes the graph."""
         self._ep_comm_initializer = initializer
@@ -623,8 +623,9 @@ class ModuleV3DecoderPipelineModel(
     vision_cls: ClassVar[type[Module[..., Any]] | None] = None
     """The registered ``VISION`` class, when the registration has one."""
 
-    ep_comm_initializer: EPCommInitializer | None = None
-    """The expert-parallel buffers' owner, under expert parallelism."""
+    ep_comm_initializer: ExpertParallelExchange | None = None
+    """The expert-parallel buffers the decoder takes, under expert
+    parallelism."""
 
     _session: InferenceSession
     _runtime: ModuleRuntime
@@ -720,6 +721,13 @@ class ModuleV3DecoderPipelineModel(
         if isinstance(config, DeploymentConfig):
             return config.apply_runtime(runtime)
         return config
+
+    def _decoder_ep_inputs(self, model_config: Any) -> object | None:
+        """Returns the decoder's ``ep`` input types, under expert parallelism."""
+        if self._runtime.ep is None:
+            return None
+        assert isinstance(model_config, ExpertParallelDeploymentConfig)
+        return ep_input_tree(model_config, self._runtime.ep)
 
     def _decoder_vision_inputs(self) -> VisionInputs[TensorLayout] | None:
         """Returns the decoder's ``vision`` input types, with ``VISION``."""
@@ -833,11 +841,7 @@ class ModuleV3DecoderPipelineModel(
                     and model_config.takes_batch_context_lengths
                     else None
                 ),
-                ep=(
-                    None
-                    if self._runtime.ep is None
-                    else ep_input_tree(self._runtime.ep)
-                ),
+                ep=self._decoder_ep_inputs(model_config),
                 lora=lora_types,
                 state=(
                     self._state_store.input_types()

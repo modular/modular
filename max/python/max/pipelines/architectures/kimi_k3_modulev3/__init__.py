@@ -24,11 +24,13 @@ that layer in the ``[num_layers, batch]`` tables ``state_cache.py`` declares.
 from __future__ import annotations
 
 from .arch import kimi_k3_modulev3_arch
+from .kimi_k3 import KimiK3Decoder
 from .model import KimiK3Model
 from .model_config import KimiK3Config
 
 __all__ = [
     "KimiK3Config",
+    "KimiK3Decoder",
     "KimiK3Model",
     "kimi_k3_modulev3_arch",
 ]

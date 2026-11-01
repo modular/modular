@@ -31,14 +31,13 @@ import dataclasses
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import ClassVar, TypeVar
+from typing import ClassVar, Protocol, TypeVar
 
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorType
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.legacy.graph_groups import EPPayload
 from max.pipelines.context import TextContext
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
@@ -47,6 +46,8 @@ __all__ = [
     "BatchContextLengths",
     "DeploymentConfig",
     "ExpertParallelDeploymentConfig",
+    "ExpertParallelExchange",
+    "ExpertParallelInputs",
     "ModuleRuntime",
     "batch_context_length_types",
     "ep_input_tree",
@@ -83,6 +84,36 @@ class ModuleRuntime:
 
     ep: EPConfig | None = None
     """The initialized expert-parallel config, under expert parallelism."""
+
+
+class ExpertParallelExchange(Protocol):
+    """The initialized exchange's buffers, as each batch passes them."""
+
+    def model_inputs(self) -> Sequence[Buffer]:
+        """Returns the buffers, in the order of the graph's ``ep`` leaves."""
+        ...
+
+
+class ExpertParallelInputs:
+    """How a decoder's graph takes the expert-parallel exchange.
+
+    The default takes :class:`~max.nn.legacy.comm.ep.EPBatchManager`'s
+    inputs: both buffer groups' atomic counters on every device, then their
+    send, receive and count pointer tables. A config whose decoder takes
+    them in another layout sets
+    :attr:`ExpertParallelDeploymentConfig.expert_parallel_inputs` to a
+    subclass.
+    """
+
+    def input_tree(self, ep: EPConfig) -> object:
+        """Returns the decoder's ``ep`` input types for ``ep``."""
+        return EPBatchManager(ep).input_tree()
+
+    def exchange(
+        self, initializer: EPCommInitializer
+    ) -> ExpertParallelExchange:
+        """Returns the buffers of ``initializer`` the graph takes."""
+        return initializer
 
 
 class DeploymentConfig:
@@ -128,6 +159,11 @@ class ExpertParallelDeploymentConfig(DeploymentConfig, abc.ABC):
     Exporters read it off the pipeline model to pick the matching
     expert-parallel backend."""
 
+    expert_parallel_inputs: ClassVar[ExpertParallelInputs] = (
+        ExpertParallelInputs()
+    )
+    """How the decoder's graph takes the exchange's buffers."""
+
     @abc.abstractmethod
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
         """Sizes the expert-parallel buffers from the checkpoint's experts."""
@@ -160,7 +196,7 @@ def initialize_ep_comm_buffers(
     config: ExpertParallelDeploymentConfig,
     runtime: ModuleRuntime,
     session: InferenceSession,
-) -> tuple[ModuleRuntime, EPCommInitializer | None]:
+) -> tuple[ModuleRuntime, ExpertParallelExchange | None]:
     """Sizes and initializes the expert-parallel communication buffers.
 
     It sizes the buffers from the config, then compiles and runs the
@@ -174,9 +210,11 @@ def initialize_ep_comm_buffers(
         session: The session that compiles the init graph.
 
     Returns:
-        ``runtime`` with :attr:`ModuleRuntime.ep` set, and the initializer
-        that owns the buffers. The initializer is ``None`` on virtual
-        devices, which can't run the init graph.
+        ``runtime`` with :attr:`ModuleRuntime.ep` set, and the buffers the
+        decoder's graph takes, as the config's
+        :attr:`~ExpertParallelDeploymentConfig.expert_parallel_inputs`
+        selects them. They are ``None`` on virtual devices, which can't run
+        the init graph.
 
     Raises:
         ValueError: If the expert-parallel size isn't a multiple of the
@@ -189,17 +227,20 @@ def initialize_ep_comm_buffers(
             f"devices on this node ({n_devices})"
         )
     ep = config.expert_parallel_config(runtime)
-    initializer = None
+    exchange = None
     if not is_virtual_device_mode():
         initializer = EPCommInitializer(ep)
         initializer.ep_init(session)
         ep.node_id = initializer.config.node_id
-    return dataclasses.replace(runtime, ep=ep), initializer
+        exchange = config.expert_parallel_inputs.exchange(initializer)
+    return dataclasses.replace(runtime, ep=ep), exchange
 
 
-def ep_input_tree(ep: EPConfig) -> EPPayload:
+def ep_input_tree(
+    config: ExpertParallelDeploymentConfig, ep: EPConfig
+) -> object:
     """Returns the decoder's ``ep`` input types for an initialized config."""
-    return EPBatchManager(ep).input_tree()
+    return config.expert_parallel_inputs.input_tree(ep)
 
 
 def batch_context_length_types(

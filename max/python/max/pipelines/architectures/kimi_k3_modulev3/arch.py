@@ -25,13 +25,12 @@ from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from .batch_processor import KimiK3ModuleV3BatchProcessor
+from .kimi_k3 import KimiK3Decoder
 from .memory_planner import KimiK3ModuleV3MemoryPlanner
 from .model_config import KimiK3Config
-from .pipeline_model import KimiK3PipelineModel
 from .weight_adapters import convert_kimi_k3_state_dict
 
 __all__ = ["kimi_k3_modulev3_arch"]
@@ -43,8 +42,7 @@ kimi_k3_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=KimiK3Config.DEFAULT_ENCODING,
     supported_encodings=KimiK3Config.SUPPORTED_ENCODINGS,
-    pipeline_model=KimiK3PipelineModel,
-    batching=KimiK3ModuleV3BatchProcessor,
+    modules={GraphRole.DECODER: KimiK3Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     weight_adapters={

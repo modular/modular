@@ -19,10 +19,10 @@ apart. No vision support, but composable later as a VLM wrapper's
 ``config.json`` or an already-extracted text sub-config, via
 :meth:`_get_text_config`.
 
-:attr:`quant_config` and :attr:`ep_config` are built by
-``KimiK3PipelineModel`` (``pipeline_model.py``), not here -- neither is
-available at ``initialize()`` time. Mutually exclusive: EP doesn't support
-MXFP4 routed experts yet.
+:attr:`quant_config` comes from :meth:`KimiK3Config.finalize` and
+:attr:`ep_config` from the deployment (:meth:`KimiK3Config.apply_runtime`),
+not ``initialize()``: neither is available then. Mutually exclusive: EP
+doesn't support MXFP4 routed experts yet.
 
 Deliberately leaves out DSpark/speculative-decoding and checkpoint
 weight-size estimation (:mod:`memory_planner`'s job). What stays here is
@@ -32,12 +32,20 @@ inseparable from it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import ClassVar
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig
+from max.nn.common_layers.mesh_axis import EP, TP
+from max.nn.legacy.comm.ep import (
+    EPBatchManager,
+    EPCommInitializer,
+    EPConfig,
+    calculate_ep_max_tokens_per_rank,
+)
 from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
@@ -46,10 +54,20 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
 )
 from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ModelOutputConfig,
+)
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelDeploymentConfig,
+    ExpertParallelExchange,
+    ExpertParallelInputs,
+    ModuleRuntime,
+)
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
@@ -70,9 +88,69 @@ from .state_cache import (
 __all__ = ["KimiK3Config"]
 
 
+class _KimiK3Exchange:
+    """The exchange buffers in :class:`KimiK3ExpertParallelInputs`' order."""
+
+    def __init__(self, initializer: EPCommInitializer) -> None:
+        n_devices = initializer.config.n_gpus_per_node
+        self._buffers = [
+            *initializer.atomic_counters[:n_devices],
+            *(
+                group[i]
+                for i in range(2)
+                for group in (
+                    initializer.send_buf_ptrs,
+                    initializer.recv_buf_ptrs,
+                    initializer.recv_count_ptrs,
+                )
+            ),
+        ]
+
+    def model_inputs(self) -> Sequence[Buffer]:
+        """Returns the counters, then the dispatch and combine tables."""
+        return self._buffers
+
+
+class KimiK3ExpertParallelInputs(ExpertParallelInputs):
+    """Kimi K3's expert-parallel exchange inputs.
+
+    One set of atomic counters per device, which both directions share, then
+    the dispatch direction's send, receive and count tables and the combine
+    direction's (:class:`~.layers.ep.EPBuffers`).
+    """
+
+    def input_tree(self, ep: EPConfig) -> object:
+        """Returns the graph's ``ep`` input types."""
+        full = EPBatchManager(ep).input_tree()
+        n_devices = ep.n_gpus_per_node
+        return (
+            full["atomic_counters"][:n_devices],
+            *(
+                full[name][i]
+                for i in range(2)
+                for name in (
+                    "send_buf_ptrs",
+                    "recv_buf_ptrs",
+                    "recv_count_ptrs",
+                )
+            ),
+        )
+
+    def exchange(
+        self, initializer: EPCommInitializer
+    ) -> ExpertParallelExchange:
+        """Returns the buffers of ``initializer`` the graph takes."""
+        return _KimiK3Exchange(initializer)
+
+
 @dataclass(kw_only=True)
-class KimiK3Config(ArchConfigWithKVCache):
+class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
     """Registry configuration for Kimi K3's text tower. See the module docstring."""
+
+    takes_batch_context_lengths: ClassVar[bool] = True
+    expert_parallel_inputs: ClassVar[ExpertParallelInputs] = (
+        KimiK3ExpertParallelInputs()
+    )
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
@@ -105,8 +183,8 @@ class KimiK3Config(ArchConfigWithKVCache):
     ep_config: EPConfig | None = None
     """Expert-parallel configuration, or ``None`` for replicated/TP experts.
 
-    Built by ``KimiK3PipelineModel._init_distributed_runtime`` once a real
-    session exists to initialize the exchange; see the module docstring.
+    Set by :meth:`apply_runtime` once the deployment has started the
+    exchange; see the module docstring.
     """
 
     ep_size: int = 1
@@ -118,7 +196,7 @@ class KimiK3Config(ArchConfigWithKVCache):
 
     quant_config: QuantConfig | None = None
     """MXFP4 config when the checkpoint's routed experts arrive packed,
-    built by ``KimiK3PipelineModel._create_model_config``; ``None`` for a
+    set by :meth:`finalize`; ``None`` for a
     bf16 checkpoint. See the module docstring."""
 
     ssm_dtype: DType = DType.bfloat16
@@ -129,6 +207,81 @@ class KimiK3Config(ArchConfigWithKVCache):
     """Dtype of the persistent KDA recurrent state. FP32 storage preserves
     recurrence precision across decode steps and prefill chunks; promoting
     only the arithmetic still rounds a BF16 pool on each call."""
+
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    """The logits the tower returns, as the pipeline asks for them."""
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns the config completed with the pipeline's outputs.
+
+        Routed experts that arrive packed take their MXFP4 quantization.
+        """
+        del huggingface_config, state_dict
+        quant_config = None
+        if self.dtype == DType.uint8:
+            quant_config = QuantConfig.mxfp4(
+                mlp_quantized_layers=range(
+                    self.model.first_k_dense_replace,
+                    self.model.num_hidden_layers,
+                )
+            )
+        return replace(
+            self, quant_config=quant_config, return_logits=outputs.return_logits
+        )
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        """Sizes the expert-parallel buffers for ``runtime``.
+
+        Raises:
+            NotImplementedError: If the routed experts are MXFP4.
+        """
+        if self.quant_config is not None:
+            raise NotImplementedError(
+                "Kimi K3's expert parallelism doesn't support MXFP4 routed "
+                "experts yet"
+            )
+        n_devices = len(runtime.mesh.devices)
+        return EPConfig(
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            hidden_size=self.model.routed_expert_hidden_size,
+            top_k=self.model.num_experts_per_token,
+            n_experts=self.model.num_experts,
+            max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=runtime.max_batch_input_tokens,
+                ep_size=runtime.ep_size,
+                data_parallel_degree=1,
+                use_allreduce=runtime.ep_use_allreduce,
+            ),
+            n_gpus_per_node=n_devices,
+            n_nodes=runtime.ep_size // n_devices,
+            use_allreduce=runtime.ep_use_allreduce,
+        )
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Returns the config placed on the deployment's devices.
+
+        The mesh has an ``ep`` axis under expert parallelism and a ``tp``
+        axis otherwise.
+        """
+        devices = runtime.mesh.devices
+        return replace(
+            self,
+            mesh=DeviceMesh(
+                tuple(devices),
+                (len(devices),),
+                (EP if self.ep_size > 1 else TP,),
+            ),
+            ep_config=runtime.ep,
+            max_batch_context_length=(
+                runtime.max_batch_total_tokens or self.max_batch_context_length
+            ),
+        )
 
     def get_kv_params(self) -> KVCacheParamInterface:
         """The KV cache parameters the config declares."""

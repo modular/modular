@@ -455,7 +455,7 @@ def _as_e8m0(data: WeightData, name: str) -> WeightData:
 def tp_degree(pipeline_config: Any) -> int:
     """Returns the TP degree the module tree shards fused tensors over.
 
-    The mesh ``pipeline_model.py`` builds is 1-D over every device: ``tp``,
+    The mesh ``KimiK3Config.apply_runtime`` builds is 1-D over every device: ``tp``,
     unless ``ep_size > 1`` makes it ``ep``, which shards nothing along TP.
     Under data parallelism (which ``KimiK3Config`` rejects) nothing is
     TP-sharded either.

@@ -263,8 +263,8 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             (see ``model_config.py``'s ``construct_kv_params``). ``None``
             runs every MLA layer padded and takes no KDA state.
             return_logits: Not a shape of ``config`` -- a per-request serving
-            choice the registry hands ``PipelineModel`` directly (see
-            ``KimiK3PipelineModel._instantiate_module``) -- so it is its own
+            choice the pipeline makes (see ``KimiK3Config.return_logits``)
+            -- so it is its own
             argument rather than a field on the checkpoint-derived
             ``KimiK3ModelConfig``.
             mla_buffer_size: One-shot MLA prefill buffer size. Same reasoning as
