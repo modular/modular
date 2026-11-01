@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/MojoTooling/TypeExtractionUtils.h"
-#include "Mojo/MojoParser/SignatureModel.h"
+#include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/MojoTooling/TypeMetadata.h"
 #include "gtest/gtest.h"
 

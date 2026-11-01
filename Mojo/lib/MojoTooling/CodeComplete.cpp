@@ -410,7 +410,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
       for (const auto &[argumentDecl, offset] :
            llvm::zip(argumentDecls, argOffsets))
         signature.parameters.push_back(
-            {offset, ArgumentInfo::getMarkdownDocString(*argumentDecl)});
+            {offset, getPublicDeclMarkdownDocString(*argumentDecl)});
       result.signatures.emplace_back(std::move(signature));
     }
   }
@@ -437,7 +437,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
     // Collect the signatures for each of the decls.
     for (ASTDecl *decl : decls) {
       if (auto *function = dyn_cast<DefASTDecl>(decl)) {
-        auto functionParameters = getFunctionParameters(*function);
+        auto functionParameters = function->getUserParamDecls();
         if (parameters.size() > functionParameters.size())
           continue;
         SignatureHelpResult::Signature signature;
@@ -449,7 +449,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
         for (const auto &[parameter, offset] :
              llvm::zip(functionParameters, paramOffsets))
           signature.parameters.push_back(
-              {offset, parameter.getMarkdownDocString()});
+              {offset, getPublicDeclMarkdownDocString(*parameter)});
         result.signatures.emplace_back(std::move(signature));
         continue;
       }
@@ -457,7 +457,7 @@ struct SignatureHelpListener : public BaseCompletionListener {
       auto *structDecl = dyn_cast<StructASTDecl>(decl);
       if (!structDecl)
         continue;
-      auto structParameters = getStructParameters(*structDecl);
+      auto structParameters = structDecl->getUserParamDecls();
       if (parameters.size() > structParameters.size())
         continue;
       SignatureHelpResult::Signature signature;
@@ -479,7 +479,8 @@ struct SignatureHelpListener : public BaseCompletionListener {
       ArrayRef<std::pair<unsigned, unsigned>> offsets) {
     signature.documentation = getPublicDeclFullMarkdownString(decl, ctx);
     for (const auto &[arg, offset] : llvm::zip(range, offsets))
-      signature.parameters.push_back({offset, arg.getMarkdownDocString()});
+      signature.parameters.push_back(
+          {offset, getPublicDeclMarkdownDocString(*arg)});
   }
 
   /// The result that has been collected so far.

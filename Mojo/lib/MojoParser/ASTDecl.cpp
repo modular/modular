@@ -81,6 +81,77 @@ ArgConvention ASTDecl::getArgConvention() const {
   return signature.getArgConventions()[argNumber];
 }
 
+static std::pair<PogListAttr, ArrayRef<Type>>
+getPogListAndTypes(const ASTDecl &decl) {
+  ASTDecl *parent = decl.getParentDecl();
+  if (auto *function = dyn_cast_or_null<FnSignatureASTDecl>(parent)) {
+    FnTypeGeneratorType signature = function->getSignature();
+    if (decl.getArgNumber() >= 0) {
+      ArrayRef<Type> types = signature.getArguments();
+      if (auto *def = dyn_cast<DefASTDecl>(function))
+        types = def->getOp().getArgumentTypes();
+      return {signature.getArgListAttrs(), types};
+    }
+    return {signature.getParamListAttrs(), signature.getInputParamTypes()};
+  }
+  if (auto *structDecl = dyn_cast_or_null<StructASTDecl>(parent)) {
+    TypeSignatureType signature = structDecl->getOp().getSignature();
+    return {signature.getParamListAttrs(), signature.getInputParamTypes()};
+  }
+  if (auto *aliasDecl = dyn_cast_or_null<AliasASTDecl>(parent)) {
+    auto signature = cast<GeneratorType>(aliasDecl->getOp().getType());
+    return {signature.getParamListAttrs(), signature.getInputParamTypes()};
+  }
+  llvm_unreachable("argument or parameter must have a signature owner");
+}
+
+static size_t getPogIndex(const ASTDecl &decl, PogListAttr pogs) {
+  if (decl.getArgNumber() >= 0)
+    return static_cast<size_t>(decl.getArgNumber());
+
+  if (auto parameter = dyn_cast_or_null<ParamDeclRefAttr>(
+          decl.getIfIRValue().getIfPValue().get())) {
+    for (size_t index : llvm::seq(pogs.size()))
+      if (pogs.getName(index) == parameter.getName())
+        return index;
+  }
+
+  assert(decl.getParamNumber() >= 0 && "parameter has no signature index");
+  return static_cast<size_t>(decl.getParamNumber());
+}
+
+PogMetadataAttr ASTDecl::getPogMetadata() const {
+  auto [pogs, types] = getPogListAndTypes(*this);
+  size_t index = getPogIndex(*this, pogs);
+  assert(index < pogs.size() &&
+         "POG metadata requested for non-argument or non-parameter");
+  return pogs.getPogs()[index];
+}
+
+VariadicKind ASTDecl::getPogVariadicKind() const {
+  auto [pogs, types] = getPogListAndTypes(*this);
+  size_t index = getPogIndex(*this, pogs);
+  assert(index < pogs.size() &&
+         "POG variadic kind requested for non-argument or non-parameter");
+  return pogs.getVariadicKind(index);
+}
+
+Type ASTDecl::getPogType() const {
+  auto [pogs, types] = getPogListAndTypes(*this);
+  size_t index = getPogIndex(*this, pogs);
+  assert(index < types.size() &&
+         "POG type requested for non-argument or non-parameter");
+  return types[index];
+}
+
+std::optional<TypedAttr> ASTDecl::getPogDefault() const {
+  auto [pogs, types] = getPogListAndTypes(*this);
+  size_t index = getPogIndex(*this, pogs);
+  assert(index < pogs.size() &&
+         "POG default requested for non-argument or non-parameter");
+  return pogs.getDefault(index);
+}
+
 /// Returns whether this argument appears in the user-visible signature.  This
 /// filters out implicitly declared error slots and result slots, but keeps
 /// user-declared "out" argument slots.
@@ -235,6 +306,27 @@ void FnSignatureASTDecl::setParamDecls(ArrayRef<ASTDecl *> decls) {
 
 void FnSignatureASTDecl::setArgDecls(ArrayRef<ASTDecl *> decls) {
   argDecls = shared.persistentAllocator.internElements(decls);
+}
+
+static bool isUserParameter(const ASTDecl &decl, PogListAttr parameters) {
+  size_t index = getPogIndex(decl, parameters);
+  PassingKind passingKind = parameters.getPassingKind(index);
+  StringRef name = parameters.getName(index);
+  if (passingKind == PassingKind::Implicit)
+    return false;
+  if (demangleParameterName(name, /*forUser=*/true) != name)
+    return false;
+  return passingKind != PassingKind::Inferred || !name.empty();
+}
+
+SmallVector<ASTDecl *> FnSignatureASTDecl::getUserParamDecls() const {
+  SmallVector<ASTDecl *> result;
+  PogListAttr parameters = getSignature().getParamListAttrs();
+  for (ASTDecl *decl : getParamDecls()) {
+    if (decl->getParamNumber() >= 0 && isUserParameter(*decl, parameters))
+      result.push_back(decl);
+  }
+  return result;
 }
 
 /// Return a list of user-declared argument declarations that we'd want to
@@ -627,6 +719,16 @@ void StructASTDecl::setParamDecls(ArrayRef<ASTDecl *> decls) {
   paramDecls = shared.persistentAllocator.internElements(decls);
 }
 
+SmallVector<ASTDecl *> StructASTDecl::getUserParamDecls() const {
+  SmallVector<ASTDecl *> result;
+  PogListAttr parameters = getOp().getSignature().getParamListAttrs();
+  for (ASTDecl *decl : getParamDecls()) {
+    if (decl->getParamNumber() >= 0 && isUserParameter(*decl, parameters))
+      result.push_back(decl);
+  }
+  return result;
+}
+
 ASTDecl *StructASTDecl::getParamByName(StringAttr name) const {
   for (ASTDecl *paramDecl : paramDecls) {
     auto paramValue = paramDecl->getIfIRValue().getIfPValue();
@@ -635,6 +737,27 @@ ASTDecl *StructASTDecl::getParamByName(StringAttr name) const {
       return paramDecl;
   }
   return nullptr;
+}
+
+SmallVector<ASTDecl *> AliasASTDecl::getUserParamDecls() const {
+  auto generatorType = dyn_cast<GeneratorType>(getOp().getType());
+  if (!generatorType)
+    return {};
+
+  SmallVector<ASTDecl *> result;
+  PogListAttr parameters = generatorType.getParamListAttrs();
+  for (auto &[name, decls] : getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      ssize_t index = decl->getParamNumber();
+      if (decl->getParentDecl() == this && index >= 0 &&
+          isUserParameter(*decl, parameters))
+        result.push_back(decl);
+    }
+  }
+  llvm::sort(result, [](ASTDecl *lhs, ASTDecl *rhs) {
+    return lhs->getParamNumber() < rhs->getParamNumber();
+  });
+  return result;
 }
 
 /// Collect the struct/trait declaration and all visible extension declarations

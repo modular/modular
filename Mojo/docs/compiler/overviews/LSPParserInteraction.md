@@ -849,7 +849,7 @@ offsets (highlight spans into the label string).
 `addDeclDocAndParametersToSignature` zips arguments with offsets to attach each
 parameter's span + markdown doc. `onParameterBinding` is the same shape but
 handles both `DefASTDecl` and `StructASTDecl` (structs are parameterized) using
-`getFunctionParameters()` and `getStructParameters()`.
+their `getUserParamDecls()` methods.
 
 #### Result shape and LSP mapping
 

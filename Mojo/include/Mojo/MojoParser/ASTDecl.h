@@ -127,6 +127,18 @@ public:
   /// argument declaration.
   ArgConvention getArgConvention() const;
 
+  /// Return the POG metadata for this argument or parameter declaration.
+  PogMetadataAttr getPogMetadata() const;
+
+  /// Return the variadic kind for this argument or parameter declaration.
+  VariadicKind getPogVariadicKind() const;
+
+  /// Return the source-level type for this argument or parameter declaration.
+  Type getPogType() const;
+
+  /// Return the default value for this argument or parameter, if present.
+  std::optional<TypedAttr> getPogDefault() const;
+
   /// Returns whether this argument appears in the user-visible signature.  This
   /// filters out implicitly declared error slots and result slots, but keeps
   /// user-declared "out" argument slots.
@@ -796,6 +808,9 @@ public:
   ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
   ArrayRef<ASTDecl *> getArgDecls() const { return argDecls; }
 
+  /// Return the source-visible parameter declarations in signature order.
+  SmallVector<ASTDecl *> getUserParamDecls() const;
+
   /// Return a list of user-declared argument declarations that we'd want to
   /// show in document generation, for example.  This filters out implicitly
   /// declared error slots and result slots, but keeps user-declared "out"
@@ -977,6 +992,9 @@ public:
   /// Return this struct's parameter declarations in signature order.
   ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
 
+  /// Return the source-visible parameter declarations in signature order.
+  SmallVector<ASTDecl *> getUserParamDecls() const;
+
   /// Return the parameter declaration with the given internal name, if any.
   ASTDecl *getParamByName(StringAttr name) const;
 
@@ -1028,6 +1046,10 @@ public:
   /// Return the alias operation represented by this declaration.
   AliasDeclOp getOp() const { return cast<AliasDeclOp>(getOperation()); }
   void setOp(AliasDeclOp op) { setOperation(*op.getOperation()); }
+
+  /// Return the source-visible parameter declarations in signature order.
+  SmallVector<ASTDecl *> getUserParamDecls() const;
+
   LogicalResult resolveSignature(Lexer &lexer) override;
   LogicalResult resolveSyntheticSignature() override;
   LogicalResult resolveBody(Lexer &lexer) override;

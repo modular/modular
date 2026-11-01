@@ -64,6 +64,50 @@ void printAliasSignature(LIT::AliasASTDecl &decl, llvm::raw_string_ostream &os,
 void printTraitSignature(LIT::TraitASTDecl &decl, llvm::raw_string_ostream &os,
                          const SignatureOffsets &offsets = {});
 
+/// Return the source-facing type and rebound default value for a parameter.
+std::string getParameterTypeString(LIT::ASTDecl &decl);
+mlir::TypedAttr getParameterDefaultValue(LIT::ASTDecl &decl);
+
+/// Return the source-facing type, convention keyword, and rebound default value
+/// for an argument.
+std::string getArgumentTypeString(LIT::ASTDecl &decl);
+llvm::StringRef getArgumentConventionString(LIT::ASTDecl &decl);
+mlir::TypedAttr getArgumentDefaultValue(LIT::ASTDecl &decl);
+
+/// Print one parameter or argument as it appears in a declaration signature.
+void printParameter(LIT::ASTDecl &decl, llvm::raw_ostream &os);
+void printArgument(LIT::ASTDecl &decl, llvm::raw_ostream &os);
+
+/// Render a constraint proposition as Mojo source-level syntax.
+std::string renderConstraintProposition(mlir::TypedAttr proposition,
+                                        ParameterEvaluator *evaluator,
+                                        LIT::SharedState &shared);
+
+std::string generatePValueString(LIT::SharedState &shared, LIT::PValue value);
+std::string getSignatureOrigin(LIT::SharedState &shared, mlir::TypedAttr origin,
+                               LIT::FnTypeGeneratorType signature,
+                               bool isRefResult);
+std::string getRefPrefixAsString(LIT::SharedState &shared, LIT::RefType refType,
+                                 LIT::FnTypeGeneratorType signature,
+                                 bool isRefResult);
+std::string
+generateTypeString(LIT::SharedState &shared, LIT::ASTType type,
+                   VariadicKind varKind,
+                   std::optional<LIT::ASTType> selfType = std::nullopt,
+                   std::optional<ArgConvention> convention = std::nullopt);
+llvm::Twine prependVariadicIdentifiers(const llvm::Twine &identifier,
+                                       VariadicKind varKind);
+void dumpIdentifierWithType(llvm::raw_ostream &os, llvm::StringRef identifier,
+                            llvm::StringRef type,
+                            VariadicKind varKind = VariadicKind::None,
+                            bool elideType = false);
+std::string getDefaultValueString(mlir::TypedAttr defaultValue,
+                                  LIT::SharedState &shared);
+
+/// Remove implicit `argName.member` parameters from a rendered argument type.
+std::string stripImplicitArgParams(llvm::StringRef typeStr,
+                                   llvm::StringRef argName);
+
 //===----------------------------------------------------------------------===//
 // Diagnostic-oriented helpers
 //===----------------------------------------------------------------------===//
