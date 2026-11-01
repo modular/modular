@@ -56,7 +56,7 @@ def run_bmm_and_check_result[
     transpose_b: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
     check_against_naive_kernel: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](
     a_host: TileTensor[
         mut=True,
@@ -239,7 +239,7 @@ def test_dynamic_shapes[
     *,
     transpose_b: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](
     ctx: DeviceContext,
     b: Int,
@@ -282,7 +282,7 @@ def test_static_NK[
     K: Int,
     transpose_b: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](
     ctx: DeviceContext,
     b: Int,
@@ -504,7 +504,7 @@ def test_pdl_chain[
         xs[len(xs) - 1].enqueue_fill(0)
         ys[len(ys) - 1].enqueue_fill(0)
 
-    _launch_pdl_chain[PDLLevel(), N=N, K=K](
+    _launch_pdl_chain[PDLLevel.OFF, N=N, K=K](
         ctx, q, w1, w2, xs_ref, ys_ref, b, m
     )
     _launch_pdl_chain[pdl_level, N=N, K=K](ctx, q, w1, w2, xs, ys, b, m)

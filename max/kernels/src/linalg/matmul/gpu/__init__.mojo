@@ -1071,7 +1071,6 @@ def _matmul_gpu_impl[
             a_type,
             b_type,
             transpose_b,
-            pdl_level=pdl_level,
             has_epilogue_fn=has_epilogue_fn,
             has_compute_fn=has_compute_fn,
         ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)

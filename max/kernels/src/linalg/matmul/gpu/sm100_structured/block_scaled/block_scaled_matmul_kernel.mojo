@@ -166,7 +166,7 @@ struct BlackwellBlockScaledMatmulKernel[
         cluster_shape: CTA cluster dimensions `(M, N, batch)` for LLVM
             cluster metadata (defaults to `(1, 1, 1)`).
         pdl_level: Programmatic dependency launch level controlling
-            inter-grid synchronization (defaults to `PDLLevel.OFF`).
+            inter-grid synchronization (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per
             SM; `0` disables profiling (defaults to `0`).
     """

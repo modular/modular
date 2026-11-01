@@ -243,7 +243,7 @@ def lamport_allreduce_test[
 
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                pdl_level=PDLLevel(),
+                pdl_level=PDLLevel.OFF,
             ](
                 in_tensors,
                 out_tensors[i].layout,
@@ -430,7 +430,7 @@ def lamport_mixed_size_test[
 
                 _allreduce_lamport_p2p[
                     ngpus=ngpus,
-                    pdl_level=PDLLevel(),
+                    pdl_level=PDLLevel.OFF,
                 ](
                     in_tensors,
                     out_tensors[i].layout,
@@ -919,7 +919,7 @@ def lamport_coexist_test[
 
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                pdl_level=PDLLevel(),
+                pdl_level=PDLLevel.OFF,
             ](
                 sin_tensors,
                 sout_tensors[i].layout,
@@ -1081,7 +1081,7 @@ def lamport_unsynced_skew_test[
 
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                pdl_level=PDLLevel(),
+                pdl_level=PDLLevel.OFF,
             ](
                 in_tensors,
                 out_capture[i].layout,
@@ -1241,7 +1241,7 @@ def lamport_wrap_test[
 
             _allreduce_lamport_p2p[
                 ngpus=ngpus,
-                pdl_level=PDLLevel(),
+                pdl_level=PDLLevel.OFF,
             ](
                 in_tensors,
                 out_tensors[i].layout,

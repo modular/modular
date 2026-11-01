@@ -396,7 +396,7 @@ struct BlackwellMatmulSM100Kernel[
         cluster_shape: Thread block cluster dimensions, must match
             `config.cluster_shape` (defaults to `(1, 1, 1)`).
         pdl_level: Programmatic Dependent Launch level for inter-grid
-            dependency ordering (defaults to `PDLLevel()`, off).
+            dependency ordering (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM
             (defaults to 0, profiling disabled).
         output_writer_type: Output writer policy controlling how C tiles are

@@ -159,7 +159,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             the load warp waits for the predecessor grid immediately before
             its first TMA load of A and the A-scales, and the MMA warp
             releases dependent grids once its main loop is done (defaults to
-            `PDLLevel()`, which is off).
+            `PDLLevel.OVERLAP_AT_BEGINNING`).
     """
 
     # ========== Derived Constants (from config) ==========

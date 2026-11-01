@@ -56,7 +56,7 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     out_type: DType,
     num_experts: Int,
     expert_shape: IndexList[2],  # (N, K)
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],

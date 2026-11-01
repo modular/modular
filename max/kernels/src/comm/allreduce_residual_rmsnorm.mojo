@@ -1751,7 +1751,10 @@ def allreduce_rmsnorm[
     in_engine: TensorEngine,
     //,
     multiply_before_cast: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = (
+        PDLLevel.OVERLAP_AT_BEGINNING if ngpus <= 2 else PDLLevel.OFF
+    ),
 ](
     input_buffers: Array[
         TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus

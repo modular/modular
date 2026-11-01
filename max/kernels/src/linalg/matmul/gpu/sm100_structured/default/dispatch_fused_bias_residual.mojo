@@ -58,7 +58,7 @@ def fused_bias_residual_matmul_dispatch_sm100[
     EpilogueEngine: TensorEngine,
     //,
     transpose_b: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
     epilogue_is_1d: Bool = False,
     has_epilogue_tensor: Bool = True,
 ](
@@ -86,7 +86,9 @@ def fused_bias_residual_matmul_dispatch_sm100[
         b_type: Element dtype of `b`; must equal `a_type` and be bfloat16.
         EpilogueEngine: Engine of the `epilogue_tensor` bias/residual tensor.
         transpose_b: Whether `b` is transposed.
-        pdl_level: Persistent kernel launch grid control level.
+        pdl_level: Persistent kernel launch grid control level. Defaults to
+            `ON`: the fused kernel waits for its predecessor at entry and
+            releases its dependents at exit.
         epilogue_is_1d: Treats `epilogue_tensor` as a 1D bias broadcast across rows.
         has_epilogue_tensor: Indicates an epilogue tensor is supplied for the TMA path.
 

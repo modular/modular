@@ -732,7 +732,7 @@ struct Grouped1D1DMatmulKernel[
         cluster_shape: 3D `(x, y, z)` cluster shape passed to the
             `nvvm.cluster_dim` metadata (defaults to `(1, 1, 1)`).
         pdl_level: Programmatic dependent launch level controlling
-            cross-grid ordering fences (defaults to `PDLLevel()`). Every
+            cross-grid ordering fences (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`). Every
             level above `OFF` waits on the previous grid before reading any
             tensor, routing included, and releases the next grid right
             after the wait.

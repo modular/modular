@@ -67,7 +67,7 @@ def _run[
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=True,
         config=config,
-        pdl_level=PDLLevel.ON if pdl else PDLLevel(),
+        pdl_level=PDLLevel.ON if pdl else PDLLevel.OFF,
     ](
         TileTensor(c, row_major(m, Idx[N])),
         TileTensor(a, row_major(m, Idx[K])),

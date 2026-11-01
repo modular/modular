@@ -60,7 +60,7 @@ def _run_case[
     ngpus: Int,
     num_cols: Int,
     use_dispatch: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
@@ -524,7 +524,7 @@ def _run_prod_oracle_case[
     num_cols: Int,
     use_dispatch: Bool = False,
     group_size: Int = ngpus,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](num_rows: Int, list_of_ctx: List[DeviceContext]) raises -> Int:
     """Compare the fused `normed_out` to the ACTUAL M3 production norm; return the
     fused-vs-production exact-mismatch count.

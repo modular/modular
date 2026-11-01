@@ -105,7 +105,9 @@ def test_pdl_launch_wait_check() raises:
 
         # The bug class: the launch passes `pdl_level` to the attribute, but
         # the kernel was instantiated without it, so its wait compiled out.
-        assert_true(_launch_rejected[level_gated_kernel[PDLLevel()]](ctx, dst))
+        assert_true(
+            _launch_rejected[level_gated_kernel[PDLLevel.OFF]](ctx, dst)
+        )
         assert_true(
             not _launch_rejected[level_gated_kernel[PDLLevel.ON]](ctx, dst)
         )

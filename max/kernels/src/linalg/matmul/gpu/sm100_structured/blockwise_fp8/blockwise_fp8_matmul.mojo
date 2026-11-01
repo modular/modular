@@ -74,7 +74,7 @@ def blockwise_fp8_matmul[
             elements (defaults to 128). Set smaller when the matmul's N-tile
             spans multiple finer-grained scale blocks.
         pdl_level: Programmatic dependent launch level for the structured
-            kernel (defaults to `PDLLevel()`, which is off). Ignored by the
+            kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`). Ignored by the
             legacy kernel selected with `USE_LEGACY_BLOCKWISE_FP8`.
 
     Args:

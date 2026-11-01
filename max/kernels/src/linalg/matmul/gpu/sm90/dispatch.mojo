@@ -81,7 +81,7 @@ def matmul_dispatch_sm90[
     a_type: DType,
     b_type: DType,
     transpose_b: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -108,7 +108,8 @@ def matmul_dispatch_sm90[
         transpose_b: Whether `b` is stored transposed (defaults to `False`);
             the SM90 kernel requires this to be `True` to dispatch.
         pdl_level: Programmatic dependent launch level for overlapping this
-            kernel with prior work (defaults to `PDLLevel()`).
+            kernel with prior work. Defaults to `ON`: the kernel waits for
+            its predecessor at entry and releases its dependents at exit.
         has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
             to `False`).
         has_compute_fn: Whether `compute_fn` transforms each output value
@@ -566,7 +567,7 @@ def matmul_dispatch_sm90_fp8[
     ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     transpose_b: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -595,7 +596,8 @@ def matmul_dispatch_sm90_fp8[
         transpose_b: Whether `b` is stored transposed (defaults to `True`);
             the SM90 kernel requires this to be `True` to dispatch.
         pdl_level: Programmatic dependent launch level for overlapping this
-            kernel with prior work (defaults to `PDLLevel()`).
+            kernel with prior work. Defaults to `ON`: the kernel waits for
+            its predecessor at entry and releases its dependents at exit.
         has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
             to `False`).
         has_compute_fn: Whether `compute_fn` transforms each output value
@@ -822,7 +824,7 @@ def matmul_dispatch_sm90_bf16_fp32[
     ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     transpose_b: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -849,7 +851,8 @@ def matmul_dispatch_sm90_bf16_fp32[
         ComputeFnType: Type of `compute_fn` (inferred).
         transpose_b: Whether `b` is stored transposed (defaults to `True`).
         pdl_level: Programmatic dependent launch level for overlapping this
-            kernel with prior work (defaults to `PDLLevel()`).
+            kernel with prior work. Defaults to `ON`: the kernel waits for
+            its predecessor at entry and releases its dependents at exit.
         has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
             to `False`).
         has_compute_fn: Whether `compute_fn` transforms each output value

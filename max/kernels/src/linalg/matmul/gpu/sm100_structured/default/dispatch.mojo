@@ -307,7 +307,7 @@ def dispatch_gemv[
         transpose_b: Whether `b` is stored transposed (defaults to
             `False`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_epilogue_fn: Whether `epilogue_fn` stores the output
             (defaults to `False`).
         has_compute_fn: Whether to apply `compute_fn` (defaults to
@@ -398,7 +398,7 @@ def matmul_dispatch_sm100[
             for float32 instead of requiring IEEE-fp32 precision
             (defaults to `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -454,7 +454,7 @@ def matmul_dispatch_sm100[
             for float32 instead of requiring IEEE-fp32 precision
             (defaults to `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_compute_fn: Whether to apply `compute_fn`. When False,
             `compute_fn` is ignored (defaults to `True`).
     Args:
@@ -514,7 +514,7 @@ def matmul_dispatch_sm100[
             for float32 instead of requiring IEEE-fp32 precision
             (defaults to `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -1342,7 +1342,7 @@ def matmul_dispatch_sm100_bf16[
         transpose_b: Whether `b` is stored transposed (defaults to
             `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_epilogue_fn: Whether `epilogue_fn` stores the output
             (defaults to `False`).
         has_compute_fn: Whether to apply `compute_fn` (defaults to
@@ -1460,7 +1460,7 @@ def matmul_dispatch_sm100_fp32[
         transpose_b: Whether `b` is stored transposed (defaults to
             `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_epilogue_fn: Whether `epilogue_fn` stores the output
             (defaults to `False`).
         has_compute_fn: Whether to apply `compute_fn` (defaults to
@@ -1680,7 +1680,7 @@ def dispatch_sm100_batched_matmul[
     a_type: DType,
     b_type: DType,
     transpose_b: Bool,
-    pdl_level: PDLLevel = PDLLevel.OFF,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
@@ -1698,7 +1698,7 @@ def dispatch_sm100_batched_matmul[
         b_type: Element type of the RHS operand `b`.
         transpose_b: Whether `b` is stored transposed.
         pdl_level: Programmatic dependent launch level for the dispatched
-            kernel (defaults to `PDLLevel.OFF`).
+            kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
     Args:
         c: Output batched matrix as a rank-3 mutable `TileTensor` of
             shape `[batch, M, N]`.
@@ -1896,7 +1896,7 @@ def sm100_heuristic_and_outliers_dispatch[
         transpose_b: Whether `b` is stored transposed (defaults to
             `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
+            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
         has_epilogue_tensor: Whether an epilogue tensor is supplied for
             the TMA epilogue load path (defaults to `False`).
         epilogue_is_1d: Whether the epilogue tensor is treated as

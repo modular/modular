@@ -2349,7 +2349,7 @@ def blockwise_scaled_fp8_with_epilogue[
     scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
     has_epilogue_fn: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2366,8 +2366,9 @@ def blockwise_scaled_fp8_with_epilogue[
     Callers must allocate `c`; with `has_epilogue_fn` the matmul result is
     written into `c` and then read back by `epilogue_fn`.
 
-    `pdl_level` applies to the SM100 matmul launch only (defaults to
-    `PDLLevel()`, which is off).
+    `pdl_level` applies to the SM100 matmul and epilogue launches. It defaults
+    to `ON`: they wait for their predecessor at entry and release their
+    dependents at exit.
     """
 
     # 1D/2D blockwise scaling with (m, n, k) granularity in

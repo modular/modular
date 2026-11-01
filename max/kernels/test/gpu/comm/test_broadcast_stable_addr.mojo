@@ -179,7 +179,7 @@ def stable_broadcast_test[
     def run_and_check(alt: Bool) raises {imm}:
         comptime for i in range(ngpus):
             comptime if force_2stage:
-                broadcast_2stage[ngpus=ngpus, pdl_level=PDLLevel()](
+                broadcast_2stage[ngpus=ngpus, pdl_level=PDLLevel.OFF](
                     in_tile, out_tiles[i], rank_sigs, ctxs[i], root, rank=i
                 )
             else:

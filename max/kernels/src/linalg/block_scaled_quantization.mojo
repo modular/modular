@@ -3024,7 +3024,8 @@ def block_scaled_matmul[
         compute_fn_col_start: The first column of each period that
             `compute_fn` may change.
         pdl_level: Programmatic dependency launch level for the
-            heuristic dispatch kernel (defaults to `PDLLevel.OFF`).
+            heuristic dispatch kernel. Defaults to `ON`: the kernel waits for
+            its predecessor at entry and releases its dependents at exit.
         _trace_description: Extra label appended to the trace event
             for profiling (defaults to `""`).
         target: Trace target string identifying the device in

@@ -1323,7 +1323,7 @@ def batched_matmul[
             straight from the checkpoint by contract. A value the graph
             computes each call (a cast, concat, derived parameter or sharded
             view) is not one, so this op's output must not feed it as B
-            (defaults to `PDLLevel()`, which disables PDL).
+            (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
 
     Args:
         c_buf: Output tensor of shape `(..., m, n)`; rank must be at least
@@ -1382,7 +1382,7 @@ def batched_matmul[
             straight from the checkpoint by contract. A value the graph
             computes each call (a cast, concat, derived parameter or sharded
             view) is not one, so this op's output must not feed it as B
-            (defaults to `PDLLevel()`, which disables PDL).
+            (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
 
     Args:
         c_buf: Tensor of shape `(..., m, n)` giving the output shape; rank
@@ -1446,7 +1446,7 @@ def batched_matmul[
             straight from the checkpoint by contract. A value the graph
             computes each call (a cast, concat, derived parameter or sharded
             view) is not one, so this op's output must not feed it as B
-            (defaults to `PDLLevel()`, which disables PDL).
+            (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
 
     Args:
         c_buf: Output tensor of shape `(..., m, n)`; rank must be at least

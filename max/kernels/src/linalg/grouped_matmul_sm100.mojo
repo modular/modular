@@ -1555,8 +1555,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
             the kernel waits for the predecessor grid immediately before
             reading `expert_usage_stats`. `PDLLevel.OVERLAP_AT_BEGINNING`
             releases dependent grids after the TMEM allocation, any other
-            level at the end of the body (defaults to `PDLLevel()`, which is
-            off).
+            level at the end of the body (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
 
     Args:
         expert_usage_stats: Pointer to per-expert usage stats; index 1 holds

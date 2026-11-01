@@ -197,8 +197,14 @@ struct PDLLevel(Defaultable, Equatable, TrivialRegisterPassable):
 
     @inline(.always)
     def __init__(out self):
-        """Initialize the PDL level to OFF."""
-        self = PDLLevel.OFF
+        """Initialize the PDL level to `OVERLAP_AT_BEGINNING`.
+
+        Programmatic dependent launch is on by default: a kernel that does not
+        opt out waits for its predecessor before its first dependent read and
+        releases its own dependents as soon as it has done so. Pass
+        `PDLLevel.OFF` to launch without PDL.
+        """
+        self = PDLLevel.OVERLAP_AT_BEGINNING
 
     @inline(.always)
     def __eq__(self, other: Int) -> Bool:

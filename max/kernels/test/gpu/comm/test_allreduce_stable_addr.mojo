@@ -187,7 +187,7 @@ def stable_allreduce_test[
                         coords, rebind[SIMD[dtype, _width]](val)
                     )
 
-                _allreduce_p2p[ngpus=ngpus, pdl_level=PDLLevel()](
+                _allreduce_p2p[ngpus=ngpus, pdl_level=PDLLevel.OFF](
                     in_tensors,
                     out_tensors[i].layout,
                     store_epilogue,

@@ -1474,7 +1474,7 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
             releases dependent grids when it finishes.
             ``PDLLevel.NO_WAIT_OVERLAP_AT_END`` is rejected, since every input
             of this op is written by the grids before it (defaults to
-            ``PDLLevel()``, which is off).
+            ``PDLLevel.ON``).
 
     Args:
         c: Output ``[total_tokens, N]``.

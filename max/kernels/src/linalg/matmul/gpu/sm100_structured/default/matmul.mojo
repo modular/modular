@@ -573,7 +573,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         config: Matmul configuration holding tile shapes, dtypes, swizzle
             modes, cluster shape, and pipeline stages.
         pdl_level: Programmatic dependent launch level for the kernel
-            (defaults to PDLLevel()).
+            (defaults to PDLLevel.OVERLAP_AT_BEGINNING).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM;
             when set, enables kernel profiling (defaults to None).
         EpilogueLayoutType: Layout type of the epilogue tensor (defaults to
@@ -675,7 +675,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         config: Matmul configuration holding tile shapes, dtypes, swizzle
             modes, cluster shape, and pipeline stages.
         pdl_level: Programmatic dependent launch level for the kernel
-            (defaults to PDLLevel()).
+            (defaults to PDLLevel.OVERLAP_AT_BEGINNING).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM;
             when set, enables kernel profiling (defaults to None).
         EpilogueLayoutType: Layout type of the epilogue tensor (defaults to
@@ -805,7 +805,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         config: Matmul configuration holding tile shapes, dtypes, swizzle
             modes, cluster shape, and pipeline stages.
         pdl_level: Programmatic dependent launch level for the kernel
-            (defaults to PDLLevel()).
+            (defaults to PDLLevel.OVERLAP_AT_BEGINNING).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM;
             when set, enables kernel profiling (defaults to None).
 
@@ -891,7 +891,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         config: Matmul configuration holding tile shapes, dtypes, swizzle
             modes, cluster shape, and pipeline stages.
         pdl_level: Programmatic dependent launch level for the kernel
-            (defaults to PDLLevel()).
+            (defaults to PDLLevel.OVERLAP_AT_BEGINNING).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM;
             when set, enables kernel profiling (defaults to None).
 
@@ -951,7 +951,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         config: Matmul configuration holding tile shapes, dtypes, swizzle
             modes, cluster shape, and pipeline stages.
         pdl_level: Programmatic dependent launch level for the kernel
-            (defaults to PDLLevel()).
+            (defaults to PDLLevel.OVERLAP_AT_BEGINNING).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM;
             when set, enables kernel profiling (defaults to None).
 
@@ -1527,7 +1527,7 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
         config: Matmul configuration holding tile shapes, dtypes, swizzle
             modes, cluster shape, and pipeline stages.
         pdl_level: Programmatic dependent launch level for the kernel
-            (defaults to PDLLevel()).
+            (defaults to PDLLevel.OVERLAP_AT_BEGINNING).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM;
             when set, enables kernel profiling (defaults to None).
         EpilogueLayoutType: Layout type of the epilogue tensor (defaults to

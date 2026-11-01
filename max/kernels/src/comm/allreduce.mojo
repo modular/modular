@@ -1747,7 +1747,8 @@ def allreduce[
     in_layout: TensorLayout,
     in_origin: Origin,
     out_layout: TensorLayout,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = PDLLevel.ON if ngpus <= 2 else PDLLevel.OFF,
     *,
     use_multimem: Bool = False,
     group_size: Int = ngpus,
@@ -1876,7 +1877,8 @@ def allreduce[
     in_layout: TensorLayout,
     in_origin: Origin,
     out_layout: TensorLayout,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = PDLLevel.ON if ngpus <= 2 else PDLLevel.OFF,
     *,
     use_multimem: Bool = False,
     group_size: Int = ngpus,
