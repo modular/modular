@@ -351,6 +351,7 @@ modular_py_test(
         # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
         "exclusive-if-local",
         "gpu",
+        "manual",
     ],
     # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
     # closed-source kernels.
@@ -382,6 +383,7 @@ modular_py_test(
     tags = [
         "exclusive-if-local",
         "gpu",
+        "manual",
     ],
     # Needs mo.grouped.ffn.blockwise.fp8.amd, registered only by the
     # closed-source kernels.
@@ -415,6 +417,7 @@ modular_py_test(
         # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
         "exclusive-if-local",
         "gpu",
+        "manual",
     ],
     # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
     # closed-source kernels.
