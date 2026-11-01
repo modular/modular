@@ -1169,6 +1169,58 @@ std::string getStructSignature(
   return signature;
 }
 
+std::string getDeclarationSnippet(ASTDecl &decl) {
+  std::string snippet;
+  llvm::raw_string_ostream os(snippet);
+
+  if (auto *function = dyn_cast<DefASTDecl>(&decl))
+    return getFunctionDeclarationSnippet(*function);
+  if (auto *alias = dyn_cast<AliasASTDecl>(&decl)) {
+    os << "comptime ";
+    printAliasSignature(*alias, os);
+    if (std::string value = alias->getToolingValue(); !value.empty())
+      os << " = " << value;
+    return snippet;
+  }
+  if (auto *variable = dyn_cast<VarASTDecl>(&decl)) {
+    if (variable->isArgument()) {
+      if (decl.isUserArgument())
+        printArgument(decl, os);
+      return snippet;
+    }
+    ASTType type = decl.getToolingType().getReferenceElementType();
+    dumpIdentifierWithType(
+        os, decl.getName().value_or(StringRef()),
+        type.getAsString(ASTTypePrinterContext(&decl.getShared())));
+    return "var " + snippet;
+  }
+  if (auto *structDecl = dyn_cast<StructASTDecl>(&decl))
+    return getStructSignature(*structDecl);
+  if (auto *trait = dyn_cast<TraitASTDecl>(&decl)) {
+    printTraitSignature(*trait, os);
+    return snippet;
+  }
+  if (auto *field = dyn_cast<StructFieldASTDecl>(&decl)) {
+    std::string type;
+    llvm::raw_string_ostream typeOS(type);
+    ASTType(field->getOp().getType())
+        .print(typeOS,
+               /*ctx=*/{&decl.getShared()});
+    dumpIdentifierWithType(os, decl.getName().value_or(StringRef()), type);
+    return "var " + snippet;
+  }
+  if (decl.isArgumentDecl()) {
+    if (decl.isUserArgument())
+      printArgument(decl, os);
+    return snippet;
+  }
+  if (decl.isUserParameterDecl()) {
+    printParameter(decl, os);
+    return snippet;
+  }
+  return {};
+}
+
 void printAliasSignature(AliasASTDecl &decl, llvm::raw_string_ostream &os,
                          const SignatureOffsets &offsets) {
   DeclResolver::DiagnosticDeclContextChanger scope(&decl);

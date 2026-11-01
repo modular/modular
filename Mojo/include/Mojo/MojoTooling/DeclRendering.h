@@ -16,21 +16,23 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
 #include <string>
+#include <utility>
 
 namespace M::KGEN::LIT {
 
 class ASTDecl;
 class StructASTDecl;
 
+/// Return the source-facing declaration snippet used by tooling UIs.
+///
+/// Struct snippets include their synthesized trait conformances.
 std::string getDeclDeclarationSnippet(ASTDecl &decl);
-std::string getDeclMarkdownDocString(ASTDecl &decl);
-std::string getDeclFullMarkdownString(ASTDecl &decl);
-
 std::string getStructDeclarationSnippet(
     StructASTDecl &decl,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets = nullptr);
+std::string getDeclMarkdownDocString(ASTDecl &decl);
+std::string getDeclFullMarkdownString(ASTDecl &decl);
 
 } // namespace M::KGEN::LIT
 

@@ -20,14 +20,15 @@
 
 #include "Support/ErrorOr.h"
 #include "llvm/ADT/StringRef.h"
+#include <string>
 #include <vector>
 
 namespace M {
 namespace KGEN {
 namespace Mojo {
 
-/// This class represents an abstract extracted python symbol.
-class ExtractedPythonSymbol {
+/// This struct describes an extracted Python symbol.
+struct ExtractedPythonSymbol {
 public:
   enum class Kind {
     /// A python import statement.
@@ -36,54 +37,26 @@ public:
     Decl,
   };
 
-  /// Return the exposed name of this decl.
+  ExtractedPythonSymbol(Kind kind, StringRef name, StringRef module = {})
+      : kind(kind), name(name.str()), module(module.str()) {}
+
+  /// Return the exposed name of this symbol.
   StringRef getName() const { return name; }
 
-  /// Return the kind of this decl.
+  /// Return the kind of this symbol.
   Kind getKind() const { return kind; }
-
-protected:
-  ExtractedPythonSymbol(Kind kind, StringRef name)
-      : kind(kind), name(name.str()) {}
-
-private:
-  Kind kind;
-  std::string name;
-};
-
-/// This class represents an extracted python import statement.
-class ExtractedPythonImport : public ExtractedPythonSymbol {
-public:
-  ExtractedPythonImport(StringRef name, StringRef module)
-      : ExtractedPythonSymbol(Kind::Import, name), module(module.str()) {}
 
   /// Return the module name of this import.
   StringRef getModule() const { return module; }
 
-  /// Support llvm-style casting.
-  static bool classof(const ExtractedPythonSymbol *symbol) {
-    return symbol->getKind() == Kind::Import;
-  }
-
-private:
+  Kind kind;
+  std::string name;
   std::string module;
-};
-
-/// This class represents an extracted python declaration statement.
-class ExtractedPythonDecl : public ExtractedPythonSymbol {
-public:
-  ExtractedPythonDecl(StringRef name)
-      : ExtractedPythonSymbol(Kind::Decl, name) {}
-
-  /// Support llvm-style casting.
-  static bool classof(const ExtractedPythonSymbol *symbol) {
-    return symbol->getKind() == Kind::Decl;
-  }
 };
 
 /// Extract the importable python symbols from the given python expression
 /// string.
-ErrorOr<std::vector<std::unique_ptr<ExtractedPythonSymbol>>>
+ErrorOr<std::vector<ExtractedPythonSymbol>>
 extractPythonSymbolsFromReplExpr(StringRef pythonExpr);
 
 } // namespace Mojo

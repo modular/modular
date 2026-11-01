@@ -458,8 +458,8 @@ static LogicalResult
 importPythonSymbolsIntoMojo(Debugger &debugger, StringRef pythonExpr,
                             StringRef moduleName, raw_ostream &mojoExprOS,
                             DiagnosticManager &diagnosticManager) {
-  ErrorOr<std::vector<std::unique_ptr<ExtractedPythonSymbol>>>
-      extractedSymbolsOr = extractPythonSymbolsFromReplExpr(pythonExpr);
+  ErrorOr<std::vector<ExtractedPythonSymbol>> extractedSymbolsOr =
+      extractPythonSymbolsFromReplExpr(pythonExpr);
   if (failed(extractedSymbolsOr)) {
     diagnosticManager.PutString(lldb::eSeverityWarning,
                                 extractedSymbolsOr.getError());
@@ -468,14 +468,14 @@ importPythonSymbolsIntoMojo(Debugger &debugger, StringRef pythonExpr,
 
   // Here we access the result, which is a serialized description of each
   // symbol to extract.
-  for (auto &symbol : llvm::make_pointee_range(*extractedSymbolsOr)) {
-    if (auto *decl = dyn_cast<ExtractedPythonDecl>(&symbol)) {
-      mojoExprOS << llvm::formatv("var {0} = {1}.{0}\n", decl->getName(),
+  for (const ExtractedPythonSymbol &symbol : *extractedSymbolsOr) {
+    if (symbol.getKind() == ExtractedPythonSymbol::Kind::Decl) {
+      mojoExprOS << llvm::formatv("var {0} = {1}.{0}\n", symbol.getName(),
                                   moduleName);
-    } else if (auto *import = dyn_cast<ExtractedPythonImport>(&symbol)) {
+    } else if (symbol.getKind() == ExtractedPythonSymbol::Kind::Import) {
       mojoExprOS << llvm::formatv(
           "var {0} = __mojo_repl_Python.import_module(\"{1}\")\n",
-          import->getName(), import->getModule());
+          symbol.getName(), symbol.getModule());
     }
   }
 

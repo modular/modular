@@ -2292,8 +2292,8 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
     // Otherwise, this is a python expression. Extract the variables that are
     // implicitly imported into mojo and create stub definitions so that future
     // cells can reference them without error.
-    ErrorOr<std::vector<std::unique_ptr<KGEN::Mojo::ExtractedPythonSymbol>>>
-        symbolsOr = KGEN::Mojo::extractPythonSymbolsFromReplExpr(contents);
+    ErrorOr<std::vector<KGEN::Mojo::ExtractedPythonSymbol>> symbolsOr =
+        KGEN::Mojo::extractPythonSymbolsFromReplExpr(contents);
     if (failed(symbolsOr)) {
       getSourceMgr().PrintMessage(SMLoc::getFromPointer(contents.data()),
                                   llvm::SourceMgr::DK_Warning,
@@ -2306,8 +2306,8 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
     std::string pythonCell;
     llvm::raw_string_ostream os(pythonCell);
     os << "from std.python import PythonObject\n\n";
-    for (auto &symbol : *symbolsOr)
-      os << "var " << symbol->getName() << ": PythonObject\n";
+    for (const auto &symbol : *symbolsOr)
+      os << "var " << symbol.getName() << ": PythonObject\n";
     int pythonCellId = getSourceMgr().AddNewSourceBuffer(
         llvm::MemoryBuffer::getMemBuffer(pythonCell,
                                          (cell.uri.file() + "_py").str()),

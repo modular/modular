@@ -82,6 +82,13 @@ std::string getStructSignature(
     llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
         nullptr);
 
+/// Return a source-facing declaration snippet for any supported declaration.
+///
+/// Unlike the signature-specific routines above, this includes declaration
+/// keywords and variable/field type annotations. It returns an empty string
+/// for declarations with no source-facing representation.
+std::string getDeclarationSnippet(LIT::ASTDecl &decl);
+
 /// Return the source-facing type for a parameter.
 std::string getParameterTypeString(LIT::ASTDecl &decl);
 

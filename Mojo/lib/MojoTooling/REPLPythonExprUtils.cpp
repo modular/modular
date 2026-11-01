@@ -154,7 +154,7 @@ executeVariableExtractorScript(StringRef pythonExpr) {
   return bufferOrErr.get()->getBuffer().str();
 }
 
-ErrorOr<std::vector<std::unique_ptr<KGEN::Mojo::ExtractedPythonSymbol>>>
+ErrorOr<std::vector<KGEN::Mojo::ExtractedPythonSymbol>>
 M::KGEN::Mojo::extractPythonSymbolsFromReplExpr(StringRef pythonExpr) {
   // We extract the necessary python symbols using the python ast module, which
   // requires us to invoke python.
@@ -173,7 +173,7 @@ M::KGEN::Mojo::extractPythonSymbolsFromReplExpr(StringRef pythonExpr) {
   // We process the symbols in reverse order so that we honor the last
   // occurrence of a given symbol name.
   llvm::StringSet<> seenVariables;
-  std::vector<std::unique_ptr<ExtractedPythonSymbol>> extractedSymbols;
+  std::vector<ExtractedPythonSymbol> extractedSymbols;
   for (StringRef symbolLine : llvm::reverse(symbolLines)) {
     SmallVector<StringRef> items;
     symbolLine.split(items, ' ');
@@ -183,8 +183,7 @@ M::KGEN::Mojo::extractPythonSymbolsFromReplExpr(StringRef pythonExpr) {
       continue;
 
     if (kind == "declaration") {
-      extractedSymbols.emplace_back(
-          std::make_unique<ExtractedPythonDecl>(name));
+      extractedSymbols.emplace_back(ExtractedPythonSymbol::Kind::Decl, name);
     } else if (kind == "import") {
       // Private import aliases (starting with a leading underscore) should not
       // be exposed to mojo.
@@ -192,8 +191,8 @@ M::KGEN::Mojo::extractPythonSymbolsFromReplExpr(StringRef pythonExpr) {
         continue;
 
       StringRef module = items[2];
-      extractedSymbols.emplace_back(
-          std::make_unique<ExtractedPythonImport>(name, module));
+      extractedSymbols.emplace_back(ExtractedPythonSymbol::Kind::Import, name,
+                                    module);
     }
   }
 

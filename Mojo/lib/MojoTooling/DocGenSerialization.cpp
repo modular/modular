@@ -582,20 +582,6 @@ static std::string getVariableType(ASTDecl &decl) {
   return type.getAsString(ASTTypePrinterContext(&decl.getShared()));
 }
 
-static std::string getArgumentDeclarationSnippet(ASTDecl &decl) {
-  std::string snippet;
-  llvm::raw_string_ostream os(snippet);
-  printArgument(decl, os);
-  return snippet;
-}
-
-static std::string getParameterDeclarationSnippet(ASTDecl &decl) {
-  std::string snippet;
-  llvm::raw_string_ostream os(snippet);
-  printParameter(decl, os);
-  return snippet;
-}
-
 static std::string getStructFieldType(StructFieldASTDecl &decl) {
   std::string type;
   llvm::raw_string_ostream os(type);
@@ -603,7 +589,6 @@ static std::string getStructFieldType(StructFieldASTDecl &decl) {
   return type;
 }
 
-static std::string getAliasDeclarationSnippet(AliasASTDecl &decl);
 static std::string getAliasMarkdownDocString(AliasASTDecl &decl);
 
 //===----------------------------------------------------------------------===//
@@ -611,40 +596,9 @@ static std::string getAliasMarkdownDocString(AliasASTDecl &decl);
 //===----------------------------------------------------------------------===//
 
 std::string M::KGEN::LIT::getDeclDeclarationSnippet(ASTDecl &decl) {
-  std::string snippet;
-  llvm::raw_string_ostream os(snippet);
-
-  if (isa<DefASTDecl>(decl))
-    return getFunctionDeclarationSnippet(cast<DefASTDecl>(decl));
-  if (isa<AliasASTDecl>(decl))
-    return getAliasDeclarationSnippet(cast<AliasASTDecl>(decl));
-  if (auto *variable = dyn_cast<VarASTDecl>(&decl)) {
-    if (!variable->isArgument()) {
-      dumpIdentifierWithType(os, decl.getName().value_or(StringRef()),
-                             getVariableType(decl));
-      return "var " + os.str();
-    }
-    if (decl.isUserArgument())
-      return getArgumentDeclarationSnippet(decl);
-    return {};
-  }
-  if (isa<StructASTDecl>(decl))
-    return getStructDeclarationSnippet(cast<StructASTDecl>(decl));
-  if (isa<TraitASTDecl>(decl))
-    return "trait " + decl.getName().value_or(StringRef()).str();
-  if (isa<StructFieldASTDecl>(decl)) {
-    dumpIdentifierWithType(os, decl.getName().value_or(StringRef()),
-                           getStructFieldType(cast<StructFieldASTDecl>(decl)));
-    return "var " + os.str();
-  }
-  if (decl.isArgumentDecl()) {
-    if (decl.isUserArgument())
-      return getArgumentDeclarationSnippet(decl);
-    return {};
-  }
-  if (decl.isUserParameterDecl())
-    return getParameterDeclarationSnippet(decl);
-  return {};
+  if (auto *structDecl = dyn_cast<StructASTDecl>(&decl))
+    return getStructDeclarationSnippet(*structDecl);
+  return getDeclarationSnippet(decl);
 }
 
 std::string M::KGEN::LIT::getDeclFullMarkdownString(ASTDecl &decl) {
@@ -778,16 +732,6 @@ static ParameterEvaluator getAliasParameterEvaluator(AliasASTDecl &decl) {
         generatorType.getParamListAttrs().getName(index), reboundType));
   }
   return evaluator;
-}
-
-static std::string getAliasDeclarationSnippet(AliasASTDecl &decl) {
-  std::string snippet;
-  llvm::raw_string_ostream os(snippet);
-  os << "comptime ";
-  printAliasSignature(decl, os);
-  if (std::string value = decl.getToolingValue(); !value.empty())
-    os << " = " << value;
-  return snippet;
 }
 
 static std::string getAliasMarkdownDocString(AliasASTDecl &decl) {
