@@ -778,6 +778,7 @@ def _target_context(started: list[EPConfig], *, ep_size: int) -> Any:
         kv_params=SimpleNamespace(devices=[DeviceRef.CPU()]),
         max_seq_len=16,
         max_batch_total_tokens=32,
+        memory_plan=SimpleNamespace(planned_max_batch_size=5),
         huggingface_config=_HF_CONFIG,
         return_logits=ReturnLogits.VARIABLE,
         return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
@@ -814,6 +815,7 @@ def test_a_composed_decoder_completes_its_config_as_serving_does(
     assert config.runtime is not None
     assert config.runtime.ep is _EP
     assert config.runtime.max_batch_total_tokens == 32
+    assert config.runtime.max_batch_size == 5
     assert builder.checkpoint_weights(context, config) == {
         "scale.weight": weight
     }
@@ -1169,3 +1171,38 @@ def test_the_graph_hands_the_decoder_its_workspace() -> None:
     np.testing.assert_array_equal(
         np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 3)
     )
+
+
+@dataclass(frozen=True)
+class RuntimeRecordingConfig(ToyConfig, DeploymentConfig):
+    runtime: ModuleRuntime | None = None
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        return replace(self, runtime=runtime)
+
+
+def test_the_deployment_carries_the_planned_batch_size() -> None:
+    cls = module_pipeline_model(
+        RuntimeRecordingConfig, ((GraphRole.DECODER, PlainDecoder),), None
+    )
+    model: Any = cls.__new__(cls)
+    pipeline_config: Any = SimpleNamespace(
+        model=SimpleNamespace(
+            data_parallel_degree=1, huggingface_config=_HF_CONFIG
+        ),
+        runtime=SimpleNamespace(
+            max_batch_input_tokens=8, ep_size=1, ep_use_allreduce=False
+        ),
+    )
+    model.pipeline_config = pipeline_config
+    model.arch_config = RuntimeRecordingConfig()
+    model.return_logits = ReturnLogits.LAST_TOKEN
+    model.return_hidden_states = ReturnHiddenStates.NONE
+    model.devices = [CPU()]
+    model.max_batch_size = 7
+    model.memory_plan = SimpleNamespace(planned_max_batch_total_tokens=64)
+    config = model._create_model_config({})
+    assert isinstance(config, RuntimeRecordingConfig)
+    assert config.runtime is not None
+    assert config.runtime.max_batch_size == 7
+    assert config.runtime.max_batch_total_tokens == 64

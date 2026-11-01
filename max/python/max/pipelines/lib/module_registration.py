@@ -829,6 +829,7 @@ class ModuleV3DecoderPipelineModel(
             max_batch_total_tokens=self.planned_max_batch_total_tokens,
             ep_size=settings.ep_size,
             ep_use_allreduce=settings.ep_use_allreduce,
+            max_batch_size=self.max_batch_size,
         )
         if runtime.ep_size > 1:
             if not isinstance(config, ExpertParallelDeploymentConfig):
@@ -1108,6 +1109,7 @@ class RegisteredDecoderBuilder:
             max_batch_total_tokens=context.max_batch_total_tokens,
             ep_size=settings.ep_size,
             ep_use_allreduce=settings.ep_use_allreduce,
+            max_batch_size=context.memory_plan.planned_max_batch_size,
         )
         if runtime.ep_size > 1:
             if not isinstance(config, ExpertParallelDeploymentConfig):

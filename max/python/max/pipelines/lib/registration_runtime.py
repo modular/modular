@@ -85,6 +85,10 @@ class ModuleRuntime:
     ep: EPConfig | None = None
     """The initialized expert-parallel config, under expert parallelism."""
 
+    max_batch_size: int | None = None
+    """The most requests a step holds, as the memory planner sized it, or
+    ``None`` when the caller doesn't size batches."""
+
 
 class ExpertParallelExchange(Protocol):
     """The initialized exchange's buffers, as each batch passes them."""
