@@ -22,10 +22,15 @@ from max.pipelines.architectures.mpnet import MPNetModel, mpnet_arch
 from max.pipelines.architectures.mpnet.batch_processor import (
     MPNetBatchProcessor,
 )
+from max.pipelines.architectures.qwen3_embedding import (
+    Qwen3EmbeddingEncoder,
+    qwen3_embedding_arch,
+)
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.lib.registration_encoder import (
     GraphApiEncoderPipelineModel,
     PaddedEncoderProcessor,
+    RaggedEncoderProcessor,
 )
 
 
@@ -34,6 +39,12 @@ from max.pipelines.lib.registration_encoder import (
     [
         (bert_arch, BertModel, "bert", PaddedEncoderProcessor),
         (mpnet_arch, MPNetModel, "mpnet", MPNetBatchProcessor),
+        (
+            qwen3_embedding_arch,
+            Qwen3EmbeddingEncoder,
+            "qwen3_embedding",
+            RaggedEncoderProcessor,
+        ),
     ],
 )
 def test_an_embedding_architecture_registers_its_encoder(
