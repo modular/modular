@@ -598,7 +598,7 @@ static llvm::json::Object serializeParameterDecl(ASTDecl &decl,
     object["traits"] = std::move(traitsArray);
   }
 
-  if (TypedAttr defaultValue = getParameterDefaultValue(decl))
+  if (TypedAttr defaultValue = getReboundPogDefault(decl))
     object["default"] =
         getDefaultValueString(defaultValue, ctx.getSharedState());
   return object;
@@ -639,7 +639,7 @@ static llvm::json::Object serializeArgumentDecl(ASTDecl &decl,
     object["traits"] = std::move(traitsArray);
   }
 
-  if (TypedAttr defaultValue = getArgumentDefaultValue(decl))
+  if (TypedAttr defaultValue = getReboundPogDefault(decl))
     object["default"] =
         getDefaultValueString(defaultValue, ctx.getSharedState());
   return object;
@@ -789,25 +789,16 @@ std::string M::KGEN::LIT::getToolingAliasValue(AliasASTDecl &decl) {
 //===----------------------------------------------------------------------===//
 
 struct FunctionDocumentation {
-  std::optional<std::string> returnType;
-  StringRef deprecated;
   std::string constraints;
   std::string description;
   std::string raisesDoc;
   std::string returnsDoc;
   std::string summary;
-  StableInfo stableInfo;
-  bool isAsync = false;
-  bool isImplicitConversion = false;
-  bool isMethod = false;
-  bool isStatic = false;
-  bool raises = false;
-  bool isInit = false;
-  bool hasDefaultImplementation = false;
 };
 
 static void augmentFunctionDocumentation(FunctionDocumentation &documentation,
-                                         ArrayRef<StringRef> desc) {
+                                         ArrayRef<StringRef> desc,
+                                         bool hasReturnType, bool raises) {
   // Process the lines of the description, looking for markers.
   SmallVector<std::string> pureDescriptionLines;
   std::string argsSectionHeader = (Twine(DocString::kSectionArgs) + ":").str();
@@ -826,12 +817,12 @@ static void augmentFunctionDocumentation(FunctionDocumentation &documentation,
     } else if (desc[line] == paramsSectionHeader) {
       skipDocumentationSection(desc, line, lineEnd);
     } else if (desc[line] == returnsSectionHeader) {
-      if (documentation.returnType)
+      if (hasReturnType)
         documentation.returnsDoc = parseDocStringSection(desc, line, lineEnd);
     } else if (desc[line] == constraintsSectionHeader) {
       documentation.constraints = parseDocStringSection(desc, line, lineEnd);
     } else if (desc[line] == raisesSectionHeader) {
-      if (documentation.raises)
+      if (raises)
         documentation.raisesDoc = parseDocStringSection(desc, line, lineEnd);
     } else {
       // If this line is an ad-hoc section heading, process it to ensure
@@ -904,23 +895,12 @@ static std::string getPogMarkdownDocString(ASTDecl &decl) {
   return {};
 }
 
-static FunctionDocumentation getFunctionDocumentation(DefASTDecl &decl) {
-  FunctionDocumentation documentation;
+static std::optional<std::string> getFunctionReturnType(DefASTDecl &decl) {
   FnOp funcOp = decl.getOp();
   FnTypeGeneratorType signature = funcOp.getFuncTypeGenerator();
   DeclResolver::DiagnosticDeclContextChanger declScopeChanger(&decl);
   auto &shared = decl.getShared();
-  documentation.deprecated = decl.getDeprecationWarning().value_or(StringRef{});
-  documentation.raises = signature.isThrows();
-  documentation.isAsync = signature.isAsync();
   Type userResultType = funcOp.getUserResultType();
-  documentation.isStatic = funcOp.getIsStatic();
-  documentation.isImplicitConversion = funcOp.isImplicitConversion();
-  documentation.isMethod =
-      !documentation.isStatic && isa<StructDeclOp>(funcOp->getParentOp());
-  documentation.isInit = funcOp.getSpecialFunctionInfo().isInitializer();
-  documentation.hasDefaultImplementation = funcOp.isDefaultedTraitFn();
-  documentation.stableInfo = computeStableInfo(funcOp);
 
   // If this is a method, grab the expected "Self" type.
   std::optional<ASTType> selfType;
@@ -938,27 +918,36 @@ static FunctionDocumentation getFunctionDocumentation(DefASTDecl &decl) {
   ASTType resultType = signature.getUserResultType();
   assert(resultType && "didn't find a result type?");
 
-  if (!resultType.isNoneType()) {
-    std::string str;
-    std::optional<ArgConvention> convention;
-    // If this is a ref result add the "ref[life, addrspace] "
-    // prefix to the specifier.
-    if (signature.isRefResult()) {
-      convention = ArgConvention::Ref;
-      str = "ref" + getRefPrefixAsString(shared, cast<RefType>(resultType),
-                                         signature, /*isRefResult*/ true);
-    }
-    Type reboundUserResultType = evaluator.getReboundType(userResultType);
-    str += generateTypeString(shared, reboundUserResultType, VariadicKind::None,
-                              selfType, convention);
-    documentation.returnType = str;
-  }
+  if (resultType.isNoneType())
+    return std::nullopt;
 
+  std::string str;
+  std::optional<ArgConvention> convention;
+  // If this is a ref result add the "ref[life, addrspace] "
+  // prefix to the specifier.
+  if (signature.isRefResult()) {
+    convention = ArgConvention::Ref;
+    str = "ref" + getRefPrefixAsString(shared, cast<RefType>(resultType),
+                                       signature, /*isRefResult*/ true);
+  }
+  Type reboundUserResultType = evaluator.getReboundType(userResultType);
+  str += generateTypeString(shared, reboundUserResultType, VariadicKind::None,
+                            selfType, convention);
+  return str;
+}
+
+static FunctionDocumentation getFunctionDocumentation(DefASTDecl &decl) {
+  FunctionDocumentation documentation;
+  FnTypeGeneratorType signature = decl.getSignature();
   // An inherited default is a copy that cannot carry a doc string of its own,
   // so its documentation comes from the trait method that declares it.
-  if (auto docStr = findDefaultImplDecl(shared, &decl)->getParsedDocString()) {
+  if (auto docStr =
+          findDefaultImplDecl(decl.getShared(), &decl)->getParsedDocString()) {
     documentation.summary = docStr->getSummary();
-    augmentFunctionDocumentation(documentation, docStr->getDescription());
+    augmentFunctionDocumentation(
+        documentation, docStr->getDescription(),
+        !ASTType(signature.getUserResultType()).isNoneType(),
+        signature.isThrows());
   }
   return documentation;
 }
@@ -1044,6 +1033,9 @@ M::KGEN::LIT::getFunctionFullMarkdownString(DefASTDecl &decl,
 static llvm::json::Object serializeFunctionDecl(DefASTDecl &decl,
                                                 MojoParserContext &ctx) {
   FunctionDocumentation documentation = getFunctionDocumentation(decl);
+  FnOp funcOp = decl.getOp();
+  FnTypeGeneratorType signature = decl.getSignature();
+  StableInfo stableInfo = computeStableInfo(funcOp);
   llvm::json::Array arguments;
   for (ASTDecl *argument : decl.getUserArgDecls())
     arguments.push_back(serializeArgumentDecl(*argument, ctx));
@@ -1052,27 +1044,27 @@ static llvm::json::Object serializeFunctionDecl(DefASTDecl &decl,
     parameters.push_back(serializeParameterDecl(*parameter, ctx));
   llvm::json::Object result{
       {"args", std::move(arguments)},
-      {"async", documentation.isAsync},
+      {"async", signature.isAsync()},
       {"constraints", documentation.constraints},
-      {"deprecated", documentation.deprecated},
+      {"deprecated", decl.getDeprecationWarning().value_or(StringRef{})},
       {"description", documentation.description},
-      {"hasDefaultImplementation", documentation.hasDefaultImplementation},
-      {"isStatic", documentation.isStatic},
-      {"isImplicitConversion", documentation.isImplicitConversion},
+      {"hasDefaultImplementation", funcOp.isDefaultedTraitFn()},
+      {"isStatic", funcOp.getIsStatic()},
+      {"isImplicitConversion", funcOp.isImplicitConversion()},
       {"kind", "function"},
       {"name", decl.getName().value_or(StringRef{}).str()},
       {"parameters", std::move(parameters)},
-      {"raises", documentation.raises},
+      {"raises", signature.isThrows()},
       {"raisesDoc", documentation.raisesDoc},
       {"signature", getFunctionSignature(decl, ctx)},
-      {"isStable", documentation.stableInfo.isStable},
-      {"isStabilityTracked", documentation.stableInfo.isStabilityTracked},
-      {"sinceVersion", documentation.stableInfo.sinceVersion},
+      {"isStable", stableInfo.isStable},
+      {"isStabilityTracked", stableInfo.isStabilityTracked},
+      {"sinceVersion", stableInfo.sinceVersion},
       {"summary", documentation.summary},
   };
-  if (documentation.returnType && !documentation.returnType->empty()) {
-    TypeMetadata metadata = extractLibraryInfo(*documentation.returnType, &decl,
-                                               &ctx.getSharedState());
+  if (std::optional<std::string> returnType = getFunctionReturnType(decl)) {
+    TypeMetadata metadata =
+        extractLibraryInfo(*returnType, &decl, &ctx.getSharedState());
     llvm::json::Object returnObject = metadata.toJSON();
     if (!documentation.returnsDoc.empty())
       returnObject["doc"] = documentation.returnsDoc;
@@ -1301,10 +1293,6 @@ static llvm::json::Object serializeTraitDecl(TraitASTDecl &decl,
 struct StructDocumentation {
   std::string constraints;
   std::string description;
-  std::string summary;
-  ConformanceConditionMap conformanceConditions;
-  StableInfo stableInfo;
-  TypeConvention convention;
 };
 
 static void augmentStructDocumentation(StructDocumentation &documentation,
@@ -1334,11 +1322,14 @@ static void augmentStructDocumentation(StructDocumentation &documentation,
 
 static StructDocumentation getStructDocumentation(StructASTDecl &decl) {
   StructDocumentation documentation;
-  StructDeclOp structOp = decl.getOp();
-  documentation.convention = structOp.getConvention();
-  documentation.stableInfo = computeStableInfo(structOp);
+  if (auto docStr = decl.getParsedDocString())
+    augmentStructDocumentation(documentation, docStr->getDescription());
+  return documentation;
+}
 
-  auto &shared = decl.getShared();
+static ConformanceConditionMap
+getStructConformanceConditions(StructASTDecl &decl) {
+  StructDeclOp structOp = decl.getOp();
   TypeSignatureType signature = structOp.getSignature();
   ParameterEvaluator evaluator;
   for (auto [index, type] : llvm::enumerate(signature.getInputParamTypes())) {
@@ -1346,14 +1337,10 @@ static StructDocumentation getStructDocumentation(StructASTDecl &decl) {
     evaluator.appendIndexBinding(ParamDeclRefAttr::get(
         signature.getParamListAttrs().getName(index), reboundType));
   }
-  collectConformanceConditions(structOp.getCanonicalTrait(), evaluator, shared,
-                               documentation.conformanceConditions);
-
-  if (auto docStr = decl.getParsedDocString()) {
-    documentation.summary = docStr->getSummary();
-    augmentStructDocumentation(documentation, docStr->getDescription());
-  }
-  return documentation;
+  ConformanceConditionMap conditions;
+  collectConformanceConditions(structOp.getCanonicalTrait(), evaluator,
+                               decl.getShared(), conditions);
+  return conditions;
 }
 
 std::string M::KGEN::LIT::getStructSignature(
@@ -1375,10 +1362,10 @@ std::string M::KGEN::LIT::getStructDeclarationSnippet(
   os << getStructSignature(decl, parameterOffsets);
 
   SmallVector<std::string> parentTraits;
-  StructDocumentation documentation = getStructDocumentation(decl);
+  ConformanceConditionMap conformanceConditions =
+      getStructConformanceConditions(decl);
   collectParentTraits(ctx, &decl, parentTraits,
-                      decl.getOp().getCanonicalTrait(),
-                      &documentation.conformanceConditions);
+                      decl.getOp().getCanonicalTrait(), &conformanceConditions);
   if (!parentTraits.empty()) {
     os << "\n# Traits: ";
     llvm::interleaveComma(parentTraits, os,
@@ -1393,7 +1380,7 @@ static std::string getStructMarkdownDocString(StructASTDecl &decl) {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
 
-  dumpMarkdownDocumentationHeader(os, documentation.summary,
+  dumpMarkdownDocumentationHeader(os, decl.getDocumentationSummary(),
                                   documentation.description);
   dumpMarkdownDeclListSection(os, DocString::kSectionParameters,
                               decl.getUserParamDecls());
@@ -1419,13 +1406,16 @@ static StringRef toString(TypeConvention convention) {
 static llvm::json::Object serializeStructDecl(StructASTDecl &decl,
                                               MojoParserContext &ctx) {
   StructDocumentation documentation = getStructDocumentation(decl);
+  StructDeclOp structOp = decl.getOp();
+  StableInfo stableInfo = computeStableInfo(structOp);
+  ConformanceConditionMap conformanceConditions =
+      getStructConformanceConditions(decl);
   auto aliases = extractChildDecls<AliasASTDecl, AliasDeclOp>(decl);
   auto fields = extractChildDecls<StructFieldASTDecl, StructFieldOp>(decl);
   auto functions = extractChildFunctions<FnOp>(decl);
 
   llvm::json::Array parentTraitsWithMetadata = collectParentTraitsWithMetadata(
-      ctx, &decl, decl.getOp().getCanonicalTrait(),
-      &documentation.conformanceConditions);
+      ctx, &decl, structOp.getCanonicalTrait(), &conformanceConditions);
   llvm::json::Array parameterInfos;
   for (ASTDecl *parameter : decl.getUserParamDecls())
     parameterInfos.push_back(serializeParameterDecl(*parameter, ctx));
@@ -1442,11 +1432,11 @@ static llvm::json::Object serializeStructDecl(StructASTDecl &decl,
       {"parameters", std::move(parameterInfos)},
       {"parentTraits", std::move(parentTraitsWithMetadata)},
       {"signature", getStructSignature(decl)},
-      {"isStable", documentation.stableInfo.isStable},
-      {"isStabilityTracked", documentation.stableInfo.isStabilityTracked},
-      {"sinceVersion", documentation.stableInfo.sinceVersion},
-      {"summary", documentation.summary},
-      {"convention", toString(documentation.convention)},
+      {"isStable", stableInfo.isStable},
+      {"isStabilityTracked", stableInfo.isStabilityTracked},
+      {"sinceVersion", stableInfo.sinceVersion},
+      {"summary", decl.getDocumentationSummary()},
+      {"convention", toString(structOp.getConvention())},
   };
 }
 

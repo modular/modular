@@ -123,8 +123,8 @@ public:
   /// Return true if this declaration represents a variable.
   bool isVariableDecl() const;
 
-  /// Returns this argument's ABI convention. Asserts if this is not an
-  /// argument declaration.
+  /// Returns this argument's effective ABI convention, including any variadic
+  /// convention. Asserts if this is not an argument declaration.
   ArgConvention getArgConvention() const;
 
   /// Return the POG metadata for this argument or parameter declaration.

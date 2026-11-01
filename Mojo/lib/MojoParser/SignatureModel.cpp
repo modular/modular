@@ -20,6 +20,7 @@
 #include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/DeclSignaturePrinter.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -36,33 +37,14 @@ namespace {
 // These records exist only while rendering one signature. AST declarations
 // remain the source of truth exposed to callers.
 
-enum class ArgumentConvention {
-  kImm,
-  kDeinit,
-  kInOut,
-  kOwned,
-  kRef,
-  kOut,
-};
-
 struct RenderedParameter {
-  StringRef name;
+  ASTDecl *decl;
   std::string type;
-  PassingKind passingKind = PassingKind::PosOrKw;
-  VariadicKind variadicKind = VariadicKind::None;
-  TypedAttr defaultValue;
-  std::string constraints;
 };
 
 struct RenderedArgument {
-  StringRef name;
-  std::string prefix;
+  ASTDecl *decl = nullptr;
   std::string type;
-  PassingKind passingKind;
-  VariadicKind variadicKind;
-  TypedAttr defaultValue;
-  ArgumentConvention convention;
-  bool isSelf;
 };
 
 } // namespace
@@ -71,13 +53,13 @@ static std::string
 mergeConformsToConstraints(ArrayRef<ConstraintAttr> constraints,
                            ParameterEvaluator *evaluator, SharedState &shared,
                            SmallVectorImpl<RenderedParameter> &params);
-static StringRef getConventionString(ArgumentConvention conv);
+static StringRef getConventionString(ArgConvention convention);
 static void renderParameter(const RenderedParameter &parameter,
-                            SharedState &shared, raw_ostream &os);
+                            TypedAttr defaultValue, SharedState &shared,
+                            raw_ostream &os);
 static void renderArgument(const RenderedArgument &argument,
-                           SharedState &shared, raw_ostream &os);
-static bool shouldExcludeParameterFromDocs(PassingKind passingKind,
-                                           StringRef paramName);
+                           TypedAttr defaultValue, SharedState &shared,
+                           raw_ostream &os);
 static bool parseConformsToString(StringRef printed, StringRef &paramName,
                                   StringRef &traitStr);
 
@@ -85,19 +67,26 @@ static bool parseConformsToString(StringRef printed, StringRef &paramName,
 // Population
 //===----------------------------------------------------------------------===//
 
+static SmallVector<ASTDecl *> getUserParamDecls(ASTDecl &decl) {
+  if (auto *function = dyn_cast<FnSignatureASTDecl>(&decl))
+    return function->getUserParamDecls();
+  if (auto *structDecl = dyn_cast<StructASTDecl>(&decl))
+    return structDecl->getUserParamDecls();
+  return cast<AliasASTDecl>(decl).getUserParamDecls();
+}
+
 static ParameterEvaluator
 populateRenderedParameters(ASTDecl &decl, ArrayRef<Type> paramTypes,
                            PogListAttr paramListAttr,
                            SmallVectorImpl<RenderedParameter> &params,
                            std::optional<ASTType> selfType = std::nullopt) {
   auto &shared = decl.getShared();
+  DenseMap<StringRef, ASTDecl *> userParams;
+  for (ASTDecl *paramDecl : getUserParamDecls(decl))
+    userParams.try_emplace(paramDecl->getPogMetadata().getName(), paramDecl);
+
   ParameterEvaluator evaluator;
   for (auto [idx, paramType] : llvm::enumerate(paramTypes)) {
-    TypedAttr defaultValue;
-    if (auto defaultAttr = paramListAttr.getDefault(idx))
-      defaultValue =
-          cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
-    PassingKind passingKind = paramListAttr.getPassingKind(idx);
     StringRef paramName = paramListAttr.getName(idx);
     VariadicKind variadicKind = paramListAttr.getVariadicKind(idx);
     Type reboundType = evaluator.getReboundType(paramType);
@@ -107,15 +96,13 @@ populateRenderedParameters(ASTDecl &decl, ArrayRef<Type> paramTypes,
     // inference loses the name binding.
     evaluator.appendIndexBinding(ParamDeclRefAttr::get(paramName, reboundType));
 
-    if (shouldExcludeParameterFromDocs(passingKind, paramName))
+    auto paramDecl = userParams.find(paramName);
+    if (paramDecl == userParams.end())
       continue;
 
     RenderedParameter info;
-    info.name = paramName;
+    info.decl = paramDecl->second;
     info.type = generateTypeString(shared, reboundType, variadicKind, selfType);
-    info.passingKind = passingKind;
-    info.variadicKind = variadicKind;
-    info.defaultValue = defaultValue;
     params.push_back(std::move(info));
   }
   return evaluator;
@@ -140,6 +127,8 @@ static std::optional<ASTType> getSelfType(FnSignatureASTDecl &decl) {
     return std::nullopt;
   if (auto *structDecl = dyn_cast<StructASTDecl>(defDecl->getParentDecl()))
     return structDecl->getSelfType();
+  if (auto *traitDecl = dyn_cast<TraitASTDecl>(defDecl->getParentDecl()))
+    return ASTType(TraitASTDecl::computeSelfType(traitDecl->getOp()));
   return std::nullopt;
 }
 
@@ -150,79 +139,33 @@ getRenderedArguments(FnSignatureASTDecl &decl, ParameterEvaluator &evaluator,
   if (!signature)
     return {};
   ArrayRef<Type> userArgTypes = signature.getArguments();
-  bool hasSelfResult = false;
   if (auto *defDecl = dyn_cast<DefASTDecl>(&decl)) {
     FnOp fnOp = defDecl->getOp();
     userArgTypes = fnOp.getArgumentTypes();
-    hasSelfResult = fnOp.getSpecialFunctionInfo().hasSelfResult();
   }
 
   auto &shared = decl.getShared();
   ArrayRef<PogMetadataAttr> argPogs = signature.getArgListAttrs().getPogs();
-  ArrayRef<Type> sigTypes = signature.getArguments();
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
   SmallVector<RenderedArgument, 2> args;
 
-  for (auto [argIdx, userType, sigType, conventionX, pogAttr] :
-       llvm::enumerate(userArgTypes, sigTypes, argConventions, argPogs)) {
+  for (auto [argIdx, userType, conventionX, pogAttr] :
+       llvm::enumerate(userArgTypes, argConventions, argPogs)) {
     ArgConvention convention = conventionX;
     if (signature.isPosVarArg(argIdx))
       convention = signature.getVariadicConvention(argIdx);
 
-    TypedAttr defaultValue;
-    if (auto defaultAttr = signature.getArgListAttrs().getDefault(argIdx))
-      defaultValue = evaluator.getReboundAttribute(defaultAttr);
-
-    std::string prefix;
-    auto passingKind = pogAttr.getPassingKind();
-    auto declConvention = ArgumentConvention::kImm;
-    switch (convention) {
-    case ArgConvention::ByRefError:
+    if (convention == ArgConvention::ByRefError)
       continue;
-    case ArgConvention::ByRefResult:
+    if (convention == ArgConvention::ByRefResult) {
       // By-ref result types model as the trailing argument; skip implicit
-      // (anonymous-named) ones, otherwise treat as `out` and inherit the
-      // previous arg's passing kind so it doesn't print with a stray `?`.
+      // (anonymous-named) ones.
       if (pogAttr.getName() == "__result__")
         continue;
-      declConvention = ArgumentConvention::kOut;
-      passingKind =
-          args.empty() ? PassingKind::PosOrKw : args.back().passingKind;
-      break;
-    case ArgConvention::ImmReg:
-    case ArgConvention::ImmMem:
-      break;
-    case ArgConvention::Mut:
-      declConvention = ArgumentConvention::kInOut;
-      break;
-    case ArgConvention::Ref:
-    case ArgConvention::MutRef:
-      declConvention = ArgumentConvention::kRef;
-      prefix = getRefPrefixAsString(shared, cast<RefType>(sigType), signature,
-                                    /*isRefResult=*/false);
-      break;
-    case ArgConvention::DeinitMem:
-      declConvention = ArgumentConvention::kDeinit;
-      break;
-    case ArgConvention::OwnedMem:
-    case ArgConvention::OwnedReg:
-      declConvention = ArgumentConvention::kOwned;
-      break;
     }
 
     VariadicKind variadicKind =
         signature.getArgListAttrs().getVariadicKind(argIdx);
-
-    bool isSelf = false;
-    if (selfType) {
-      if (hasSelfResult)
-        isSelf = declConvention == ArgumentConvention::kOut;
-      else
-        // TODO: this is wrong for static methods, but matches the historical
-        // doc-tooling behavior - fixing it would change the rendered Self
-        // type elision for the first arg of any static method on a struct.
-        isSelf = argIdx == 0;
-    }
 
     Type reboundUserType = evaluator.getReboundType(userType);
     std::string typeString = generateTypeString(
@@ -231,20 +174,15 @@ getRenderedArguments(FnSignatureASTDecl &decl, ParameterEvaluator &evaluator,
     // type - they're fully determined by the argument and noisy for humans.
     typeString = stripImplicitArgParams(typeString, pogAttr.getName());
     RenderedArgument info;
-    info.name = pogAttr.getName();
-    info.prefix = std::move(prefix);
     info.type = std::move(typeString);
-    info.passingKind = passingKind;
-    info.variadicKind = variadicKind;
-    info.defaultValue = defaultValue;
-    info.convention = declConvention;
-    info.isSelf = isSelf;
     args.push_back(std::move(info));
   }
 
   SmallVector<ASTDecl *> argDecls = decl.getUserArgDecls();
   assert(args.size() == argDecls.size() &&
          "user argument declarations must match the rendered signature");
+  for (auto [argument, argDecl] : llvm::zip(args, argDecls))
+    argument.decl = argDecl;
   return args;
 }
 
@@ -312,10 +250,9 @@ static std::optional<RenderedParameter> getRenderedParameter(ASTDecl &decl) {
 
   mergeConformsToConstraints(constraints, &evaluator, decl.getShared(),
                              parameters);
-  StringRef name = decl.getPogMetadata().getName();
   auto parameter =
       llvm::find_if(parameters, [&](const RenderedParameter &info) {
-        return info.name == name;
+        return info.decl == &decl;
       });
   if (parameter == parameters.end())
     return std::nullopt;
@@ -327,34 +264,71 @@ std::string getParameterTypeString(ASTDecl &decl) {
   return parameter ? parameter->type : std::string();
 }
 
-TypedAttr getParameterDefaultValue(ASTDecl &decl) {
-  std::optional<RenderedParameter> parameter = getRenderedParameter(decl);
-  return parameter ? parameter->defaultValue : TypedAttr();
-}
-
 std::string getArgumentTypeString(ASTDecl &decl) {
   std::optional<RenderedArgument> argument = getRenderedArgument(decl);
   return argument ? argument->type : std::string();
 }
 
 StringRef getArgumentConventionString(ASTDecl &decl) {
-  std::optional<RenderedArgument> argument = getRenderedArgument(decl);
-  return argument ? getConventionString(argument->convention) : StringRef();
+  if (decl.getArgNumber() < 0 || !decl.isUserArgument())
+    return {};
+  return getConventionString(decl.getArgConvention());
 }
 
-TypedAttr getArgumentDefaultValue(ASTDecl &decl) {
-  std::optional<RenderedArgument> argument = getRenderedArgument(decl);
-  return argument ? argument->defaultValue : TypedAttr();
+static std::pair<ArrayRef<Type>, PogListAttr>
+getParameterSignature(ASTDecl &owner) {
+  if (auto *function = dyn_cast<FnSignatureASTDecl>(&owner)) {
+    FnTypeGeneratorType signature = function->getSignature();
+    return {signature.getInputParamTypes(), signature.getParamListAttrs()};
+  }
+  if (auto *structDecl = dyn_cast<StructASTDecl>(&owner)) {
+    TypeSignatureType signature = structDecl->getOp().getSignature();
+    return {signature.getInputParamTypes(), signature.getParamListAttrs()};
+  }
+  auto *aliasDecl = cast<AliasASTDecl>(&owner);
+  auto signature = cast<GeneratorType>(aliasDecl->getOp().getType());
+  return {signature.getInputParamTypes(), signature.getParamListAttrs()};
+}
+
+TypedAttr getReboundPogDefault(ASTDecl &decl) {
+  std::optional<TypedAttr> defaultValue = decl.getPogDefault();
+  if (!defaultValue)
+    return {};
+
+  ASTDecl *owner = decl.getParentDecl();
+  if (!owner)
+    return {};
+  auto [paramTypes, paramList] = getParameterSignature(*owner);
+
+  size_t parameterLimit = paramTypes.size();
+  if (decl.getParamNumber() >= 0) {
+    StringRef name = decl.getPogMetadata().getName();
+    for (size_t index : llvm::seq(paramList.size())) {
+      if (paramList.getName(index) == name) {
+        parameterLimit = index;
+        break;
+      }
+    }
+  }
+
+  ParameterEvaluator evaluator;
+  for (size_t index : llvm::seq(parameterLimit)) {
+    Type reboundType = evaluator.getReboundType(paramTypes[index]);
+    evaluator.appendIndexBinding(
+        ParamDeclRefAttr::get(paramList.getName(index), reboundType));
+  }
+  return cast<TypedAttr>(evaluator.getReboundAttribute(*defaultValue));
 }
 
 void printParameter(ASTDecl &decl, raw_ostream &os) {
   if (std::optional<RenderedParameter> parameter = getRenderedParameter(decl))
-    renderParameter(*parameter, decl.getShared(), os);
+    renderParameter(*parameter, getReboundPogDefault(decl), decl.getShared(),
+                    os);
 }
 
 void printArgument(ASTDecl &decl, raw_ostream &os) {
   if (std::optional<RenderedArgument> argument = getRenderedArgument(decl))
-    renderArgument(*argument, decl.getShared(), os);
+    renderArgument(*argument, getReboundPogDefault(decl), decl.getShared(), os);
 }
 
 //===----------------------------------------------------------------------===//
@@ -518,7 +492,7 @@ mergeConformsToConstraints(ArrayRef<ConstraintAttr> constraints,
     if (parseConformsToString(printed, paramName, traitStr)) {
       RenderedParameter *match = nullptr;
       for (auto &p : params) {
-        if (p.name == paramName) {
+        if (p.decl->getPogMetadata().getName() == paramName) {
           match = &p;
           break;
         }
@@ -548,53 +522,91 @@ mergeConformsToConstraints(ArrayRef<ConstraintAttr> constraints,
 // Rendering
 //===----------------------------------------------------------------------===//
 
-static StringRef getConventionString(ArgumentConvention conv) {
-  switch (conv) {
-  case ArgumentConvention::kImm:
-    return "imm";
-  case ArgumentConvention::kDeinit:
-    return "deinit";
-  case ArgumentConvention::kInOut:
-    return "mut";
-  case ArgumentConvention::kOwned:
-    return "var";
-  case ArgumentConvention::kRef:
-    return "ref";
-  case ArgumentConvention::kOut:
+static StringRef getConventionString(ArgConvention convention) {
+  switch (convention) {
+  case ArgConvention::ByRefError:
+    llvm_unreachable("error arguments are not rendered");
+  case ArgConvention::ByRefResult:
     return "out";
+  case ArgConvention::ImmReg:
+  case ArgConvention::ImmMem:
+    return "imm";
+  case ArgConvention::Mut:
+    return "mut";
+  case ArgConvention::Ref:
+  case ArgConvention::MutRef:
+    return "ref";
+  case ArgConvention::DeinitMem:
+    return "deinit";
+  case ArgConvention::OwnedMem:
+  case ArgConvention::OwnedReg:
+    return "var";
   }
   llvm_unreachable("unknown convention");
 }
 
-static void renderParameter(const RenderedParameter &p, SharedState &shared,
-                            raw_ostream &os) {
-  dumpIdentifierWithType(os, p.name, p.type, p.variadicKind);
-  if (!p.constraints.empty())
-    os << p.constraints;
-  if (p.defaultValue)
-    os << " = " << getDefaultValueString(p.defaultValue, shared);
+static void renderParameter(const RenderedParameter &p, TypedAttr defaultValue,
+                            SharedState &shared, raw_ostream &os) {
+  PogMetadataAttr metadata = p.decl->getPogMetadata();
+  dumpIdentifierWithType(os, metadata.getName(), p.type,
+                         p.decl->getPogVariadicKind());
+  if (defaultValue)
+    os << " = " << getDefaultValueString(defaultValue, shared);
 }
 
-static void renderArgument(const RenderedArgument &a, SharedState &shared,
-                           raw_ostream &os) {
-  if (a.convention != ArgumentConvention::kImm) {
-    os << getConventionString(a.convention);
+static std::string getArgumentPrefix(ASTDecl &decl) {
+  ArgConvention convention = decl.getArgConvention();
+  if (convention != ArgConvention::Ref && convention != ArgConvention::MutRef)
+    return {};
+
+  auto *parent = cast<FnSignatureASTDecl>(decl.getParentDecl());
+  FnTypeGeneratorType signature = parent->getSignature();
+  Type type =
+      signature.getArguments()[static_cast<size_t>(decl.getArgNumber())];
+  return getRefPrefixAsString(decl.getShared(), cast<RefType>(type), signature,
+                              /*isRefResult=*/false);
+}
+
+static bool isSelfArgument(ASTDecl &decl) {
+  auto *parent = cast<FnSignatureASTDecl>(decl.getParentDecl());
+  if (!getSelfType(*parent))
+    return false;
+  if (auto *function = dyn_cast<DefASTDecl>(parent);
+      function && function->getOp().getSpecialFunctionInfo().hasSelfResult())
+    return decl.getArgConvention() == ArgConvention::ByRefResult;
+
+  // TODO: this is wrong for static methods, but matches the historical
+  // doc-tooling behavior - fixing it would change the rendered Self type
+  // elision for the first arg of any static method on a struct.
+  return decl.getArgNumber() == 0;
+}
+
+static void renderArgument(const RenderedArgument &a, TypedAttr defaultValue,
+                           SharedState &shared, raw_ostream &os) {
+  ArgConvention argConvention = a.decl->getArgConvention();
+  StringRef convention = getConventionString(argConvention);
+  std::string prefix = getArgumentPrefix(*a.decl);
+  if (argConvention != ArgConvention::ImmReg &&
+      argConvention != ArgConvention::ImmMem) {
+    os << convention;
     // Don't add a space after `ref` if a `[origin]` prefix follows - the
     // prefix supplies its own trailing space.
-    if (a.prefix.empty())
+    if (prefix.empty())
       os << ' ';
   }
-  os << a.prefix;
-  bool elideType = a.isSelf && a.type == "Self";
+  os << prefix;
+  bool isSelf = isSelfArgument(*a.decl);
+  bool elideType = isSelf && a.type == "Self";
   // A compiler-synthesized implicit self (e.g. the `__call__` requirement of a
   // closure trait) carries no source name; render it as `self` rather than
   // leaving a blank argument slot.
-  StringRef name = a.name;
-  if (a.isSelf && name.empty())
+  StringRef name = a.decl->getPogMetadata().getName();
+  if (isSelf && name.empty())
     name = "self";
-  dumpIdentifierWithType(os, name, a.type, a.variadicKind, elideType);
-  if (a.defaultValue)
-    os << " = " << getDefaultValueString(a.defaultValue, shared);
+  dumpIdentifierWithType(os, name, a.type, a.decl->getPogVariadicKind(),
+                         elideType);
+  if (defaultValue)
+    os << " = " << getDefaultValueString(defaultValue, shared);
 }
 
 namespace {
@@ -628,22 +640,56 @@ void printPogList(size_t count, llvm::function_ref<PassingKind(size_t)> extract,
 } // namespace
 
 void printParameterList(
-    ArrayRef<RenderedParameter> params, SharedState &shared,
-    llvm::raw_string_ostream &os,
+    ArrayRef<RenderedParameter> params, ParameterEvaluator &evaluator,
+    SharedState &shared, llvm::raw_string_ostream &os,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets) {
   printPogList(
-      params.size(), [&](size_t i) { return params[i].passingKind; },
-      [&](size_t i) { renderParameter(params[i], shared, os); },
+      params.size(),
+      [&](size_t i) {
+        return params[i].decl->getPogMetadata().getPassingKind();
+      },
+      [&](size_t i) {
+        TypedAttr defaultValue;
+        if (auto defaultAttr = params[i].decl->getPogDefault())
+          defaultValue =
+              cast<TypedAttr>(evaluator.getReboundAttribute(*defaultAttr));
+        renderParameter(params[i], defaultValue, shared, os);
+      },
       /*isArgs=*/false, /*suppressSlashAfterSelf=*/false, os, offsets);
 }
 
+static PassingKind
+getRenderedArgumentPassingKind(ArrayRef<RenderedArgument> args, size_t index) {
+  const RenderedArgument &argument = args[index];
+  if (argument.decl->getArgConvention() != ArgConvention::ByRefResult)
+    return argument.decl->getPogMetadata().getPassingKind();
+
+  // An initializer moves its trailing out result to the front. Preserve a
+  // leading positional-only marker, but otherwise render the result normally.
+  if (index == 0) {
+    if (args.size() > 1 &&
+        args[1].decl->getPogMetadata().getPassingKind() == PassingKind::PosOnly)
+      return PassingKind::PosOnly;
+    return PassingKind::PosOrKw;
+  }
+  return args[index - 1].decl->getPogMetadata().getPassingKind();
+}
+
 void printArgumentList(
-    ArrayRef<RenderedArgument> args, SharedState &shared,
-    llvm::raw_string_ostream &os, bool suppressSlashAfterSelf,
+    ArrayRef<RenderedArgument> args, ParameterEvaluator &evaluator,
+    SharedState &shared, llvm::raw_string_ostream &os,
+    bool suppressSlashAfterSelf,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets) {
   printPogList(
-      args.size(), [&](size_t i) { return args[i].passingKind; },
-      [&](size_t i) { renderArgument(args[i], shared, os); },
+      args.size(),
+      [&](size_t i) { return getRenderedArgumentPassingKind(args, i); },
+      [&](size_t i) {
+        TypedAttr defaultValue;
+        if (auto defaultAttr = args[i].decl->getPogDefault())
+          defaultValue =
+              cast<TypedAttr>(evaluator.getReboundAttribute(*defaultAttr));
+        renderArgument(args[i], defaultValue, shared, os);
+      },
       /*isArgs=*/true, suppressSlashAfterSelf, os, offsets);
 }
 
@@ -654,27 +700,22 @@ void printArgumentList(
 void printRenderedFunctionSignature(
     StringRef name, SmallVectorImpl<RenderedArgument> &args,
     ArrayRef<RenderedParameter> params, StringRef returnType,
-    StringRef fnConstraints, bool isInit, bool isMethod, SharedState &shared,
-    llvm::raw_string_ostream &os, const SignatureOffsets &offsets) {
+    StringRef fnConstraints, bool isInit, bool isMethod,
+    FnTypeGeneratorType signature, ParameterEvaluator &evaluator,
+    SharedState &shared, llvm::raw_string_ostream &os,
+    const SignatureOffsets &offsets) {
   // Initializer methods conventionally render with `self` (the out-arg) at
   // the front of the argument list rather than the back.
-  bool hasOutArgument =
-      !args.empty() && args.back().convention == ArgumentConvention::kOut;
-  if (hasOutArgument && isInit) {
-    auto passingKind = PassingKind::PosOrKw;
-    if (args.size() != 1) {
-      std::rotate(args.rbegin(), args.rbegin() + 1, args.rend());
-      if (args[1].passingKind == PassingKind::PosOnly)
-        passingKind = PassingKind::PosOnly;
-    }
-    args[0].passingKind = passingKind;
-  }
+  bool hasOutArgument = !args.empty() && args.back().decl->getArgConvention() ==
+                                             ArgConvention::ByRefResult;
+  if (hasOutArgument && isInit && args.size() != 1)
+    std::rotate(args.rbegin(), args.rbegin() + 1, args.rend());
 
   os << "def " << name;
   if (!params.empty())
-    printParameterList(params, shared, os, offsets.parameters);
-  printArgumentList(args, shared, os, /*suppressSlashAfterSelf=*/isMethod,
-                    offsets.arguments);
+    printParameterList(params, evaluator, shared, os, offsets.parameters);
+  printArgumentList(args, evaluator, shared, os,
+                    /*suppressSlashAfterSelf=*/isMethod, offsets.arguments);
 
   if (offsets.returnTypeStart)
     *offsets.returnTypeStart = os.str().size();
@@ -691,13 +732,14 @@ void printRenderedFunctionSignature(
 void printRenderedStructSignature(StringRef name,
                                   ArrayRef<RenderedParameter> params,
                                   StringRef bodyConstraints,
+                                  ParameterEvaluator &evaluator,
                                   LIT::SharedState &shared,
                                   llvm::raw_string_ostream &os,
                                   const SignatureOffsets &offsets) {
   os << "struct " << name;
 
   if (!params.empty())
-    printParameterList(params, shared, os, offsets.parameters);
+    printParameterList(params, evaluator, shared, os, offsets.parameters);
 
   if (!bodyConstraints.empty())
     os << bodyConstraints;
@@ -706,38 +748,17 @@ void printRenderedStructSignature(StringRef name,
 void printRenderedAliasSignature(StringRef name, StringRef type,
                                  ArrayRef<RenderedParameter> params,
                                  StringRef bodyConstraints,
+                                 ParameterEvaluator &evaluator,
                                  LIT::SharedState &shared,
                                  llvm::raw_string_ostream &os,
                                  const SignatureOffsets &offsets) {
   os << name;
   if (!params.empty())
-    printParameterList(params, shared, os, offsets.parameters);
+    printParameterList(params, evaluator, shared, os, offsets.parameters);
   if (!type.empty())
     os << ": " << type;
   if (!bodyConstraints.empty())
     os << bodyConstraints;
-}
-
-/// Helper function to determine if a parameter should be excluded from docs.
-///
-/// Mojo parameters fall into several categories:
-/// 1. Implicit parameters - internal compiler parameters, always hidden
-/// 2. Compiler-synthesized inferred parameters - generated by compiler, hidden
-/// 3. Explicitly declared inferred parameters - written in source code, shown
-/// 4. Regular parameters - always shown
-static bool shouldExcludeParameterFromDocs(PassingKind passingKind,
-                                           StringRef paramName) {
-  // Always exclude implicit parameters (internal compiler parameters)
-  if (passingKind == PassingKind::Implicit)
-    return true;
-
-  // Ignore name mangled parameters, which are autoparams.
-  if (demangleParameterName(paramName, /*forUser*/ true) != paramName)
-    return true;
-
-  // Exclude inferred parameters that were synthesized by the compiler
-  // (identifiable by empty names).
-  return passingKind == PassingKind::Inferred && paramName.empty();
 }
 
 /// Try to parse a printed constraint string as "conforms_to(ParamName, Traits)"
@@ -1030,8 +1051,8 @@ void printFunctionSignature(DefASTDecl &decl, llvm::raw_string_ostream &os,
 
   SmallVector<RenderedArgument, 2> args =
       getRenderedArguments(decl, evaluator, selfType);
-  bool hasOutArgument =
-      !args.empty() && args.back().convention == ArgumentConvention::kOut;
+  bool hasOutArgument = !args.empty() && args.back().decl->getArgConvention() ==
+                                             ArgConvention::ByRefResult;
   std::string returnTypeStr;
   ASTType resultType = signature.getUserResultType();
   if (!hasOutArgument && resultType && !resultType.isNoneType()) {
@@ -1051,8 +1072,8 @@ void printFunctionSignature(DefASTDecl &decl, llvm::raw_string_ostream &os,
 
   StringRef name = fnOp.getSourceName().value_or(StringRef()).split('(').first;
   printRenderedFunctionSignature(name, args, params, returnTypeStr,
-                                 fnConstraints, isInit, isMethod, shared, os,
-                                 offsets);
+                                 fnConstraints, isInit, isMethod, signature,
+                                 evaluator, shared, os, offsets);
 }
 
 void printStructSignature(StructASTDecl &decl, llvm::raw_string_ostream &os,
@@ -1068,8 +1089,8 @@ void printStructSignature(StructASTDecl &decl, llvm::raw_string_ostream &os,
   std::string constraints;
   if (auto cs = signature.getParamListAttrs().getBodyConstraints(); !cs.empty())
     constraints = mergeConformsToConstraints(cs, &evaluator, shared, params);
-  printRenderedStructSignature(structOp.getName(), params, constraints, shared,
-                               os, offsets);
+  printRenderedStructSignature(structOp.getName(), params, constraints,
+                               evaluator, shared, os, offsets);
 }
 
 void printAliasSignature(AliasASTDecl &decl, llvm::raw_string_ostream &os,
@@ -1092,8 +1113,8 @@ void printAliasSignature(AliasASTDecl &decl, llvm::raw_string_ostream &os,
   if (auto cs = generatorType.getParamListAttrs().getBodyConstraints();
       !cs.empty())
     constraints = mergeConformsToConstraints(cs, &evaluator, shared, params);
-  printRenderedAliasSignature(name, /*type=*/"", params, constraints, shared,
-                              os, offsets);
+  printRenderedAliasSignature(name, /*type=*/"", params, constraints, evaluator,
+                              shared, os, offsets);
 }
 
 void printTraitSignature(TraitASTDecl &decl, llvm::raw_string_ostream &os,

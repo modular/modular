@@ -64,15 +64,16 @@ void printAliasSignature(LIT::AliasASTDecl &decl, llvm::raw_string_ostream &os,
 void printTraitSignature(LIT::TraitASTDecl &decl, llvm::raw_string_ostream &os,
                          const SignatureOffsets &offsets = {});
 
-/// Return the source-facing type and rebound default value for a parameter.
+/// Return the source-facing type for a parameter.
 std::string getParameterTypeString(LIT::ASTDecl &decl);
-mlir::TypedAttr getParameterDefaultValue(LIT::ASTDecl &decl);
 
-/// Return the source-facing type, convention keyword, and rebound default value
-/// for an argument.
+/// Return the source-facing type and convention keyword for an argument.
 std::string getArgumentTypeString(LIT::ASTDecl &decl);
 llvm::StringRef getArgumentConventionString(LIT::ASTDecl &decl);
-mlir::TypedAttr getArgumentDefaultValue(LIT::ASTDecl &decl);
+
+/// Return this argument or parameter's default with parameter references
+/// rebound to their source-level names.
+mlir::TypedAttr getReboundPogDefault(LIT::ASTDecl &decl);
 
 /// Print one parameter or argument as it appears in a declaration signature.
 void printParameter(LIT::ASTDecl &decl, llvm::raw_ostream &os);

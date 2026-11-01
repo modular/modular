@@ -68,8 +68,8 @@ ASTType ASTDecl::getToolingType() {
   return {};
 }
 
-/// Returns this argument's ABI convention. Asserts if this is not an
-/// argument declaration.
+/// Returns this argument's effective ABI convention, including any variadic
+/// convention. Asserts if this is not an argument declaration.
 ArgConvention ASTDecl::getArgConvention() const {
   ssize_t argNumber = getArgNumber();
   assert(argNumber >= 0 && "argument convention requested for non-argument");
@@ -78,6 +78,8 @@ ArgConvention ASTDecl::getArgConvention() const {
   assert(signature && "function argument must have a resolved signature");
   assert(static_cast<size_t>(argNumber) < signature.getNumArguments() &&
          "argument number is out of range");
+  if (signature.isPosVarArg(argNumber))
+    return signature.getVariadicConvention(argNumber);
   return signature.getArgConventions()[argNumber];
 }
 
