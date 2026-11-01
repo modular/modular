@@ -2031,6 +2031,7 @@ def _launch_block_scaled_split_k[
         CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if lane_bytes
         == 16 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
     ),
+    b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -2055,6 +2056,7 @@ def _launch_block_scaled_split_k[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         matrix_format=matrix_format,
+        b_matrix_format=b_matrix_format,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](
@@ -2084,6 +2086,7 @@ def _launch_block_scaled_split_k_impl[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+    b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
     *,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
@@ -2125,6 +2128,7 @@ def _launch_block_scaled_split_k_impl[
         WM=WM,
         WN=WN,
         matrix_format=matrix_format,
+        b_matrix_format=b_matrix_format,
     ]
     comptime N = type_of(c).static_shape[1]
     comptime c_dtype = type_of(c).dtype
@@ -2302,6 +2306,7 @@ def block_scaled_matmul_amd[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     lane_bytes: Int = 16,
+    b_lane_bytes: Int = 0,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, .uint8, ...],
@@ -2330,6 +2335,10 @@ def block_scaled_matmul_amd[
         MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
         lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4, default) or
             32 (MXFP8), which selects the operand format and byte extents.
+        b_lane_bytes: Operand bytes per lane for B only. 0 (default) uses
+            `lane_bytes`, i.e. A and B share an encoding; 16 against
+            `lane_bytes=32` selects the mixed E4M3 A x E2M1 B pair, where
+            B's K extent is half of A's.
 
     Args:
         c: Output [M, N] (any float dtype, e.g. float32 or bfloat16).
@@ -2344,6 +2353,7 @@ def block_scaled_matmul_amd[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         lane_bytes=lane_bytes,
+        b_lane_bytes=b_lane_bytes,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](c, a, b, a_scales, b_scales, no_epilogue_fn, no_compute_fn, ctx)
@@ -2356,6 +2366,7 @@ def block_scaled_matmul_amd[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     lane_bytes: Int = 16,
+    b_lane_bytes: Int = 0,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, .uint8, ...],
@@ -2377,6 +2388,8 @@ def block_scaled_matmul_amd[
         MMA_N: MFMA tile cols.
         MMA_K: MFMA K-depth in logical elements.
         lane_bytes: 16 (MXFP4) or 32 (MXFP8).
+        b_lane_bytes: Operand bytes per lane for B only (see the other
+            overload); 0 shares A's encoding.
 
     Args:
         c: Output [M, N]. Only its shape is read.
@@ -2392,6 +2405,7 @@ def block_scaled_matmul_amd[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         lane_bytes=lane_bytes,
+        b_lane_bytes=b_lane_bytes,
         has_epilogue_fn=True,
         has_compute_fn=False,
     ](c, a, b, a_scales, b_scales, epilogue_fn, no_compute_fn, ctx)
@@ -2404,6 +2418,7 @@ def block_scaled_matmul_amd[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     lane_bytes: Int = 16,
+    b_lane_bytes: Int = 0,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, .uint8, ...],
@@ -2424,6 +2439,8 @@ def block_scaled_matmul_amd[
         MMA_N: MFMA tile cols.
         MMA_K: MFMA K-depth in logical elements.
         lane_bytes: 16 (MXFP4) or 32 (MXFP8).
+        b_lane_bytes: Operand bytes per lane for B only (see the other
+            overload); 0 shares A's encoding.
 
     Args:
         c: Output [M, N].
@@ -2439,6 +2456,7 @@ def block_scaled_matmul_amd[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         lane_bytes=lane_bytes,
+        b_lane_bytes=b_lane_bytes,
         has_epilogue_fn=False,
         has_compute_fn=True,
     ](c, a, b, a_scales, b_scales, no_epilogue_fn, compute_fn, ctx)
@@ -2453,6 +2471,7 @@ def _block_scaled_matmul_amd_impl[
     MMA_N: Int,
     MMA_K: Int,
     lane_bytes: Int,
+    b_lane_bytes: Int,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
 ](
@@ -2485,6 +2504,21 @@ def _block_scaled_matmul_amd_impl[
     comptime _fmt = (
         CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if lane_bytes
         == 16 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
+    )
+    # B's encoding. `b_lane_bytes` defaults to `lane_bytes` (equal encodings);
+    # 16 against A's 32 selects the mixed pair the MFMA also consumes natively,
+    # E4M3 activations against nibble-packed E2M1 weights, so a weight-only
+    # quantized GEMM does not have to widen B to one byte per element first.
+    # Nothing below changes: `lane_bytes` stays A's, and every K rule is
+    # expressed in A's bytes (== logical elements at E4M3).
+    comptime assert b_lane_bytes == 0 or (
+        lane_bytes == 32 and b_lane_bytes == 16
+    ), (
+        "b_lane_bytes must be 0 (same encoding as A) or 16 with lane_bytes=32"
+        " (E4M3 A x E2M1 B); the kernel only validates that mixed pair"
+    )
+    comptime _bfmt = (
+        CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if b_lane_bytes == 16 else _fmt
     )
     comptime _elems_per_byte = 32 // lane_bytes
     comptime _bk_256_bytes = 256 // _elems_per_byte
@@ -2655,6 +2689,7 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
+                b_matrix_format=_bfmt,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2673,6 +2708,7 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
+                b_matrix_format=_bfmt,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2687,6 +2723,7 @@ def _block_scaled_matmul_amd_impl[
                 WM=16,
                 WN=16,
                 matrix_format=_fmt,
+                b_matrix_format=_bfmt,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2707,6 +2744,7 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
+                b_matrix_format=_bfmt,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2721,6 +2759,7 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
+                b_matrix_format=_bfmt,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2735,6 +2774,7 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
+                b_matrix_format=_bfmt,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2752,6 +2792,7 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
+                    b_matrix_format=_bfmt,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2771,6 +2812,7 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
+                    b_matrix_format=_bfmt,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2862,6 +2904,7 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
+                    b_matrix_format=_bfmt,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2876,6 +2919,7 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
+                    b_matrix_format=_bfmt,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2909,6 +2953,7 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
+                    b_matrix_format=_bfmt,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2923,6 +2968,7 @@ def _block_scaled_matmul_amd_impl[
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
                     matrix_format=_fmt,
+                    b_matrix_format=_bfmt,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                 ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)
@@ -2937,6 +2983,7 @@ def _block_scaled_matmul_amd_impl[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 matrix_format=_fmt,
+                b_matrix_format=_bfmt,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, a_scales, b_scales, M, epilogue_fn, compute_fn, ctx)

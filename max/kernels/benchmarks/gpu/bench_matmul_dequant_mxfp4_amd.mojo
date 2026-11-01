@@ -118,7 +118,7 @@ def verify_mxfp4_matmul[
     var b_fp8_tt = TileTensor(b_fp8, row_major[N, K]())
     var a_fp8_tt = TileTensor(a_fp8, row_major((M, Idx[K])))
 
-    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
+    from linalg.mxfp4_dequant import _cast_bf16_to_fp8
 
     dequant_mxfp4(
         ctx,
@@ -245,7 +245,7 @@ def bench_cast_bf16_to_fp8[
     var a_tt = TileTensor(a_device, row_major((M, Idx[K])))
     var a_fp8_tt = TileTensor(a_fp8_device, row_major((M, Idx[K])))
 
-    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
+    from linalg.mxfp4_dequant import _cast_bf16_to_fp8
 
     @inline(.always)
     def kernel_launch(
@@ -297,7 +297,7 @@ def bench_fp8_matmul[
     var a_fp8_tt = TileTensor(a_fp8, row_major((M, Idx[K])))
     var b_fp8_tt = TileTensor(b_fp8, row_major((Idx[N], Idx[K])))
 
-    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
+    from linalg.mxfp4_dequant import _cast_bf16_to_fp8
 
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a_bf16_tt, M, K)
     _cast_bf16_to_fp8(ctx, b_fp8_tt, b_bf16_tt, N, K)
@@ -361,7 +361,17 @@ def bench_mxfp4_matmul[
     def kernel_launch(
         ctx: DeviceContext, iteration: Int
     ) raises {mut c_tt, imm}:
-        mxfp4_dequant_matmul_amd(c_tt, a_tt, b_packed_tt, b_scales_tt, ctx)
+        # The benchmark's scales are all 2^0 (see _fill_random_mxfp4_data),
+        # so the weight metadata the dispatcher gates on is exact.
+        mxfp4_dequant_matmul_amd(
+            c_tt,
+            a_tt,
+            b_packed_tt,
+            b_scales_tt,
+            ctx,
+            min_block_scale_exp=127,
+            max_block_scale_exp=127,
+        )
         ctx.synchronize()
 
     if run_benchmark:

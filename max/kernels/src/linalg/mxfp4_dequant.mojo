@@ -20,8 +20,9 @@ SF_VECTOR_SIZE (32) consecutive elements.
 """
 
 from std.math import ceildiv
+from std.memory import bitcast
 from max.gpu import block_idx, thread_idx, grid_dim, block_dim
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import get_gpu_info
 from max.gpu.primitives.grid_controls import (
     PDL,
@@ -269,3 +270,154 @@ def _cast_bf16_to_fp8(
         target="gpu",
         _trace_description="mxfp4_dequant_cast",
     ](cast_fn, (num_rows, num_cols), ctx)
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(256))
+)
+@__name(t"cast_bf16_to_fp8_unit_scales")
+def _cast_bf16_to_fp8_unit_scales_kernel[
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    input_layout: TensorLayout,
+    output_engine: TensorEngine,
+    scales_engine: TensorEngine,
+    input_engine: TensorEngine,
+    *,
+    ELEMENTS_PER_THREAD: Int = 32,
+](
+    output: TileTensor[
+        .float8_e4m3fn, output_layout, MutAnyOrigin, Engine=output_engine
+    ],
+    scales: TileTensor[
+        .float8_e8m0fnu, scales_layout, MutAnyOrigin, Engine=scales_engine
+    ],
+    input: TileTensor[
+        .bfloat16, input_layout, MutAnyOrigin, Engine=input_engine
+    ],
+    num_rows: Int32,
+    num_cols: Int32,
+):
+    """Casts BF16 to FP8 and writes the unit E8M0 scale of every block.
+
+    Same conversion as `_cast_bf16_to_fp8`, in one pass that also emits the
+    `[num_rows, num_cols // 32]` block scales a block-scaled MMA consumes.
+    The cast is unscaled, so every block scale is E8M0 `2^0` (bit pattern
+    127) and the MMA reproduces the cast values exactly. Writing the scales
+    here rather than in a second kernel keeps the per-block cost at one byte
+    of stores.
+
+    One thread covers one whole `ELEMENTS_PER_THREAD`-element block, so it is
+    the sole writer of that block's scale, and copies it in chunks of the
+    target's wider vector (a whole number of both the BF16 load and the FP8
+    store vectors). Chunking narrower measured ~8% slower at M=64, where the
+    kernel is bandwidth-bound and the load is the bottleneck.
+    """
+    comptime UNIT_E8M0 = bitcast[.float8_e8m0fnu](UInt8(127))
+    comptime bf16_width = simd_width_of[
+        DType.bfloat16, target=get_gpu_target()
+    ]()
+    comptime fp8_width = simd_width_of[
+        DType.float8_e4m3fn, target=get_gpu_target()
+    ]()
+    comptime CHUNK = max(bf16_width, fp8_width)
+    comptime assert (
+        CHUNK % bf16_width == 0 and CHUNK % fp8_width == 0
+    ), "a chunk must be a whole number of both operand vectors"
+    comptime assert (
+        ELEMENTS_PER_THREAD % CHUNK == 0
+    ), "an MX block must be a whole number of chunks"
+    var _num_rows = Int(num_rows)
+    var blocks_per_row = Int(num_cols) // ELEMENTS_PER_THREAD
+    var col_threads = grid_dim.x * block_dim.x
+
+    for row in range(block_idx.y, _num_rows, grid_dim.y):
+        for block in range(
+            block_idx.x * block_dim.x + thread_idx.x,
+            blocks_per_row,
+            col_threads,
+        ):
+            var col = block * ELEMENTS_PER_THREAD
+            comptime for i in range(ELEMENTS_PER_THREAD // CHUNK):
+                var off = col + i * CHUNK
+                output.store(
+                    (row, off),
+                    input.load[CHUNK]((row, off)).cast[DType.float8_e4m3fn](),
+                )
+            scales.store((row, block), UNIT_E8M0)
+
+
+def _cast_bf16_to_fp8_unit_scales(
+    ctx: DeviceContext,
+    output: TileTensor,
+    scales: TileTensor,
+    input: TileTensor,
+    num_rows: Int,
+    num_cols: Int,
+) raises:
+    """Cast BF16 to FP8 and fill the matching unit E8M0 block scales.
+
+    Combines `_cast_bf16_to_fp8` with filling `scales` with E8M0 `2^0`, i.e.
+    the "no scaling" scale, so a block-scaled MMA can consume FP8 activations
+    with the same values the plain cast produces.
+
+    Args:
+        ctx: Device context for kernel launch.
+        output: FP8 destination [num_rows, num_cols].
+        scales: E8M0 destination [num_rows, num_cols // 32].
+        input: BF16 source [num_rows, num_cols].
+        num_rows: Number of rows in all three tensors.
+        num_cols: Number of columns of `output`/`input`; a multiple of 32.
+    """
+    var out_tt = output.as_unsafe_any_origin()
+    var scales_tt = scales.as_unsafe_any_origin()
+    var in_tt = input.as_unsafe_any_origin()
+    comptime assert out_tt.flat_rank == 2, "output must be rank 2"
+    comptime assert scales_tt.flat_rank == 2, "scales must be rank 2"
+    comptime assert in_tt.flat_rank == 2, "input must be rank 2"
+    comptime assert out_tt.mut, "output must be mutable"
+    comptime assert scales_tt.mut, "scales must be mutable"
+    comptime assert (
+        out_tt.dtype == .float8_e4m3fn
+    ), "output must be float8_e4m3fn"
+    comptime assert (
+        scales_tt.dtype == .float8_e8m0fnu
+    ), "scales must be float8_e8m0fnu"
+    comptime assert in_tt.dtype == .bfloat16, "input must be bfloat16"
+
+    comptime MX_BLOCK = 32
+    comptime ELEMENTS_PER_THREAD = MX_BLOCK
+    comptime block_dim_x = 256
+    debug_assert(
+        num_cols % MX_BLOCK == 0,
+        "num_cols must be a multiple of the 32-element MX block",
+    )
+
+    if num_rows == 0 or num_cols == 0:
+        return
+
+    comptime kernel = _cast_bf16_to_fp8_unit_scales_kernel[
+        type_of(out_tt).LayoutType,
+        type_of(scales_tt).LayoutType,
+        type_of(in_tt).LayoutType,
+        type_of(out_tt).Engine,
+        type_of(scales_tt).Engine,
+        type_of(in_tt).Engine,
+        ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
+    ]
+
+    var blocks_per_row = num_cols // MX_BLOCK
+    # grid.y carries rows; cap it at the hardware limit and let the kernel's
+    # strided row loop cover the rest.
+    comptime MAX_GRID_Y = 65535
+    var grid_y = min(num_rows, MAX_GRID_Y)
+    var threads_per_row = min(blocks_per_row, block_dim_x)
+    ctx.enqueue_function[kernel](
+        out_tt,
+        scales_tt,
+        in_tt,
+        Int32(num_rows),
+        Int32(num_cols),
+        block_dim=(threads_per_row, 1, 1),
+        grid_dim=(ceildiv(blocks_per_row, threads_per_row), grid_y, 1),
+    )
