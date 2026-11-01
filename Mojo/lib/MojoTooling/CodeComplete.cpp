@@ -16,6 +16,7 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/CallOperands.h"
 #include "Mojo/MojoParser/DeclResolver.h"
+#include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/ExprNode.h"
 #include "Mojo/MojoParser/SharedState.h"
@@ -127,9 +128,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
                                       parserContext->getCompilationOptions(),
                                       frontendOptions);
       if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
-        if (!getPublicDeclKindName(*module).empty())
+        if (!module->getToolingKindName().empty())
           results.back().documentation =
-              getPublicDeclFullMarkdownString(*module, *parserContext);
+              getPublicDeclFullMarkdownString(*module);
       }
     };
 
@@ -328,11 +329,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
 
     CodeCompletionResult result(name, kind);
     if (auto *function = dyn_cast<DefASTDecl>(decl))
-      result.documentation =
-          getFunctionFullMarkdownString(*function, *parserContext);
-    else if (!getPublicDeclKindName(*decl).empty())
-      result.documentation =
-          getPublicDeclFullMarkdownString(*decl, *parserContext);
+      result.documentation = getFunctionFullMarkdownString(*function);
+    else if (!decl->getToolingKindName().empty())
+      result.documentation = getPublicDeclFullMarkdownString(*decl);
     results.emplace_back(result);
   }
 
@@ -403,10 +402,8 @@ struct SignatureHelpListener : public BaseCompletionListener {
       SignatureHelpResult::Signature signature;
       SmallVector<std::pair<unsigned, unsigned>> argOffsets;
       signature.label = getFunctionDeclarationSnippet(
-          *function, *parserContext,
-          /*parameterOffsets=*/nullptr, &argOffsets);
-      signature.documentation =
-          getFunctionFullMarkdownString(*function, *parserContext);
+          *function, /*parameterOffsets=*/nullptr, &argOffsets);
+      signature.documentation = getFunctionFullMarkdownString(*function);
       for (const auto &[argumentDecl, offset] :
            llvm::zip(argumentDecls, argOffsets))
         signature.parameters.push_back(
@@ -442,10 +439,9 @@ struct SignatureHelpListener : public BaseCompletionListener {
           continue;
         SignatureHelpResult::Signature signature;
         SmallVector<std::pair<unsigned, unsigned>> paramOffsets;
-        signature.label = getFunctionDeclarationSnippet(
-            *function, *parserContext, &paramOffsets);
-        signature.documentation =
-            getFunctionFullMarkdownString(*function, *parserContext);
+        signature.label =
+            getFunctionDeclarationSnippet(*function, &paramOffsets);
+        signature.documentation = getFunctionFullMarkdownString(*function);
         for (const auto &[parameter, offset] :
              llvm::zip(functionParameters, paramOffsets))
           signature.parameters.push_back(
@@ -462,9 +458,8 @@ struct SignatureHelpListener : public BaseCompletionListener {
         continue;
       SignatureHelpResult::Signature signature;
       SmallVector<std::pair<unsigned, unsigned>> paramOffsets;
-      signature.label = getStructDeclarationSnippet(*structDecl, *parserContext,
-                                                    &paramOffsets);
-      addDeclDocAndParametersToSignature(*parserContext, signature, *structDecl,
+      signature.label = getStructDeclarationSnippet(*structDecl, &paramOffsets);
+      addDeclDocAndParametersToSignature(signature, *structDecl,
                                          structParameters, paramOffsets);
       result.signatures.emplace_back(std::move(signature));
     }
@@ -474,10 +469,9 @@ struct SignatureHelpListener : public BaseCompletionListener {
   /// form the given decl to a signature.
   template <typename RangeT>
   static void addDeclDocAndParametersToSignature(
-      MojoParserContext &ctx, SignatureHelpResult::Signature &signature,
-      ASTDecl &decl, RangeT &&range,
+      SignatureHelpResult::Signature &signature, ASTDecl &decl, RangeT &&range,
       ArrayRef<std::pair<unsigned, unsigned>> offsets) {
-    signature.documentation = getPublicDeclFullMarkdownString(decl, ctx);
+    signature.documentation = getPublicDeclFullMarkdownString(decl);
     for (const auto &[arg, offset] : llvm::zip(range, offsets))
       signature.parameters.push_back(
           {offset, getPublicDeclMarkdownDocString(*arg)});

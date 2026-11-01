@@ -357,9 +357,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Types
 
-  /// Get the declaration that defined the trait.
-  ASTDecl *getTraitDecl(KGEN::TraitSymbolAttr traitSymbol);
-
   /// Substitute parameters into a type and resolve them into a different type.
   ASTType concretizeType(ASTType base, ArrayRef<TypedAttr> params,
                          ASTType type);

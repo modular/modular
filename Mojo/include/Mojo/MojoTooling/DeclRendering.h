@@ -22,39 +22,19 @@
 namespace M::KGEN::LIT {
 
 class ASTDecl;
-class AliasASTDecl;
 class DefASTDecl;
-class MojoParserContext;
 class StructASTDecl;
 
-StringRef getPublicDeclKindName(ASTDecl &decl);
-std::string getPublicDeclDeclarationSnippet(ASTDecl &decl,
-                                            MojoParserContext &ctx);
+std::string getPublicDeclDeclarationSnippet(ASTDecl &decl);
 std::string getPublicDeclMarkdownDocString(ASTDecl &decl);
-std::string getPublicDeclFullMarkdownString(ASTDecl &decl,
-                                            MojoParserContext &ctx);
+std::string getPublicDeclFullMarkdownString(ASTDecl &decl);
 
-std::string getToolingAliasValue(AliasASTDecl &decl);
-
-std::string getStructSignature(
+std::string getStructDeclarationSnippet(
     StructASTDecl &decl,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets = nullptr);
-std::string getStructDeclarationSnippet(
-    StructASTDecl &decl, MojoParserContext &ctx,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets = nullptr);
 
-std::string getFunctionDeclarationSnippet(
-    DefASTDecl &decl, MojoParserContext &ctx,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets = nullptr,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets = nullptr);
-std::string getFunctionSignature(
-    DefASTDecl &decl, MojoParserContext &ctx,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets = nullptr,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets = nullptr,
-    unsigned *returnOffset = nullptr);
 std::string getFunctionMarkdownDocString(DefASTDecl &decl);
-std::string getFunctionFullMarkdownString(DefASTDecl &decl,
-                                          MojoParserContext &ctx);
+std::string getFunctionFullMarkdownString(DefASTDecl &decl);
 
 } // namespace M::KGEN::LIT
 

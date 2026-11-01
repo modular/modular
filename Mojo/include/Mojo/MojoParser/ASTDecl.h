@@ -102,6 +102,7 @@ public:
 
   /// Return tooling information for this declaration.
   ASTType getToolingType();
+  StringRef getToolingKindName();
   std::optional<StringRef> getName();
   std::optional<StringRef> getDeprecationWarning();
 
@@ -119,6 +120,9 @@ public:
   /// Return true if this declaration represents a compile-time parameter
   /// declaration on a function or struct.
   bool isParameterDecl() const;
+
+  /// Return true if this parameter appears in the user-visible signature.
+  bool isUserParameterDecl() const;
 
   /// Return true if this declaration represents a variable.
   bool isVariableDecl() const;
@@ -1046,6 +1050,7 @@ public:
   /// Return the alias operation represented by this declaration.
   AliasDeclOp getOp() const { return cast<AliasDeclOp>(getOperation()); }
   void setOp(AliasDeclOp op) { setOperation(*op.getOperation()); }
+  std::string getToolingValue();
 
   /// Return the source-visible parameter declarations in signature order.
   SmallVector<ASTDecl *> getUserParamDecls() const;

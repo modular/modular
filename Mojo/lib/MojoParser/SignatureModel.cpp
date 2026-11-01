@@ -275,6 +275,26 @@ StringRef getArgumentConventionString(ASTDecl &decl) {
   return getConventionString(decl.getArgConvention());
 }
 
+std::string AliasASTDecl::getToolingValue() {
+  auto generatorType = dyn_cast<GeneratorType>(getOp().getType());
+  ParameterEvaluator evaluator;
+  if (generatorType) {
+    for (auto [index, type] :
+         llvm::enumerate(generatorType.getInputParamTypes())) {
+      Type reboundType = evaluator.getReboundType(type);
+      evaluator.appendIndexBinding(ParamDeclRefAttr::get(
+          generatorType.getParamListAttrs().getName(index), reboundType));
+    }
+  }
+
+  std::optional<Attribute> value = getOp().getValue();
+  if (!value)
+    return {};
+  if (auto generator = dyn_cast<GeneratorAttr>(*value))
+    value = evaluator.getReboundAttribute(generator.getBody());
+  return generatePValueString(getShared(), *value);
+}
+
 static std::pair<ArrayRef<Type>, PogListAttr>
 getParameterSignature(ASTDecl &owner) {
   if (auto *function = dyn_cast<FnSignatureASTDecl>(&owner)) {
@@ -1076,6 +1096,51 @@ void printFunctionSignature(DefASTDecl &decl, llvm::raw_string_ostream &os,
                                  evaluator, shared, os, offsets);
 }
 
+std::string getFunctionSignature(
+    DefASTDecl &decl,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets,
+    unsigned *returnOffset) {
+  std::string signature;
+  llvm::raw_string_ostream os(signature);
+  SignatureOffsets offsets;
+  offsets.parameters = parameterOffsets;
+  offsets.arguments = argumentOffsets;
+  offsets.returnTypeStart = returnOffset;
+  printFunctionSignature(decl, os, offsets);
+  return signature;
+}
+
+std::string getFunctionDeclarationSnippet(
+    DefASTDecl &decl,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) {
+  std::string snippet;
+  llvm::raw_string_ostream os(snippet);
+  FnTypeGeneratorType functionType = decl.getSignature();
+  if (functionType.isAsync())
+    os << "__async ";
+  unsigned returnOffset = 0;
+  std::string signature = getFunctionSignature(decl, parameterOffsets,
+                                               argumentOffsets, &returnOffset);
+  size_t signatureStart = os.str().size();
+  auto adjustOffsets = [&](auto *offsets) {
+    for (auto &offset : *offsets) {
+      offset.first += signatureStart;
+      offset.second += signatureStart;
+    }
+  };
+  if (parameterOffsets)
+    adjustOffsets(parameterOffsets);
+  if (argumentOffsets)
+    adjustOffsets(argumentOffsets);
+  os << StringRef(signature).take_front(returnOffset);
+  if (functionType.isThrows())
+    os << " raises";
+  os << StringRef(signature).drop_front(returnOffset);
+  return snippet;
+}
+
 void printStructSignature(StructASTDecl &decl, llvm::raw_string_ostream &os,
                           const SignatureOffsets &offsets) {
   DeclResolver::DiagnosticDeclContextChanger scope(&decl);
@@ -1091,6 +1156,17 @@ void printStructSignature(StructASTDecl &decl, llvm::raw_string_ostream &os,
     constraints = mergeConformsToConstraints(cs, &evaluator, shared, params);
   printRenderedStructSignature(structOp.getName(), params, constraints,
                                evaluator, shared, os, offsets);
+}
+
+std::string getStructSignature(
+    StructASTDecl &decl,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) {
+  std::string signature;
+  llvm::raw_string_ostream os(signature);
+  SignatureOffsets offsets;
+  offsets.parameters = parameterOffsets;
+  printStructSignature(decl, os, offsets);
+  return signature;
 }
 
 void printAliasSignature(AliasASTDecl &decl, llvm::raw_string_ostream &os,

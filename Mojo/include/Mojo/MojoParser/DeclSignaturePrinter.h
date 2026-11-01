@@ -64,6 +64,24 @@ void printAliasSignature(LIT::AliasASTDecl &decl, llvm::raw_string_ostream &os,
 void printTraitSignature(LIT::TraitASTDecl &decl, llvm::raw_string_ostream &os,
                          const SignatureOffsets &offsets = {});
 
+std::string getFunctionSignature(
+    LIT::DefASTDecl &decl,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+        nullptr,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
+        nullptr,
+    unsigned *returnOffset = nullptr);
+std::string getFunctionDeclarationSnippet(
+    LIT::DefASTDecl &decl,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+        nullptr,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
+        nullptr);
+std::string getStructSignature(
+    LIT::StructASTDecl &decl,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+        nullptr);
+
 /// Return the source-facing type for a parameter.
 std::string getParameterTypeString(LIT::ASTDecl &decl);
 

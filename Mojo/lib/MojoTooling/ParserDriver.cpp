@@ -111,11 +111,6 @@ const FrontendOptions &MojoParserContext::getFrontendOptions() {
   return impl->sharedState.frontendOptions;
 }
 
-ASTDecl *MojoParserContext::getTraitDecl(KGEN::TraitSymbolAttr traitSymbol) {
-  return &impl->sharedState.declResolver->getDeclForTypeSymbol(
-      traitSymbol.getSymbol());
-}
-
 ASTType MojoParserContext::concretizeType(ASTType base,
                                           ArrayRef<TypedAttr> params,
                                           ASTType type) {

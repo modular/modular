@@ -26,6 +26,7 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
+#include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/Lexer.h"
 #include "Mojo/MojoTooling/CodeComplete.h"
@@ -178,13 +179,13 @@ std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
   };
 
   if (auto *function = dyn_cast<DefASTDecl>(decl)) {
-    std::string snippet = getFunctionDeclarationSnippet(*function, ctx);
+    std::string snippet = KGEN::getFunctionDeclarationSnippet(*function);
     std::string docString = getFunctionMarkdownDocString(*function);
     return processDecl("function", snippet, docString,
                        /*includeKindInSnippet=*/true);
   }
-  if (StringRef kind = getPublicDeclKindName(*decl); !kind.empty())
-    return processDecl(kind, getPublicDeclDeclarationSnippet(*decl, ctx),
+  if (StringRef kind = decl->getToolingKindName(); !kind.empty())
+    return processDecl(kind, getPublicDeclDeclarationSnippet(*decl),
                        getPublicDeclMarkdownDocString(*decl),
                        !isa<AliasASTDecl, StructASTDecl>(decl));
   // If didn't get a view, we fall back to simply printing the name of the
@@ -1425,19 +1426,18 @@ void MojoDocument::getDocumentSymbols(
     } else if (auto *alias = dyn_cast<AliasASTDecl>(decl)) {
       if (isGlobalAliasDecl(*alias))
         addSymbol(alias->getName().value_or(StringRef{}),
-                  lsp::SymbolKind::Property, range,
-                  getToolingAliasValue(*alias));
+                  lsp::SymbolKind::Property, range, alias->getToolingValue());
     } else if (auto *trait = dyn_cast<TraitASTDecl>(decl)) {
       addSymbol(trait->getName().value_or(StringRef{}),
                 lsp::SymbolKind::Interface, range);
     } else if (auto *structDecl = dyn_cast<StructASTDecl>(decl)) {
       addSymbol(structDecl->getName().value_or(StringRef{}),
                 lsp::SymbolKind::Struct, range,
-                getStructSignature(*structDecl));
+                KGEN::getStructSignature(*structDecl));
     } else if (auto *function = dyn_cast<DefASTDecl>(decl)) {
       addSymbol(function->getName().value_or(StringRef{}),
                 lsp::SymbolKind::Function, range,
-                getFunctionSignature(*function, *context->parserContext));
+                KGEN::getFunctionSignature(*function));
     }
   }
 

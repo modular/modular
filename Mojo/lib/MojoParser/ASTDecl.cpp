@@ -68,6 +68,28 @@ ASTType ASTDecl::getToolingType() {
   return {};
 }
 
+StringRef ASTDecl::getToolingKindName() {
+  if (auto *variable = dyn_cast<VarASTDecl>(this))
+    return variable->isArgument() ? "argument" : "variable";
+  if (isa<AliasASTDecl>(this))
+    return "alias";
+  if (isa<FileModuleASTDecl, ImportASTDecl>(this))
+    return "module";
+  if (isa<PackageASTDecl>(this))
+    return "package";
+  if (isa<StructASTDecl>(this))
+    return "struct";
+  if (isa<StructFieldASTDecl>(this))
+    return "field";
+  if (isa<TraitASTDecl>(this))
+    return "trait";
+  if (isArgumentDecl())
+    return "argument";
+  if (isUserParameterDecl())
+    return "parameter";
+  return {};
+}
+
 /// Returns this argument's effective ABI convention, including any variadic
 /// convention. Asserts if this is not an argument declaration.
 ArgConvention ASTDecl::getArgConvention() const {
@@ -566,6 +588,20 @@ bool ASTDecl::isArgumentDecl() const {
 }
 
 bool ASTDecl::isParameterDecl() const { return getParamNumber() >= 0; }
+
+bool ASTDecl::isUserParameterDecl() const {
+  if (!isParameterDecl())
+    return false;
+  ASTDecl *parent = getParentDecl();
+  SmallVector<ASTDecl *> parameters;
+  if (auto *function = dyn_cast_or_null<FnSignatureASTDecl>(parent))
+    parameters = function->getUserParamDecls();
+  else if (auto *structDecl = dyn_cast_or_null<StructASTDecl>(parent))
+    parameters = structDecl->getUserParamDecls();
+  else if (auto *aliasDecl = dyn_cast_or_null<AliasASTDecl>(parent))
+    parameters = aliasDecl->getUserParamDecls();
+  return llvm::is_contained(parameters, this);
+}
 
 bool ASTDecl::isVariableDecl() const {
   if (auto *variable = dyn_cast<VarASTDecl>(this))
