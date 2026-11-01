@@ -10,15 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Serves embedding architectures that register a graph-API ``ENCODER``.
+"""Serves embedding architectures that register an ``ENCODER``.
 
 An encoder-only architecture registers its encoder module for the
 ``ENCODER`` role, and :func:`encoder_pipeline_model` builds the pipeline
 model: it finalizes the config, constructs the encoder as
 ``encoder_cls(config)``, loads the checkpoint, builds the graph from
-:func:`encoder_input_types`, and batches and executes it. The encoder's
-``__call__`` takes :class:`EncoderInputs` of graph values and returns the
-embeddings.
+:func:`encoder_input_types`, and batches and executes it. The encoder takes
+:class:`EncoderInputs` and returns the embeddings: a graph-API
+(:class:`max.nn.legacy.Module`) encoder in its ``__call__``, over graph
+values, and a ModuleV3 (:class:`max.nn.Module`) encoder in its
+``forward``, over tensors.
 
 An encoder takes its batch in one of two layouts, which its class picks:
 
@@ -29,12 +31,16 @@ An encoder takes its batch in one of two layouts, which its class picks:
   them but with no KV cache.
 
 A registered encoder class can also set ``graph_name``, the name its graph
-compiles under, and ``strict_state_dict_loading``,
+compiles under. A graph-API encoder can set ``strict_state_dict_loading``,
 ``override_quantization_encoding`` and ``weight_alignment``, the options it
-loads the checkpoint with, which an instance may also set from its config. An encoder whose
-graph predates registration with input types other than its layout's
-defines ``legacy_input_types()``, which returns them in field order, so
-its precompiled MEFs keep their key.
+loads the checkpoint with, which an instance may also set from its config.
+A graph-API encoder whose graph predates registration with input types
+other than its layout's defines ``legacy_input_types()``, which returns
+them in field order, so its precompiled MEFs keep their key.
+
+A ModuleV3 encoder is built under the pipeline's dtype and moved to its
+device, and the checkpoint's ``float32`` and ``bfloat16`` weights are cast
+to the dtypes its parameters declare.
 """
 
 from __future__ import annotations
@@ -46,17 +52,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
+from max import functional as F
 from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, Value
 from max.graph import Module as GraphModule
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn import Module
 from max.nn.legacy.layer import Module as GraphApiModule
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.config import KVCacheConfig
-from max.tensor import Tensor
+from max.tensor import Tensor, default_dtype
 from typing_extensions import TypeVar
 
 from .graph_specs import GraphRole, GraphSpec
@@ -68,7 +76,12 @@ from .interfaces.batch_processor import (
     embedding_ragged_symbolic_inputs,
     padded_encoder_symbolic_inputs,
 )
-from .interfaces.pipeline_model import ModelInputs, ModelOutputs, PipelineModel
+from .interfaces.pipeline_model import (
+    ModelInputs,
+    ModelOutputs,
+    PipelineModel,
+    _cast_to_parameter_dtypes,
+)
 from .module_registration import finalize_config
 from .utils import parse_state_dict_from_weights
 
@@ -80,7 +93,9 @@ if TYPE_CHECKING:
 
 __all__ = [
     "EncoderInputs",
+    "EncoderPipelineModel",
     "GraphApiEncoderPipelineModel",
+    "ModuleV3EncoderPipelineModel",
     "PaddedEncoderInputs",
     "PaddedEncoderProcessor",
     "RaggedEncoderInputs",
@@ -208,6 +223,28 @@ def _graph_name(encoder_cls: type[Any]) -> str:
     return getattr(encoder_cls, "graph_name", encoder_cls.__qualname__)
 
 
+class _ModuleV3EncoderGraph(Module[..., Tensor]):
+    """Calls a ModuleV3 encoder with :class:`EncoderInputs` of its inputs.
+
+    It is name-transparent to the encoder, so the graph's weight names are
+    the encoder's own.
+    """
+
+    def __init__(
+        self, encoder: Module[..., Tensor], fields: Sequence[str]
+    ) -> None:
+        super().__init__()
+        encoder.name_transparent = True
+        self.encoder = encoder
+        self._fields = tuple(fields)
+
+    def forward(self, *inputs: Tensor) -> Tensor:
+        """Groups the graph's inputs into fields and runs the encoder."""
+        return self.encoder(
+            EncoderInputs(**dict(zip(self._fields, inputs, strict=True)))
+        )
+
+
 @dataclass
 class PaddedEncoderInputs(ModelInputs):
     """The prepared inputs of a padded ``ENCODER``."""
@@ -286,17 +323,19 @@ def _reduce_encoder_pipeline_model(
 copyreg.pickle(_EncoderPipelineModelMeta, _reduce_encoder_pipeline_model)
 
 
-class GraphApiEncoderPipelineModel(
+class EncoderPipelineModel(
     PipelineModel[TextContext, Any, Model],
     metaclass=_EncoderPipelineModelMeta,
 ):
-    """Serves a registered graph-API ``ENCODER`` module.
+    """Serves a registered ``ENCODER`` module.
 
-    :func:`encoder_pipeline_model` subclasses it for each registration. It
-    keeps no KV cache, and returns the embeddings as the outputs' logits.
+    :func:`encoder_pipeline_model` subclasses
+    :class:`GraphApiEncoderPipelineModel` or
+    :class:`ModuleV3EncoderPipelineModel` for each registration. It keeps no
+    KV cache, and returns the embeddings as the outputs' logits.
     """
 
-    encoder_cls: ClassVar[type[GraphApiModule]]
+    encoder_cls: ClassVar[type[Any]]
     """The registered ``ENCODER`` class."""
 
     def __init__(
@@ -340,7 +379,7 @@ class GraphApiEncoderPipelineModel(
         )
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        # graph_specs loads these into the encoder it constructs.
+        # graph_specs builds the encoder's weights from these.
         self._checkpoint = state_dict
         return finalize_config(
             self.arch_config,
@@ -348,6 +387,22 @@ class GraphApiEncoderPipelineModel(
             state_dict,
             ModelOutputConfig(return_logits=self.return_logits),
         )
+
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the encoder on the prepared batch."""
+        assert isinstance(
+            model_inputs, (PaddedEncoderInputs, RaggedEncoderInputs)
+        )
+        assert self.batch_processor is not None
+        return self.batch_processor.process_outputs(
+            self.model.execute(*model_inputs.buffers)
+        )
+
+
+class GraphApiEncoderPipelineModel(EncoderPipelineModel):
+    """Serves a registered graph-API ``ENCODER`` module."""
+
+    encoder_cls: ClassVar[type[GraphApiModule]]
 
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
         """Returns the encoder graph, with the checkpoint loaded into it."""
@@ -381,20 +436,37 @@ class GraphApiEncoderPipelineModel(
             )
         }
 
-    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        """Runs the encoder on the prepared batch."""
-        assert isinstance(
-            model_inputs, (PaddedEncoderInputs, RaggedEncoderInputs)
-        )
-        assert self.batch_processor is not None
-        return self.batch_processor.process_outputs(
-            self.model.execute(*model_inputs.buffers)
-        )
+
+class ModuleV3EncoderPipelineModel(EncoderPipelineModel):
+    """Serves a registered ModuleV3 ``ENCODER`` module."""
+
+    encoder_cls: ClassVar[type[Module[..., Any]]]
+
+    def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
+        """Returns the encoder graph, built from the checkpoint weights."""
+        encoder_cls = type(self).encoder_cls
+        # A registered module takes its config, which type[Module] can't say.
+        constructor: Any = encoder_cls
+        with F.lazy(), default_dtype(self.dtype):
+            encoder = constructor(model_config)
+            encoder.to(self.devices[0])
+        input_types = encoder_input_types(encoder_cls, self.device_refs)
+        graph = _ModuleV3EncoderGraph(encoder, list(input_types))
+        weights = _cast_to_parameter_dtypes(graph, self._checkpoint)
+        self._checkpoint = {}
+        return {
+            GraphRole.ENCODER: GraphSpec(
+                graph,
+                _graph_name(encoder_cls),
+                tuple(input_types.values()),
+                weights=weights,
+            )
+        }
 
 
 _PIPELINE_MODELS: dict[
     tuple[type[ArchConfig], tuple[tuple[str, type[Any]], ...], Any],
-    type[GraphApiEncoderPipelineModel],
+    type[EncoderPipelineModel],
 ] = {}
 
 
@@ -402,7 +474,7 @@ def encoder_pipeline_model(
     config: type[ArchConfig],
     modules: tuple[tuple[str, type[Any]], ...],
     batching: type[Any] | None,
-) -> type[GraphApiEncoderPipelineModel]:
+) -> type[EncoderPipelineModel]:
     """Returns the pipeline model that serves an ``ENCODER`` registration.
 
     One registration always returns the same class.
@@ -415,7 +487,8 @@ def encoder_pipeline_model(
 
     Raises:
         NotImplementedError: If it registers a role other than ``ENCODER``.
-        TypeError: If the ``ENCODER`` isn't a graph-API module class.
+        TypeError: If the ``ENCODER`` isn't a graph-API or ModuleV3 module
+            class.
     """
     registration = (config, modules, batching)
     if (cached := _PIPELINE_MODELS.get(registration)) is not None:
@@ -426,11 +499,17 @@ def encoder_pipeline_model(
             f"an encoder registration can't fill {unsupported}"
         )
     encoder_cls = by_role[GraphRole.ENCODER]
-    if not isinstance(encoder_cls, type) or not issubclass(
+    base: type[EncoderPipelineModel]
+    if isinstance(encoder_cls, type) and issubclass(encoder_cls, Module):
+        base = ModuleV3EncoderPipelineModel
+    elif isinstance(encoder_cls, type) and issubclass(
         encoder_cls, GraphApiModule
     ):
+        base = GraphApiEncoderPipelineModel
+    else:
         raise TypeError(
-            "the ENCODER module must be a max.nn.legacy.Module class"
+            "the ENCODER module must be a max.nn.Module or "
+            "max.nn.legacy.Module class"
         )
     default_batching: type[BatchProcessor[Any, Any]] = (
         RaggedEncoderProcessor
@@ -440,7 +519,7 @@ def encoder_pipeline_model(
     name = f"{encoder_cls.__name__}PipelineModel"
     model = _EncoderPipelineModelMeta(
         name,
-        (GraphApiEncoderPipelineModel,),
+        (base,),
         {
             "__module__": __name__,
             "__qualname__": name,
@@ -450,6 +529,6 @@ def encoder_pipeline_model(
             "batch_processor_cls": batching or default_batching,
         },
     )
-    assert issubclass(model, GraphApiEncoderPipelineModel)
+    assert issubclass(model, EncoderPipelineModel)
     _PIPELINE_MODELS[registration] = model
     return model

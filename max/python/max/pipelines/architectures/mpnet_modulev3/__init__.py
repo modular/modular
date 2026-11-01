@@ -13,13 +13,11 @@
 """MPNet sentence transformer architecture for embeddings generation."""
 
 from .arch import mpnet_modulev3_arch
-from .inputs import MPNetInputs
-from .model import MPNetPipelineModel
+from .graph import MPNetModel
 from .model_config import MPNetConfig
 
 __all__ = [
     "MPNetConfig",
-    "MPNetInputs",
-    "MPNetPipelineModel",
+    "MPNetModel",
     "mpnet_modulev3_arch",
 ]

@@ -23,11 +23,13 @@ from unittest.mock import NonCallableMock
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorType, TensorValue
 from max.graph.weights import WeightsFormat
+from max.nn import Module as ModuleV3
 from max.nn.legacy.layer import Module
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
@@ -38,15 +40,18 @@ from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 from max.pipelines.lib.registration_encoder import (
     EncoderInputs,
     GraphApiEncoderPipelineModel,
+    ModuleV3EncoderPipelineModel,
     PaddedEncoderInputs,
     PaddedEncoderProcessor,
     RaggedEncoderInputs,
     RaggedEncoderProcessor,
     _EncoderGraph,
+    _ModuleV3EncoderGraph,
     encoder_input_types,
     encoder_pipeline_model,
 )
 from max.pipelines.modeling.types import PipelineTask
+from max.tensor import Tensor
 from transformers import AutoConfig
 from typing_extensions import Self
 
@@ -103,6 +108,39 @@ class RaggedEncoder(Module):
     def __call__(self, inputs: EncoderInputs[TensorValue]) -> TensorValue:
         assert inputs.input_row_offsets is not None
         assert inputs.return_n_logits is not None
+        return inputs.tokens
+
+
+class Scale(ModuleV3[[Tensor], Tensor]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = Tensor.zeros([1], dtype=DType.float32, device=CPU())
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x * self.weight
+
+
+class ModuleV3PaddedEncoder(ModuleV3[[EncoderInputs], Tensor]):
+    graph_name = "padded_v3"
+
+    def __init__(self, config: ToyConfig) -> None:
+        super().__init__()
+        self.scale = Scale()
+
+    def forward(self, inputs: EncoderInputs) -> Tensor:
+        assert inputs.attention_mask is not None
+        return self.scale(F.cast(inputs.tokens, DType.float32)) + (
+            inputs.attention_mask * 100
+        )
+
+
+class ModuleV3RaggedEncoder(ModuleV3[[EncoderInputs], Tensor]):
+    ragged_batch = True
+
+    def __init__(self, config: ToyConfig) -> None:
+        super().__init__()
+
+    def forward(self, inputs: EncoderInputs) -> Tensor:
         return inputs.tokens
 
 
@@ -172,6 +210,25 @@ def test_the_encoder_graph_feeds_each_field() -> None:
     np.testing.assert_array_equal(embeddings.to_numpy(), [[1, 2, 0]])
 
 
+def test_a_modulev3_encoder_graph_feeds_each_field() -> None:
+    encoder = ModuleV3PaddedEncoder(ToyConfig())
+    input_types = encoder_input_types(ModuleV3PaddedEncoder, [CPU_REF])
+    graph = _ModuleV3EncoderGraph(encoder, list(input_types))
+    assert [name for name, _ in graph.parameters] == ["scale.weight"]
+
+    run = graph.compile(
+        *input_types.values(),
+        weights={"scale.weight": np.array([2], np.float32)},
+    )
+    embeddings = run(
+        Buffer.from_numpy(np.array([[1, 2, 3]], np.int64)),
+        Buffer.from_numpy(np.array([[1, 1, 0]], np.float32)),
+    )
+    np.testing.assert_array_equal(
+        np.from_dlpack(embeddings.driver_tensor), [[102, 104, 6]]
+    )
+
+
 def test_the_padded_processor_pads_and_masks_the_batch() -> None:
     processor = PaddedEncoderProcessor(ToyConfig(), _runtime())
     inputs = processor.prepare_initial_token_inputs(
@@ -220,6 +277,25 @@ def test_a_registration_builds_an_encoder_pipeline_model(
     assert pickle.loads(pickle.dumps(model)) is model
 
 
+@pytest.mark.parametrize(
+    ("encoder", "processor"),
+    [
+        (ModuleV3PaddedEncoder, PaddedEncoderProcessor),
+        (ModuleV3RaggedEncoder, RaggedEncoderProcessor),
+    ],
+)
+def test_a_modulev3_registration_builds_a_modulev3_encoder_pipeline_model(
+    encoder: type[ModuleV3[..., Any]], processor: type[Any]
+) -> None:
+    model = _arch(encoder).pipeline_model
+    assert isinstance(model, type)
+    assert issubclass(model, ModuleV3EncoderPipelineModel)
+    assert model.encoder_cls is encoder
+    assert model.batch_processor_cls is processor
+    assert _arch(encoder).pipeline_model is model
+    assert pickle.loads(pickle.dumps(model)) is model
+
+
 def test_an_encoder_registration_fills_only_the_encoder() -> None:
     with pytest.raises(NotImplementedError, match="decoder"):
         encoder_pipeline_model(
@@ -230,7 +306,7 @@ def test_an_encoder_registration_fills_only_the_encoder() -> None:
             ),
             None,
         )
-    with pytest.raises(TypeError, match=r"max\.nn\.legacy\.Module"):
+    with pytest.raises(TypeError, match=r"max\.nn\.Module"):
         encoder_pipeline_model(
             ToyConfig, ((GraphRole.ENCODER, ToyConfig),), None
         )
