@@ -25,8 +25,8 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3multimodal.model import (
     Gemma3_MultiModalModel,
 )
-from max.pipelines.architectures.gemma3multimodal_modulev3.model import (
-    Gemma3MultiModalModelV3,
+from max.pipelines.architectures.gemma3multimodal_modulev3 import (
+    gemma3_multimodal_modulev3_arch,
 )
 from max.pipelines.architectures.internvl.model import InternVLModel
 from max.pipelines.context import LogProbabilities
@@ -780,7 +780,14 @@ class _MixinState:
 
 @pytest.mark.parametrize(
     "model_cls",
-    [InternVLModel, Gemma3_MultiModalModel, Gemma3MultiModalModelV3],
+    [
+        InternVLModel,
+        Gemma3_MultiModalModel,
+        pytest.param(
+            gemma3_multimodal_modulev3_arch.pipeline_model,
+            id="Gemma3ModuleV3",
+        ),
+    ],
 )
 def test_vision_models_use_the_mixin(model_cls: type) -> None:
     """The vision models inherit ``LogProbabilitiesMixin``'s implementation."""
