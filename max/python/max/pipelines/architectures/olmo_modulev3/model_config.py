@@ -18,14 +18,15 @@ from typing import ClassVar, Literal
 from max.graph.weights import WeightData
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.llama3_modulev3.model_config import (
-    Llama3Config,
+    Llama3DecoderConfig,
 )
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 
 
 @dataclass(kw_only=True)
-class OlmoConfig(Llama3Config):
+class OlmoConfig(Llama3DecoderConfig):
     """Model configuration for Olmo graph construction/execution."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float32"
@@ -41,17 +42,17 @@ class OlmoConfig(Llama3Config):
         self,
         huggingface_config: AutoConfig,
         state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
+        return_logits: ReturnLogits | ModelOutputConfig,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> None:
-        """Delegates to the parent with layer norm, which OLMo uses."""
+        """Completes the config in place, with the layer norm OLMo uses."""
         super().finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
-            norm_method="layer_norm",  # Olmo uses layer norm
+            norm_method="layer_norm",
             attention_bias=attention_bias,
         )
