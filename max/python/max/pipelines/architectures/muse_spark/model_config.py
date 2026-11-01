@@ -22,7 +22,6 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.nn.legacy.quant_config import NVFP4_BLOCK_SIZE, QuantConfig
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
@@ -35,12 +34,18 @@ from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVCache,
+    ModelOutputConfig,
+)
+from max.pipelines.lib.registration_runtime import (
+    DeploymentConfig,
+    ModuleRuntime,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -346,7 +351,7 @@ class MuseSparkTextConfig(ArchConfigWithBoundedMaxSeqLen):
 
 
 @dataclass(kw_only=True)
-class MuseSparkConfig(ArchConfigWithKVCache):
+class MuseSparkConfig(ArchConfigWithKVCache, DeploymentConfig):
     """Top-level Muse Spark configuration."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
@@ -363,6 +368,11 @@ class MuseSparkConfig(ArchConfigWithKVCache):
     audio_token_id: int
     text_config: MuseSparkTextConfig
     quantization_encoding: SupportedEncoding | None = None
+    mesh: DeviceMesh | None = None
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Places the text module on the serving mesh."""
+        return replace(self, mesh=runtime.mesh)
 
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""
@@ -501,14 +511,26 @@ class MuseSparkConfig(ArchConfigWithKVCache):
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
     ) -> None:
-        """Sets the fields that depend on the loaded weights and pipeline.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-            state_dict: Model weights dictionary.
-            return_logits: Return logits configuration.
-        """
-        self.text_config.return_logits = return_logits
+        """Resolves output modes and checkpoint expert dtypes for registration."""
+        self.text_config = replace(
+            self.text_config, return_logits=outputs.return_logits
+        )
+        nvfp4 = self.text_config.nvfp4
+        if nvfp4 is not None:
+            expert_zero_gate = re.compile(
+                r"language_model\.layers\.(\d+)\.mlp\.experts\.0\.gate_proj\.weight(\.data)?"
+            )
+            expert_dtypes = {
+                int(match[1]): data.dtype
+                for name, data in state_dict.items()
+                if (match := expert_zero_gate.fullmatch(name))
+            }
+            self.text_config.nvfp4 = replace(
+                nvfp4,
+                quant_config=reconcile_expert_dtypes(
+                    nvfp4.quant_config, expert_dtypes
+                ),
+            )
