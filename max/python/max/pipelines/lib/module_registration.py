@@ -31,6 +31,10 @@ A registered module class can also set:
   (:func:`consumes_vision`);
 - ``supports_pipeline_stages``, when its config builds one pipeline
   stage's layers (:func:`supports_pipeline_stages`);
+- ``scratch_types(config, *, max_batch_size, devices)``, a classmethod that
+  returns the buffer types of the workspace its kernels write each step (see
+  :mod:`~max.pipelines.lib.decoder_scratch`). Its batch processor must be a
+  :class:`DecoderBatchProcessor`, which passes the buffers;
 - ``state_store(config, *, max_batch_size, devices)``, a classmethod that
   returns the store of the per-request state it carries between steps (see
   :mod:`~max.pipelines.lib.request_state`). Its batch processor must be a
@@ -73,7 +77,7 @@ from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, TensorType, Type
+from max.graph import BufferType, DeviceRef, TensorType, Type
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
@@ -90,6 +94,7 @@ from max.tensor.sharding import (
 )
 from transformers import AutoConfig
 
+from .decoder_scratch import DecoderScratch, build_decoder_scratch
 from .graph_specs import GraphRole, GraphSpec
 from .interfaces.arch_config import ArchConfig, ModelOutputConfig
 from .interfaces.batch_processor import (
@@ -142,6 +147,7 @@ __all__ = [
     "ModuleV3DecoderPipelineModel",
     "RegisteredDecoderBuilder",
     "VisionBatchProcessor",
+    "bind_decoder_scratch",
     "bind_state_store",
     "construct_module",
     "decoder_input_types",
@@ -266,6 +272,7 @@ def decoder_input_types(
     ep: object | None = None,
     lora: Sequence[TensorType] = (),
     state: Sequence[Any] = (),
+    scratch: Sequence[BufferType] = (),
 ) -> OrderedDict[str, object]:
     """Returns a ``DECODER`` graph's input types, keyed by field.
 
@@ -289,6 +296,7 @@ def decoder_input_types(
             :attr:`~max.pipelines.lib.registration_runtime.ExpertParallelDeploymentConfig.expert_parallel_inputs`.
         lora: The LoRA input types, when serving LoRA adapters.
         state: The input types of the decoder's per-request state.
+        scratch: The decoder's workspace buffer types.
     """
     data_parallel = data_parallel_degree > 1
     fields = [
@@ -316,6 +324,8 @@ def decoder_input_types(
         types["lora"] = tuple(lora)
     if state:
         types["state"] = tuple(state)
+    if scratch:
+        types["scratch"] = tuple(scratch)
     return OrderedDict(
         (name, types[name]) for name in _FIELD_ORDER if name in types
     )
@@ -382,6 +392,9 @@ class DecoderModelInputs(ModelInputs):
     state: tuple[Buffer, ...] = ()
     """The decoder's per-request state inputs, when it declares any."""
 
+    scratch: tuple[Buffer, ...] = ()
+    """The decoder's workspace buffers, when it declares any."""
+
     request_ids: tuple[RequestID, ...] = ()
     """The step's requests in batch order, when the decoder keeps state for
     them."""
@@ -416,6 +429,7 @@ class DecoderModelInputs(ModelInputs):
             *self.ep_inputs,
             *self.lora_buffers,
             *self.state,
+            *self.scratch,
         )
 
 
@@ -452,6 +466,10 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
     state_store: RequestStateStore | None = None
     """The decoder's per-request state store, which fills the batch's state
     inputs. The pipeline model sets it once it builds the store."""
+
+    scratch: DecoderScratch | None = None
+    """The decoder's workspace, which every batch passes. The pipeline model
+    sets it once it allocates the buffers."""
 
     def max_dims(
         self, dims: Iterable[str], kv_params: KVCacheParamInterface
@@ -492,6 +510,9 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
                     self.state_store.input_types()
                     if self.state_store is not None
                     else ()
+                ),
+                scratch=(
+                    self.scratch.input_types if self.scratch is not None else ()
                 ),
             )
         )
@@ -560,6 +581,8 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
         if self.state_store is not None:
             inputs.state = self.state_store.prepare(context_batch)
             inputs.request_ids = tuple(ctx.request_id for ctx in context_batch)
+        if self.scratch is not None:
+            inputs.scratch = self.scratch.buffers
         return inputs
 
     def process_outputs(
@@ -922,6 +945,13 @@ class ModuleV3DecoderPipelineModel(
             max_batch_size=self.max_batch_size,
             devices=self.devices,
         )
+        scratch = bind_decoder_scratch(
+            type(self).decoder_cls,
+            model_config,
+            self.batch_processor,
+            max_batch_size=self.max_batch_size,
+            devices=self.devices,
+        )
         module_default_dtype = self._module_default_dtype(
             state_dict, model_config
         )
@@ -952,6 +982,7 @@ class ModuleV3DecoderPipelineModel(
                 if self._state_store is not None
                 else ()
             ),
+            scratch=scratch.input_types if scratch is not None else (),
         )
         # A stage after the first takes the previous stage's return last.
         if boundary := stage_input_types(stage, ()):
@@ -1107,6 +1138,48 @@ class RegisteredDecoderBuilder:
         del context, config
         weights, self._weights = self._weights, {}
         return weights
+
+
+def bind_decoder_scratch(
+    decoder_cls: type[Any],
+    model_config: Any,
+    batch_processor: object,
+    *,
+    max_batch_size: int,
+    devices: Sequence[Device],
+) -> DecoderScratch | None:
+    """Allocates a registered decoder's workspace and gives it to the batcher.
+
+    Args:
+        decoder_cls: The registered ``DECODER`` class.
+        model_config: The finalized config the decoder is built from.
+        batch_processor: The pipeline model's batch processor.
+        max_batch_size: The most requests a step holds.
+        devices: The devices the decoder runs on.
+
+    Returns:
+        The workspace, or ``None`` when the decoder declares none.
+
+    Raises:
+        TypeError: If the decoder declares workspace and the batch processor
+            isn't a :class:`DecoderBatchProcessor`, which passes it.
+    """
+    scratch = build_decoder_scratch(
+        decoder_cls,
+        model_config,
+        max_batch_size=max_batch_size,
+        devices=devices,
+    )
+    if scratch is None:
+        return None
+    if not isinstance(batch_processor, DecoderBatchProcessor):
+        raise TypeError(
+            f"{decoder_cls.__qualname__} declares workspace, which only a "
+            f"DecoderBatchProcessor passes, not "
+            f"{type(batch_processor).__qualname__}"
+        )
+    batch_processor.scratch = scratch
+    return scratch
 
 
 def bind_state_store(

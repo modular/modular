@@ -26,7 +26,7 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, TensorType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn import Module
 from max.nn.legacy.comm.ep import EPConfig
@@ -34,6 +34,7 @@ from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
+from max.pipelines.lib.decoder_scratch import build_decoder_scratch
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 from max.pipelines.lib.interfaces.pipeline_model import PipelineModel
@@ -43,6 +44,7 @@ from max.pipelines.lib.module_registration import (
     ModuleV3DecoderPipelineModel,
     RegisteredDecoderBuilder,
     _DecoderGraph,
+    bind_decoder_scratch,
     consumes_vision,
     decoder_input_types,
     finalize_config,
@@ -271,6 +273,7 @@ def test_decoder_inputs_take_the_canonical_order() -> None:
         "ep",
         "lora",
         "state",
+        "scratch",
         "stage_boundary",
     ]
 
@@ -1033,3 +1036,136 @@ def test_a_decoder_without_stages_refuses_one() -> None:
     stage = PipelineStage(0, 2, range(1))
     with pytest.raises(ValueError, match="doesn't build pipeline stages"):
         _staged_model(PlainDecoder, stage).graph_specs(StagedConfig())
+
+
+_SCRATCH = BufferType(DType.float32, [2, 3], device=DeviceRef.CPU())
+
+
+class ScratchDecoder(PlainDecoder):
+    """Declares one workspace buffer, sized from the largest batch."""
+
+    @classmethod
+    def scratch_types(
+        cls, config: ToyConfig, *, max_batch_size: int, devices: Any
+    ) -> tuple[BufferType, ...]:
+        del config
+        return tuple(
+            BufferType(DType.float32, [2, max_batch_size], device=device)
+            for device in (DeviceRef.from_device(d) for d in devices)
+        )
+
+
+def test_a_decoder_without_workspace_gets_none() -> None:
+    assert (
+        build_decoder_scratch(
+            PlainDecoder, ToyConfig(), max_batch_size=3, devices=[CPU()]
+        )
+        is None
+    )
+
+
+def test_workspace_is_allocated_once_at_its_declared_size() -> None:
+    scratch = build_decoder_scratch(
+        ScratchDecoder, ToyConfig(), max_batch_size=3, devices=[CPU()]
+    )
+    assert scratch is not None
+    assert scratch.input_types == (_SCRATCH,)
+    (buffer,) = scratch.buffers
+    assert buffer.shape == (2, 3)
+    assert buffer.dtype == DType.float32
+
+
+@pytest.mark.parametrize(
+    ("declared", "error"),
+    [
+        (X, TypeError),
+        (
+            BufferType(DType.float32, ["rows"], device=DeviceRef.CPU()),
+            ValueError,
+        ),
+    ],
+)
+def test_workspace_must_be_static_buffers(
+    declared: Any, error: type[Exception]
+) -> None:
+    class Declares(PlainDecoder):
+        @classmethod
+        def scratch_types(cls, config: Any, **kwargs: Any) -> tuple[Any, ...]:
+            return (declared,)
+
+    with pytest.raises(error):
+        build_decoder_scratch(
+            Declares, ToyConfig(), max_batch_size=3, devices=[CPU()]
+        )
+
+
+def test_workspace_follows_the_state_inputs() -> None:
+    kv_params = NonCallableMock(get_symbolic_inputs=lambda: (X,))
+    types = decoder_input_types(
+        kv_params, DeviceRef.CPU(), state=(X,), scratch=(_SCRATCH,)
+    )
+    assert list(types)[-2:] == ["state", "scratch"]
+    assert types["scratch"] == (_SCRATCH,)
+
+
+def test_every_batch_passes_the_same_workspace_last() -> None:
+    processor = _batch_processor(1)
+    scratch = bind_decoder_scratch(
+        ScratchDecoder,
+        ToyConfig(),
+        processor,
+        max_batch_size=3,
+        devices=[CPU()],
+    )
+    assert scratch is not None
+    kv = NonCallableMock(spec=KVCacheInputsPerDevice)
+    first, second = (
+        processor.prepare_initial_token_inputs(
+            [[_context(1, 2)]], kv_cache_inputs=kv
+        )
+        for _ in range(2)
+    )
+    assert first.scratch == second.scratch == scratch.buffers
+    assert first.buffers[-1] is scratch.buffers[0]
+    symbolic = processor.get_symbolic_inputs(
+        kv_params=NonCallableMock(get_symbolic_inputs=lambda: (X,)),
+        device_refs=[DeviceRef.CPU()],
+    )
+    assert symbolic[-1] == _SCRATCH
+
+
+def test_only_the_decoder_batch_processor_passes_workspace() -> None:
+    with pytest.raises(TypeError, match="DecoderBatchProcessor"):
+        bind_decoder_scratch(
+            ScratchDecoder,
+            ToyConfig(),
+            object(),
+            max_batch_size=3,
+            devices=[CPU()],
+        )
+
+
+class ScratchReader(Module[[DecoderInputs], DecoderOutputs]):
+    def __init__(self, config: ToyConfig) -> None:
+        super().__init__()
+
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        assert inputs.scratch is not None
+        (scratch,) = inputs.scratch
+        return DecoderOutputs(next_token_logits=inputs.kv[0] + scratch[0])
+
+
+def test_the_graph_hands_the_decoder_its_workspace() -> None:
+    workspace = BufferType(DType.float32, [1, 2], device=DeviceRef.CPU())
+    types = _toy_input_types(scratch=(workspace,))
+    types["kv"] = (X,)
+    run = _DecoderGraph(ScratchReader(ToyConfig()), types).compile(
+        X, X, X, X, workspace
+    )
+    outputs = run(
+        *(Buffer.from_numpy(np.full(2, 1, np.float32)) for _ in range(4)),
+        Buffer.from_numpy(np.full((1, 2), 2, np.float32)),
+    )
+    np.testing.assert_array_equal(
+        np.from_dlpack(outputs.next_token_logits.driver_tensor), np.full(2, 3)
+    )

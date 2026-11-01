@@ -143,6 +143,11 @@ class DecoderInputs(Generic[TensorT]):
     architecture defines what each one holds.
     """
 
+    scratch: tuple[Any, ...] | None = None
+    """The workspace buffers the decoder declares with ``scratch_types``, in
+    its order (see :mod:`~max.pipelines.lib.decoder_scratch`). The same
+    buffers come every step, and nothing in them outlives one."""
+
     stage_boundary: Any = None
     """What the previous pipeline stage's decoder returned, in the tree it
     returned it, on a stage after the first (see
