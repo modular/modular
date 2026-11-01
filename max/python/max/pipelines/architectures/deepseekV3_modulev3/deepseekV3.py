@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from typing import ClassVar
 
 from max import functional as F
 from max import tree
@@ -37,7 +38,8 @@ from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
-from max.tensor import Tensor
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -348,6 +350,101 @@ class DeepseekV3(Module[..., ModuleV3Outputs]):
             return_n_logits,
             input_row_offsets,
             batch_context_lengths_tensor,
+            data_parallel_splits,
+            input_row_offsets_i64,
+            comm_buffers,
+        )
+
+
+class DeepseekV3Decoder(Module[[DecoderInputs], DecoderOutputs]):
+    """The DeepSeek-V3 MLA decoder, registered for the ``DECODER`` role.
+
+    It runs tensor-parallel attention over a ``tp`` mesh, or one attention
+    replica per device over a ``dp`` mesh, with its experts tensor-parallel
+    or, under expert parallelism, spread across the devices.
+    """
+
+    graph_name: ClassVar[str] = "DeepseekV3"
+    supports_data_parallel: ClassVar[bool] = True
+
+    def __init__(self, config: DeepseekV3Config) -> None:
+        super().__init__()
+        if config.mesh is None:
+            raise ValueError(
+                "DeepSeek-V3 needs a mesh: apply the runtime first"
+            )
+        self.ep_batch_manager = (
+            None
+            if config.ep_config is None
+            else EPBatchManager(config.ep_config)
+        )
+        # Quantized checkpoints keep norms, biases and embeddings in bf16.
+        dtype = (
+            DType.bfloat16 if config.quant_config is not None else config.dtype
+        )
+        with default_dtype(dtype):
+            self.language_model = DeepseekV3TextModel(
+                config, self.ep_batch_manager
+            )
+        self.config = config
+        self.kv_params = config.kv_params
+
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Runs the decoder over the batch."""
+        mesh = self.config.mesh
+        assert mesh is not None
+        assert inputs.batch_context_lengths is not None
+
+        data_parallel_splits: Tensor | None = None
+        input_row_offsets_i64: Tensor | None = None
+        dp_degree = self.config.data_parallel_degree
+        if dp_degree > 1:
+            assert dp_degree == mesh.num_devices
+            assert inputs.host_input_row_offsets is not None
+            cpu_mesh = DeviceMesh(
+                tuple(CPU() for _ in range(dp_degree)), (dp_degree,), ("dp",)
+            )
+            batch_context_length = Tensor.from_shard_values(
+                [TensorValue(shard) for shard in inputs.batch_context_lengths],
+                DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
+            )
+            data_parallel_splits = inputs.data_parallel_splits
+            input_row_offsets_i64 = F.cast(
+                inputs.host_input_row_offsets, DType.int64
+            )
+        else:
+            batch_context_length = inputs.batch_context_lengths[0]
+
+        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_collections = tree.leaves(
+            self.kv_params.unflatten_kv_inputs(kv_inputs),
+            leaf=KVCacheInputsPerDevice,
+        )
+        # Replicas serve different requests, so their caches vary;
+        # tensor-parallel devices all store the same latent cache.
+        kv_collection = PagedCacheValues.from_upstream(
+            kv_collections,
+            DeviceMapping(
+                mesh,
+                tuple(
+                    Unknown() if name == DP else Replicated()
+                    for name in mesh.axis_names
+                ),
+            ),
+        )
+
+        comm_buffers: EPCommBuffers | None = None
+        if self.ep_batch_manager is not None:
+            assert inputs.ep is not None
+            comm_buffers = self.ep_batch_manager.comm_buffers(
+                [x._graph_value for x in tree.leaves(inputs.ep)]
+            )
+        return self.language_model(
+            inputs.tokens,
+            kv_collection,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
+            batch_context_length,
             data_parallel_splits,
             input_row_offsets_i64,
             comm_buffers,

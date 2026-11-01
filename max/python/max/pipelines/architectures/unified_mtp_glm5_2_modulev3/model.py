@@ -23,19 +23,22 @@ from max import functional as F
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.lib.graph_specs import GraphRole
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
+from max.pipelines.lib.registration_runtime import ModuleRuntime
 from max.profiler import traced
 from max.tensor import default_device, default_dtype
 from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import DeviceMesh
 from typing_extensions import override
 
 from ..deepseekV3_2_modulev3.deepseekV3_2 import DeepseekV3_2
 from ..deepseekV3_2_modulev3.model_config import DeepseekV3_2Config
 from ..deepseekV3_2_modulev3.nextn import DeepseekV3_2NextN
-from ..deepseekV3_modulev3.model import build_ep_config, create_model_config
 from ..glm5_1_modulev3.model_config import Glm5_1Config
 from ..unified_mtp_glm5_2.model import UnifiedMTPGlm5_2Model, _subtree_quantized
 from .batch_processor import UnifiedMTPGlm5_2ModuleV3BatchProcessor
@@ -79,12 +82,22 @@ class UnifiedMTPGlm5_2ModuleV3Model(UnifiedMTPGlm5_2Model):
         if n_devices > 1 and ep_size != n_devices:
             raise ValueError("Only the EP strategy is supported.")
 
-        target_config = create_model_config(self, Glm5_1Config, state_dict)
-        assert isinstance(target_config, DeepseekV3_2Config)
+        target_config = Glm5_1Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        ).finalize(self.huggingface_config, state_dict, ModelOutputConfig())
+        runtime = ModuleRuntime(
+            mesh=DeviceMesh(tuple(self.devices), (n_devices,), (TP,)),
+            data_parallel_degree=1,
+            max_batch_input_tokens=self.pipeline_config.runtime.max_batch_input_tokens,
+            max_batch_total_tokens=self.planned_max_batch_total_tokens,
+            ep_size=ep_size,
+            ep_use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
+        )
         if ep_size > 1:
-            target_config.ep_config = build_ep_config(
-                self, ep_size, n_devices, target_config
+            runtime = replace(
+                runtime, ep=target_config.expert_parallel_config(runtime)
             )
+        target_config = target_config.apply_runtime(runtime)
         self._split_mtp_kv_params()
         self._target_config = target_config
         return target_config
